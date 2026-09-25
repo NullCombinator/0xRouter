@@ -1,5 +1,9 @@
 # environment / secrets
 .env
+.mcp.json
+
+# upstream reference clone + its generated code graph (never committed)
+ref/
 
 # OS noise
 .DS_Store
