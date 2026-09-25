@@ -1,0 +1,5 @@
+# environment / secrets
+.env
+
+# OS noise
+.DS_Store
