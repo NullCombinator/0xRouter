@@ -1,4 +1,4 @@
-# 1router project skills
+# 0router project skills
 
 Curated Claude Code skills, project-scoped: they load only for sessions in this
 repo. Sources and review provenance:
@@ -59,3 +59,31 @@ scanned for network/exec/secret patterns — only expected localhost serving,
 webbrowser open, Google Fonts links, one SRI-hashed CDN script, and `claude -p`
 subprocess calls consistent with each script's stated purpose. No exfiltration,
 no prompt injection, no obfuscation found.
+
+## Spec-kit (10 skills) — from github/spec-kit
+
+Installed 2026-09-26 by `specify init --here --force --non-interactive
+--integration claude --script sh`, run with specify-cli 1.0.12 built via
+`uv tool install --from ref/spec-kit` from this repo's own pinned clone
+(tag v1.0.12, commit e77daa9, MIT, GitHub Inc.). The ten `speckit-*` skills
+load alongside the fifteen above; shared infra lives in `.specify/` (sh
+script variant, templates, speckit workflow, sha256 manifests).
+
+- Core SDD cycle: speckit-constitution, -specify, -clarify, -plan, -tasks,
+  -implement, -converge. Quality gates: -analyze (read-only cross-artifact
+  consistency), -checklist ("unit tests for English" over requirements).
+  -taskstoissues is the GitHub-issues bridge — inert here, the repo has no
+  GitHub remote.
+- Review: dress-rehearsal init run in /tmp first; every installed file
+  sha256-verified against `.specify/integrations/*.manifest.json`; installed
+  scripts/templates diffed against the pinned clone (only intended
+  `__SPECKIT_COMMAND_*__` → `/speckit-*` placeholder rendering differs);
+  all ten SKILL.md bodies read end-to-end; pattern scans clean — no network
+  calls, exec, or obfuscation. Init writes no root CLAUDE.md and no
+  `.claude/settings.json`; fully offline (bundled core pack).
+- Discovery proven 2026-09-26: dummy-token probe transcript carries all ten
+  speckit names in the system prompt before the upstream 401; Headroom
+  api_requests 24→32; `.token` trap-restored to 0 bytes mode 600.
+- init.md's "hard constraints / out of scope: set after the first run via
+  the spec-driven toolkit" is now unblocked — `/speckit-constitution` is
+  that toolkit's entry point.
