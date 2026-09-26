@@ -1,0 +1,26 @@
+#!/bin/sh
+# Launch Claude Code as the 0router identity: its own config directory,
+# so its settings, plugins, history, and memory never touch ~/.claude.
+#
+# Two isolation layers:
+# 1. Config isolation — CLAUDE_CONFIG_DIR; inherited ANTHROPIC_* env is unset
+#    (auth chain ranks env credentials above everything else, and an inherited
+#    BASE_URL would override this identity's own).
+# 2. Filesystem confinement — 0router-gate (Landlock, kernel-enforced,
+#    inherited by every child process). Allowlist: the 0router runtime only.
+#    ~/.claude, ~/.claude-alt, ~/.ssh, ~/.config (except git), ~/secrets and
+#    everything else in $HOME is denied read/write/exec. Fail-closed: gate
+#    errors never fall through to running claude unrestricted.
+export CLAUDE_CONFIG_DIR="${HOME}/.claude-0router"
+unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY \
+      ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL \
+      ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL \
+      ANTHROPIC_PROFILE ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_ORGANIZATION_ID \
+      CLAUDE_CODE_OAUTH_TOKEN
+
+GATE="${HOME}/.claude-0router/bin/0router-gate"
+[ -x "$GATE" ] || { echo "claude-0router: missing $GATE — refusing to start ungated (fail-closed)" >&2; exit 126; }
+
+RULES="rw:${CLAUDE_CONFIG_DIR},rw:${HOME}/Desktop/0router,ro:${HOME}/docker/agentmemory/0router,ro:/usr,ro:/bin,ro:/sbin,ro:/lib,ro:/lib64,ro:/etc,ro:/opt,ro:/proc,ro:/dev,ro:/sys,rw:/tmp,rw:/dev/null,rw:/dev/tty,rw:/dev/pts,rw:/dev/shm,ro:${HOME}/.nvm,ro:${HOME}/.local/share/claude,ro:${HOME}/.local/lib/palace-mcp,ro:${HOME}/.local/bin,ro:${HOME}/.gitconfig,ro:${HOME}/.config/git"
+
+exec "$GATE" "$RULES" -- claude "$@"
