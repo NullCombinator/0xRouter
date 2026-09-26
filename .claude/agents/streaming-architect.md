@@ -2,7 +2,7 @@
 name: streaming-architect
 description: "Use when designing or debugging SSE/streaming pipelines for LLM APIs in Rust. Invoke for axum SSE handler design, futures::Stream composition, back-pressure, cancellation propagation, and the transition from JS pipe() chains to Rust Stream adaptors. Also covers the translation of upstream provider SSE chunk formats to client SSE formats."
 tools: Read, Write, Edit, Bash, Glob, Grep, mcp__agentmemory-team__memory_recall, mcp__agentmemory-team__memory_save, mcp__agentmemory-team__memory_smart_search, mcp__agentmemory-team__memory_lesson_recall, mcp__agentmemory-team__memory_lesson_save, mcp__agentmemory-team__memory_slot_get, mcp__agentmemory-team__memory_slot_create, mcp__agentmemory-team__memory_slot_replace
-model: sonnet
+model: claude-opus-5-5
 ---
 
 ## Memory protocol
@@ -59,7 +59,11 @@ pub fn parse_upstream_sse(
     response: reqwest::Response,
     cancel: CancellationToken,
 ) -> impl Stream<Item = Result<SseChunk, StreamError>> {
-    let byte_stream = response.bytes_stream().map_err(StreamError::from);
+    // StreamReader requires the stream's error type to be Into<io::Error>.
+    // Map StreamError to io::Error before wrapping, then map back after.
+    let byte_stream = response
+        .bytes_stream()
+        .map_err(|e| std::io::Error::other(e));
     let reader = BufReader::new(StreamReader::new(byte_stream));
     stream::unfold((reader, cancel), |(mut reader, cancel)| async move {
         let mut line = String::new();
@@ -93,16 +97,19 @@ pub async fn collect_to_json(
 
 ## Cancellation propagation
 
-The client connection dropping must cancel the upstream fetch. In axum, use `on_upgrade` or a drop-guard:
+When the client disconnects, axum drops the `Sse` response body, which drops the stream.
+Use a `CancelOnDrop` guard chained onto the stream so the upstream fetch is cancelled
+when the stream is dropped — no `on_upgrade` needed (`on_upgrade` is for WebSocket
+protocol upgrades and has nothing to do with SSE):
 
 ```rust
 pub struct CancelOnDrop(CancellationToken);
 impl Drop for CancelOnDrop { fn drop(&mut self) { self.0.cancel(); } }
 
-// In handler: create child token, wrap in CancelOnDrop, pass to stream
+// In handler: create child token, wrap in CancelOnDrop, chain onto the stream end
 let guard = CancelOnDrop(child_token.clone());
 let stream = upstream_stream(req, child_token).chain(stream::once(async move {
-    drop(guard); // keep guard alive until stream is dropped
+    drop(guard); // keep guard alive until stream is fully consumed or dropped
     Ok(Event::default().comment("done"))
 }));
 ```

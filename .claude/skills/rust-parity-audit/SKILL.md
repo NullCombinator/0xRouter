@@ -58,13 +58,13 @@ For each function, compare the JS and Rust error contracts:
 | Bad credentials | Throws ExecutorError | `Err(ExecutorError::BadCredentials)` | ✓ |
 | AbortSignal fired | Throws AbortError, propagated | `Err(ExecutorError::Cancelled)` | ✓ |
 
-Special attention to **fail-open** paths (RTK, headroom, caveman, ponytail) — these must return `None`/original on any error, never panic or return `Err`.
+Special attention to **fail-open** paths — these must return `None`/original on any error, never panic or return `Err`. rtk (headroom, caveman, ponytail) is out of scope for 0router; if you encounter a reference to it, note that it belongs upstream.
 
 ---
 
 ### Step 4: State and mutation parity
 
-- JS mutates request body in-place (RTK `compressMessages`). Rust clone-on-write: original untouched if middleware returns `None`.
+- Fail-open hooks (e.g. optional body transforms) mutate in-place in JS. Rust clone-on-write: original untouched if middleware returns `None`.
 - JS class fields (`this.provider`, `this.config`) → Rust struct fields. Confirm no field was dropped.
 - Shared mutable state (`Map`, `Set` in closures) → confirm Rust uses `Arc<Mutex<T>>` or `Arc<RwLock<T>>` with equivalent access semantics.
 
@@ -115,7 +115,7 @@ Produce a findings table:
 | # | File | Pattern | Finding | Severity |
 |---|---|---|---|---|
 | 1 | `executors/default.rs` | Error contract | `applyJsonSchemaFallback` returns empty messages on edge case; JS returned original body | High |
-| 2 | `rtk/mod.rs` | Fail-open | `compress_messages` panics on malformed UTF-8; should return `None` | Critical |
+| 2 | `provider_registry.rs` | Interface parity | `get_model_type` returns `"llm"` default; 9router's `getModelType` returns `null` when no kind/type field | High |
 | 3 | `translator/request/openai_to_claude.rs` | Direct route | Missing direct route for openai→claude pair; falls through lossy pivot | High |
 
 Severity:

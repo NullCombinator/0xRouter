@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **0router** (null router) — a from-scratch Rust implementation of [9router](ref/9router/)'s core routing engine. The project is currently pre-code: infrastructure and tooling are in place, the first Rust crate has not yet been written. The JS reference lives in `ref/9router/`.
 
-The single thing 0router does differently from 9router: the routing decision. Cache-aware routing, per-agent isolation, windowed amortization across providers, and a plugin model where third-party providers are declared as data files (not code) that the core alone executes. See `init.md` for the full intention.
+0router re-implements 9router's core routing engine in Rust, with a different routing decision (cache-aware, per-agent isolation, windowed amortization), a unified provider entity model (one plugin = one provider with per-modality sections), unified models as routing targets, first-class support for non-text model types, latency observability, testable combos, and a plugin model where third-party providers are declared as TOML data files. See `init.md` for the full intention and `init.md`→`constitution.md` for the non-negotiable invariants.
 
 ## Running this identity
 
@@ -16,7 +16,7 @@ This Claude Code instance runs under an isolated identity (`claude-0router`) wit
 claude-0router      # launcher at ~/.local/bin/claude-0router
 ```
 
-The gate allows rw to `~/.claude-0router` and `~/Desktop/0router` only. All other `$HOME` paths are denied at the kernel level. See `identity/README.md` for the full ruleset and how to recompile the gate binary.
+The gate allows rw to `~/.claude-0router`, `~/Desktop/0router`, and standard temp paths (`/tmp`, `/dev/{null,ptmx,tty,pts,shm}`). `~/Desktop` is read-only (project browsing). `/usr`, `/bin`, `/lib`, `/etc`, and other system trees are read-only. Everything else in `$HOME` is denied. See `identity/README.md` for the full ruleset and how to recompile the gate binary.
 
 ## MCP servers
 
@@ -37,7 +37,7 @@ All three are wired in `.mcp.json`:
 - `ref/9router/CLAUDE.md` — architecture, commands, persistence layer, gotchas
 - `ref/9router/open-sse/AGENTS.md` — the routing engine's conventions and "how to add a provider/executor/translator"
 
-The request lifecycle: `src/app/api/v1/*` → `src/sse/handlers/chat.js` → `open-sse/handlers/chatCore.js` → `open-sse/executors/*` → `open-sse/translator/*` → SSE back to client.
+The request lifecycle: `src/app/api/v1/*` → `src/sse/handlers/chat.js` → `open-sse/handlers/chatCore.js` → `open-sse/translator/*` → `open-sse/executors/*` → SSE back to client.
 
 ## Spec-driven development (speckit)
 
@@ -77,17 +77,17 @@ The porting skill set (load before any translation work):
 - `/rust-parity-audit` — 7-section behavioral parity audit protocol
 - `/benchmaxxing` — 8 prompting rules for criterion-driven optimization (baseline-first, anti-cheat, radical thinking, breakthrough)
 
-## Porting conventions (JS → Rust)
+## Building conventions (9router → 0router)
 
 The 10 recurring patterns in 9router and their Rust equivalents are catalogued in `.claude/skills/port-js-to-rust/SKILL.md`. The most important:
 
 - **Fail-open middleware** (`try { ... } catch { return null }`) → `Result::ok()` returning `Option<T>`. Never panic in these paths.
-- **Class hierarchy** (BaseExecutor + subclasses) → Rust `trait` + closed `enum` for the builtin provider set; `Box<dyn Trait>` only for plugin-extensible points.
-- **Side-effect self-registration** (translator `register(from, to, ...)` on import) → static table for builtins; `inventory` crate reserved for plugin translators.
+- **Class hierarchy** (BaseExecutor + subclasses) → Rust `trait` (with `async_trait` for `dyn` compatibility) + closed `enum` for the builtin provider set; `Box<dyn Trait>` only for plugin-extensible runtime dispatch.
+- **Side-effect self-registration** (translator `register(from, to, ...)` on import) → static table for builtins. `inventory` is acceptable for intra-binary registration; it is **not** for plugin extension (plugins are data, not code).
 - **AbortController/Signal** → `tokio_util::sync::CancellationToken` + `tokio::select!`
 - **SSE streaming** → `axum::response::sse::Sse<impl Stream>` with `futures::StreamExt` adaptors; never buffer.
 
-Port in dependency order: `config/` → `translator/schema/` → `translator/concerns/` → `translator/request|response/` → `executors/base` → `executors/default` → `rtk/` → `handlers/chatCore` → axum router.
+**9router is a behavioral oracle, not a port template.** 0router's architecture differs (unified provider entities, unified models, first-class model types beyond text, no rtk). Build compiling, testable slices using 9router's `tests/__baseline__` snapshots and unit tests as parity fixtures; do not force 9router's import-cycle dependency order onto 0router.
 
 ## Plugin safety invariant
 

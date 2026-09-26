@@ -32,6 +32,11 @@ class DefaultExecutor extends BaseExecutor {
 
 **Rust translation**
 ```rust
+use async_trait::async_trait;
+
+// async fn in a trait is NOT dyn-compatible without async_trait (or a boxed future).
+// async_trait rewrites the async fn to return Pin<Box<dyn Future + Send>>.
+#[async_trait]
 pub trait Executor: Send + Sync {
     fn build_url(&self, model: &str, stream: bool, url_index: usize, creds: &Credentials) -> String;
     fn build_headers(&self, creds: &Credentials, stream: bool) -> HeaderMap;
@@ -40,10 +45,11 @@ pub trait Executor: Send + Sync {
 }
 
 pub struct DefaultExecutor { pub provider: String, pub config: ProviderConfig }
+#[async_trait]
 impl Executor for DefaultExecutor { ... }
 ```
 
-**Decision rule**: If the override set is closed at compile time → use an enum. If plugins add executors at runtime → use `Box<dyn Executor>`. For 0router, providers are declared as data-not-code plugins, so the core set is compile-time: prefer an enum.
+**Decision rule**: If the override set is closed at compile time → use an enum. If runtime dispatch is needed → `Box<dyn Executor>` with `async_trait`. For 0router's built-in executor set, prefer an enum; `Box<dyn Executor>` is reserved for future plugin ABIs that genuinely require runtime dispatch (not today). Plugins never contribute Rust code.
 
 ---
 
@@ -97,20 +103,27 @@ clearTimeout(timer);
 use tokio_util::sync::CancellationToken;
 use tokio::time::timeout;
 
-let token = CancellationToken::new();
-let child = token.child_token();
-
-let result = tokio::select! {
-    res = timeout(Duration::from_millis(timeout_ms), do_request(url, child)) => res?,
+// JS times out only the connect/headers phase and maps it to a retryable 502.
+// It then clears the timer after headers arrive (base.js:137,150).
+// Wrap only the connect+headers call, not the full streaming response.
+let connect_result = tokio::select! {
+    r = timeout(Duration::from_millis(connect_timeout_ms), connect_and_get_headers(url, &child)) => {
+        match r {
+            // Elapsed: map to 502 (retryable) so the retry loop can try the next URL
+            Err(_elapsed) => Err(ExecutorError::StatusCode(502)),
+            Ok(inner) => inner,
+        }
+    }
     _ = caller_token.cancelled() => return Err(ExecutorError::Cancelled),
 };
+// Once headers are received, stream the body without a per-chunk timeout.
 ```
 
-**Rule**: Map `AbortSignal` parameters to `CancellationToken` passed by value. `AbortSignal.any([a, b])` → `select!` over two `.cancelled()` futures.
+**Rule**: Map `AbortSignal` parameters to `CancellationToken` passed by value. `AbortSignal.any([a, b])` → `select!` over two `.cancelled()` futures. The connect timeout maps to a retryable 502, not `Err(Elapsed)` — the retry loop needs a status code, not an error type.
 
 ---
 
-### 4. Side-effect self-registration → inventory crate (or build-time table)
+### 4. Side-effect self-registration → static table (or `inventory` for intra-binary use)
 
 **JS pattern**
 ```js
@@ -123,24 +136,28 @@ import "./request/openai-to-claude.js";     // triggers registration
 
 **Rust translation**
 ```rust
-// Option A — inventory (distributed registration, good for plugins)
-use inventory;
-inventory::submit!(TranslatorRegistration {
-    from: Format::OpenAI, to: Format::Claude,
-    translate_req: openai_to_claude_req,
-    translate_res: openai_to_claude_res,
-});
-
-// Option B — explicit table (simpler, no proc-macro dep)
+// Explicit static table (preferred)
 pub fn builtin_translators() -> Vec<TranslatorEntry> {
     vec![
         TranslatorEntry { from: Format::OpenAI, to: Format::Claude, ... },
         TranslatorEntry { from: Format::Claude, to: Format::Kiro, ... },
     ]
 }
+
+// inventory (intra-binary only, when a static table would span many files)
+// NOTE: inventory uses link-time registration — it can only register code
+// compiled into the same binary. It cannot accept contributions from plugins.
+// Plugins are TOML data; they never contribute Rust functions via inventory.
+use inventory;
+inventory::submit!(TranslatorRegistration {
+    from: Format::OpenAI, to: Format::Claude,
+    translate_req: openai_to_claude_req,
+    translate_res: openai_to_claude_res,
+});
+// Somewhere in the crate root: inventory::collect!(TranslatorRegistration);
 ```
 
-**Rule**: For 0router's declarative plugin design (data-not-code), prefer Option B with a static table. Reserve `inventory` for a future plugin ABI where third-party crates contribute translators.
+**Rule**: Prefer the explicit static table. Use `inventory` only for intra-binary registration where the table would otherwise span many files inconveniently. `inventory` MUST NOT be used for plugin extension points — plugins are data, not code, and cannot contribute link-time registrations.
 
 ---
 
@@ -200,70 +217,97 @@ const BUILTIN_PROVIDERS: &str = include_str!("../config/providers.toml");
 
 ---
 
-### 7. Fail-open RTK middleware → `Option<T>` pipeline
+### 7. Fail-open middleware → `Option<T>` pipeline
 
-**JS pattern**
+**Note on rtk**: 9router's `rtk/` (compressMessages, headroom, pxpipe, caveman, ponytail)
+is a token-optimization suite that runs *before* the routing decision. init.md places
+token optimization in a separate upstream hop. **Do not port rtk to 0router.**
+
+The fail-open *pattern* (try → null on error, caller uses original) appears elsewhere in
+9router (e.g. body transforms, optional feature hooks). The pattern applies there.
+
+**JS pattern (general fail-open hook)**
 ```js
-// rtk/index.js — mutates in-place, returns null on error (fail-open)
-async function compressMessages(body) {
+// A hook that may transform a value; returns null on any failure (fail-open).
+async function maybeTransform(value) {
   try {
-    return doCompress(body);
+    return await doTransform(value);
   } catch {
     return null; // caller uses original if null
   }
 }
-const compressed = await compressMessages(body);
-const outBody = compressed ?? body;
+const transformed = await maybeTransform(value);
+const out = transformed ?? value;
 ```
 
 **Rust translation**
 ```rust
-pub async fn compress_messages(body: RequestBody) -> Option<RequestBody> {
-    compress_internal(body).await.ok()  // Any error → None
+pub async fn maybe_transform(value: Payload) -> Option<Payload> {
+    transform_internal(value).await.ok()  // Any error → None
 }
 
 // Caller:
-let body = compress_messages(body.clone()).await.unwrap_or(body);
+let value = maybe_transform(value.clone()).await.unwrap_or(value);
 ```
 
-**Rule**: Fail-open hooks return `Option<T>`. Never propagate errors out of them. The `.ok()` combinator on `Result<T, E>` is the idiomatic bridge.
+**Rule**: Fail-open hooks return `Option<T>`. Never propagate errors out of them. The `.ok()` combinator on `Result<T, E>` is the idiomatic bridge. The key invariant: if the hook fails for any reason, the pipeline continues with the original value unmodified — it never fails closed.
 
 ---
 
 ### 8. Retry loop with URL fallback → custom retry combinator
 
-**JS pattern**
+**JS pattern** (from `open-sse/executors/base.js`)
 ```js
-for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
+// base.js: outer loop advances URL index; inner tryRetry retries the SAME url.
+// shouldRetry(status) decides: true → retry same url (decrements urlIndex)
+//                              false → move to next url
+// retryConfig maps status → {attempts, delayMs}.
+// 429 gets retried on the SAME url with exponential backoff (not moved forward).
+for (let urlIndex = 0; urlIndex < fallbackUrls.length; urlIndex++) {
   try {
-    const response = await fetch(urls[urlIndex], ...);
-    if (shouldRetry(response.status)) { urlIndex--; continue; }
+    const response = await fetch(fallbackUrls[urlIndex], ...);
+    if (shouldRetry(response.status)) { urlIndex--; continue; } // retry same url
     return response;
   } catch (e) {
-    if (urlIndex + 1 >= fallbackCount) throw e;
+    if (urlIndex + 1 >= fallbackUrls.length) throw e;
+    // else: network error → advance to next url
   }
 }
 ```
 
 **Rust translation**
 ```rust
-pub async fn execute_with_fallback(urls: &[Url], req: &Request) -> Result<Response, ExecutorError> {
-    let mut last_err = None;
-    for url in urls {
-        match attempt(url, req).await {
-            Ok(resp) if resp.status() == StatusCode::TOO_MANY_REQUESTS => {
-                last_err = Some(ExecutorError::RateLimited);
-                continue;  // try next URL
+pub async fn execute_with_fallback(
+    urls: &[Url],
+    req: &Request,
+    retry_config: &RetryConfig,
+) -> Result<Response, ExecutorError> {
+    let mut url_iter = urls.iter().peekable();
+    while let Some(url) = url_iter.next() {
+        let mut attempts = 0u32;
+        loop {
+            match attempt(url, req).await {
+                Ok(resp) if should_retry(resp.status(), retry_config) => {
+                    // Retry the SAME url up to the configured attempt limit
+                    attempts += 1;
+                    if attempts >= retry_config.attempts_for(resp.status()) {
+                        // Give up on this url; advance to next
+                        break;
+                    }
+                    tokio::time::sleep(retry_delay(resp.status(), attempts, retry_config)).await;
+                    // continue inner loop → same url
+                }
+                Ok(resp) => return Ok(resp),
+                Err(_) if url_iter.peek().is_some() => break, // network error → next url
+                Err(e) => return Err(ExecutorError::Network(e)),
             }
-            Ok(resp) => return Ok(resp),
-            Err(e) => { last_err = Some(e); continue; }
         }
     }
-    Err(last_err.unwrap_or(ExecutorError::NoUrls))
+    Err(ExecutorError::AllUrlsFailed)
 }
 ```
 
-**Rule**: The JS `urlIndex--; continue` trick (retry same URL) maps to a recursive call or an explicit inner loop. Keep the outer loop for URL progression and a separate retry counter per URL.
+**Rule**: Per-status retry (429, 502, 503, 504) retries the **same** URL; it is not a URL advance. URL advance happens on network errors or when retry attempts are exhausted. Keep the two loops distinct: outer for URL progression, inner for per-status retry.
 
 ---
 
@@ -336,20 +380,26 @@ For each JS file being ported:
 6. **Write the Rust module** — use `rust-engineer` agent for implementation details.
 7. **Run parity audit** — invoke `/rust-parity-audit` skill before closing the port.
 
-### File priority order (recommended)
+### Build order (reference-informed, not 9router import order)
 
-Port in dependency order, bottom-up:
+9router's import graph has cycles (translator → executors → config/kiroConstants →
+translator/concerns), so its file order is not a valid build order for 0router.
+Build the first testable slice instead:
 
-1. `config/` → typed Rust config structs + enums (no logic, easy start)
-2. `translator/schema/` → Rust enums for ROLE, BLOCK types, FORMAT
-3. `translator/concerns/` → pure functions, easiest to test
-4. `translator/request/` + `translator/response/` → translation functions
-5. `executors/base.js` → `Executor` trait
-6. `executors/default.js` → `DefaultExecutor` impl
-7. `executors/*.js` → one `impl Executor` per special provider
-8. `rtk/` → fail-open middleware pipeline
-9. `handlers/chatCore.js` → main request handler
-10. `src/sse/` + routing glue → axum router
+1. **Provider + model registry** — typed Rust structs/enums for provider entities,
+   unified models, and error classification; parity-test against 9router's
+   `tests/__baseline__/snapshot-providers.mjs` and `verify-alias.mjs`.
+2. **Translator schema** — Rust enums for ROLE, BLOCK types, FORMAT; pure conversions.
+3. **Translator concerns + request/response** — pure translation functions; test against
+   9router's unit test suite for each translator pair.
+4. **Executor trait + DefaultExecutor** — `Executor` trait (with `async_trait`),
+   `DefaultExecutor` impl; retry loop; fail-open error paths.
+5. **Provider-specific executors** — one `impl Executor` per provider with special auth
+   or request-shape quirks.
+6. **chatCore equivalent** — request handler composing translator + executor + routing.
+7. **Axum router** — SSE handler, keep-alive, cancellation via `CancelOnDrop`.
+
+**rtk is not in this list.** rtk (token compression) is upstream of 0router. Do not port it.
 
 ---
 

@@ -29,13 +29,13 @@ if (!js_path) {
 
 // Derive a default rust_out path from js_path if not given
 function deriveRustPath(jsPath) {
-  // ref/9router/open-sse/executors/base.js → src/executor/base.rs
+  // ref/9router/open-sse/executors/base.js → src/executors/base.rs
   // ref/9router/open-sse/translator/request/openai-to-claude.js → src/translator/request/openai_to_claude.rs
   const rel = jsPath.replace(/^ref\/9router\//, '').replace(/^open-sse\//, '')
   const base = rel
     .replace(/\.js$/, '.rs')
     .replace(/-([a-z])/g, (_, c) => '_' + c)  // kebab-case → snake_case
-    .replace(/\//g, '/')
+  // Note: the .replace(/\//g, '/') no-op was removed (replaced path separator with itself)
   return 'src/' + base
 }
 const rustOut = rust_out || deriveRustPath(js_path)
@@ -202,7 +202,7 @@ Then produce the porting plan as a structured object.
 The rust_out path is: ${rustOut}
 
 Rules:
-- module_role: one sentence, include the layer (config / translator / executor / handler / rtk / storage).
+- module_role: one sentence, include the layer (provider-registry / translator / executor / handler / storage). If this file is part of 9router's rtk (token compression), stop immediately — rtk is out of scope for 0router.
 - patterns: only list patterns that actually apply to this file. Do not invent.
 - data_model: cover every exported type and every meaningful internal object shape.
 - error_contracts: cover every try/catch. is_fail_open = true when the catch returns null/undefined.

@@ -67,7 +67,7 @@ const REPORT_SCHEMA = {
     failed: { type: 'number' },
     skipped: { type: 'number' },
     total_blockers: { type: 'number' },
-    total_tests: { type: 'number' },
+    total_lines: { type: 'number', description: 'Total lines of Rust written across all ported files.' },
     summary: { type: 'string', description: 'One paragraph: what was ported, what failed, what to do next.' },
     next_steps: { type: 'array', items: { type: 'string' } },
   },
@@ -193,7 +193,7 @@ phase('Report')
 const succeeded = allResults.filter(r => r?.ok).length
 const failed = allResults.filter(r => r && !r.ok).length
 const totalBlockers = allResults.reduce((n, r) => n + (r?.blockers?.length || 0), 0)
-const totalTests = allResults.reduce((n, r) => n + (r?.lines_written || 0), 0)  // reuse field for lines
+const totalLines = allResults.reduce((n, r) => n + (r?.lines_written || 0), 0)
 const failedFiles = allResults.filter(r => r && !r.ok).map(r => r.js_path).join(', ')
 
 const report = await agent(
@@ -228,7 +228,7 @@ Write a one-paragraph summary and a next_steps list. next_steps should include:
 const ok = failed === 0 && totalBlockers === 0
 
 log(ok
-  ? `Layer ${layer} fully ported: ${succeeded} files, ${totalTests} total lines.`
+  ? `Layer ${layer} fully ported: ${succeeded} files, ${totalLines} total lines.`
   : `Layer ${layer} partially ported: ${succeeded} succeeded, ${failed} failed, ${totalBlockers} blockers.`
 )
 
@@ -245,6 +245,7 @@ return {
   failed,
   skipped: enumeration.skipped,
   total_blockers: totalBlockers,
+  total_lines: totalLines,
   summary: report?.summary,
   next_steps: report?.next_steps || [],
   results: allResults,

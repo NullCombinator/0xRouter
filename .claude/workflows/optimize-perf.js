@@ -217,7 +217,7 @@ Constraint: Long-duration analysis is fine. Do NOT run benchmarks. Do NOT write 
       label: `Hypothesis: ${direction.split(':')[0]}`,
       phase: 'Explore',
       schema: HYPOTHESIS_SCHEMA,
-      agentType: 'performance-engineer',
+      agentType: 'perf-hypothesis-explorer',
     }
   )
 )

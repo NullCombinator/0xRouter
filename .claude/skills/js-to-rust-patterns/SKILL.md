@@ -218,14 +218,18 @@ if model.starts_with("claude-") { ... }
 
 ---
 
-### Class static factory
+### Constructor (factory function)
 
 ```js
-static create(provider) { return new DefaultExecutor(provider); }
+// 9router executors do not expose a static create() factory —
+// they are constructed inline per-request.
+function makeExecutor(provider, config) { return new DefaultExecutor(provider, config); }
 ```
 ```rust
 impl DefaultExecutor {
-    pub fn new(provider: BuiltinProvider) -> Self { Self { provider } }
+    pub fn new(provider: BuiltinProvider, config: ProviderConfig) -> Self {
+        Self { provider, config }
+    }
 }
 ```
 
@@ -247,4 +251,4 @@ impl DefaultExecutor {
 | Config/env | `process.env` | `config` crate or `std::env` |
 | SQLite | `better-sqlite3` / `sql.js` | `sqlx` with `sqlite` feature |
 | Logging | `console.log` / custom | `tracing` |
-| Distributed registration | import side-effects | `inventory` crate |
+| Intra-binary registration | import side-effects | `inventory` crate (built-ins only; never for plugins) |
