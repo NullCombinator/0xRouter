@@ -177,9 +177,10 @@ routing contract.
 - **Secrets isolation**: Secrets MUST NOT be passed to or stored by plugin declarations.
   They MUST be injected by the core at request execution time only.
 - **Bundled provider secrets**: 9router's registry files hardcode OAuth `clientSecret` for
-  five providers (antigravity, gemini-cli, gemini, iflow, trae). When these are converted
-  to bundled TOML plugins, their secrets MUST be extracted into a core-side credential
-  table, not placed in the TOML file.
+  four active providers (antigravity, gemini-cli, gemini, iflow). trae also carries one,
+  but it is disabled in 9router and is not bundled. When these are converted to bundled
+  TOML plugins, their secrets MUST be extracted into a core-side credential table, not
+  placed in the TOML file.
 - **Performance gate**: Any change touching routing, streaming, or execution hot paths MUST
   include a Criterion benchmark. Regressions block merge.
 
@@ -217,7 +218,10 @@ guidance, PATCH for clarifications and wording fixes.
 MUST reference the relevant principle(s) in its description. Reviewers MUST verify
 compliance before approving.
 
-**Version**: 2.0.0 | **Ratified**: 2026-09-26 | **Last Amended**: 2026-09-26
+**Version**: 2.0.1 | **Ratified**: 2026-09-26 | **Last Amended**: 2026-09-26
+
+**v2.0.1 changes (PATCH)**: Corrected the "Bundled provider secrets" constraint to the
+four active providers. trae is disabled in 9router and is not bundled. No rule changed.
 
 **v2.0.0 changes (MAJOR)**: Added Principles III (Unified Models & Provider Entities),
 VIII (Latency Observability). Replaced "Parity-First Porting" with "Reference-Informed
