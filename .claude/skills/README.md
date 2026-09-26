@@ -45,7 +45,7 @@ tree listing at that commit.
 - **context7** (upstash/context7) — glue for Upstash's hosted docs-MCP
   service; not wired on this LAN. Bodies read for the record.
 - **claude-mem** (thedotmack/claude-mem) — a parallel memory engine; would
-  fight the Palace agentmemory estate ([[one-router-isolated-identity-2026-09-25]]).
+  fight the Palace agentmemory estate ([[0router-isolated-identity-2026-09-25]]).
 - ui-ux-pro-max, taste-skill, transitions.dev, marketing/social packs,
   finance/small-business/legal plugin bundles — design/office/business
   domains, irrelevant to a Rust LLM router.
