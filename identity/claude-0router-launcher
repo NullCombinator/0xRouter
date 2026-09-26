@@ -21,6 +21,6 @@ unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY \
 GATE="${HOME}/.claude-0router/bin/0router-gate"
 [ -x "$GATE" ] || { echo "claude-0router: missing $GATE — refusing to start ungated (fail-closed)" >&2; exit 126; }
 
-RULES="rw:${CLAUDE_CONFIG_DIR},rw:${HOME}/Desktop/0router,ro:${HOME}/docker/agentmemory/0router,ro:/usr,ro:/bin,ro:/sbin,ro:/lib,ro:/lib64,ro:/etc,ro:/opt,ro:/proc,ro:/dev,ro:/sys,rw:/tmp,rw:/dev/null,rw:/dev/tty,rw:/dev/pts,rw:/dev/shm,ro:${HOME}/.nvm,ro:${HOME}/.local/share/claude,ro:${HOME}/.local/lib/palace-mcp,ro:${HOME}/.local/bin,ro:${HOME}/.gitconfig,ro:${HOME}/.config/git"
+RULES="rw:${CLAUDE_CONFIG_DIR},rw:${HOME}/Desktop/0router,ro:${HOME}/docker/agentmemory/0router,ro:/usr,ro:/bin,ro:/sbin,ro:/lib,ro:/lib64,ro:/etc,ro:/opt,ro:/proc,ro:/dev,ro:/sys,rw:/tmp,rw:/dev/null,rw:/dev/tty,rw:/dev/pts,rw:/dev/shm,ro:${HOME}/.nvm,ro:${HOME}/.local/share/claude,ro:${HOME}/.local/lib/palace-mcp,ro:${HOME}/.local/bin,ro:${HOME}/.gitconfig,ro:${HOME}/.config/git,ro:${HOME}/.local/share/uv"
 
 exec "$GATE" "$RULES" -- claude "$@"

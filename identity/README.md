@@ -26,7 +26,7 @@ runs with two enforced layers:
 - rw: `~/.claude-0router`, `~/Desktop/0router`, `/tmp`, `/dev/null`, `/dev/tty`, `/dev/pts`, `/dev/shm`
 - ro: system trees (`/usr /bin /sbin /lib /lib64 /etc /opt /proc /dev /sys`),
   `~/.nvm`, `~/.local/share/claude`, `~/.local/lib/palace-mcp`, `~/.local/bin`,
-  `~/.gitconfig`, `~/.config/git`, `~/docker/agentmemory/0router`
+  `~/.gitconfig`, `~/.config/git`, `~/.local/share/uv` (code-review-graph lives there), `~/docker/agentmemory/0router`
 - Everything else denied. Proven: foreign reads rc=2, git OK in repo,
   `claude --version` under gate, fail-closed 126 when gate binary absent.
 
