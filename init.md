@@ -11,8 +11,7 @@ A Rust implementation of the 9router project core.
 To make 9router faster, customizable, and to enrich it:
 
 - **Latency observability** — latency becomes something measured and visible, not something noticed.
-- **SSL certificate handling** — done the way nginx-proxy-manager does it.
-- **Claude form of connection** — supported the way suture does it.
+- **Claude form of connection**
 - **Nested combos** — handled more efficiently.
 - **Robust model tests in providers** — provider-level model tests become trustworthy.
 - **Testable combos** — combos gain test capability of their own, not just the providers inside them.
