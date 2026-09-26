@@ -1,14 +1,14 @@
-# 1router
+# 0router (null router)
 
 Intention, written 2026-09-25 before any code. This file is the seed of the project: what it is, why it exists, and where its boundaries will come from later.
 
 ## What it is
 
-A Rust implementation of the 9router project.
+A Rust implementation of the 9router project core.
 
 ## Why it exists
 
-To make 9router faster, and to enrich it:
+To make 9router faster, customizable, and to enrich it:
 
 - **Latency observability** — latency becomes something measured and visible, not something noticed.
 - **SSL certificate handling** — done the way nginx-proxy-manager does it.
