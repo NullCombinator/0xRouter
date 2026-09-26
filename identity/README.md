@@ -23,7 +23,7 @@ runs with two enforced layers:
 
 ## Ruleset (proven 2026-09-26)
 
-- rw: `~/.claude-0router`, `~/Desktop/0router`, `/tmp`, `/dev/null`, `/dev/tty`, `/dev/pts`, `/dev/shm`
+- rw: `~/.claude-0router`, `~/Desktop/0router`, `/tmp`, `/dev/null`, `/dev/tty`, `/dev/pts`, `/dev/shm`, `/dev/ptmx` (PTY creation — daemon bg workers die "exit 1 before init" without it)
 - ro: system trees (`/usr /bin /sbin /lib /lib64 /etc /opt /proc /dev /sys`),
   `~/.nvm`, `~/.local/share/claude`, `~/.local/lib/palace-mcp`, `~/.local/bin`,
   `~/Desktop` (read-only — project browsing; writes outside 0router denied), `~/.gitconfig`, `~/.config/git`, `~/.local/share/uv` (code-review-graph lives there), `~/docker/agentmemory/0router`

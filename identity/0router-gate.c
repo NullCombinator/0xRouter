@@ -30,8 +30,15 @@ int rule_add(int rfd, const char *path, unsigned long acc) {
   if (pfd < 0) { fprintf(stderr, "0router-gate: open %s: %s\n", path, strerror(errno)); return -1; }
   if (fstat(pfd, &st) == 0 && !S_ISDIR(st.st_mode)) {
     /* Landlock: non-directory fds accept only file-level rights. */
-    const unsigned long FILE_ACC = LANDLOCK_ACCESS_FS_EXECUTE | LANDLOCK_ACCESS_FS_WRITE_FILE |
+    unsigned long FILE_ACC = LANDLOCK_ACCESS_FS_EXECUTE | LANDLOCK_ACCESS_FS_WRITE_FILE |
         LANDLOCK_ACCESS_FS_READ_FILE | LANDLOCK_ACCESS_FS_TRUNCATE;
+    /* Char devices ruled rw (ptmx, tty, null) need ioctls — PTY allocation
+     * is pure ioctl on /dev/ptmx. Grant the ABI-5 ioctl right to rw rules. */
+#ifdef LANDLOCK_ACCESS_FS_IOCTL_DEV
+    FILE_ACC |= LANDLOCK_ACCESS_FS_IOCTL_DEV;
+#elif defined(LANDLOCK_ACCESS_FS_IOCTL)
+    FILE_ACC |= LANDLOCK_ACCESS_FS_IOCTL;
+#endif
     acc &= FILE_ACC;
   }
   pb.allowed_access = acc;
