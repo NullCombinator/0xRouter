@@ -56,6 +56,24 @@ Project-scoped agents in `.claude/agents/` — invokable as subagents from workf
 | `rust-engineer` | General Rust implementation with ownership/lifetime/async expertise |
 | `llm-architect` | LLM system design, RAG, multi-model deployments |
 
+## Model and effort policy
+
+Defaults live in `~/.claude-0router/settings.json` (main session: Opus 5.5 @ `high`; ad-hoc subagents: Sonnet 5). Agent `model:`/`effort:` frontmatter is the per-role policy and wins over the `CLAUDE_CODE_SUBAGENT_MODEL` default — never set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, which silently discards every agent pin.
+
+| Tier | Agents |
+|---|---|
+| Opus 5.5 `high` — judgment-heavy, errors are expensive | js-to-rust-porter, streaming-architect, plugin-system-designer, architect-reviewer, security-auditor |
+| Opus 5.5 `medium` — implementation, review, debugging | rust-engineer, code-reviewer, debugger, llm-architect |
+| Sonnet 5 `medium` — gated or fanned-out work | performance-engineer, perf-hypothesis-explorer, error-detective, api-designer |
+| Sonnet 5 `low` — mechanical | test-automator, docker-expert |
+
+Main-session choice by work type (use `s` in `/model` or `/effort` to make it session-only):
+
+- **Opus 5.5 `high`** (default): constitution/specify/clarify/plan/analyze, writing skills, agents, or specs, parity audits.
+- **Opus 5.5 `medium`**: `/speckit-implement` and workflow orchestration — the heavy lifting is in pinned subagents.
+- **Sonnet 5 `low`**: chores (git, formatting, doc typos). Not `opusplan` for anything that makes claims about `ref/9router`.
+- One hard turn: add `ultrathink` to the prompt instead of raising session effort. Avoid `max`.
+
 ## Workflows
 
 Orchestration programs in `.claude/workflows/` — chain agents in phases with structured data passing:
