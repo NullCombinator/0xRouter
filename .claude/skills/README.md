@@ -50,9 +50,22 @@ tree listing at that commit.
   finance/small-business/legal plugin bundles — design/office/business
   domains, irrelevant to a Rust LLM router.
 
-## Review status (2026-09-25)
+## Rust porting workflows (3 skills + 3 workflows) — added 2026-09-26
 
-All 15 SKILL.md bodies read end-to-end before install; all 21 support files
+Built from direct analysis of the 9router JS codebase (`ref/9router/`) and the 0router intent (`init.md`). Cover the 10 recurring JS→Rust translation patterns found in the routing engine.
+
+- **port-js-to-rust** — full porting workflow: pattern identification, data model mapping, error contract mapping, file priority order, and a pre-merge checklist.
+- **js-to-rust-patterns** — quick-reference cards for common JS idioms (nullish coalescing, spread, Promise.all/race, AbortController, URLSearchParams, fail-open catch) with idiomatic Rust equivalents and a crate recommendation table.
+- **rust-parity-audit** — read-only behavioral parity audit: interface parity table, error contract comparison, state/mutation check, streaming contract, translator route coverage, and a severity-ranked findings format.
+
+Companion workflows in `.claude/workflows/` orchestrate these skills across agents:
+- **port-module** — 4-phase pipeline (analysis → Rust impl → parity tests → audit) for one JS file
+- **port-layer** — enumerates a directory, fans out `port-module` in parallel batches, produces a layer report
+- **audit-rust-port** — given a Rust file, locates its JS counterpart and runs the full parity audit with triage
+
+## Review status (2026-09-26)
+
+All 18 SKILL.md bodies read end-to-end before install; all 21 support files
 decoded from pinned blob SHAs (byte-size verified) and scanned: agents/*.md,
 references/, and both HTML viewers' script blocks read in full; Python scripts
 scanned for network/exec/secret patterns — only expected localhost serving,
