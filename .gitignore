@@ -5,5 +5,9 @@
 # upstream reference clone + its generated code graph (never committed)
 ref/
 
+# Rust build output and the project-local cargo home (set by the launcher)
+target/
+.cargo-home/
+
 # OS noise
 .DS_Store

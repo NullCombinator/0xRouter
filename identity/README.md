@@ -26,7 +26,10 @@ runs with two enforced layers:
 - rw: `~/.claude-0router`, `~/Desktop/0router`, `/tmp`, `/dev/null`, `/dev/tty`, `/dev/pts`, `/dev/shm`, `/dev/ptmx` (PTY creation — daemon bg workers die "exit 1 before init" without it)
 - ro: system trees (`/usr /bin /sbin /lib /lib64 /etc /opt /proc /dev /sys`),
   `~/.nvm`, `~/.local/share/claude`, `~/.local/lib/palace-mcp`, `~/.local/bin`,
-  `~/Desktop` (read-only — project browsing; writes outside 0router denied), `~/.gitconfig`, `~/.config/git`, `~/.local/share/uv` (code-review-graph lives there), `~/docker/agentmemory/0router`
+  `~/Desktop` (read-only — project browsing; writes outside 0router denied), `~/.gitconfig`, `~/.config/git`, `~/.local/share/uv` (code-review-graph lives there), `~/docker/agentmemory/0router`,
+  `~/.rustup` and `~/.cargo/bin` (Rust toolchain; the launcher sets
+  `RUSTUP_HOME=~/.rustup` and `CARGO_HOME=~/Desktop/0router/.cargo-home`, so the
+  crate cache is project-local and the rest of `~/.cargo` stays denied)
 - Everything else denied. Proven: foreign reads rc=2, git OK in repo,
   `claude --version` under gate, fail-closed 126 when gate binary absent.
 
