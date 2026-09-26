@@ -54,7 +54,7 @@ For each function, compare the JS and Rust error contracts:
 | Scenario | JS behavior | Rust behavior | Match? |
 |---|---|---|---|
 | Network timeout | Returns null (fail-open) | Returns `None` | ✓ |
-| Upstream 429 | `urlIndex--; continue` | `continue` to next URL | ✓ |
+| Upstream 429 | `shouldRetry(429)→true` → `continue` (URL advance; 0 same-URL retries by default per `runtimeConfig.js:79`) | advance to next URL | ✓ |
 | Bad credentials | Throws ExecutorError | `Err(ExecutorError::BadCredentials)` | ✓ |
 | AbortSignal fired | Throws AbortError, propagated | `Err(ExecutorError::Cancelled)` | ✓ |
 

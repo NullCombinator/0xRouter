@@ -256,23 +256,40 @@ let value = maybe_transform(value.clone()).await.unwrap_or(value);
 
 ### 8. Retry loop with URL fallback → custom retry combinator
 
-**JS pattern** (from `open-sse/executors/base.js`)
+**JS pattern** (from `open-sse/executors/base.js:83–183`, `runtimeConfig.js:71–93`)
+
+There are **two distinct mechanisms** — keep them separate or the semantics are wrong:
+
 ```js
-// base.js: outer loop advances URL index; inner tryRetry retries the SAME url.
-// shouldRetry(status) decides: true → retry same url (decrements urlIndex)
-//                              false → move to next url
-// retryConfig maps status → {attempts, delayMs}.
-// 429 gets retried on the SAME url with exponential backoff (not moved forward).
-for (let urlIndex = 0; urlIndex < fallbackUrls.length; urlIndex++) {
-  try {
-    const response = await fetch(fallbackUrls[urlIndex], ...);
-    if (shouldRetry(response.status)) { urlIndex--; continue; } // retry same url
-    return response;
-  } catch (e) {
-    if (urlIndex + 1 >= fallbackUrls.length) throw e;
-    // else: network error → advance to next url
-  }
+// Mechanism 1 — tryRetry(urlIndex, statusKey): same-URL retry.
+//   Reads DEFAULT_RETRY_CONFIG[statusKey].attempts from runtimeConfig.js.
+//   Default retry config (runtimeConfig.js:79–82):
+//     429 → { attempts: 0, delayMs: 0 }   ← ZERO same-URL retries
+//     502 → { attempts: 3, delayMs: 3000 } ← 3 same-URL retries, 3 s gap
+//     503 → { attempts: 3, delayMs: 2000 } ← 3 same-URL retries, 2 s gap
+//     504 → { attempts: 2, delayMs: 3000 } ← 2 same-URL retries, 3 s gap
+//   Returns true → caller does `urlIndex--; continue` (outer for-loop undoes the ++)
+//   Returns false (attempts==0 or exhausted) → falls through to mechanism 2.
+
+// Mechanism 2 — shouldRetry(status, urlIndex): 429-only URL advance.
+//   Returns true ONLY for RATE_LIMITED (429) when more fallback URLs remain.
+//   Returns true → `continue` (outer for-loop advances urlIndex).
+//   Despite the name, this does NOT retry the same URL; it moves to the next one.
+
+shouldRetry(status, urlIndex) {
+  return status === HTTP_STATUS.RATE_LIMITED && urlIndex + 1 < this.getFallbackCount();
 }
+
+// In execute():
+const response = await fetch(fallbackUrls[urlIndex], ...);
+if (await tryRetry(urlIndex, response.status, ...)) { urlIndex--; continue; } // same URL (502/503/504)
+if (this.shouldRetry(response.status, urlIndex))   { continue; }              // next URL (429 only)
+return response;
+
+// Network errors use 502's retry config, then advance URL:
+// if (await tryRetry(urlIndex, HTTP_STATUS.BAD_GATEWAY, ...)) { urlIndex--; continue; } // same URL
+// if (urlIndex + 1 < fallbackCount) continue;                                           // advance URL
+// throw error;
 ```
 
 **Rust translation**
@@ -280,26 +297,51 @@ for (let urlIndex = 0; urlIndex < fallbackUrls.length; urlIndex++) {
 pub async fn execute_with_fallback(
     urls: &[Url],
     req: &Request,
-    retry_config: &RetryConfig,
+    retry_cfg: &RetryConfig,
+    cancel: CancellationToken,
 ) -> Result<Response, ExecutorError> {
-    let mut url_iter = urls.iter().peekable();
-    while let Some(url) = url_iter.next() {
-        let mut attempts = 0u32;
-        loop {
-            match attempt(url, req).await {
-                Ok(resp) if should_retry(resp.status(), retry_config) => {
-                    // Retry the SAME url up to the configured attempt limit
-                    attempts += 1;
-                    if attempts >= retry_config.attempts_for(resp.status()) {
-                        // Give up on this url; advance to next
-                        break;
+    let mut per_url_attempts: Vec<u32> = vec![0; urls.len()];
+    let mut url_index = 0;
+
+    while url_index < urls.len() {
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(ExecutorError::Cancelled),
+            result = attempt(&urls[url_index], req) => {
+                match result {
+                    Ok(resp) => {
+                        // Mechanism 1: same-URL retry for 502/503/504 (attempts > 0)
+                        let entry = retry_cfg.for_status(resp.status());
+                        if entry.attempts > 0 && per_url_attempts[url_index] < entry.attempts {
+                            per_url_attempts[url_index] += 1;
+                            tokio::time::sleep(Duration::from_millis(entry.delay_ms)).await;
+                            continue; // same URL
+                        }
+                        // Mechanism 2: 429 → URL advance (attempts == 0 by default)
+                        if resp.status() == StatusCode::TOO_MANY_REQUESTS
+                            && url_index + 1 < urls.len()
+                        {
+                            url_index += 1;
+                            continue; // next URL
+                        }
+                        return Ok(resp);
                     }
-                    tokio::time::sleep(retry_delay(resp.status(), attempts, retry_config)).await;
-                    // continue inner loop → same url
+                    Err(e) if is_network_error(&e) => {
+                        // Network errors use 502 retry config for same-URL retries
+                        let entry = retry_cfg.for_status(StatusCode::BAD_GATEWAY);
+                        if entry.attempts > 0 && per_url_attempts[url_index] < entry.attempts {
+                            per_url_attempts[url_index] += 1;
+                            tokio::time::sleep(Duration::from_millis(entry.delay_ms)).await;
+                            continue; // same URL
+                        }
+                        if url_index + 1 < urls.len() {
+                            url_index += 1;
+                            continue; // advance URL on network error after attempts exhausted
+                        }
+                        return Err(ExecutorError::Network(e));
+                    }
+                    Err(e) => return Err(ExecutorError::Network(e)),
                 }
-                Ok(resp) => return Ok(resp),
-                Err(_) if url_iter.peek().is_some() => break, // network error → next url
-                Err(e) => return Err(ExecutorError::Network(e)),
             }
         }
     }
@@ -307,7 +349,7 @@ pub async fn execute_with_fallback(
 }
 ```
 
-**Rule**: Per-status retry (429, 502, 503, 504) retries the **same** URL; it is not a URL advance. URL advance happens on network errors or when retry attempts are exhausted. Keep the two loops distinct: outer for URL progression, inner for per-status retry.
+**Rule**: 429 advances to the **next URL** by default — it has zero same-URL attempts in the default config (`runtimeConfig.js:79`). 502, 503, and 504 retry the **same URL** (3×, 3×, 2× respectively). A provider can override these via `config.retry` merged at `base.js:107`. Keep the two mechanisms separate: `tryRetry` for same-URL retries, `shouldRetry` for URL advance.
 
 ---
 
