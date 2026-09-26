@@ -50,6 +50,15 @@ tree listing at that commit.
   finance/small-business/legal plugin bundles — design/office/business
   domains, irrelevant to a Rust LLM router.
 
+## Performance optimization (1 skill + 2 workflows + 1 agent) — added 2026-09-26
+
+Derived from Max Woolf's "Agentic Iteration" (2026-09). Encodes the benchmaxxing loop: baseline-first, concrete pass/fail metric, anti-cheat rules, radical thinking prompts, parallel hypothesis subagents, competitor benchmarks, refactor pass, and breakthrough prompts.
+
+- **benchmaxxing** skill — 8-rule prompting reference: baseline first, concrete metric, anti-cheat constraints, radical thinking, correctness gate, competitor benchmarks, refactor pass, breakthrough prompts. Load before any performance optimization task.
+- **optimize-perf** workflow — full 6-phase benchmaxxing pipeline: baseline → 7 parallel hypothesis subagents → implement best → correctness gate → competitor benchmarks → refactor pass.
+- **refactor-pass** workflow — standalone ≥20% SLoC reduction with zero criterion regression gate; sometimes yields free speed improvement as a side effect.
+- **perf-hypothesis-explorer** agent — read-only analyst; investigates one optimization direction (SIMD, allocations, parallelism, data structures, algorithmic, caching, compile-time) and returns a concrete hypothesis. Runs as a cheap parallel subagent in optimize-perf.
+
 ## Rust porting workflows (3 skills + 3 workflows) — added 2026-09-26
 
 Built from direct analysis of the 9router JS codebase (`ref/9router/`) and the 0router intent (`init.md`). Cover the 10 recurring JS→Rust translation patterns found in the routing engine.
