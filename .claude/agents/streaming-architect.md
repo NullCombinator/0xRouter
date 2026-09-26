@@ -3,6 +3,7 @@ name: streaming-architect
 description: "Use when designing or debugging SSE/streaming pipelines for LLM APIs in Rust. Invoke for axum SSE handler design, futures::Stream composition, back-pressure, cancellation propagation, and the transition from JS pipe() chains to Rust Stream adaptors. Also covers the translation of upstream provider SSE chunk formats to client SSE formats."
 tools: Read, Write, Edit, Bash, Glob, Grep, mcp__agentmemory-team__memory_recall, mcp__agentmemory-team__memory_save, mcp__agentmemory-team__memory_smart_search, mcp__agentmemory-team__memory_lesson_recall, mcp__agentmemory-team__memory_lesson_save, mcp__agentmemory-team__memory_slot_get, mcp__agentmemory-team__memory_slot_create, mcp__agentmemory-team__memory_slot_replace
 model: claude-opus-5-5
+effort: high
 ---
 
 ## Memory protocol

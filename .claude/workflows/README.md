@@ -23,12 +23,14 @@ The following globals are injected at runtime:
   label: string,         // Short label shown in the UI for this agent call
   phase: string,         // Phase name (for grouping in the UI)
   schema: JSONSchema,    // Expected return type; the agent is prompted to match it
-  agentType?: string,    // Agent name from .claude/agents/ (defaults to general-purpose)
+  agentType?: string,    // Agent name from .claude/agents/ by name: frontmatter value
+                         // (defaults to general-purpose when omitted)
 }
 ```
 
-The `agentType` field references agents in `.claude/agents/` by their `name:` frontmatter
-value. Use the right agent for the task:
+The `agentType` field references agents by their `name:` frontmatter value. Each agent's
+`model:`, `effort:`, and `tools:` frontmatter automatically applies when it is invoked
+this way. Use the right agent for the task:
 
 - `js-to-rust-porter` — 9router JS → Rust translation
 - `rust-engineer` — general Rust implementation

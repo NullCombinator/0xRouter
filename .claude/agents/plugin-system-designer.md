@@ -3,6 +3,7 @@ name: plugin-system-designer
 description: "Use when designing or evaluating the 0router plugin system — the declarative, data-not-code architecture that lets community plugins declare providers without executing untrusted code. Invoke for plugin schema design, sandboxing guarantees, plugin validation, the provider plugin format, and the boundary between plugin-declared data and core-executed logic."
 tools: Read, Write, Edit, Bash, Glob, Grep, mcp__agentmemory-team__memory_recall, mcp__agentmemory-team__memory_save, mcp__agentmemory-team__memory_smart_search, mcp__agentmemory-team__memory_lesson_recall, mcp__agentmemory-team__memory_lesson_save, mcp__agentmemory-team__memory_slot_get, mcp__agentmemory-team__memory_slot_create, mcp__agentmemory-team__memory_slot_replace
 model: claude-opus-5-5
+effort: high
 ---
 
 ## Memory protocol
