@@ -6,7 +6,7 @@
 One file declares one provider. Keys use `snake_case`. Unknown keys are **rejected**
 (FR-008). Only `id` and `category` are required (FR-006).
 
-## Minimal (catalogue-only)
+## Minimal (catalog-only)
 
 ```toml
 schema = 1
@@ -62,11 +62,11 @@ dimensions = 1024
 | `passthrough_models` | bool | |
 | `version_separator_tolerance` | bool | |
 | `[auth]` | table | `kind`, `modes`, `no_auth`, `has_oauth`, `header`, `scheme`, `hooks`, `credential_fallback` |
-| `[transport]` | table | See data model. Only the listed keys; long-tail values go in `[transport.executor_params]` |
+| `[transport]` | table | See data model. Only the listed keys. Executor-specific values go in `[transport.executor_params]`, which is a closed set of keys too (`cli_version`, `client_version`, `api_client`, `client_identifier`, `token_auth`, `no_auth`, `auth_type`, `[transport.executor_params.copilot]`) |
 | `[[transports]]` | array of tables | Same shape as `[transport]` |
-| `[oauth]` | table | Public values only. Long-tail values go in `[oauth.endpoints]` (URLs) and `[oauth.params]` (scalars) |
+| `[oauth]` | table | Public values only. Long-tail values go in `[oauth.endpoints]` (URLs) and `[oauth.params]` (scalars). `oauth.params` keys must be ones the core knows (`KNOWN_OAUTH_PARAMS`) |
 | `[capabilities.<kind>]` | table | `<kind>` ∈ `llm`, `image`, `image_to_text`, `video`, `tts`, `stt`, `embedding`, `web_search`, `web_fetch`, `systemone` |
-| `[[models]]` | array of tables | Omit entirely = "catalogue unknown"; `models = []` = "offers none" |
+| `[[models]]` or `models = [...]` | array of tables, or array of ID strings | Omit entirely = "catalog unknown"; `models = []` = "offers none". A bare string `"acme-small"` means `{ id = "acme-small" }` with a derived display name (9router `normalizeModel`). TOML cannot mix `[[models]]` tables with an inline string array in one file; use one form or the other |
 | `[display]` | table | `name`, `icon`, `color`, `text_icon`, `website`, `notice`, `deprecated`, `deprecation_notice`, `priority`, `hidden`, `has_free`, `auth_hint`, `features`, `thinking` |
 
 ## Named built-ins (closed sets — unknown values are rejected)
@@ -86,6 +86,7 @@ A plugin can **select** core behaviour by name. It can never **supply** behaviou
 | Rule | Example that fails | Error (shape) |
 |---|---|---|
 | Unknown key | `client_secret = "…"` anywhere | `acme.toml:12:1 oauth.client_secret: unknown field` |
+| Unknown OAuth param | `[oauth.params] foo = "x"` | `…oauth.params.foo: unknown OAuth parameter; allowed: …` |
 | Secret-like map key | `headers = { Authorization = "Bearer x" }` | `acme.toml:9:13 transport.headers.Authorization: credential-bearing header not allowed in plugins` |
 | Secret in URL | `base_url = "https://u:p@x"` or `?api_key=` | `…transport.base_url: URL must not carry credentials` |
 | Bad enum | `category = "local"` | `…category: expected one of apikey, oauth, freeTier, free, webCookie` |

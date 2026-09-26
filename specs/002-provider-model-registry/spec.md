@@ -212,6 +212,8 @@ validation gate and check accept/reject results and the error content.
   shape is reserved for direct requests (FR-014).
 - A direct request whose model part itself contains `/` (e.g.
   `openrouter/meta-llama/llama-3`): only the first `/` separates provider from model.
+- A target with an empty provider or model part (`/gpt-4o`, `openai/`) or an empty
+  target: structured not-found (empty target).
 - A plugin file that is not parseable at all: rejected with the file path and the parse
   position; other plugins still load.
 - A malformed bundled plugin: this is a release defect; startup fails loudly rather than
@@ -276,7 +278,8 @@ validation gate and check accept/reject results and the error content.
   any plugin file. The credential table MUST NOT be readable through any plugin-facing
   interface.
 - **FR-012a**: Each credential-table entry MUST be bound to the hosts 9router sends that
-  secret to: the OAuth hosts (authorize, token, refresh) declared by the bundled plugin,
+  secret to: the hosts of the OAuth authorize, token, and refresh URLs the bundled plugin
+  declares (in its OAuth section or its transports),
   or, where the bundled plugin declares none (gemini), the provider's OAuth hosts that
   the core knows about. A replacing user plugin
   MUST receive the credential only if every OAuth URL it declares uses one of those
@@ -344,8 +347,11 @@ validation gate and check accept/reject results and the error content.
 **Parity (Constitution VI)**
 
 - **FR-023**: The bundled registry's transport view, alias view (all 117 probe tokens and
-  the id-to-alias map), and OAuth endpoint view MUST reproduce 9router's
-  `providers-baseline.json`, `alias-baseline.json`, and `oauth-urls-baseline.json`. The
+  the id-to-alias map), and OAuth endpoint view MUST reproduce 9router's provider,
+  alias, and OAuth-URL baselines, regenerated from the pinned `ref/9router` with the
+  same shapes as its `providers-baseline.json`, `alias-baseline.json`, and
+  `oauth-urls-baseline.json`. The committed baselines are not used as-is, because
+  `providers-baseline.json` is stale by one header value. The
   transport view compared is the core's composed view (plugin + credential table), since
   the baseline itself contains client secrets that FR-012 keeps out of plugins. The 4
   alias tokens 9router echoes back unresolved (`qw`, `dv`, `devin`, `devin-cli`) are an
@@ -383,8 +389,8 @@ validation gate and check accept/reject results and the error content.
 - **SC-001**: 100% of the 83 provider transports, 113 resolvable alias probe tokens (plus
   the 4 unowned tokens returning not-found), 83 id-to-alias
   entries, and all five OAuth baseline sections (endpoints, token URLs, auth URLs, refresh
-  URLs, client IDs) in 9router's baseline snapshots are reproduced by the bundled registry
-  with zero differences.
+  URLs, client IDs) in 9router's baseline snapshots (regenerated from the pinned
+  reference, FR-023) are reproduced by the bundled registry with zero differences.
 - **SC-002**: Zero bundled or accepted plugin files contain a credential value; a scan of
   the shipped plugin set for the four known client secrets finds none.
 - **SC-003**: For a corpus covering every validation rule, 100% of invalid plugins are
@@ -422,8 +428,10 @@ validation gate and check accept/reject results and the error content.
   understands; each quirk present in the bundled set is carried over.
 - Per-provider amortization parameters (rate limits, quotas, offers) are out of scope
   here and will be added to the provider entity by the routing-decision slice.
-- Parity baselines are those committed in `ref/9router/tests/__baseline__/` at the time of
-  planning; they are regenerated with `snapshot-providers.mjs` if the reference is updated.
+- Parity baselines are regenerated from the pinned `ref/9router` commit, in the same
+  shapes as the files in `ref/9router/tests/__baseline__/`, and stored with 0router's
+  tests. They are regenerated whenever the reference is updated. The committed 9router
+  files are not edited.
 - Out of scope: the routing decision (cache-aware, amortization), request execution,
   translators, SSE, OAuth flows, error classification and retry, combos, dashboard, token
   optimization.

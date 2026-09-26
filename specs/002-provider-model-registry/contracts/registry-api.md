@@ -66,15 +66,30 @@ pub struct ModelInfo<'a> {
 base ID with the suffix re-appended, matching 9router (US2 scenario 5). `resolve()` is the
 function that applies `allow_uncatalogued_models` (FR-017).
 
-### Crate-internal (not exported to plugins, visible to core crates)
+### Composed transport (public; secret stays opaque)
 
 ```rust
-/// Composed transport as the executor will need it:
-/// plugin transport + oauth public fields + credential if bound hosts match.
+/// Composed transport as the executor will need it: the plugin transport, plus
+/// the OAuth `client_id`/`token_url` where the transport lacks them, plus the
+/// credential if the bound hosts match.
 pub fn composed_transport(&self, provider: &str) -> Option<ComposedTransport<'_>>;
+
+pub struct ComposedTransport<'a> {
+    // …public transport fields…
+    pub client_secret: Option<&'a SecretString>,
+}
+
+impl SecretString {
+    pub fn matches(&self, candidate: &str) -> bool;  // compare without revealing
+    pub(crate) fn expose(&self) -> &str;             // crate-internal only
+}
+// Debug/Display → "***"; not Serialize.
 ```
 
-The parity tests serialise this view and compare it against `providers.json`.
+The parity tests serialise this view without `clientSecret` and compare it against
+`providers.json`. They then check the secret with
+`client_secret.unwrap().matches(fixture["clientSecret"])`. The value is compared but
+never read out through the public API.
 
 ## Behavioural guarantees
 
@@ -82,8 +97,9 @@ The parity tests serialise this view and compare it against `providers.json`.
 |---|---|
 | `resolve("a/b/c")` splits at the first `/` → provider `a`, model `b/c` | unit |
 | `resolve("name")` never infers a provider | unit |
+| `resolve("")`, `resolve("/m")`, `resolve("p/")` → `NotFound::EmptyTarget` | unit |
 | Undeclared alias token → `NotFound::Provider` (4 baseline tokens included) | parity |
-| No public function returns a `client_secret` | compile-fail doc-test + API review |
+| No public function returns a raw `client_secret`: `SecretString::expose` is `pub(crate)` | `compile_fail` doc-test calling `expose()` from outside the crate + API review |
 | Lookups during reload see old or new, never mixed | concurrency test (SC-007) |
 
 ## CLI: `zerorouter-cli`

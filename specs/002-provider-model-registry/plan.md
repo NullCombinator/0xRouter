@@ -28,7 +28,7 @@ pinned `ref/9router`. A thin `zerorouter-cli` exposes `check`, `validate`, `reso
 the dev-time generator.
 
 **Primary Dependencies**: `serde`, `toml`, `serde_path_to_error`, `thiserror`,
-`arc-swap`, `url`, `regex-lite`. Dev: `serde_json`, `criterion`. CLI: `clap`.
+`arc-swap`, `url`, `regex-lite`, `indexmap`. Dev: `serde_json`, `criterion`. CLI: `clap`.
 ([research R12](research.md#r12-crates))
 
 **Storage**: Files only. Bundled plugins are embedded in the binary. User plugins live
@@ -141,29 +141,36 @@ crates/
 │   ├── Cargo.toml
 │   ├── build.rs                    # embeds plugins/bundled/*.toml via include_str! table
 │   ├── src/
-│   │   ├── lib.rs                  # RegistryHandle, Registry, re-exports
+│   │   ├── lib.rs                  # RegistryHandle (ArcSwap, reload), re-exports
 │   │   ├── schema/                 # serde structs: plugin.rs, transport.rs, oauth.rs,
-│   │   │                           #   model.rs, capability.rs, config.rs, enums.rs
+│   │   │                           #   model.rs, capability.rs, config.rs, enums.rs,
+│   │   │                           #   oauth_params.rs (GENERATED: KNOWN_OAUTH_PARAMS)
 │   │   ├── validate/               # gate.rs (FR-007–010), secrets.rs (R5), errors.rs
 │   │   ├── credentials/
 │   │   │   ├── mod.rs              # SecretString, host binding (FR-012a)
 │   │   │   └── bundled.rs          # GENERATED: 4-entry static table
 │   │   ├── load.rs                 # bundled + user + config → candidate; conflicts
-│   │   ├── registry.rs             # Registry snapshot, indices, ArcSwap handle, reload
+│   │   ├── registry.rs             # Registry snapshot, indices, credential binding
 │   │   ├── lookup.rs               # suffix, tolerance, upstream ID (9router parity)
 │   │   ├── resolve.rs              # target classification, Resolution/NotFound
 │   │   └── views.rs                # composed transport / alias / oauth parity views
 │   ├── tests/
-│   │   ├── parity.rs               # vs tests/fixtures/9router/*.json
+│   │   ├── smoke.rs                # bundled-only open on an empty home
+│   │   ├── parity/                 # main.rs + transport, alias, oauth, lookup modules
+│   │   │                           #   vs tests/fixtures/9router/*.json
 │   │   ├── gate.rs  + gate/{valid,invalid}/*.toml
 │   │   ├── secrets.rs              # no table value appears in any plugin
 │   │   ├── unified.rs              # US3
+│   │   ├── plugins.rs              # US4: conflicts, credential binding, skipped plugins
 │   │   └── reload.rs               # FR-024–026, SC-007
 │   └── benches/
 │       └── resolve.rs
 └── zerorouter-cli/
     ├── Cargo.toml
-    └── src/main.rs                 # check · validate · resolve · model · providers
+    └── src/
+        ├── main.rs                 # clap dispatch; exit codes 0/1/2
+        └── cmd/                    # check · validate · resolve · model · providers
+docs/                               # plugin-authoring and operator docs (Polish)
 plugins/
 └── bundled/*.toml                  # GENERATED: 121 files
 tools/
@@ -171,7 +178,8 @@ tools/
     └── generate.mjs                # evaluates ref/9router → plugins, credentials, fixtures
 tests/
 └── fixtures/
-    └── 9router/                    # GENERATED oracle: providers, alias, oauth-urls, lookup
+    └── 9router/                    # GENERATED oracle: providers, alias, oauth-urls,
+                                    #   lookup, tts-tables
 ```
 
 **Structure Decision**:

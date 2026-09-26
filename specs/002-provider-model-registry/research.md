@@ -117,25 +117,48 @@ fields.
 **Decision**: Defence in depth, in this order:
 1. **Structural.** No schema field exists whose purpose is a secret, and
    `deny_unknown_fields` means one can't be added.
-2. **Free-form maps.** The keys of `headers`, `oauth.params`, `transport.executor_params`,
-   and model `params` are checked against a denylist, case-insensitively:
+2. **Closed maps.** Where the bundled set shows a fixed set of keys, the map is closed:
+   - `transport.executor_params` is a typed struct (data model). Its field `token_auth`
+     holds an auth-mode name (grok-cli: `"xai-grok-cli"`), not a credential.
+   - `oauth.params` keys must be in `KNOWN_OAUTH_PARAMS`, which the generator writes
+     from the bundled set. Some keys there contain "token" (e.g. gitlab `tokenUrlPath`)
+     but hold paths or names, not credentials. A closed list is stricter than a
+     denylist, and a key the core doesn't know would do nothing anyway.
+3. **Open maps.** The keys of `headers` and model `params` are checked against a
+   denylist, case-insensitively:
    - `secret`, `password`, `passwd`, `api_key`/`apikey`, `access_token`, `refresh_token`,
      `cookie`, `authorization`, `x-api-key`, `proxy-authorization`, `x-goog-api-key`;
    - any key matching `token` unless it ends in `url`, `_url`, or `endpoint`.
-3. **URLs.** Any URL containing userinfo (`user:pass@`) or a query parameter from the
+
+   None of the 39 bundled header names match (verified).
+4. **URLs.** Any URL containing userinfo (`user:pass@`) or a query parameter from the
    same denylist is rejected.
-4. **Credential table.** Secrets live in a generated Rust source file with a static table
-   (R8). Each entry is `{ provider_id, field: ClientSecret, value, bound_hosts }`.
-   `bound_hosts` is the set of hosts in the bundled plugin's `authorize_url`, `token_url`,
-   and `refresh_url`, plus any `oauth.endpoints` URL. If the bundled plugin declares
-   none (gemini), the generator uses the matching `OAUTH_ENDPOINTS` entry
-   (FR-012a). The generator fails if an entry would end up with no hosts at all.
-   Invariant for the execution slice: the secret is only ever sent to a host in
-   `bound_hosts`.
-5. **Composition.** The composed transport view (the parity view) re-creates 9router's
-   injection: `clientId`/`tokenUrl` come from the plugin's `oauth`, and `clientSecret`
-   comes from the credential table only when the active plugin's OAuth hosts are a subset
-   of `bound_hosts`.
+5. **Credential table.** Secrets live in a generated Rust source file with a static table
+   (R8). Each entry is `{ provider_id, value, bound_hosts }`.
+   - `bound_hosts` is the bundled plugin's **OAuth host set**: the hosts of
+     `oauth.{authorize,token,refresh}_url` plus `token_url`/`refresh_url`/`auth_url` on
+     any transport.
+   - `user_info_url`, `device_code_url`, and `oauth.endpoints` are excluded: they never
+     receive the secret. Counting them would bar gemini-cli and antigravity from their
+     own secret, because `userInfoUrl` is on `www.googleapis.com`.
+   - If the bundled plugin declares none (gemini), the generator uses the hosts of
+     `OAUTH_ENDPOINTS.google` (`config/appConstants.js`): `oauth2.googleapis.com` and
+     `accounts.google.com` (FR-012a).
+   - The generator fails if an entry would end up with no hosts.
+   - Invariant for the execution slice: the secret is only ever sent to a host in
+     `bound_hosts`. Transport `token_url` is part of the set because a replacing
+     plugin could otherwise keep `oauth.token_url` and redirect the transport's.
+6. **Composition.** The composed transport view (the parity view) re-creates 9router's
+   injection:
+   - `clientId` and `tokenUrl` are copied from `oauth` only when the transport does not
+     declare them. antigravity, gemini-cli, gemini, kimi, and xai declare `clientId` on
+     the transport; kiro's transport `tokenUrl` differs from its `oauth.tokenUrl`.
+   - `clientSecret` comes from the credential table only when the active plugin's OAuth
+     host set is a subset of `bound_hosts`.
+7. **No raw secret in the public API.** `SecretString` exposes only `matches(&str)` and a
+   `***` rendering. Raw access is `pub(crate)`. Parity tests compare the composed
+   `clientSecret` with `matches` against the value in the oracle fixture. They never
+   read it out.
 
 These are public "installed-app" OAuth secrets that 9router ships in open source.
 Compiling them into the binary does not reduce their secrecy. It does keep them out of
@@ -227,7 +250,7 @@ reviewers can read every bundled provider.
 - `alias-baseline.json` has 117 tokens. 4 of them (`qw`, `dv`, `devin`, `devin-cli`)
   resolve to themselves only because `resolveProviderAlias` echoes unknown input. No
   active provider owns them (devin-cli is disabled; qw has no provider).
-- `modelKeys` (100) = 92 provider catalogues keyed by canonical alias, plus 8 TTS
+- `modelKeys` (100) = 92 provider catalogs keyed by canonical alias, plus 8 TTS
   model/voice tables keyed by synthetic names (`openai-tts-models`, `gemini-tts-voices`,
   …) from `config/ttsModels.js`.
 - The lookup functions in `config/providerModels.js` import and run fine in plain Node.
@@ -247,11 +270,15 @@ files are:
   `findModelName`. The edge inputs are: a thinking suffix, a nested paren, a dash/dot
   variant, an undeclared ID, trailing whitespace, and a preset suffix.
 
+The 8 synthetic TTS keys are **not** turned into `lookup.json` rows, because they are
+not providers. The generator writes them separately to `tts-tables.json`: synthetic key
+→ `{ provider, models }`, with the owning provider taken from `ttsModels.js`.
+
 The Rust parity tests compare the composed registry views against these fixtures. There
 are two documented deviations, and they are asserted explicitly:
 - the 4 unowned alias tokens return not-found;
-- the 8 TTS tables are checked as the model lists of the owning providers' TTS
-  capability sections, not as top-level keys.
+- the 8 TTS tables are checked against `capabilities.tts.models` of their owning
+  provider, not as top-level keys.
 
 The Codex review-suffix and Muse Spark branches in `getModelUpstreamId` and
 `getModelTargetFormat` are excluded from the oracle inputs (spec Assumptions).
@@ -306,6 +333,7 @@ These are the baselines future regressions are judged against.
 | `arc-swap` | Snapshot swap (R6) |
 | `url` | Host extraction, userinfo/query checks (R5) |
 | `regex-lite` | The single thinking-suffix pattern `\([^()]+\)\s*$`; no need for full `regex` |
+| `indexmap` (serde) | Ordered `headers` / `endpoints` / `params` maps, so parity comparisons keep 9router's key order |
 | `serde_json` (dev) | Loading fixtures in parity tests |
 | `criterion` (dev) | Benchmarks |
 | `clap` (cli only) | `zerorouter-cli` arguments |

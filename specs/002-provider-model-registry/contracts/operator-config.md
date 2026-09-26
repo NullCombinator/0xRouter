@@ -52,8 +52,9 @@ Unknown keys are rejected, as they are in plugins.
 |---|---|
 | `name` contains `/` or is empty | `config.toml:4 unified_model[0].name: must be non-empty and must not contain "/"` |
 | Duplicate unified model name | `…unified_model[2].name: duplicate of unified_model[0]` |
+| No members | `…unified_model[1].members: must not be empty` |
 | Member provider unknown | `…unified_model[0].members[1].provider: unknown provider "xx"` |
-| Member model not in catalogue (non-passthrough) | `…members[0].model: "foo" is not declared by provider "claude"` |
+| Member model not in catalog (non-passthrough) | `…members[0].model: "foo" is not declared by provider "claude"` |
 | Same provider twice in one unified model | `…members[2]: provider "claude" already a member` |
 | Conflicting kinds | `…members[1]: kind "embedding" conflicts with unified_model kind "llm"` |
 | `[provider.<id>]` for an unknown provider | `…provider.nope: unknown provider` |
@@ -62,6 +63,11 @@ Unknown keys are rejected, as they are in plugins.
 Member resolution uses the same alias index and model lookup as requests. The
 `upstream_id` for each member is resolved once, when the file loads.
 
+Any error above is fatal at startup, with one exception. If a member names the id of a
+user plugin that was **skipped** at startup (FR-010), that unified model is dropped and
+reported, and the rest of the config loads. On reload, every error rejects the whole
+reload (FR-024).
+
 ## Load report
 
 Each load (startup or reload) produces a report. It is shown by `zerorouter-cli check`
@@ -69,4 +75,5 @@ and later by the dashboard. It lists:
 - pending conflicts (a user plugin shadowed by a bundled one with no decision yet);
 - declined user plugins;
 - credentials withheld under FR-012a, with the offending URL;
-- user plugins skipped at startup, with their errors.
+- user plugins skipped at startup, with their errors;
+- unified models dropped at startup because a member's plugin was skipped.

@@ -7,6 +7,9 @@ absent, and absence is kept distinct from an explicit value. On-disk formats are
 [contracts/plugin-schema.md](contracts/plugin-schema.md) and
 [contracts/operator-config.md](contracts/operator-config.md).
 
+**Terminology**: the spec's model "type" is the field `kind` (9router's legacy `type`
+normalises to it). A provider's model list is its "catalog".
+
 ---
 
 ## Overview
@@ -20,7 +23,7 @@ Registry (one immutable snapshot, swapped atomically on reload)
 ├── credentials:      ProviderId → ResolvedCredential   (bundled table ∩ host binding)
 └── report:           LoadReport                        (conflicts, withheld credentials, skipped plugins)
 
-ProviderEntity ──< Model                   (one catalogue per provider)
+ProviderEntity ──< Model                   (one catalog per provider)
 ProviderEntity ──< CapabilitySection       (one per offered capability kind)
 UnifiedModel   ──< Member ──> ProviderEntity + Model id
 ```
@@ -39,10 +42,10 @@ One provider, declared by one plugin file (FR-001, FR-002).
 | `aliases` | `Vec<String>` | Extra lookup tokens. Each token must be unique across all ids and aliases |
 | `ui_alias` | `Option<String>` | Display-only badge. **Not** a lookup token (9router parity) |
 | `auth` | `Option<AuthDecl>` | See below |
-| `transport` | `Option<Transport>` | Absent = catalogue-only provider (38 bundled) |
+| `transport` | `Option<Transport>` | Absent = catalog-only provider (38 bundled) |
 | `transports` | `Vec<Transport>` | Extra endpoints by format (9 bundled). Only allowed if `transport` is set |
 | `oauth` | `Option<OAuthDecl>` | Public OAuth endpoint data only |
-| `models` | `Option<Vec<Model>>` | `None` = catalogue unknown; `Some([])` = offers no models (bundled `zed`) |
+| `models` | `Option<Vec<Model>>` | `None` = catalog unknown; `Some([])` = offers no models (bundled `zed`). Each entry is a full table or a bare ID string (9router `normalizeModel`); a bare string becomes `Model { id, .. }` with every other field `None` |
 | `passthrough_models` | `bool` (default false) | Any model id is valid and resolves to itself |
 | `version_separator_tolerance` | `bool` (default false) | Enables dash↔dot model id matching (FR-020). Set only by bundled `kiro` |
 | `capabilities` | `Map<CapabilityKind, CapabilitySection>` | Present only for offered capabilities (FR-003) |
@@ -53,7 +56,16 @@ One provider, declared by one plugin file (FR-001, FR-002).
 - A capability section with no endpoint of its own requires `transport` to be set
   (edge case: unreachable section).
 - `version_separator_tolerance` and `passthrough_models` both being `true` is allowed:
-  passthrough wins, and tolerance only affects catalogue hits.
+  passthrough wins, and tolerance only affects catalog hits.
+
+**OAuth host set** (FR-012a): the hosts of every OAuth URL the plugin declares, wherever
+it declares them:
+- `oauth.authorize_url`, `oauth.token_url`, `oauth.refresh_url`;
+- `token_url`, `refresh_url`, and `auth_url` on `transport` and on every `transports[]`
+  entry.
+
+`user_info_url`, `device_code_url`, and `oauth.endpoints` never receive the client
+secret, so they are not part of the set.
 
 ### AuthDecl
 
@@ -78,7 +90,8 @@ executor-specific values.
 | `base_urls` | `Vec<Url>` | Fallback URL list (e.g. kiro) |
 | `format` | `Option<WireFormat>` | Closed enum of the 13 values in the bundled set: `openai`, `openai-responses`, `claude`, `gemini`, `gemini-cli`, `vertex`, `antigravity`, `kiro`, `cursor`, `commandcode`, `ollama`, `grok-web`, `perplexity-web`. Composed view fills `openai` when absent (9router `buildTransport`) |
 | `headers` | `OrderedMap<String, String>` | Header-name denylist (R5). Order kept for parity |
-| `url_suffix`, `validate_url`, `models_url`, `responses_url`, `messages_url`, `chat_path`, `user_url`, `billing_url`, `refresh_url`, `token_url`, `auth_url` | `Option<Url or String>` | URL fields: same URL checks as `base_url` |
+| `url_suffix`, `validate_url`, `models_url`, `responses_url`, `messages_url`, `chat_path`, `user_url`, `billing_url`, `refresh_url`, `token_url`, `auth_url` | `Option<Url or String>` | URL fields: same URL checks as `base_url`. `token_url`, `refresh_url`, `auth_url` join the OAuth host set. `token_url` is declared on the transport by antigravity, cline, kimi, kiro, and xai, and kiro's differs from its `oauth.token_url` |
+| `client_id` | `Option<String>` | Public. Declared on the transport by antigravity, gemini-cli, gemini, kimi, and xai |
 | `force_stream` | `Option<bool>` | |
 | `timeout_ms`, `stall_timeout_ms` | `Option<u64>` | |
 | `retry` | `Option<Map<String, u32>>` | Keys are HTTP status codes or `default`. Carried for the execution slice |
@@ -88,27 +101,29 @@ executor-specific values.
 | `usage` | `Option<Map<String, Scalar or Url>>` | Usage-reporting endpoints |
 | `regions`, `default_region` | `Option<Map<String, Url>>`, `Option<String>` | `default_region` must be a key of `regions` |
 | `auth` | `Option<TransportAuth>` | Per-transport override (multi-endpoint providers) |
-| `executor_params` | `Map<String, Scalar>` | `cliVersion`, `clientVersion`, `apiClient`, `copilot.*`, `clientIdentifier`, `tokenAuth`, `noAuth`, `authType`. Key denylist (R5) |
+| `executor_params` | `Option<ExecutorParams>` | **Closed struct**, not a free map: `cli_version`, `client_version`, `api_client`, `client_identifier`, `token_auth` (an auth-mode name such as `"xai-grok-cli"`, not a credential), `no_auth`, `auth_type`, and `copilot` (`vscode_version`, `chat_version`, `user_agent`, `api_version`). These are the only keys observed in the bundled set. Unknown keys are rejected |
 
-`client_id`, `client_secret`, and `token_url` are **never** read from a transport block.
-The composed view takes `client_id`/`token_url` from `oauth` and `client_secret` from the
-credential table (R5).
+There is no `client_secret` field on a transport. The composed view (R5) copies
+`client_id` and `token_url` from `oauth` only when the transport does not declare them
+(9router `OAUTH_INJECT_FIELDS`). It adds `client_secret` from the credential table only
+when the binding check passes.
 
 ### OAuthDecl
 
 | Field | Type | Rule |
 |---|---|---|
 | `client_id` | `Option<String>` | Public |
-| `authorize_url`, `token_url`, `refresh_url`, `device_code_url`, `user_info_url` | `Option<Url>` | These, plus `endpoints`, define the provider's **OAuth host set** (FR-012a) |
+| `authorize_url`, `token_url`, `refresh_url` | `Option<Url>` | Part of the **OAuth host set** (FR-012a) |
+| `device_code_url`, `user_info_url` | `Option<Url>` | Not part of the host set |
 | `scopes` | `Vec<String>` | 9router `scope` (string) and `scopes` (array) normalise here |
 | `code_challenge_method` | `Option<String>` | |
 | `refresh_lead_ms` | `Option<u64>` | |
 | `endpoints` | `OrderedMap<String, Url>` | Long-tail provider URLs (`apiBaseUrl`, `stateUrl`, `ssoOidcEndpoint`, …) |
-| `params` | `OrderedMap<String, Scalar>` | Long-tail non-URL values. Key denylist (R5) |
+| `params` | `OrderedMap<String, Scalar>` | Long-tail non-URL values. **Keys must be in `KNOWN_OAUTH_PARAMS`**, a list the generator derives from the bundled set (R5). OAuth flows are core built-ins, so a key the core does not know would do nothing; rejecting it keeps the map from carrying anything else |
 
 ### Model
 
-One entry in a provider's catalogue (FR-004, FR-005).
+One entry in a provider's catalog (FR-004, FR-005).
 
 | Field | Type | Rule |
 |---|---|---|
@@ -136,7 +151,7 @@ One entry in a provider's catalogue (FR-004, FR-005).
 | `limits` | `Option<Map<String, Scalar>>` | Search/fetch knobs: `cost_per_query`, `free_monthly_quota`, `max_max_results`, … |
 | `hidden` | `bool` | 9router `hiddenKinds` |
 
-**Catalogue view**: `section(kind).catalogue()` = provider models whose `kind == Some(kind)`,
+**Catalog view**: `section(kind).catalog()` = provider models whose `kind == Some(kind)`,
 plus `section.models`. For `llm`, it also includes models with `kind == None`: an
 untyped model served by the main transport is listed under text but keeps `kind = None`,
 so the "no declared type" answer (FR-004) is unchanged.
@@ -149,14 +164,19 @@ so the "no declared type" answer (FR-004) is unchanged.
 |---|---|---|
 | `provider_id` | `ProviderId` | Key |
 | `client_secret` | `SecretString` | `Debug`/`Display` print `***`. Not `Serialize` |
-| `bound_hosts` | `Set<Host>` | OAuth host set of the bundled plugin it came from; if that plugin declares no OAuth URLs (gemini), the matching 9router `OAUTH_ENDPOINTS` entry (R5) |
+| `bound_hosts` | `Set<Host>` | OAuth host set of the bundled plugin it came from; if that plugin declares no OAuth URLs (gemini), the hosts of 9router's `OAUTH_ENDPOINTS.google` (`oauth2.googleapis.com`, `accounts.google.com`) (R5) |
 
 **ResolvedCredential** (per snapshot): `Available(&secret)` if the active plugin for that
 id has an OAuth host set ⊆ `bound_hosts`. Otherwise `Withheld { offending_url }`, which is
 recorded in `LoadReport` (FR-012a).
 
-No function in the plugin-facing API returns a credential. Only the composed transport
-view, used by parity tests and later the executor, can see it.
+**SecretString** has no public way to read the value. Its public surface is:
+- `Debug`/`Display` print `***`;
+- `matches(&str) -> bool` compares without revealing the value.
+
+Raw access (`expose()`) is `pub(crate)`. So `ComposedTransport` can be public: it carries
+`client_secret: Option<&SecretString>`, and parity tests check the value with `matches`.
+The execution slice will add a narrowly scoped way to send the secret.
 
 ---
 
@@ -168,14 +188,14 @@ view, used by parity tests and later the executor, can see it.
 |---|---|---|
 | `name` | `String` | Unique. Must not contain `/` (FR-014). Must not be empty |
 | `kind` | `Option<ModelKind>` | If set, every member with a declared kind must match |
-| `members` | `Vec<Member>` (≥ 1) | Ordered. No provider twice |
+| `members` | `Vec<Member>` | **Must not be empty** (FR-015). Ordered. No provider twice |
 
 ### Member
 
 | Field | Type | Rule |
 |---|---|---|
 | `provider` | token | Resolved via the alias index at load. Unknown → error naming the member |
-| `model` | `String` | Must be in the provider's catalogue (suffix-stripped, tolerance applied) unless the provider is passthrough |
+| `model` | `String` | Must be in the provider's catalog (suffix-stripped, tolerance applied) unless the provider is passthrough |
 | *(derived)* `upstream_id` | `String` | Resolved at load with the FR-021 algorithm |
 
 ### ProviderSettings
@@ -208,7 +228,7 @@ Resolution::Unified { model: &UnifiedModel, members: &[ResolvedMember] }  // FR-
 NotFound::Provider { token }                     // FR-018
 NotFound::UnifiedModel { name }                  // FR-014a (bare name)
 NotFound::Model { provider, model }              // uncatalogued + setting off
-NotFound::EmptyTarget
+NotFound::EmptyTarget                            // "", "/x", "x/"
 ```
 
 Model queries (FR-022) take `(provider token, model id)` and return a `ModelInfo` view.
@@ -245,6 +265,10 @@ reload is rejected.
  Startup:  bundled (must all validate, else fatal) + user plugins (invalid ones skipped)
            + config.toml (invalid → fatal: no previous snapshot to fall back to)
            → Snapshot v1 → Active
+
+           Exception: a unified model with a member whose provider id belongs to a user
+           plugin that was skipped at startup is dropped and reported, not fatal.
+           Otherwise one bad user plugin would block startup, which breaks FR-010.
 
  Reload:   build candidate from disk ─▶ validate everything
                     │ any error                          │ ok
