@@ -30,5 +30,10 @@ runs with two enforced layers:
 - Everything else denied. Proven: foreign reads rc=2, git OK in repo,
   `claude --version` under gate, fail-closed 126 when gate binary absent.
 
+**Gate ABI notes:**
+- `LANDLOCK_ACCESS_FS_TRUNCATE` is ABI 3 (not ABI 2). The gate correctly gates it at `abi >= 3`.
+- `LANDLOCK_ACCESS_FS_IOCTL_DEV` is ABI 5; the earlier `LANDLOCK_ACCESS_FS_IOCTL` fallback referenced a never-merged constant and has been removed.
+- The launcher previously listed `ro:~/Desktop` twice (duplicate); one has been removed.
+
 Auth (2026-09-26): subscription `/login` — OAuth in
 `~/.claude-0router/.credentials.json`, auto-refresh; apiKeyHelper/.token retired.
