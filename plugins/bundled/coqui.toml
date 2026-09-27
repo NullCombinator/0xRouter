@@ -1,0 +1,27 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "coqui"
+category = "freeTier"
+alias = "coqui"
+
+[[capabilities.tts.models]]
+id = "tts_models/en/ljspeech/tacotron2-DDC"
+name = "Tacotron2 DDC (LJSpeech)"
+
+[capabilities.tts.endpoint]
+base_url = "http://localhost:5002/api/tts"
+auth_type = "none"
+auth_header = "none"
+format = "coqui"
+
+[auth]
+kind = "none"
+no_auth = true
+
+[display]
+name = "Coqui TTS"
+icon = "record_voice_over"
+color = "#10B981"
+text_icon = "CQ"
+website = "https://github.com/coqui-ai/TTS"
+hidden = true

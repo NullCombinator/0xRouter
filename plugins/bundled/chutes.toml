@@ -1,0 +1,20 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "chutes"
+category = "apikey"
+alias = "chutes"
+aliases = ["ch"]
+ui_alias = "ch"
+transport = { base_url = "https://llm.chutes.ai/v1/chat/completions", validate_url = "https://llm.chutes.ai/v1/models" }
+
+[capabilities]
+llm = {}
+
+[display]
+name = "Chutes AI"
+icon = "water_drop"
+color = "#ffffffff"
+text_icon = "CH"
+website = "https://chutes.ai"
+notice = { api_key_url = "https://chutes.ai/app/api" }
+priority = 70

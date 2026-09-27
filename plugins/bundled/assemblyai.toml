@@ -1,0 +1,48 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "assemblyai"
+category = "apikey"
+alias = "assemblyai"
+aliases = ["aai"]
+ui_alias = "aai"
+transport = { base_url = "https://api.assemblyai.com/v1/audio/transcriptions", validate_url = "https://api.assemblyai.com/v1/account" }
+
+[[models]]
+id = "universal-3-pro"
+name = "Universal 3 Pro"
+params = ["language"]
+kind = "stt"
+
+[[models]]
+id = "universal-2"
+name = "Universal 2"
+params = ["language"]
+kind = "stt"
+
+[[models]]
+id = "best"
+name = "Best (Nano + Universal)"
+kind = "stt"
+
+[[models]]
+id = "nano"
+name = "Nano (Fast)"
+kind = "stt"
+
+[capabilities.stt.endpoint]
+base_url = "https://api.assemblyai.com/v2/transcript"
+auth_type = "apikey"
+auth_header = "authorization"
+format = "assemblyai"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "AssemblyAI"
+icon = "record_voice_over"
+color = "#0062FF"
+text_icon = "AA"
+website = "https://assemblyai.com"
+notice = { api_key_url = "https://www.assemblyai.com/app/api-keys" }
+priority = 30

@@ -1,0 +1,58 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "baidu"
+category = "apikey"
+alias = "qianfan"
+aliases = ["qianfan", "ernie", "baidu-qianfan"]
+ui_alias = "qianfan"
+transport = { base_url = "https://qianfan.baidubce.com/v2/chat/completions", validate_url = "https://qianfan.baidubce.com/v2/models" }
+
+[[models]]
+id = "deepseek-v4-pro"
+name = "DeepSeek V4 Pro"
+context_length = 1048576
+
+[[models]]
+id = "deepseek-v4-flash"
+name = "DeepSeek V4 Flash"
+context_length = 1048576
+
+[[models]]
+id = "glm-5.2"
+name = "GLM 5.2"
+context_length = 512000
+
+[[models]]
+id = "glm-5.1"
+name = "GLM 5.1"
+context_length = 198000
+
+[[models]]
+id = "kimi-k2.6"
+name = "Kimi K2.6"
+context_length = 262144
+
+[[models]]
+id = "qwen3.5-397b-a17b"
+name = "Qwen 3.5 397B A17B"
+context_length = 262144
+
+[[models]]
+id = "qwen3.5-27b"
+name = "Qwen 3.5 27B"
+context_length = 262144
+
+[capabilities]
+llm = {}
+
+[auth]
+kind = "apikey"
+modes = ["apikey"]
+
+[display]
+name = "Baidu Qianfan"
+icon = "search"
+color = "#2932E1"
+text_icon = "BD"
+website = "https://cloud.baidu.com/product/qianfan.html"
+notice = { api_key_url = "https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application" }

@@ -1,0 +1,49 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "llm7"
+category = "apikey"
+alias = "llm7"
+aliases = ["llm-7"]
+ui_alias = "llm7"
+passthrough_models = true
+transport = { base_url = "https://api.llm7.io/v1/chat/completions", validate_url = "https://api.llm7.io/v1/models" }
+
+[[models]]
+id = "gpt-5.5"
+name = "GPT-5.5 (LLM7)"
+context_length = 1050000
+
+[[models]]
+id = "claude-opus-5"
+name = "Claude Opus 5 (LLM7)"
+context_length = 1000000
+
+[[models]]
+id = "deepseek-v4-flash"
+name = "DeepSeek V4 Flash (LLM7)"
+context_length = 1000000
+
+[[models]]
+id = "grok-4.5"
+name = "Grok 4.5 (LLM7)"
+context_length = 500000
+
+[[models]]
+id = "kimi-k3"
+name = "Kimi K3 (LLM7)"
+context_length = 1000000
+
+[capabilities]
+llm = {}
+
+[auth]
+kind = "apikey"
+modes = ["apikey"]
+
+[display]
+name = "LLM7"
+icon = "pool"
+color = "#7C3AED"
+text_icon = "L7"
+website = "https://llm7.io"
+notice = { api_key_url = "https://llm7.io" }

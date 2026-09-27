@@ -1,0 +1,38 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "fish-audio"
+category = "apikey"
+alias = "fish"
+
+[[capabilities.tts.models]]
+id = "s2.1-pro-free"
+name = "S2.1 Pro Free"
+
+[[capabilities.tts.models]]
+id = "s2.1-pro"
+name = "S2.1 Pro"
+
+[[capabilities.tts.models]]
+id = "s2-pro"
+name = "S2 Pro"
+
+[[capabilities.tts.models]]
+id = "s1"
+name = "S1"
+
+[capabilities.tts.endpoint]
+base_url = "https://api.fish.audio/v1/tts"
+auth_type = "apikey"
+auth_header = "bearer"
+format = "fish-audio"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Fish Audio"
+icon = "record_voice_over"
+color = "#1E9BF0"
+text_icon = "FA"
+website = "https://fish.audio"
+notice = { api_key_url = "https://fish.audio/app/api-keys/" }

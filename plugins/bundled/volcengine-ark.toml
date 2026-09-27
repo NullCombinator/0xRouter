@@ -1,0 +1,59 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "volcengine-ark"
+category = "apikey"
+alias = "volcengine-ark"
+aliases = ["ark"]
+ui_alias = "ark"
+
+[transport]
+base_url = "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions"
+headers = {}
+
+[[models]]
+id = "Doubao-Seed-2.0-Code"
+name = "Doubao-Seed-2.0-Code"
+
+[[models]]
+id = "Doubao-Seed-2.0-pro"
+name = "Doubao-Seed-2.0-pro"
+
+[[models]]
+id = "Doubao-Seed-2.0-lite"
+name = "Doubao-Seed-2.0-lite"
+
+[[models]]
+id = "Doubao-Seed-Code"
+name = "Doubao-Seed-Code"
+
+[[models]]
+id = "DeepSeek-V4-Flash"
+name = "DeepSeek-V4-Flash"
+
+[[models]]
+id = "DeepSeek-V4-Pro"
+name = "DeepSeek-V4-Pro"
+
+[[models]]
+id = "GLM-5.1"
+name = "GLM-5.1"
+
+[[models]]
+id = "MiniMax-M2.7"
+name = "MiniMax-M2.7"
+
+[[models]]
+id = "Kimi-K2.6"
+name = "Kimi-K2.6"
+
+[capabilities]
+llm = {}
+
+[display]
+name = "Volcengine Ark"
+icon = "cloud"
+color = "#1677FF"
+text_icon = "ARK"
+website = "https://ark.cn-beijing.volces.com"
+notice = { api_key_url = "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey" }
+priority = 270

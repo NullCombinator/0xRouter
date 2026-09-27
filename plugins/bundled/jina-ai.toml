@@ -1,0 +1,36 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "jina-ai"
+category = "apikey"
+alias = "jina"
+
+[[capabilities.embedding.models]]
+id = "jina-embeddings-v3"
+name = "Jina Embeddings v3"
+dimensions = 1024
+
+[[capabilities.embedding.models]]
+id = "jina-embeddings-v2-base-en"
+name = "Jina Embeddings v2 Base EN"
+dimensions = 768
+
+[[capabilities.embedding.models]]
+id = "jina-embeddings-v2-base-code"
+name = "Jina Embeddings v2 Base Code"
+dimensions = 768
+
+[capabilities.embedding.endpoint]
+base_url = "https://api.jina.ai/v1/embeddings"
+auth_type = "apikey"
+auth_header = "bearer"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Jina AI"
+icon = "blur_on"
+color = "#2563EB"
+text_icon = "JA"
+website = "https://jina.ai"
+notice = { text = "10M free tokens on signup (non-commercial), no credit card required.", api_key_url = "https://jina.ai/?sui=apikey" }

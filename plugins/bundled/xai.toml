@@ -1,0 +1,79 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "xai"
+category = "oauth"
+alias = "xai"
+
+[transport]
+base_url = "https://api.x.ai/v1/chat/completions"
+validate_url = "https://api.x.ai/v1/models"
+responses_url = "https://api.x.ai/v1/responses"
+client_id = "b1a00492-073a-47ea-816f-4c329264a828"
+token_url = "https://auth.x.ai/oauth2/token"
+refresh_url = "https://auth.x.ai/oauth2/token"
+
+[[models]]
+id = "grok-4.6"
+name = "Grok 4.6"
+
+[[models]]
+id = "grok-4.5"
+name = "Grok 4.5"
+
+[[models]]
+id = "grok-4"
+name = "Grok 4"
+
+[[models]]
+id = "grok-4-fast-reasoning"
+name = "Grok 4 Fast Reasoning"
+
+[[models]]
+id = "grok-code-fast-1"
+name = "Grok Code Fast"
+
+[[models]]
+id = "grok-3"
+name = "Grok 3"
+
+[[models]]
+id = "grok-2-image-1212"
+name = "Grok 2 Image"
+params = ["n", "response_format"]
+kind = "image"
+
+[[models]]
+id = "grok-imagine-video"
+name = "Grok Imagine Video"
+params = ["duration", "aspect_ratio", "resolution"]
+kind = "video"
+
+[capabilities]
+image_to_text = {}
+llm = {}
+
+[capabilities.image.endpoint]
+base_url = "https://api.x.ai/v1/images/generations"
+body_fields = ["model", "prompt", "n", "response_format"]
+
+[capabilities.video.endpoint]
+base_url = "https://api.x.ai/v1/videos"
+
+[capabilities.web_search.endpoint]
+via_chat = true
+default_model = "grok-4.20-reasoning"
+base_url = "https://api.x.ai/v1/responses"
+pricing_url = "https://x.ai/api#pricing"
+
+[auth]
+modes = ["oauth", "apikey"]
+has_oauth = true
+
+[display]
+name = "xAI (Grok)"
+icon = "auto_awesome"
+color = "#1DA1F2"
+text_icon = "XA"
+website = "https://x.ai"
+notice = { api_key_url = "https://console.x.ai" }
+priority = 280

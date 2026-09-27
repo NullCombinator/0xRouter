@@ -1,0 +1,16 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "topaz"
+category = "apikey"
+alias = "topaz"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Topaz"
+icon = "image"
+color = "#059669"
+text_icon = "TP"
+website = "https://topazlabs.com"
+notice = { api_key_url = "https://topazlabs.com/account" }

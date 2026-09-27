@@ -1,0 +1,55 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "hyperbolic"
+category = "apikey"
+alias = "hyperbolic"
+aliases = ["hyp"]
+ui_alias = "hyp"
+transport = { base_url = "https://api.hyperbolic.xyz/v1/chat/completions", validate_url = "https://api.hyperbolic.xyz/v1/models" }
+
+[[models]]
+id = "Qwen/QwQ-32B"
+name = "QwQ 32B"
+
+[[models]]
+id = "deepseek-ai/DeepSeek-R1"
+name = "DeepSeek R1"
+
+[[models]]
+id = "deepseek-ai/DeepSeek-V3"
+name = "DeepSeek V3"
+
+[[models]]
+id = "meta-llama/Llama-3.3-70B-Instruct"
+name = "Llama 3.3 70B"
+
+[[models]]
+id = "meta-llama/Llama-3.2-3B-Instruct"
+name = "Llama 3.2 3B"
+
+[[models]]
+id = "Qwen/Qwen2.5-72B-Instruct"
+name = "Qwen 2.5 72B"
+
+[[models]]
+id = "Qwen/Qwen2.5-Coder-32B-Instruct"
+name = "Qwen 2.5 Coder 32B"
+
+[[models]]
+id = "NousResearch/Hermes-3-Llama-3.1-70B"
+name = "Hermes 3 70B"
+
+[capabilities]
+llm = {}
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Hyperbolic"
+icon = "bolt"
+color = "#00D4FF"
+text_icon = "HY"
+website = "https://hyperbolic.xyz"
+notice = { api_key_url = "https://app.hyperbolic.xyz/settings" }
+priority = 160

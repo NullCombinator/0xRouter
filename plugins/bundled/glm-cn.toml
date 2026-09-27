@@ -1,0 +1,65 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "glm-cn"
+category = "apikey"
+alias = "glm-cn"
+
+[transport]
+base_url = "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions"
+headers = {}
+
+[transport.usage]
+url = "https://open.bigmodel.cn/api/monitor/usage/quota/limit"
+
+[[models]]
+id = "glm-5.3"
+name = "GLM 5.3"
+
+[[models]]
+id = "glm-5.3-flash"
+name = "GLM 5.3 Flash (Vision)"
+
+[[models]]
+id = "glm-5.2"
+name = "GLM 5.2"
+
+[[models]]
+id = "glm-5.1"
+name = "GLM 5.1"
+
+[[models]]
+id = "glm-5-turbo"
+name = "GLM 5 Turbo"
+
+[[models]]
+id = "glm-5"
+name = "GLM 5"
+
+[[models]]
+id = "glm-4.7"
+name = "GLM-4.7"
+
+[[models]]
+id = "glm-4.6v"
+name = "GLM 4.6V (Vision)"
+
+[[models]]
+id = "glm-4.6"
+name = "GLM-4.6"
+
+[[models]]
+id = "glm-4.5-air"
+name = "GLM-4.5-Air"
+
+[capabilities]
+llm = {}
+
+[display]
+name = "GLM (China)"
+icon = "code"
+color = "#DC2626"
+text_icon = "GC"
+website = "https://open.bigmodel.cn"
+notice = { api_key_url = "https://open.bigmodel.cn/usercenter/apikeys" }
+priority = 130
+features = { usage = true, usage_apikey = true }

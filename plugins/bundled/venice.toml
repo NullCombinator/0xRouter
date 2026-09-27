@@ -1,0 +1,99 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "venice"
+category = "apikey"
+alias = "venice"
+aliases = ["vn"]
+ui_alias = "venice"
+passthrough_models = true
+transport = { base_url = "https://api.venice.ai/api/v1/chat/completions", validate_url = "https://api.venice.ai/api/v1/models", thinking_format = "openai" }
+models_fetcher = { url = "https://api.venice.ai/api/v1/models", kind = "openai" }
+
+[[models]]
+id = "venice-uncensored-1-2"
+name = "Venice Uncensored 1.2"
+
+[[models]]
+id = "zai-org-glm-5"
+name = "GLM-5"
+
+[[models]]
+id = "qwen3-235b-a22b-instruct-2507"
+name = "Qwen3 235B A22B Instruct"
+
+[[models]]
+id = "qwen3-coder-480b-a35b-instruct-turbo"
+name = "Qwen3 Coder 480B A35B Turbo"
+
+[[models]]
+id = "qwen3-vl-235b-a22b"
+name = "Qwen3 VL 235B A22B"
+
+[[models]]
+id = "deepseek-v4-pro"
+name = "DeepSeek V4 Pro"
+
+[[models]]
+id = "llama-3.3-70b"
+name = "Llama 3.3 70B"
+
+[[models]]
+id = "hermes-3-llama-3.1-405b"
+name = "Hermes 3 Llama 3.1 405B"
+
+[[models]]
+id = "mistral-small-3-2-24b-instruct"
+name = "Mistral Small 3.2 24B"
+
+[[models]]
+id = "text-embedding-3-large"
+name = "Text Embedding 3 Large"
+kind = "embedding"
+
+[[models]]
+id = "text-embedding-bge-m3"
+name = "BGE-M3 Embedding"
+kind = "embedding"
+
+[[models]]
+id = "text-embedding-qwen3-8b"
+name = "Qwen3 8B Embedding"
+kind = "embedding"
+
+[[models]]
+id = "venice-sd35"
+name = "Venice SD3.5"
+params = ["n", "size"]
+kind = "image"
+
+[[models]]
+id = "flux-2-pro"
+name = "FLUX.2 Pro"
+params = ["n", "size"]
+kind = "image"
+
+[[models]]
+id = "gpt-image-2"
+name = "GPT Image 2 (via Venice)"
+params = ["n", "size", "quality"]
+kind = "image"
+
+[capabilities]
+llm = {}
+
+[capabilities.embedding.endpoint]
+base_url = "https://api.venice.ai/api/v1/embeddings"
+auth_type = "apikey"
+auth_header = "bearer"
+
+[capabilities.image.endpoint]
+base_url = "https://api.venice.ai/api/v1/images/generations"
+
+[display]
+name = "Venice AI"
+icon = "shield"
+color = "#DC2626"
+text_icon = "VE"
+website = "https://venice.ai"
+notice = { text = "OpenAI-compatible. Private inference + uncensored models (Venice Uncensored, GLM, Qwen, DeepSeek, Llama).", api_key_url = "https://venice.ai/settings/api" }
+priority = 115

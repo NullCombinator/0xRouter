@@ -1,0 +1,118 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "tokenrouter"
+category = "apikey"
+alias = "tokenrouter"
+aliases = ["tr"]
+ui_alias = "tokenrouter"
+passthrough_models = true
+transport = { base_url = "https://api.tokenrouter.com/v1/chat/completions", validate_url = "https://api.tokenrouter.com/v1/models", thinking_format = "tokenrouter" }
+models_fetcher = { url = "https://api.tokenrouter.com/v1/models", kind = "openai" }
+
+[[models]]
+id = "anthropic/claude-haiku-4.5"
+name = "Claude Haiku 4.5"
+
+[[models]]
+id = "anthropic/claude-sonnet-4.6"
+name = "Claude Sonnet 4.6"
+
+[[models]]
+id = "anthropic/claude-opus-4.8"
+name = "Claude Opus 4.8"
+
+[[models]]
+id = "anthropic/claude-opus-4.8-fast"
+name = "Claude Opus 4.8 Fast"
+
+[[models]]
+id = "openai/gpt-5.4"
+name = "Gpt 5.4"
+
+[[models]]
+id = "openai/gpt-5.4-mini"
+name = "Gpt 5.4 Mini"
+
+[[models]]
+id = "openai/gpt-5.4-pro"
+name = "Gpt 5.4 Pro"
+
+[[models]]
+id = "openai/gpt-5.5"
+name = "Gpt 5.5"
+
+[[models]]
+id = "openai/gpt-5.6-sol"
+name = "Gpt 5.6 Sol"
+
+[[models]]
+id = "google/gemini-3.5-flash"
+name = "Gemini 3.5 Flash"
+
+[[models]]
+id = "google/gemini-3.6-flash"
+name = "Gemini 3.6 Flash"
+
+[[models]]
+id = "deepseek/deepseek-v4-flash"
+name = "Deepseek V4 Flash"
+
+[[models]]
+id = "deepseek/deepseek-v4-pro"
+name = "Deepseek V4 Pro"
+
+[[models]]
+id = "qwen/qwen3-coder-next"
+name = "Qwen3 Coder Next"
+
+[[models]]
+id = "qwen/qwen3.7-max"
+name = "Qwen3.7 Max"
+
+[[models]]
+id = "qwen/qwen3.8-max"
+name = "Qwen3.8 Max"
+
+[[models]]
+id = "moonshotai/kimi-k2.7-code"
+name = "Kimi K2.7 Code"
+
+[[models]]
+id = "moonshotai/kimi-k3-free"
+name = "Kimi K3 Free"
+
+[[models]]
+id = "z-ai/glm-5.3-free"
+name = "Glm 5.3 Free"
+
+[[models]]
+id = "z-ai/glm-5.2"
+name = "Glm 5.2"
+
+[[models]]
+id = "z-ai/glm-5-turbo"
+name = "Glm 5 Turbo"
+
+[[models]]
+id = "x-ai/grok-4.5"
+name = "Grok 4.5"
+
+[capabilities]
+llm = {}
+
+[capabilities.embedding.endpoint]
+base_url = "https://api.tokenrouter.com/v1/embeddings"
+auth_type = "apikey"
+auth_header = "bearer"
+
+[capabilities.image.endpoint]
+base_url = "https://api.tokenrouter.com/v1/images/generations"
+
+[display]
+name = "TokenRouter"
+icon = "hub"
+color = "#0EA5E9"
+text_icon = "TR"
+website = "https://www.tokenrouter.com"
+notice = { text = "OpenAI-compatible gateway. 300+ models (OpenAI, Claude, Gemini, Qwen, DeepSeek, Kimi, GLM, dsb).", api_key_url = "https://www.tokenrouter.com" }
+thinking = { options = ["low", "medium", "high", "xhigh", "max"], default_mode = "high" }

@@ -1,0 +1,31 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "serper"
+category = "apikey"
+alias = "serper"
+
+[capabilities.web_search.endpoint]
+base_url = "https://google.serper.dev"
+method = "POST"
+auth_type = "apikey"
+auth_header = "x-api-key"
+search_types = ["web", "news"]
+timeout_ms = 10000
+
+[capabilities.web_search.limits]
+cost_per_query = 0.001
+free_monthly_quota = 2500
+default_max_results = 5
+max_max_results = 100
+cache_ttl_ms = 300000
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Serper"
+icon = "search"
+color = "#4F46E5"
+text_icon = "SP"
+website = "https://serper.dev"
+notice = { api_key_url = "https://serper.dev/api-key" }

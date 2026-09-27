@@ -1,0 +1,51 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "featherless"
+category = "apikey"
+alias = "featherless"
+aliases = ["fl"]
+ui_alias = "fl"
+transport = { base_url = "https://api.featherless.ai/v1/chat/completions", validate_url = "https://api.featherless.ai/v1/models" }
+
+[[models]]
+id = "deepseek-ai/DeepSeek-V4-Pro"
+name = "DeepSeek V4 Pro"
+
+[[models]]
+id = "deepseek-ai/DeepSeek-V4-Flash"
+name = "DeepSeek V4 Flash"
+
+[[models]]
+id = "zai-org/GLM-5.2"
+name = "GLM 5.2"
+
+[[models]]
+id = "zai-org/GLM-5.1"
+name = "GLM 5.1"
+
+[[models]]
+id = "moonshotai/Kimi-K2.7-Code"
+name = "Kimi K2.7 Code"
+
+[[models]]
+id = "moonshotai/Kimi-K2.6"
+name = "Kimi K2.6"
+
+[[models]]
+id = "moonshotai/Kimi-K2.5"
+name = "Kimi K2.5"
+
+[capabilities]
+llm = {}
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Featherless"
+icon = "flutter_dash"
+color = "#111827"
+text_icon = "FL"
+website = "https://featherless.ai"
+notice = { api_key_url = "https://featherless.ai/account/api-keys" }
+priority = 65

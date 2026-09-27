@@ -1,0 +1,29 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "sambanova"
+category = "apikey"
+alias = "samba"
+aliases = ["sambanova-ai"]
+ui_alias = "samba"
+transport = { base_url = "https://api.sambanova.ai/v1/chat/completions", validate_url = "https://api.sambanova.ai/v1/models" }
+
+[[models]]
+id = "MiniMax-M2.7"
+name = "MiniMax M2.7"
+context_length = 196608
+
+[capabilities]
+llm = {}
+
+[auth]
+kind = "apikey"
+modes = ["apikey"]
+
+[display]
+name = "SambaNova"
+icon = "memory"
+color = "#F97316"
+text_icon = "SN"
+website = "https://sambanova.ai"
+notice = { api_key_url = "https://cloud.sambanova.ai/apis" }
+hidden = true

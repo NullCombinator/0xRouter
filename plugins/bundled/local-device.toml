@@ -1,0 +1,29 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "local-device"
+category = "freeTier"
+alias = "local-device"
+
+[[models]]
+id = "default"
+name = "System Default Voice"
+kind = "tts"
+
+[capabilities.tts]
+models = []
+
+[capabilities.tts.endpoint]
+auth_type = "none"
+auth_header = "none"
+format = "local-device"
+
+[auth]
+kind = "none"
+no_auth = true
+
+[display]
+name = "Local Device"
+icon = "speaker"
+color = "#64748B"
+text_icon = "LD"
+media_priority = 5

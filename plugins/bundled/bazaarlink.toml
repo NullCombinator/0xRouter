@@ -1,0 +1,142 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "bazaarlink"
+category = "freeTier"
+alias = "bzl"
+aliases = ["bazaar-link"]
+ui_alias = "bzl"
+transport = { base_url = "https://bazaarlink.ai/api/v1/chat/completions", validate_url = "https://bazaarlink.ai/api/v1/models" }
+
+[[models]]
+id = "auto:free"
+name = "Auto Free (Zero Cost)"
+
+[[models]]
+id = "claude-opus-4.7"
+name = "Claude Opus 4.7"
+context_length = 1000000
+
+[[models]]
+id = "claude-sonnet-4.6"
+name = "Claude Sonnet 4.6"
+context_length = 1000000
+
+[[models]]
+id = "claude-haiku-4.5"
+name = "Claude Haiku 4.5"
+context_length = 200000
+
+[[models]]
+id = "gpt-5.5"
+name = "GPT-5.5"
+context_length = 1050000
+
+[[models]]
+id = "gpt-5.4"
+name = "GPT-5.4"
+context_length = 1050000
+
+[[models]]
+id = "gpt-5.4-mini"
+name = "GPT-5.4 Mini"
+context_length = 400000
+
+[[models]]
+id = "gpt-5.4-nano"
+name = "GPT-5.4 Nano"
+context_length = 400000
+
+[[models]]
+id = "grok-4.3"
+name = "Grok 4.3"
+context_length = 1000000
+
+[[models]]
+id = "grok-4.20"
+name = "Grok 4.20"
+context_length = 2000000
+
+[[models]]
+id = "gemini-3.1-pro-preview"
+name = "Gemini 3.1 Pro"
+context_length = 1048576
+
+[[models]]
+id = "gemini-3-flash-preview"
+name = "Gemini 3 Flash"
+context_length = 1048576
+
+[[models]]
+id = "gemini-3.1-flash-lite-preview"
+name = "Gemini 3.1 Flash Lite"
+context_length = 1048576
+
+[[models]]
+id = "kimi-k2.6"
+name = "Kimi K2.6"
+context_length = 262144
+
+[[models]]
+id = "kimi-k2.5"
+name = "Kimi K2.5"
+context_length = 262144
+
+[[models]]
+id = "glm-5.1"
+name = "GLM 5.1"
+context_length = 204800
+
+[[models]]
+id = "glm-5"
+name = "GLM 5"
+context_length = 204800
+
+[[models]]
+id = "mimo-v2.5-pro"
+name = "MiMo-V2.5-Pro"
+context_length = 1050000
+
+[[models]]
+id = "mimo-v2.5"
+name = "MiMo-V2.5"
+context_length = 1050000
+
+[[models]]
+id = "minimax-m3"
+name = "MiniMax M3"
+context_length = 1048576
+
+[[models]]
+id = "minimax-m2.7"
+name = "MiniMax M2.7"
+context_length = 204800
+
+[[models]]
+id = "minimax-m2.5"
+name = "MiniMax M2.5"
+context_length = 204800
+
+[[models]]
+id = "qwen3.6-plus"
+name = "Qwen 3.6 Plus"
+context_length = 1000000
+
+[[models]]
+id = "nemotron-3-super-120b-a12b"
+name = "Nemotron 3 Super"
+context_length = 1000000
+
+[capabilities]
+llm = {}
+
+[auth]
+kind = "apikey"
+modes = ["apikey"]
+
+[display]
+name = "Bazaarlink"
+icon = "storefront"
+color = "#DC2626"
+text_icon = "BZ"
+website = "https://bazaarlink.ai"
+notice = { api_key_url = "https://bazaarlink.ai" }

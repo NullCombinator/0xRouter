@@ -1,0 +1,41 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "fireworks"
+category = "apikey"
+alias = "fireworks"
+transport = { base_url = "https://api.fireworks.ai/inference/v1/chat/completions", validate_url = "https://api.fireworks.ai/inference/v1/models" }
+
+[[models]]
+id = "accounts/fireworks/models/deepseek-v3p1"
+name = "DeepSeek V3.1"
+
+[[models]]
+id = "accounts/fireworks/models/llama-v3p3-70b-instruct"
+name = "Llama 3.3 70B"
+
+[[models]]
+id = "accounts/fireworks/models/qwen3-235b-a22b"
+name = "Qwen3 235B"
+
+[[models]]
+id = "nomic-ai/nomic-embed-text-v1.5"
+name = "Nomic Embed Text v1.5"
+kind = "embedding"
+
+[capabilities]
+llm = {}
+
+[capabilities.embedding.endpoint]
+base_url = "https://api.fireworks.ai/inference/v1/embeddings"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Fireworks AI"
+icon = "local_fire_department"
+color = "#7B2EF2"
+text_icon = "FW"
+website = "https://fireworks.ai"
+notice = { api_key_url = "https://fireworks.ai/account/api-keys" }
+priority = 50

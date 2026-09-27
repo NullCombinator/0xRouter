@@ -1,0 +1,82 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "siliconflow"
+category = "apikey"
+alias = "siliconflow"
+transport = { base_url = "https://api.siliconflow.com/v1/chat/completions", validate_url = "https://api.siliconflow.com/v1/models", thinking_format = "openai" }
+
+[[models]]
+id = "deepseek-ai/DeepSeek-V4-Pro"
+name = "DeepSeek V4 Pro"
+
+[[models]]
+id = "deepseek-ai/DeepSeek-V4-Flash"
+name = "DeepSeek V4 Flash"
+
+[[models]]
+id = "deepseek-ai/DeepSeek-V3.2"
+name = "DeepSeek V3.2"
+
+[[models]]
+id = "deepseek-ai/DeepSeek-V3.2-Exp"
+name = "DeepSeek V3.2 Exp"
+
+[[models]]
+id = "deepseek-ai/DeepSeek-V3.1"
+name = "DeepSeek V3.1"
+
+[[models]]
+id = "deepseek-ai/DeepSeek-V3.1-Terminus"
+name = "DeepSeek V3.1 Terminus"
+
+[[models]]
+id = "deepseek-ai/DeepSeek-R1"
+name = "DeepSeek R1"
+
+[[models]]
+id = "Qwen/Qwen3.5-397B-A17B"
+name = "Qwen 3.5 397B A17B"
+
+[[models]]
+id = "Qwen/Qwen3.5-122B-A10B"
+name = "Qwen 3.5 122B A10B"
+
+[[models]]
+id = "zai-org/GLM-5.1"
+name = "GLM 5.1"
+
+[[models]]
+id = "zai-org/GLM-5"
+name = "GLM 5"
+
+[[models]]
+id = "moonshotai/Kimi-K2.6"
+name = "Kimi K2.6"
+
+[[models]]
+id = "moonshotai/Kimi-K2.5"
+name = "Kimi K2.5"
+
+[[models]]
+id = "openai/gpt-oss-120b"
+name = "GPT OSS 120B"
+
+[[models]]
+id = "MiniMaxAI/MiniMax-M2.5"
+name = "MiniMax M2.5"
+
+[[models]]
+id = "inclusionAI/Ling-flash-2.0"
+name = "Ling Flash 2.0"
+
+[capabilities]
+llm = {}
+
+[display]
+name = "SiliconFlow"
+icon = "cloud_queue"
+color = "#5B6EF5"
+text_icon = "SF"
+website = "https://cloud.siliconflow.com"
+notice = { api_key_url = "https://cloud.siliconflow.com/account/ak" }
+priority = 250

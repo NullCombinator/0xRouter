@@ -1,0 +1,31 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "searxng"
+category = "freeTier"
+alias = "searxng"
+
+[capabilities.web_search.endpoint]
+base_url = "http://localhost:8888/search"
+method = "GET"
+auth_type = "none"
+auth_header = "none"
+search_types = ["web", "news"]
+timeout_ms = 10000
+
+[capabilities.web_search.limits]
+cost_per_query = 0
+free_monthly_quota = 999999
+default_max_results = 5
+max_max_results = 50
+cache_ttl_ms = 180000
+
+[auth]
+kind = "none"
+no_auth = true
+
+[display]
+name = "SearXNG"
+icon = "saved_search"
+color = "#3B82F6"
+text_icon = "SX"
+website = "https://docs.searxng.org"

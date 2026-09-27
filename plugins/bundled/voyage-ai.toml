@@ -1,0 +1,56 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "voyage-ai"
+category = "apikey"
+alias = "voyage-ai"
+ui_alias = "voyage"
+
+[[models]]
+id = "voyage-3-large"
+name = "Voyage 3 Large"
+kind = "embedding"
+
+[[models]]
+id = "voyage-3.5"
+name = "Voyage 3.5"
+kind = "embedding"
+
+[[models]]
+id = "voyage-3.5-lite"
+name = "Voyage 3.5 Lite"
+kind = "embedding"
+
+[[models]]
+id = "voyage-code-3"
+name = "Voyage Code 3"
+kind = "embedding"
+
+[[models]]
+id = "voyage-finance-2"
+name = "Voyage Finance 2"
+kind = "embedding"
+
+[[models]]
+id = "voyage-law-2"
+name = "Voyage Law 2"
+kind = "embedding"
+
+[[models]]
+id = "voyage-multilingual-2"
+name = "Voyage Multilingual 2"
+kind = "embedding"
+
+[capabilities.embedding.endpoint]
+base_url = "https://api.voyageai.com/v1/embeddings"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Voyage AI"
+icon = "data_array"
+color = "#0EA5E9"
+text_icon = "VG"
+website = "https://www.voyageai.com"
+notice = { api_key_url = "https://dash.voyageai.com/api-keys" }
+priority = 40

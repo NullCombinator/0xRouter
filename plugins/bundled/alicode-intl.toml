@@ -1,0 +1,50 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "alicode-intl"
+category = "apikey"
+alias = "alicode-intl"
+
+[transport]
+base_url = "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions"
+headers = {}
+quirks = ["preserve_cache_control"]
+
+[[models]]
+id = "qwen3.5-plus"
+name = "Qwen3.5 Plus"
+
+[[models]]
+id = "kimi-k2.5"
+name = "Kimi K2.5"
+
+[[models]]
+id = "glm-5"
+name = "GLM 5"
+
+[[models]]
+id = "MiniMax-M2.5"
+name = "MiniMax M2.5"
+
+[[models]]
+id = "qwen3-coder-next"
+name = "Qwen3 Coder Next"
+
+[[models]]
+id = "qwen3-coder-plus"
+name = "Qwen3 Coder Plus"
+
+[[models]]
+id = "glm-4.7"
+name = "GLM 4.7"
+
+[capabilities]
+llm = {}
+
+[display]
+name = "Alibaba Coding"
+icon = "cloud"
+color = "#FF6A00"
+text_icon = "ALi"
+website = "https://www.alibabacloud.com/product/coding"
+notice = { api_key_url = "https://www.alibabacloud.com/product/coding" }
+priority = 10

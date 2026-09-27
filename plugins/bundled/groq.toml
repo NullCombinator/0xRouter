@@ -1,0 +1,67 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "groq"
+category = "apikey"
+alias = "groq"
+
+[transport]
+base_url = "https://api.groq.com/openai/v1/chat/completions"
+validate_url = "https://api.groq.com/openai/v1/models"
+
+[transport.usage]
+url = "https://api.groq.com/openai/v1/models"
+
+[[models]]
+id = "llama-3.3-70b-versatile"
+name = "Llama 3.3 70B"
+
+[[models]]
+id = "meta-llama/llama-4-maverick-17b-128e-instruct"
+name = "Llama 4 Maverick"
+
+[[models]]
+id = "qwen/qwen3-32b"
+name = "Qwen3 32B"
+
+[[models]]
+id = "openai/gpt-oss-120b"
+name = "GPT-OSS 120B"
+
+[[models]]
+id = "whisper-large-v3"
+name = "Whisper Large v3"
+params = ["language", "response_format", "temperature", "prompt"]
+kind = "stt"
+
+[[models]]
+id = "whisper-large-v3-turbo"
+name = "Whisper Large v3 Turbo"
+params = ["language", "response_format", "temperature", "prompt"]
+kind = "stt"
+
+[[models]]
+id = "distil-whisper-large-v3-en"
+name = "Distil Whisper Large v3 EN"
+params = ["language", "response_format", "temperature", "prompt"]
+kind = "stt"
+
+[capabilities]
+image_to_text = {}
+llm = {}
+
+[capabilities.stt.endpoint]
+base_url = "https://api.groq.com/openai/v1/audio/transcriptions"
+auth_type = "apikey"
+auth_header = "bearer"
+format = "openai"
+
+[display]
+name = "Groq"
+icon = "speed"
+color = "#F55036"
+text_icon = "GQ"
+website = "https://groq.com"
+notice = { api_key_url = "https://console.groq.com/keys" }
+priority = 60
+has_free = true
+features = { usage = true, usage_apikey = true }

@@ -1,0 +1,42 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "vercel-ai-gateway"
+category = "apikey"
+alias = "vercel-ai-gateway"
+aliases = ["vercel"]
+ui_alias = "vercel"
+passthrough_models = true
+models_fetcher = { url = "https://ai-gateway.vercel.sh/v1/models", kind = "openai" }
+
+[transport]
+base_url = "https://ai-gateway.vercel.sh/v1/chat/completions"
+thinking_format = "openai"
+retry = { 429 = 2 }
+
+[transport.usage]
+url = "https://ai-gateway.vercel.sh/v1/credits"
+
+[capabilities]
+image_to_text = {}
+llm = {}
+
+[capabilities.embedding.endpoint]
+base_url = "https://ai-gateway.vercel.sh/v1/embeddings"
+
+[capabilities.image.endpoint]
+base_url = "https://ai-gateway.vercel.sh/v1/images/generations"
+
+[capabilities.web_search.endpoint]
+via_chat = true
+default_model = "openai/gpt-4o-mini"
+pricing_url = "https://vercel.com/docs/ai-gateway/pricing"
+
+[display]
+name = "Vercel AI Gateway"
+icon = "deployed_code"
+color = "#111827"
+text_icon = "VG"
+website = "https://vercel.com/ai-gateway"
+notice = { text = "Unified OpenAI-compatible endpoint from Vercel. Use your AI Gateway API key, then pick models with provider/model IDs like anthropic/claude-sonnet-4.6 or openai/gpt-5.4.", api_key_url = "https://vercel.com/dashboard/~/ai-gateway" }
+priority = 160
+features = { usage = true, usage_apikey = true }

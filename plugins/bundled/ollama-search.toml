@@ -1,0 +1,33 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "ollama-search"
+category = "apikey"
+alias = "ollama-search"
+
+[capabilities.web_search.endpoint]
+base_url = "https://ollama.com/api/web_search"
+method = "POST"
+auth_type = "apikey"
+auth_header = "bearer"
+search_types = ["web"]
+timeout_ms = 10000
+
+[capabilities.web_search.limits]
+cost_per_query = 0
+free_monthly_quota = 1000
+default_max_results = 5
+max_max_results = 10
+cache_ttl_ms = 300000
+
+[auth]
+kind = "apikey"
+modes = ["apikey"]
+credential_fallback = "ollama"
+
+[display]
+name = "Ollama Search"
+icon = "cloud"
+color = "#ffffff"
+text_icon = "OL"
+website = "https://ollama.com"
+notice = { text = "Web search via Ollama Cloud subscription. Reuses the API key from the Ollama (chat) provider.", api_key_url = "https://ollama.com/settings/keys" }

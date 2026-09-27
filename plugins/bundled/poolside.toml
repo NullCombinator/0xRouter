@@ -1,0 +1,32 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "poolside"
+category = "freeTier"
+alias = "poolside"
+aliases = ["ps"]
+ui_alias = "ps"
+transport = { base_url = "https://inference.poolside.ai/v1/chat/completions", validate_url = "https://inference.poolside.ai/v1/models" }
+
+[[models]]
+id = "poolside/laguna-s-2.1"
+name = "Laguna S 2.1"
+
+[[models]]
+id = "poolside/laguna-xs-2.1"
+name = "Laguna XS 2.1"
+
+[capabilities]
+llm = {}
+
+[auth]
+kind = "apikey"
+modes = ["apikey"]
+
+[display]
+name = "Poolside"
+icon = "water_drop"
+color = "#0EA5E9"
+text_icon = "PS"
+website = "https://poolside.ai"
+notice = { api_key_url = "https://platform.poolside.ai/api-keys" }
+priority = 60

@@ -1,0 +1,32 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "recraft"
+category = "apikey"
+alias = "recraft"
+
+[[models]]
+id = "recraftv3"
+name = "Recraft V3"
+params = ["n", "size", "style"]
+kind = "image"
+
+[[models]]
+id = "recraftv2"
+name = "Recraft V2"
+params = ["n", "size", "style"]
+kind = "image"
+
+[capabilities.image.endpoint]
+base_url = "https://external.api.recraft.ai/v1/images/generations"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Recraft"
+icon = "image"
+color = "#EC4899"
+text_icon = "RC"
+website = "https://recraft.ai"
+notice = { api_key_url = "https://www.recraft.ai/profile/api" }
+priority = 70

@@ -1,0 +1,60 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "black-forest-labs"
+category = "apikey"
+alias = "black-forest-labs"
+aliases = ["bfl"]
+ui_alias = "bfl"
+
+[[models]]
+id = "flux-pro-1.1"
+name = "FLUX Pro 1.1"
+params = ["n", "size"]
+kind = "image"
+
+[[models]]
+id = "flux-pro-1.1-ultra"
+name = "FLUX Pro 1.1 Ultra"
+params = ["size"]
+kind = "image"
+
+[[models]]
+id = "flux-pro"
+name = "FLUX Pro"
+params = ["n", "size"]
+kind = "image"
+
+[[models]]
+id = "flux-dev"
+name = "FLUX Dev"
+params = ["n", "size"]
+kind = "image"
+
+[[models]]
+id = "flux-kontext-pro"
+name = "FLUX Kontext Pro (Edit)"
+params = ["size"]
+capabilities = ["edit"]
+kind = "image"
+
+[[models]]
+id = "flux-kontext-max"
+name = "FLUX Kontext Max (Edit)"
+params = ["size"]
+capabilities = ["edit"]
+kind = "image"
+
+[capabilities.image.endpoint]
+base_url = "https://api.bfl.ai/v1"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Black Forest Labs"
+icon = "image"
+color = "#111827"
+text_icon = "BF"
+website = "https://blackforestlabs.ai"
+notice = { api_key_url = "https://api.bfl.ai" }
+priority = 50

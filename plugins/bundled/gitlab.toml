@@ -1,0 +1,37 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "gitlab"
+category = "oauth"
+
+[transport]
+base_url = "https://gitlab.com/api/v4/chat/completions"
+
+[transport.auth]
+combined = true
+header = "Authorization"
+scheme = "bearer"
+
+[oauth]
+scopes = ["api", "read_user"]
+code_challenge_method = "S256"
+
+[oauth.endpoints]
+default_base_url = "https://gitlab.com"
+
+[oauth.params]
+authorize_url_path = "/oauth/authorize"
+token_url_path = "/oauth/token"
+user_info_url_path = "/api/v4/user"
+
+[capabilities]
+llm = {}
+
+[display]
+name = "GitLab Duo"
+icon = "code"
+color = "#FC6D26"
+text_icon = "GL"
+website = "https://gitlab.com"
+notice = { signup_url = "https://gitlab.com" }
+priority = 100
+hidden = true

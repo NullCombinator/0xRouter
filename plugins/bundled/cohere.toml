@@ -1,0 +1,30 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "cohere"
+category = "apikey"
+alias = "cohere"
+transport = { base_url = "https://api.cohere.ai/v1/chat/completions", validate_url = "https://api.cohere.ai/v1/models" }
+
+[[models]]
+id = "command-r-plus-08-2024"
+name = "Command R+ (Aug 2024)"
+
+[[models]]
+id = "command-r-08-2024"
+name = "Command R (Aug 2024)"
+
+[[models]]
+id = "command-a-03-2025"
+name = "Command A (Mar 2025)"
+
+[capabilities]
+llm = {}
+
+[display]
+name = "Cohere"
+icon = "hub"
+color = "#39594D"
+text_icon = "CO"
+website = "https://cohere.com"
+notice = { api_key_url = "https://dashboard.cohere.com/api-keys" }
+priority = 90

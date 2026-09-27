@@ -1,0 +1,67 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "kilocode"
+category = "oauth"
+alias = "kc"
+ui_alias = "kc"
+passthrough_models = true
+models_fetcher = { url = "https://api.kilo.ai/api/gateway/models", kind = "openrouter-free" }
+
+[transport]
+base_url = "https://api.kilo.ai/api/openrouter/chat/completions"
+headers = {}
+
+[transport.auth]
+combined = true
+header = "Authorization"
+scheme = "bearer"
+hooks = ["kilocode_org"]
+
+[oauth.endpoints]
+api_base_url = "https://api.kilo.ai"
+initiate_url = "https://api.kilo.ai/api/device-auth/codes"
+poll_url_base = "https://api.kilo.ai/api/device-auth/codes"
+
+[[models]]
+id = "anthropic/claude-sonnet-4-20250514"
+name = "Claude Sonnet 4"
+
+[[models]]
+id = "anthropic/claude-opus-4-20250514"
+name = "Claude Opus 4"
+
+[[models]]
+id = "google/gemini-2.5-pro"
+name = "Gemini 2.5 Pro"
+
+[[models]]
+id = "google/gemini-2.5-flash"
+name = "Gemini 2.5 Flash"
+
+[[models]]
+id = "openai/gpt-4.1"
+name = "GPT-4.1"
+
+[[models]]
+id = "openai/o3"
+name = "o3"
+
+[[models]]
+id = "deepseek/deepseek-chat"
+name = "DeepSeek Chat"
+
+[[models]]
+id = "deepseek/deepseek-reasoner"
+name = "DeepSeek Reasoner"
+
+[capabilities]
+llm = {}
+
+[display]
+name = "Kilo Code"
+icon = "code"
+color = "#FF6B35"
+text_icon = "KC"
+website = "https://kilocode.ai"
+notice = { signup_url = "https://kilocode.ai" }
+priority = 70

@@ -1,0 +1,33 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "nebius"
+category = "apikey"
+alias = "nebius"
+transport = { base_url = "https://api.studio.nebius.ai/v1/chat/completions", validate_url = "https://api.studio.nebius.ai/v1/models" }
+
+[[models]]
+id = "meta-llama/Llama-3.3-70B-Instruct"
+name = "Llama 3.3 70B Instruct"
+
+[[models]]
+id = "Qwen/Qwen3-Embedding-8B"
+name = "Qwen3 Embedding 8B"
+kind = "embedding"
+
+[capabilities]
+llm = {}
+
+[capabilities.embedding.endpoint]
+base_url = "https://api.tokenfactory.nebius.com/v1/embeddings"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Nebius AI"
+icon = "cloud"
+color = "#6C5CE7"
+text_icon = "NB"
+website = "https://nebius.com"
+notice = { api_key_url = "https://studio.nebius.com/settings/api-keys" }
+priority = 70

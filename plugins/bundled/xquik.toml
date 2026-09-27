@@ -1,0 +1,31 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "xquik"
+category = "apikey"
+alias = "xquik"
+
+[capabilities.web_search.endpoint]
+base_url = "https://xquik.com/api/v1/x/tweets/search"
+validate_url = "https://xquik.com/api/v1/credits"
+method = "GET"
+auth_type = "apikey"
+auth_header = "x-api-key"
+search_types = ["x"]
+timeout_ms = 10000
+
+[capabilities.web_search.limits]
+default_max_results = 5
+max_max_results = 100
+cache_ttl_ms = 60000
+credits_per_result = 1
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Xquik"
+icon = "tag"
+color = "#5C3327"
+text_icon = "XQ"
+website = "https://docs.xquik.com/api-reference/x/search-tweets"
+notice = { api_key_url = "https://xquik.com", text = "Searches public X posts. Billing uses 1 Xquik credit per returned post." }

@@ -1,0 +1,94 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "bluesminds"
+category = "apikey"
+alias = "bm"
+aliases = ["blue-sminds"]
+ui_alias = "bm"
+transport = { base_url = "https://api.bluesminds.com/v1/chat/completions", validate_url = "https://api.bluesminds.com/v1/models" }
+
+[[models]]
+id = "gpt-4.1"
+name = "GPT-4.1"
+context_length = 1048576
+
+[[models]]
+id = "gpt-4.1-mini"
+name = "GPT-4.1 Mini"
+context_length = 1048576
+
+[[models]]
+id = "gpt-4.1-nano"
+name = "GPT-4.1 Nano"
+context_length = 1048576
+
+[[models]]
+id = "claude-sonnet-4-5"
+name = "Claude Sonnet 4.5"
+context_length = 200000
+
+[[models]]
+id = "claude-haiku-4-5"
+name = "Claude Haiku 4.5"
+context_length = 200000
+
+[[models]]
+id = "gemini-2.0-flash"
+name = "Gemini 2.0 Flash"
+context_length = 1048576
+
+[[models]]
+id = "gemini-2.0-flash-exp"
+name = "Gemini 2.0 Flash (Exp)"
+context_length = 1048576
+
+[[models]]
+id = "qwen-turbo"
+name = "Qwen Turbo"
+context_length = 1000000
+
+[[models]]
+id = "kimi-k2"
+name = "Kimi K2"
+context_length = 262144
+
+[[models]]
+id = "kimi-k2-thinking"
+name = "Kimi K2 Thinking"
+context_length = 262144
+
+[[models]]
+id = "glm-4.7"
+name = "GLM 4.7"
+context_length = 204800
+
+[[models]]
+id = "minimax-m2.5"
+name = "MiniMax M2.5"
+context_length = 204800
+
+[[models]]
+id = "claude-opus-4-5"
+name = "Claude Opus 4.5 (VIP)"
+context_length = 200000
+
+[[models]]
+id = "gemini-2.5-pro"
+name = "Gemini 2.5 Pro (VIP)"
+context_length = 1048576
+
+[capabilities]
+llm = {}
+
+[auth]
+kind = "apikey"
+modes = ["apikey"]
+
+[display]
+name = "BluesMinds"
+icon = "psychology"
+color = "#2563EB"
+text_icon = "BM"
+website = "https://bluesminds.com"
+notice = { api_key_url = "https://bluesminds.com" }
+hidden = true

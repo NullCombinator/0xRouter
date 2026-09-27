@@ -1,0 +1,39 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "aws-polly"
+category = "apikey"
+alias = "polly"
+
+[[capabilities.tts.models]]
+id = "standard"
+name = "Standard"
+
+[[capabilities.tts.models]]
+id = "neural"
+name = "Neural"
+
+[[capabilities.tts.models]]
+id = "long-form"
+name = "Long-form"
+
+[[capabilities.tts.models]]
+id = "generative"
+name = "Generative"
+
+[capabilities.tts.endpoint]
+base_url = "https://polly.{region}.amazonaws.com/v1/speech"
+auth_type = "apikey"
+auth_header = "aws-sigv4"
+format = "aws-polly"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "AWS Polly"
+icon = "record_voice_over"
+color = "#FF9900"
+text_icon = "PL"
+website = "https://aws.amazon.com/polly/"
+notice = { text = "Use AWS Secret Access Key as API key; set providerSpecificData.accessKeyId and optional region.", api_key_url = "https://console.aws.amazon.com/iam/home#/security_credentials" }
+has_provider_specific_data = true

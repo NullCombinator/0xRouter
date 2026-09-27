@@ -1,0 +1,31 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "playht"
+category = "apikey"
+alias = "playht"
+
+[[capabilities.tts.models]]
+id = "PlayDialog"
+name = "PlayDialog"
+
+[[capabilities.tts.models]]
+id = "Play3.0-mini"
+name = "Play 3.0 Mini"
+
+[capabilities.tts.endpoint]
+base_url = "https://api.play.ht/api/v2/tts/stream"
+auth_type = "apikey"
+auth_header = "playht"
+format = "playht"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "PlayHT"
+icon = "play_circle"
+color = "#00B4D8"
+text_icon = "PH"
+website = "https://play.ht"
+notice = { api_key_url = "https://play.ht/studio/api-access" }
+hidden = true

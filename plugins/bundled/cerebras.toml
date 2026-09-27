@@ -1,0 +1,46 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "cerebras"
+category = "apikey"
+alias = "cerebras"
+
+[transport]
+base_url = "https://api.cerebras.ai/v1/chat/completions"
+validate_url = "https://api.cerebras.ai/v1/models"
+quirks = ["drop_client_metadata"]
+
+[[models]]
+id = "gpt-oss-120b"
+name = "GPT OSS 120B"
+
+[[models]]
+id = "zai-glm-4.7"
+name = "ZAI GLM 4.7"
+
+[[models]]
+id = "llama-3.3-70b"
+name = "Llama 3.3 70B"
+
+[[models]]
+id = "llama-4-scout-17b-16e-instruct"
+name = "Llama 4 Scout"
+
+[[models]]
+id = "qwen-3-235b-a22b-instruct-2507"
+name = "Qwen3 235B A22B"
+
+[[models]]
+id = "qwen-3-32b"
+name = "Qwen3 32B"
+
+[capabilities]
+llm = {}
+
+[display]
+name = "Cerebras"
+icon = "memory"
+color = "#FF4F00"
+text_icon = "CB"
+website = "https://www.cerebras.ai"
+notice = { api_key_url = "https://cloud.cerebras.ai/platform" }
+priority = 60

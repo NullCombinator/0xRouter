@@ -1,0 +1,25 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "mmf"
+category = "apikey"
+
+[transport]
+base_url = "https://api.xiaomimimo.com/api/free-ai/openai/chat"
+
+[transport.executor_params]
+no_auth = true
+
+[[models]]
+id = "mimo-auto"
+name = "MiMo Auto"
+
+[capabilities]
+llm = {}
+
+[display]
+name = "MMF"
+icon = "hub"
+color = "#6366F1"
+text_icon = "MF"
+priority = 200
+hidden = true

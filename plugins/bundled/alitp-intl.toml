@@ -1,0 +1,46 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "alitp-intl"
+category = "apikey"
+alias = "alitp-intl"
+
+[transport]
+base_url = "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions"
+headers = {}
+quirks = ["preserve_cache_control"]
+
+[[models]]
+id = "qwen3.8-max-preview"
+name = "Qwen3.8 Max Preview"
+
+[[models]]
+id = "qwen3.7-max"
+name = "Qwen3.7 Max"
+
+[[models]]
+id = "qwen3.7-plus"
+name = "Qwen3.7 Plus"
+
+[[models]]
+id = "qwen3.6-flash"
+name = "Qwen3.6 Flash"
+
+[[models]]
+id = "glm-5.2"
+name = "GLM 5.2"
+
+[[models]]
+id = "deepseek-v4-pro"
+name = "DeepSeek V4 Pro"
+
+[capabilities]
+llm = {}
+
+[display]
+name = "Alibaba Token Plan"
+icon = "cloud"
+color = "#FF6A00"
+text_icon = "ATP"
+website = "https://www.alibabacloud.com/campaign/ai-landing-page-token"
+notice = { api_key_url = "https://modelstudio.console.alibabacloud.com/?apiKey=1" }
+priority = 11

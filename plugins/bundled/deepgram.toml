@@ -1,0 +1,49 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "deepgram"
+category = "apikey"
+alias = "deepgram"
+aliases = ["dg"]
+ui_alias = "dg"
+transport = { base_url = "https://api.deepgram.com/v1/listen" }
+
+[[models]]
+id = "nova-3"
+name = "Nova 3"
+params = ["language"]
+kind = "stt"
+
+[[models]]
+id = "nova-2"
+name = "Nova 2"
+params = ["language"]
+kind = "stt"
+
+[[models]]
+id = "whisper-large"
+name = "Whisper Large"
+params = ["language"]
+kind = "stt"
+
+[[models]]
+id = "nova"
+name = "Nova"
+kind = "stt"
+
+[capabilities.stt.endpoint]
+base_url = "https://api.deepgram.com/v1/listen"
+auth_type = "apikey"
+auth_header = "token"
+format = "deepgram"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Deepgram"
+icon = "mic"
+color = "#13EF93"
+text_icon = "DG"
+website = "https://deepgram.com"
+notice = { text = "$200 free credit on signup (no card required). Aura-1: $0.015/1k chars, Aura-2: $0.030/1k chars (Pay-As-You-Go).", api_key_url = "https://console.deepgram.com/api-keys" }
+priority = 20

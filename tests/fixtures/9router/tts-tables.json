@@ -1,0 +1,123 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "elevenlabs-tts-models": {
+      "provider": "elevenlabs",
+      "kind": "models",
+      "models": [
+        "eleven_flash_v2_5",
+        "eleven_turbo_v2_5",
+        "eleven_multilingual_v2",
+        "eleven_monolingual_v1"
+      ]
+    },
+    "gemini-tts-models": {
+      "provider": "gemini",
+      "kind": "models",
+      "models": [
+        "gemini-3.1-flash-tts-preview",
+        "gemini-2.5-flash-preview-tts",
+        "gemini-2.5-pro-preview-tts"
+      ]
+    },
+    "gemini-tts-voices": {
+      "provider": "gemini",
+      "kind": "voices",
+      "models": [
+        "Zephyr",
+        "Puck",
+        "Charon",
+        "Kore",
+        "Fenrir",
+        "Leda",
+        "Orus",
+        "Aoede",
+        "Callirrhoe",
+        "Autonoe",
+        "Enceladus",
+        "Iapetus",
+        "Umbriel",
+        "Algieba",
+        "Despina",
+        "Erinome",
+        "Algenib",
+        "Rasalgethi",
+        "Laomedeia",
+        "Achernar",
+        "Alnilam",
+        "Schedar",
+        "Gacrux",
+        "Pulcherrima",
+        "Achird",
+        "Zubenelgenubi",
+        "Vindemiatrix",
+        "Sadachbia",
+        "Sadaltager",
+        "Sulafat"
+      ]
+    },
+    "openai-tts-models": {
+      "provider": "openai",
+      "kind": "models",
+      "models": [
+        "gpt-4o-mini-tts",
+        "tts-1-hd",
+        "tts-1"
+      ]
+    },
+    "openai-tts-voices": {
+      "provider": "openai",
+      "kind": "voices",
+      "models": [
+        "alloy",
+        "ash",
+        "ballad",
+        "cedar",
+        "coral",
+        "echo",
+        "fable",
+        "marin",
+        "nova",
+        "onyx",
+        "sage",
+        "shimmer",
+        "verse"
+      ]
+    },
+    "openrouter-tts-models": {
+      "provider": "openrouter",
+      "kind": "models",
+      "models": [
+        "openai/gpt-4o-mini-tts",
+        "openai/tts-1-hd",
+        "openai/tts-1"
+      ]
+    },
+    "openrouter-tts-voices": {
+      "provider": "openrouter",
+      "kind": "voices",
+      "models": [
+        "alloy",
+        "ash",
+        "ballad",
+        "cedar",
+        "coral",
+        "echo",
+        "fable",
+        "marin",
+        "nova",
+        "onyx",
+        "sage",
+        "shimmer",
+        "verse"
+      ]
+    },
+    "xiaomi-mimo-tts-models": {
+      "provider": "xiaomi-mimo",
+      "kind": "models",
+      "models": [
+        "mimo-v2.5-tts"
+      ]
+    }
+  }
+}

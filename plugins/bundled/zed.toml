@@ -1,0 +1,46 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "zed"
+category = "oauth"
+alias = "zd"
+ui_alias = "zd"
+passthrough_models = true
+models = []
+
+[transport]
+base_url = "https://cloud.zed.dev/completions"
+format = "openai"
+force_stream = true
+headers = { content-type = "application/json" }
+models_url = "https://cloud.zed.dev/models"
+
+[transport.auth]
+combined = true
+header = "Authorization"
+scheme = "<user_id> <access_token>"
+
+[transport.usage]
+url = "https://cloud.zed.dev/client/users/me"
+
+[oauth]
+authorize_url = "https://zed.dev/native_app_signin"
+
+[oauth.params]
+platform = "zed"
+rsa_key_exchange = true
+
+[capabilities]
+llm = {}
+
+[auth]
+kind = "oauth"
+has_oauth = true
+
+[display]
+name = "Zed"
+icon = "code"
+color = "#A855F7"
+website = "https://zed.dev"
+notice = { signup_url = "https://zed.dev/native_app_signin" }
+priority = 999
+features = { usage = true }

@@ -1,0 +1,31 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "cartesia"
+category = "apikey"
+alias = "cartesia"
+
+[[capabilities.tts.models]]
+id = "sonic-2"
+name = "Sonic 2"
+
+[[capabilities.tts.models]]
+id = "sonic-3"
+name = "Sonic 3"
+
+[capabilities.tts.endpoint]
+base_url = "https://api.cartesia.ai/tts/bytes"
+auth_type = "apikey"
+auth_header = "x-api-key"
+format = "cartesia"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Cartesia"
+icon = "spatial_audio"
+color = "#FF4F8B"
+text_icon = "CA"
+website = "https://cartesia.ai"
+notice = { api_key_url = "https://play.cartesia.ai/keys" }
+hidden = true

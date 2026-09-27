@@ -1,0 +1,135 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "minimax"
+category = "apikey"
+alias = "minimax"
+
+[transport]
+base_url = "https://api.minimax.io/anthropic/v1/messages"
+format = "claude"
+url_suffix = "?beta=true"
+headers = { Anthropic-Version = "2023-06-01", Anthropic-Beta = "claude-code-20250219,interleaved-thinking-2025-05-14" }
+quirks = ["drop_output_config", "require_claude_tool_type"]
+
+[transport.reasoning_inject]
+scope = "all"
+
+[transport.auth]
+combined = true
+header = "x-api-key"
+scheme = "raw"
+
+[transport.usage]
+urls = ["https://www.minimax.io/v1/token_plan/remains", "https://api.minimax.io/v1/api/openplatform/coding_plan/remains"]
+
+[[transports]]
+format = "openai"
+base_url = "https://api.minimax.io/v1/chat/completions"
+
+[transports.auth]
+combined = true
+header = "Authorization"
+scheme = "bearer"
+
+[[transports]]
+format = "claude"
+base_url = "https://api.minimax.io/anthropic/v1/messages"
+url_suffix = "?beta=true"
+headers = { Anthropic-Version = "2023-06-01", Anthropic-Beta = "claude-code-20250219,interleaved-thinking-2025-05-14" }
+
+[transports.auth]
+combined = true
+header = "x-api-key"
+scheme = "raw"
+
+[[models]]
+id = "MiniMax-M3"
+name = "MiniMax M3"
+target_format = "claude"
+
+[[models]]
+id = "MiniMax-M2.7"
+name = "MiniMax M2.7"
+
+[[models]]
+id = "MiniMax-M2.5"
+name = "MiniMax M2.5"
+
+[[models]]
+id = "MiniMax-M2.1"
+name = "MiniMax M2.1"
+
+[[models]]
+id = "minimax-image-01"
+name = "MiniMax Image 01"
+params = ["n", "size", "response_format"]
+kind = "image"
+
+[[models]]
+id = "speech-2.8-hd"
+name = "Speech 2.8 HD"
+kind = "tts"
+
+[[models]]
+id = "speech-2.8-turbo"
+name = "Speech 2.8 Turbo"
+kind = "tts"
+
+[[models]]
+id = "speech-2.6-hd"
+name = "Speech 2.6 HD"
+kind = "tts"
+
+[[models]]
+id = "speech-2.6-turbo"
+name = "Speech 2.6 Turbo"
+kind = "tts"
+
+[[models]]
+id = "speech-02-hd"
+name = "Speech 02 HD"
+kind = "tts"
+
+[[models]]
+id = "speech-02-turbo"
+name = "Speech 02 Turbo"
+kind = "tts"
+
+[[models]]
+id = "speech-01-hd"
+name = "Speech 01 HD"
+kind = "tts"
+
+[[models]]
+id = "speech-01-turbo"
+name = "Speech 01 Turbo"
+kind = "tts"
+
+[capabilities]
+image_to_text = {}
+llm = {}
+
+[capabilities.image.endpoint]
+base_url = "https://api.minimaxi.com/v1/images/generations"
+
+[capabilities.tts.endpoint]
+base_url = "https://api.minimax.io/v1/t2a_v2"
+auth_type = "apikey"
+auth_header = "bearer"
+format = "minimax-tts"
+
+[capabilities.web_search.endpoint]
+via_chat = true
+default_model = "MiniMax-M2.7"
+base_url = "https://api.minimaxi.com/v1/text/chatcompletion_v2"
+pricing_url = "https://www.minimaxi.com/document/price"
+
+[display]
+name = "Minimax Coding"
+icon = "memory"
+color = "#7C3AED"
+text_icon = "MM"
+website = "https://www.minimaxi.com"
+notice = { api_key_url = "https://platform.minimaxi.com/user-center/basic-information/interface-key" }
+priority = 90
+features = { usage = true, usage_apikey = true }

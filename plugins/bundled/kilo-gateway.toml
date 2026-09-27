@@ -1,0 +1,53 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "kilo-gateway"
+category = "freeTier"
+alias = "kgw"
+aliases = ["kilo-gateway", "kilogateway"]
+ui_alias = "kgw"
+transport = { base_url = "https://api.kilo.ai/api/gateway/chat/completions", validate_url = "https://api.kilo.ai/api/gateway/models" }
+
+[[models]]
+id = "kilo-auto/free"
+name = "Kilo Auto Free"
+context_length = 256000
+
+[[models]]
+id = "nvidia/nemotron-3-super-120b-a12b:free"
+name = "Nemotron 3 Super 120B (Free)"
+context_length = 262144
+
+[[models]]
+id = "nvidia/nemotron-3-ultra-550b-a55b:free"
+name = "Nemotron 3 Ultra 550B (Free)"
+context_length = 1000000
+
+[[models]]
+id = "kwaipilot/kat-coder-pro-v2.5:free"
+name = "Kat Coder Pro v2.5 (Free)"
+context_length = 256000
+
+[[models]]
+id = "kilo-auto/frontier"
+name = "Kilo Auto Frontier"
+context_length = 1000000
+
+[[models]]
+id = "kilo-auto/balanced"
+name = "Kilo Auto Balanced"
+context_length = 1000000
+
+[capabilities]
+llm = {}
+
+[auth]
+kind = "apikey"
+modes = ["apikey"]
+
+[display]
+name = "Kilo Gateway"
+icon = "login"
+color = "#8B5CF6"
+text_icon = "KG"
+website = "https://kilo.ai"
+notice = { api_key_url = "https://kilo.ai/dashboard?tab=apiKeys" }

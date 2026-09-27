@@ -1,0 +1,33 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "tencent"
+category = "apikey"
+alias = "hunyuan"
+aliases = ["hunyuan", "tencent-hunyuan"]
+ui_alias = "hunyuan"
+transport = { base_url = "https://api.hunyuan.cloud.tencent.com/v1/chat/completions", validate_url = "https://api.hunyuan.cloud.tencent.com/v1/models" }
+
+[[models]]
+id = "hunyuan-turbos-latest"
+name = "Hunyuan TurboS Latest"
+context_length = 200000
+
+[[models]]
+id = "hunyuan-t1-latest"
+name = "Hunyuan T1 Latest"
+context_length = 256000
+
+[capabilities]
+llm = {}
+
+[auth]
+kind = "apikey"
+modes = ["apikey"]
+
+[display]
+name = "Tencent Hunyuan"
+icon = "cloud"
+color = "#0052D9"
+text_icon = "HY"
+website = "https://cloud.tencent.com/product/hunyuan"
+notice = { api_key_url = "https://console.cloud.tencent.com/hunyuan/api-key" }

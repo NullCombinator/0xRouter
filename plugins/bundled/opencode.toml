@@ -1,0 +1,55 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "opencode"
+category = "free"
+alias = "oc"
+ui_alias = "oc"
+passthrough_models = true
+models_fetcher = { url = "https://opencode.ai/zen/v1/models", kind = "opencode-free" }
+
+[transport]
+base_url = "https://opencode.ai"
+headers = { x-opencode-client = "desktop" }
+force_stream = true
+force_auto_tool_choice_models = ["muse-spark-1.3-contributor-free"]
+
+[transport.executor_params]
+no_auth = true
+
+[[models]]
+id = "muse-spark-1.2-contributor-free"
+name = "Muse Spark 1.2 Contributor Free"
+target_format = "openai-responses"
+
+[[models]]
+id = "muse-spark-1.3-contributor-free"
+name = "Muse Spark 1.3 Contributor Free"
+target_format = "openai-responses"
+
+[[models]]
+id = "union-alpha"
+name = "Union Alpha Free"
+target_format = "claude"
+
+[[models]]
+id = "jev-1.13-free"
+name = "Jev 1.13 Free"
+kind = "systemone"
+
+[capabilities]
+llm = {}
+
+[capabilities.systemone.endpoint]
+base_url = "https://opencode.ai/zen/v1/systemone"
+headers = { x-opencode-client = "desktop", User-Agent = "opencode/1.18.31" }
+
+[auth]
+no_auth = true
+
+[display]
+name = "OpenCode Free"
+icon = "terminal"
+color = "#E87040"
+text_icon = "OC"
+priority = 40
+has_free = true

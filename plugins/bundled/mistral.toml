@@ -1,0 +1,45 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "mistral"
+category = "apikey"
+alias = "mistral"
+
+[transport]
+base_url = "https://api.mistral.ai/v1/chat/completions"
+validate_url = "https://api.mistral.ai/v1/models"
+quirks = ["drop_client_metadata"]
+
+[[models]]
+id = "mistral-large-latest"
+name = "Mistral Large 3"
+
+[[models]]
+id = "codestral-latest"
+name = "Codestral"
+
+[[models]]
+id = "mistral-medium-latest"
+name = "Mistral Medium 3"
+
+[[models]]
+id = "mistral-embed"
+name = "Mistral Embed"
+kind = "embedding"
+
+[capabilities]
+image_to_text = {}
+llm = {}
+
+[capabilities.embedding.endpoint]
+base_url = "https://api.mistral.ai/v1/embeddings"
+auth_type = "apikey"
+auth_header = "bearer"
+
+[display]
+name = "Mistral"
+icon = "air"
+color = "#FF7000"
+text_icon = "MI"
+website = "https://mistral.ai"
+notice = { api_key_url = "https://console.mistral.ai/api-keys" }
+priority = 80

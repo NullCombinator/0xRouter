@@ -1,0 +1,97 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "xiaomi-tokenplan"
+category = "apikey"
+alias = "xiaomi-tokenplan"
+aliases = ["xmtp"]
+ui_alias = "xmtp"
+
+[transport]
+base_url = "https://token-plan-sgp.xiaomimimo.com/v1/chat/completions"
+default_region = "sgp"
+
+[transport.regions]
+sgp = "https://token-plan-sgp.xiaomimimo.com/v1"
+cn = "https://token-plan-cn.xiaomimimo.com/v1"
+ams = "https://token-plan-ams.xiaomimimo.com/v1"
+
+[[transports]]
+format = "openai"
+
+[transports.auth]
+combined = true
+header = "Authorization"
+scheme = "bearer"
+
+[[transports]]
+format = "claude"
+headers = { Anthropic-Version = "2023-06-01", Anthropic-Beta = "claude-code-20250219,interleaved-thinking-2025-05-14" }
+
+[transports.auth]
+combined = true
+header = "x-api-key"
+scheme = "raw"
+
+[[models]]
+id = "mimo-v2.5-pro"
+name = "MiMo V2.5 Pro"
+
+[[models]]
+id = "mimo-v2.5-pro-claude"
+name = "MiMo V2.5 Pro (Claude Native)"
+target_format = "claude"
+upstream_id = "mimo-v2.5-pro"
+
+[[models]]
+id = "mimo-v2.5"
+name = "MiMo V2.5"
+
+[[models]]
+id = "mimo-v2-pro"
+name = "MiMo V2 Pro"
+
+[[models]]
+id = "mimo-v2-omni"
+name = "MiMo V2 Omni"
+
+[[models]]
+id = "mimo-v2-tts"
+name = "MiMo V2 TTS"
+
+[[models]]
+id = "mimo-v2.5-tts"
+name = "MiMo V2.5 TTS"
+
+[[models]]
+id = "mimo-v2.5-tts-voiceclone"
+name = "MiMo V2.5 TTS Voice Clone"
+
+[[models]]
+id = "mimo-v2.5-tts-voicedesign"
+name = "MiMo V2.5 TTS Voice Design"
+
+[capabilities]
+llm = {}
+
+[display]
+name = "Xiaomi MiMo (Token Plan)"
+icon = "smart_toy"
+color = "#FF6700"
+text_icon = "XT"
+website = "https://mimo.xiaomi.com"
+notice = { text = "Xiaomi MiMo Token Plan subscription (API key starts with tp-). Token Plan keys are cluster-specific — select the region matching your subscription.", api_key_url = "https://mimo.xiaomi.com" }
+priority = 300
+has_provider_specific_data = true
+default_region = "sgp"
+
+[[display.regions]]
+id = "sgp"
+label = "Singapore (新加坡)"
+
+[[display.regions]]
+id = "cn"
+label = "China (中国大陆)"
+
+[[display.regions]]
+id = "ams"
+label = "Amsterdam (阿姆斯特丹)"
