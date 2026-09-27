@@ -74,7 +74,7 @@ dimensions = 1024
 | Key | Allowed values |
 |---|---|
 | `transport.quirks` | `preserve_cache_control`, `drop_client_metadata`, `cline_envelope`, `drop_output_config`, `require_claude_tool_type`, `cloak_tools_on_oauth` (plus the list-valued `claude_supported_tool_types`, `force_auto_tool_choice_models`) |
-| `auth.hooks` | `cline_headers`, `kimi_headers` |
+| `auth.hooks` | `cline_headers`, `kimi_headers`, `kilocode_org` |
 | `transport.format`, `models.target_format`, `models.supported_formats` | see data model `WireFormat` |
 | `capabilities.<kind>` | see above |
 

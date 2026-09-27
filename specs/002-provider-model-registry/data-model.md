@@ -76,7 +76,7 @@ secret, so they are not part of the set.
 | `no_auth` | `bool` | Needs no credentials |
 | `has_oauth` | `bool` | Exposes an OAuth flow |
 | `header` / `scheme` | `Option<String>` / `Option<AuthScheme>` | Where the core puts the credential: `bearer` \| `raw` |
-| `hooks` | `Vec<AuthHook>` | **Closed enum** of core built-ins: `cline_headers`, `kimi_headers`. Unknown name → rejected |
+| `hooks` | `Vec<AuthHook>` | **Closed enum** of core built-ins: `cline_headers`, `kimi_headers`, `kilocode_org`. Unknown name → rejected |
 | `credential_fallback` | `Option<ProviderId>` | Reuse another provider's user credential (bundled `ollama-search`). Must reference an existing provider |
 
 ### Transport

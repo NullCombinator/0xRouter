@@ -1,0 +1,15 @@
+[package]
+name = "zerorouter-cli"
+version = "0.1.0"
+description = "Operator CLI for the 0router registry"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+clap.workspace = true
+serde_json.workspace = true
+zerorouter-registry.workspace = true
+
+[lints]
+workspace = true

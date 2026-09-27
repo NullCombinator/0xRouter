@@ -1,0 +1,29 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = { version = "1.1", features = ["preserve_order"] }
+serde_path_to_error = "0.1"
+thiserror = "2"
+arc-swap = "1.9"
+url = "2.5"
+regex-lite = "0.1"
+indexmap = { version = "2", features = ["serde"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+criterion = "0.8"
+clap = { version = "4.6", features = ["derive"] }
+tempfile = "3"
+zerorouter-registry = { path = "crates/zerorouter-registry" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }

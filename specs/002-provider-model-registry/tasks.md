@@ -47,27 +47,27 @@ Two refinements to the plan's tree, made so tasks can run in parallel:
 
 **Purpose**: Workspace and crate skeletons that compile.
 
-- [ ] T001 Verify the toolchain prerequisite ([research R1](research.md#r1-toolchain-availability)).
+- [X] T001 Verify the toolchain prerequisite ([research R1](research.md#r1-toolchain-availability)).
   - `cargo --version` and `rustc --version` must both succeed inside the `claude-0router` gate.
   - If either fails, **stop** and ask the user to update the gate. Never edit `identity/`.
-- [ ] T002 Create the workspace manifest `Cargo.toml` at the repo root.
+- [X] T002 Create the workspace manifest `Cargo.toml` at the repo root.
   - `members = ["crates/*"]` and `resolver = "3"`.
   - `[workspace.package]`: `edition = "2024"`, `rust-version = "1.85"`, `license`.
   - `[workspace.dependencies]` for every crate in [R12](research.md#r12-crates), plus `indexmap` with the `serde` feature (ordered `headers`/`endpoints` maps; R12 omitted it).
   - `[workspace.lints.rust] unsafe_code = "forbid"`.
   - `[workspace.lints.clippy] all = "warn"`.
-- [ ] T003 Create `crates/zerorouter-registry/Cargo.toml` and the library root.
+- [X] T003 Create `crates/zerorouter-registry/Cargo.toml` and the library root.
   - Dependencies: `serde` (derive), `toml`, `serde_path_to_error`, `thiserror`, `arc-swap`, `url`, `regex-lite`, `indexmap`.
   - Dev-dependencies: `serde_json`, `criterion`.
   - `[[bench]] name = "resolve"`, `harness = false`.
   - `build = "build.rs"`, `lints.workspace = true`.
   - `src/lib.rs` declares the modules `schema`, `validate`, `credentials`, `load`, `registry`, `lookup`, `resolve`, `views`, each with an empty `mod.rs` or file so the crate compiles.
-- [ ] T004 [P] Create `crates/zerorouter-cli/Cargo.toml` (deps: `clap` derive, `serde_json`, `zerorouter-registry` by path) and `crates/zerorouter-cli/src/main.rs`.
+- [X] T004 [P] Create `crates/zerorouter-cli/Cargo.toml` (deps: `clap` derive, `serde_json`, `zerorouter-registry` by path) and `crates/zerorouter-cli/src/main.rs`.
   - Five clap subcommands `check`, `validate`, `resolve`, `model`, `providers`, each dispatching to an empty `src/cmd/<name>.rs`.
   - Exit codes per [contracts/registry-api.md § CLI](contracts/registry-api.md#cli-zerorouter-cli): 0 ok, 1 errors, 2 not found.
   - `--home DIR` overrides `$ZEROROUTER_HOME`.
 - [x] T005 [P] Append `target/` and `.cargo-home/` to `.gitignore`.
-- [ ] T006 Run `cargo build --workspace && cargo clippy --workspace` and confirm both pass on the skeleton.
+- [X] T006 Run `cargo build --workspace && cargo clippy --workspace` and confirm both pass on the skeleton.
 
 ---
 
@@ -83,34 +83,34 @@ registry. Every story depends on these.
 Rule for every struct below: `#[serde(deny_unknown_fields)]`, `snake_case` keys, and
 `Option` wherever [data-model.md](data-model.md) says absence is distinct.
 
-- [ ] T007 [P] Define the closed enums in `crates/zerorouter-registry/src/schema/enums.rs`. Each enum implements `Display` and a `pub const ALLOWED: &[&str]` so error messages can list the allowed values.
+- [X] T007 [P] Define the closed enums in `crates/zerorouter-registry/src/schema/enums.rs`. Each enum implements `Display` and a `pub const ALLOWED: &[&str]` so error messages can list the allowed values.
   - `Category`: exactly `apikey | oauth | freeTier | free | webCookie`, with serde renames that keep the camelCase spellings.
   - `WireFormat`: the 13 values `openai`, `openai-responses`, `claude`, `gemini`, `gemini-cli`, `vertex`, `antigravity`, `kiro`, `cursor`, `commandcode`, `ollama`, `grok-web`, `perplexity-web`.
   - `Quirk`: `preserve_cache_control`, `drop_client_metadata`, `cline_envelope`, `drop_output_config`, `require_claude_tool_type`, `cloak_tools_on_oauth`.
-  - `AuthHook`: `cline_headers`, `kimi_headers`.
+  - `AuthHook`: `cline_headers`, `kimi_headers`, `kilocode_org`.
   - `AuthKind`: `apikey | oauth`.
   - `AuthScheme`: `bearer | raw`.
   - `CapabilityKind`: `llm`, `image`, `image_to_text`, `video`, `tts`, `stt`, `embedding`, `web_search`, `web_fetch`, `systemone`. Mark it `#[non_exhaustive]`.
   - `ModelKind`: same value set as `CapabilityKind`.
   - `ContentKind`: `image`, `audio`.
-- [ ] T008 [P] Define `Model` in `crates/zerorouter-registry/src/schema/model.rs` per [data-model § Model](data-model.md#model).
+- [X] T008 [P] Define `Model` in `crates/zerorouter-registry/src/schema/model.rs` per [data-model § Model](data-model.md#model).
   - `id` is required. Every other field is `Option`: `name`, `kind`, `upstream_id`, `target_format`, `supported_formats`, `quota_family`, `strip`, `context_length`, `max_output_tokens`, `dimensions`, `rate_multiplier`, `capabilities`, `params`, `description`.
   - "`kind`: `None` = no declared type (FR-004)". Never default it to `llm`.
   - An entry may be a bare ID string (9router `normalizeModel`): implement a string-or-table `Deserialize` so `"acme-small"` becomes `Model { id: "acme-small", .. }`. A value that is neither a string nor a table must still produce a path + span error.
-- [ ] T009 [P] Define `Transport` and `TransportAuth` in `crates/zerorouter-registry/src/schema/transport.rs` per [data-model § Transport](data-model.md#transport).
+- [X] T009 [P] Define `Transport` and `TransportAuth` in `crates/zerorouter-registry/src/schema/transport.rs` per [data-model § Transport](data-model.md#transport).
   - `headers: IndexMap<String, String>`. Keep order for parity.
   - `quirks: Vec<Quirk>`, plus `claude_supported_tool_types` and `force_auto_tool_choice_models`.
   - `regions` / `default_region`: "`default_region` must be a key of `regions`".
   - `executor_params: Option<ExecutorParams>`, a closed struct (`deny_unknown_fields`): `cli_version`, `client_version`, `api_client`, `client_identifier`, `token_auth`, `no_auth`, `auth_type`, and `copilot: Option<CopilotParams { vscode_version, chat_version, user_agent, api_version }>`.
   - All URL fields listed in the data model, including `token_url`, `refresh_url`, and `auth_url`, plus `client_id`. These are declared on the transport by some bundled providers (client_id: antigravity, gemini-cli, gemini, kimi, xai; token_url: antigravity, cline, kimi, kiro, xai). There is no `client_secret` field.
-- [ ] T010 [P] Define `OAuthDecl` in `crates/zerorouter-registry/src/schema/oauth.rs`.
+- [X] T010 [P] Define `OAuthDecl` in `crates/zerorouter-registry/src/schema/oauth.rs`.
   - Fields: `client_id`, `authorize_url`, `token_url`, `refresh_url`, `device_code_url`, `user_info_url`, `scopes: Vec<String>`, `code_challenge_method`, `refresh_lead_ms`, `endpoints: IndexMap<String, Url>`, `params: IndexMap<String, Scalar>`.
   - `params` keys must be in `KNOWN_OAUTH_PARAMS` (generated by T016 into `crates/zerorouter-registry/src/schema/oauth_params.rs`); anything else → `oauth.params.<key>: unknown OAuth parameter; allowed: …`.
   - Add a free function `host_set(oauth: Option<&OAuthDecl>, transports: &[&Transport]) -> BTreeSet<Host>` (FR-012a): the hosts of `oauth.{authorize,token,refresh}_url` plus `token_url`/`refresh_url`/`auth_url` on `transport` and every `transports[]` entry. It excludes `user_info_url`, `device_code_url`, and `oauth.endpoints`.
-- [ ] T011 [P] Define `CapabilitySection`, `SectionEndpoint`, and `SectionModel` in `crates/zerorouter-registry/src/schema/capability.rs` per [data-model § CapabilitySection](data-model.md#capabilitysection).
+- [X] T011 [P] Define `CapabilitySection`, `SectionEndpoint`, and `SectionModel` in `crates/zerorouter-registry/src/schema/capability.rs` per [data-model § CapabilitySection](data-model.md#capabilitysection).
   - `endpoint`, `models`, `limits`, `hidden`.
   - `SectionEndpoint` has `base_url`, `auth_type`, `auth_header`, `format`, `headers`, `method`, `timeout_ms`, `default_model`, `poll_url`, `body_fields`, `model_map`.
-- [ ] T012 Define `PluginFile`, `AuthDecl`, `Display`, `ProviderEntity`, and `PluginSource { Bundled, User(PathBuf) }` in `crates/zerorouter-registry/src/schema/plugin.rs` and re-export them from `schema/mod.rs`. Depends on T007–T011.
+- [X] T012 Define `PluginFile`, `AuthDecl`, `Display`, `ProviderEntity`, and `PluginSource { Bundled, User(PathBuf) }` in `crates/zerorouter-registry/src/schema/plugin.rs` and re-export them from `schema/mod.rs`. Depends on T007–T011.
   - Top-level keys exactly as in [contracts/plugin-schema.md § Top-level keys](contracts/plugin-schema.md#top-level-keys).
   - `models: Option<Vec<Model>>`: "`None` = catalog unknown; `Some([])` = offers no models". Elements use the string-or-table form from T008.
   - `capabilities: BTreeMap<CapabilityKind, CapabilitySection>`.
@@ -118,15 +118,15 @@ Rule for every struct below: `#[serde(deny_unknown_fields)]`, `snake_case` keys,
 
 ### Validation gate (FR-007 – FR-010)
 
-- [ ] T013 [P] Implement `ValidationError { file, line, col, path, rule }` in `crates/zerorouter-registry/src/validate/errors.rs`.
+- [X] T013 [P] Implement `ValidationError { file, line, col, path, rule }` in `crates/zerorouter-registry/src/validate/errors.rs`.
   - `Display` renders `file:line:col field.path: rule`.
   - Include a byte-span → line/col helper.
   - Add unit tests for rendering.
-- [ ] T014 [P] Implement the secret checks from [R5](research.md#r5-keeping-secrets-out-of-plugins) in `crates/zerorouter-registry/src/validate/secrets.rs`, with unit tests for each denylisted key and URL case.
+- [X] T014 [P] Implement the secret checks from [R5](research.md#r5-keeping-secrets-out-of-plugins) in `crates/zerorouter-registry/src/validate/secrets.rs`, with unit tests for each denylisted key and URL case.
   - The key denylist applies to **open maps only**: `transport.headers` (and `transports[].headers`, section endpoint `headers`) and every model `params`. Closed structs (`executor_params`, `oauth.params`) are already guarded by their key sets. Add a unit test that none of the 39 header names in the bundled set is rejected.
   - `check_map_key(key) -> Option<&'static str>` matches case-insensitively against `secret`, `password`, `passwd`, `api_key`/`apikey`, `access_token`, `refresh_token`, `cookie`, `authorization`, `x-api-key`, `proxy-authorization`, `x-goog-api-key`. It also matches any key containing `token` unless the key ends in `url`, `_url`, or `endpoint`.
   - `check_url(url)` rejects userinfo and any query parameter whose key hits the same denylist.
-- [ ] T015 Implement the validation gate in `crates/zerorouter-registry/src/validate/gate.rs`. Depends on T012–T014.
+- [X] T015 Implement the validation gate in `crates/zerorouter-registry/src/validate/gate.rs`. Depends on T012–T014.
   - Signature: `pub fn validate(src: &str, source: PluginSource, file: &str) -> Result<ProviderEntity, Vec<ValidationError>>`.
   - Parse with `toml::Deserializer` + `serde_path_to_error`, so unknown fields and bad enum values produce path + span errors that list the allowed values.
   - Then run semantic checks and **collect all errors**, not just the first:
@@ -145,7 +145,7 @@ Rule for every struct below: `#[serde(deny_unknown_fields)]`, `snake_case` keys,
 
 All three generator parts touch the same file, so they run in order.
 
-- [ ] T016 Write part 1 of `tools/gen-bundled/generate.mjs`: plugin files. Plain Node ≥ 22 ESM, no npm dependencies, a small hand-written TOML emitter.
+- [X] T016 Write part 1 of `tools/gen-bundled/generate.mjs`: plugin files. Plain Node ≥ 22 ESM, no npm dependencies, a small hand-written TOML emitter.
   - Import `ref/9router/open-sse/providers/registry/index.js` (the evaluated registry).
   - For each of the 121 active entries, write `plugins/bundled/<id>.toml`.
   - Map every observed key per [R4](research.md#r4-what-the-schema-must-carry-registry-census):
@@ -165,11 +165,11 @@ All three generator parts touch the same file, so they run in order.
   - Write `crates/zerorouter-registry/src/schema/oauth_params.rs` with `pub const KNOWN_OAUTH_PARAMS: &[&str]`, the sorted set of `oauth.params` keys emitted (e.g. gitlab `token_url_path`).
   - **Exit non-zero on any unmapped key**, including an executor param outside the T009 key set.
   - The first line of each file is `# Generated from ref/9router@<sha> by tools/gen-bundled/generate.mjs — do not edit.`, where `<sha>` comes from `git -C ref/9router rev-parse --short HEAD`.
-- [ ] T017 Extend `tools/gen-bundled/generate.mjs` to write `crates/zerorouter-registry/src/credentials/bundled.rs` (part 2).
+- [X] T017 Extend `tools/gen-bundled/generate.mjs` to write `crates/zerorouter-registry/src/credentials/bundled.rs` (part 2).
   - One static entry for each of antigravity, gemini-cli, gemini, and iflow: `provider_id`, `client_secret`, and `bound_hosts`.
   - `bound_hosts` = the bundled plugin's host set as defined in T010 (`oauth.{authorize,token,refresh}_url` plus transport `token_url`/`refresh_url`/`auth_url`; not `user_info_url`, `device_code_url`, or `oauth.endpoints`). gemini declares none, so use the hosts of `OAUTH_ENDPOINTS.google` from `ref/9router/open-sse/config/appConstants.js` (oauth2.googleapis.com, accounts.google.com).
   - Exit non-zero if any entry would have no hosts, or if the number of secrets found ≠ 4.
-- [ ] T018 Extend `tools/gen-bundled/generate.mjs` to write the oracle into `tests/fixtures/9router/` (part 3, [R9](research.md#r9-parity-oracle)).
+- [X] T018 Extend `tools/gen-bundled/generate.mjs` to write the oracle into `tests/fixtures/9router/` (part 3, [R9](research.md#r9-parity-oracle)).
   - `providers.json`: the current `PROVIDERS`.
   - `alias.json`: the `ALIAS_TOKENS` list and shape from `ref/9router/tests/__baseline__/verify-alias.mjs`.
   - `oauth-urls.json`: the shape of `verify-oauth-urls.mjs`.
@@ -178,37 +178,37 @@ All three generator parts touch the same file, so they run in order.
     - Exclude inputs that hit the Codex review-suffix and Muse Spark branches.
     - Exclude the 8 synthetic TTS keys in `PROVIDER_MODELS`; they are not provider aliases.
   - `tts-tables.json`: synthetic TTS key → `{ provider, models }`, from `open-sse/config/ttsModels.js`.
-- [ ] T019 Run `node tools/gen-bundled/generate.mjs` and commit the generated output (quickstart step 1).
+- [X] T019 Run `node tools/gen-bundled/generate.mjs` and commit the generated output (quickstart step 1).
   - Check that there are 121 files in `plugins/bundled/`, 4 entries in `credentials/bundled.rs`, and that `schema/oauth_params.rs` exists.
   - Check that `grep -rl 'client_secret\|GOCSPX-' plugins/` is empty.
 
 ### Registry core
 
-- [ ] T020 Create `crates/zerorouter-registry/build.rs`.
+- [X] T020 Create `crates/zerorouter-registry/build.rs`.
   - List `../../plugins/bundled/*.toml` in sorted order.
   - Write `$OUT_DIR/bundled_plugins.rs` containing `pub static BUNDLED: &[(&str, &str)] = &[("<file>", include_str!("<abs path>")), …];`.
   - Emit `cargo:rerun-if-changed=../../plugins/bundled`.
-- [ ] T021 [P] Implement the credentials module in `crates/zerorouter-registry/src/credentials/mod.rs`.
+- [X] T021 [P] Implement the credentials module in `crates/zerorouter-registry/src/credentials/mod.rs`.
   - `SecretString`: `Debug`/`Display` print `***`, and it is not `Serialize`. Its only public method is `matches(&self, candidate: &str) -> bool`; `expose(&self) -> &str` is `pub(crate)`.
   - `CredentialEntry`, and `include!("bundled.rs")` behind `std::sync::LazyLock`.
   - `ResolvedCredential { Available(&SecretString), Withheld { offending_url: Url } }`.
   - `fn bind(entry, active: &ProviderEntity) -> ResolvedCredential`. It computes the active plugin's host set with `host_set` (T010, including its transports) and returns `Available` only if that set ⊆ `bound_hosts`. An empty host set on the active plugin also counts as a match (gemini).
   - `SecretString` and `ResolvedCredential` are public type names; the table, `CredentialEntry`, and `bind` are `pub(crate)`.
-- [ ] T022 Implement `Registry` and its indices in `crates/zerorouter-registry/src/registry.rs`.
+- [X] T022 Implement `Registry` and its indices in `crates/zerorouter-registry/src/registry.rs`.
   - Fields: `providers: Vec<ProviderEntity>`, `alias_index: HashMap<Box<str>, ProviderIdx>` (ids + `alias` + `aliases`, never `ui_alias`), `credentials`, `report: LoadReport`.
   - Methods: `provider(token) -> Result<&ProviderEntity, NotFound>`, `providers()`, `capability(provider, kind) -> Result<Option<&CapabilitySection>, NotFound>` (`Ok(None)` = "not offered").
   - Alias conflicts are errors that name both sources: an alias equal to another provider's id, or a token claimed by two providers.
   - Define `NotFound` in `crates/zerorouter-registry/src/resolve.rs` with `Provider { token }`, `UnifiedModel { name }`, `Model { provider, model }`, and `EmptyTarget`.
-- [ ] T023 Implement bundled loading in `crates/zerorouter-registry/src/load.rs`.
+- [X] T023 Implement bundled loading in `crates/zerorouter-registry/src/load.rs`.
   - `LoadReport`: counts, pending conflicts, declined plugins, withheld credentials, skipped plugins with errors.
   - `OperatorHome::resolve()`: `$ZEROROUTER_HOME`, else `~/.0router`. A missing home, config, or plugins directory is not an error.
   - `load_bundled() -> Result<Vec<ProviderEntity>, StartupError>` runs every `BUNDLED` entry through `validate::gate::validate`. **Any error is fatal.**
   - Cross-plugin check: `auth.credential_fallback` must name an existing provider → `auth.credential_fallback: unknown provider "<x>"`.
-- [ ] T024 Implement `RegistryHandle` in `crates/zerorouter-registry/src/lib.rs` with an `ArcSwap<Registry>`, a reload `Mutex<()>`, and the `OperatorHome`.
+- [X] T024 Implement `RegistryHandle` in `crates/zerorouter-registry/src/lib.rs` with an `ArcSwap<Registry>`, a reload `Mutex<()>`, and the `OperatorHome`.
   - `open(home) -> Result<Self, StartupError>` builds from the bundled set only for now. US3 adds config.toml and US4 adds user plugins.
   - `snapshot() -> Arc<Registry>`.
   - Re-export the public types listed in [contracts/registry-api.md](contracts/registry-api.md).
-- [ ] T025 Add a smoke test in `crates/zerorouter-registry/tests/smoke.rs`: `RegistryHandle::open` on an empty temp home succeeds and yields 121 providers. Run `cargo test -p zerorouter-registry`.
+- [X] T025 Add a smoke test in `crates/zerorouter-registry/tests/smoke.rs`: `RegistryHandle::open` on an empty temp home succeeds and yields 121 providers. Run `cargo test -p zerorouter-registry`.
 
 **Checkpoint**: Bundled plugins embed, validate, and load. User stories can start.
 
@@ -225,41 +225,41 @@ bundled plugins only and no user config (quickstart steps 2–3).
 
 ### Tests for User Story 1 ⚠️ write first, confirm they fail
 
-- [ ] T026 [US1] Create the parity test harness in `crates/zerorouter-registry/tests/parity/main.rs`.
+- [X] T026 [US1] Create the parity test harness in `crates/zerorouter-registry/tests/parity/main.rs`.
   - `mod transport; mod alias; mod oauth; mod lookup;`
   - Helpers: load a fixture from `$CARGO_MANIFEST_DIR/../../tests/fixtures/9router/<name>.json`, and open a bundled-only registry on an empty temp `ZEROROUTER_HOME`.
   - `lookup.rs` starts as an empty module and is filled in by US2.
-- [ ] T027 [P] [US1] Write the transport parity test in `crates/zerorouter-registry/tests/parity/transport.rs` (US1 scenario 1, SC-001).
+- [X] T027 [P] [US1] Write the transport parity test in `crates/zerorouter-registry/tests/parity/transport.rs` (US1 scenario 1, SC-001).
   - 121 entities in total.
   - Exactly 83 have a transport; 38 are catalog-only.
   - For each of the 83, `serde_json::to_value(composed_transport(id))` equals `providers.json[id]` with `clientSecret` removed: endpoint, format (defaults to `openai` when absent), headers in order, quirks, and the `clientId`/`tokenUrl` fields.
   - Where the fixture has `clientSecret`, assert `client_secret.unwrap().matches(fixture["clientSecret"])`; where it has none, assert `client_secret.is_none()`.
   - For each entry of `tts-tables.json`, the owning provider's `capabilities.tts.models` lists the same model IDs in the same order.
-- [ ] T028 [P] [US1] Write the alias parity test in `crates/zerorouter-registry/tests/parity/alias.rs` (US1 scenarios 2 and 5, SC-001).
+- [X] T028 [P] [US1] Write the alias parity test in `crates/zerorouter-registry/tests/parity/alias.rs` (US1 scenarios 2 and 5, SC-001).
   - The 113 owned tokens in `alias.json` resolve to the same provider id.
   - `qw`, `dv`, `devin`, and `devin-cli` return `NotFound::Provider` (the R10 deviation, asserted explicitly).
   - The 83-entry id-to-alias map matches.
   - `provider("kr")` returns kiro.
-- [ ] T029 [P] [US1] Write the OAuth parity test in `crates/zerorouter-registry/tests/parity/oauth.rs` (US1 scenario 3, SC-001). All five sections of `oauth-urls.json` must match with zero differences: endpoints, token URLs, auth URLs, refresh URLs, and client IDs.
-- [ ] T030 [P] [US1] Write the secrets test in `crates/zerorouter-registry/tests/secrets.rs` (US1 scenario 4, SC-002).
+- [X] T029 [P] [US1] Write the OAuth parity test in `crates/zerorouter-registry/tests/parity/oauth.rs` (US1 scenario 3, SC-001). All five sections of `oauth-urls.json` must match with zero differences: endpoints, token URLs, auth URLs, refresh URLs, and client IDs.
+- [X] T030 [P] [US1] Write the secrets test in `crates/zerorouter-registry/tests/secrets.rs` (US1 scenario 4, SC-002).
   - Scan every `BUNDLED` source for each of the 4 credential values and for `client_secret`, and expect none.
   - For each of the 4 providers, the composed transport's `client_secret` is `Some`, and `matches` succeeds against the fixture value.
   - `format!("{:?}", secret)` and `format!("{}", secret)` are `***`.
-- [ ] T031 [P] [US1] Add `compile_fail` doc-tests to `crates/zerorouter-registry/src/credentials/mod.rs` ([contracts/registry-api.md](contracts/registry-api.md#behavioural-guarantees)): one calls `SecretString::expose()` from outside the crate, and one names the credential table. Both must fail to compile.
+- [X] T031 [P] [US1] Add `compile_fail` doc-tests to `crates/zerorouter-registry/src/credentials/mod.rs` ([contracts/registry-api.md](contracts/registry-api.md#behavioural-guarantees)): one calls `SecretString::expose()` from outside the crate, and one names the credential table. Both must fail to compile.
 
 ### Implementation for User Story 1
 
-- [ ] T032 [US1] Implement the public `Registry::composed_transport(&self, provider) -> Option<ComposedTransport<'_>>` in `crates/zerorouter-registry/src/views.rs`, per [contracts/registry-api.md § Composed transport](contracts/registry-api.md#composed-transport-public-secret-stays-opaque).
+- [X] T032 [US1] Implement the public `Registry::composed_transport(&self, provider) -> Option<ComposedTransport<'_>>` in `crates/zerorouter-registry/src/views.rs`, per [contracts/registry-api.md § Composed transport](contracts/registry-api.md#composed-transport-public-secret-stays-opaque).
   - Start from the plugin `transport`.
   - Fill `format = "openai"` when it is absent.
   - Copy `client_id`/`token_url` from `oauth` only when the transport does not declare them (9router `OAUTH_INJECT_FIELDS`); kiro keeps its own transport `token_url`.
   - Set `client_secret: Option<&SecretString>` only when the credential is `ResolvedCredential::Available`.
   - Serialise to 9router's camelCase shape by exactly reversing the generator's key mapping (T016). `client_secret` is skipped during serialisation.
-- [ ] T033 [US1] Add `alias_view(token)` and `id_to_alias()` to `crates/zerorouter-registry/src/views.rs`. `id_to_alias` gives `alias` if set, else `id`, for the 83 entries in the baseline map. Also add `oauth_urls_view()`, which returns the 5-section shape of `oauth-urls.json`.
-- [ ] T034 [US1] Compute `credentials: HashMap<ProviderId, ResolvedCredential>` in `crates/zerorouter-registry/src/registry.rs` when the snapshot is built, by calling `credentials::bind(entry, active_plugin)` for each credential entry.
-- [ ] T035 [US1] Implement `crates/zerorouter-cli/src/cmd/providers.rs`: a list of id, alias, category, and capabilities, filtered by `--capability KIND`, with `--json`.
-- [ ] T036 [US1] Implement the basic `crates/zerorouter-cli/src/cmd/check.rs`: open the handle and print provider counts and all load errors. Exit 0 on success, 1 on error.
-- [ ] T037 [US1] Run `cargo test -p zerorouter-registry --test parity --test secrets` and fix any differences in the generator (T016) or the views (T032–T033), never in the fixtures.
+- [X] T033 [US1] Add `alias_view(token)` and `id_to_alias()` to `crates/zerorouter-registry/src/views.rs`. `id_to_alias` gives `alias` if set, else `id`, for the 83 entries in the baseline map. Also add `oauth_urls_view()`, which returns the 5-section shape of `oauth-urls.json`.
+- [X] T034 [US1] Compute `credentials: HashMap<ProviderId, ResolvedCredential>` in `crates/zerorouter-registry/src/registry.rs` when the snapshot is built, by calling `credentials::bind(entry, active_plugin)` for each credential entry.
+- [X] T035 [US1] Implement `crates/zerorouter-cli/src/cmd/providers.rs`: a list of id, alias, category, and capabilities, filtered by `--capability KIND`, with `--json`.
+- [X] T036 [US1] Implement the basic `crates/zerorouter-cli/src/cmd/check.rs`: open the handle and print provider counts and all load errors. Exit 0 on success, 1 on error.
+- [X] T037 [US1] Run `cargo test -p zerorouter-registry --test parity --test secrets` and fix any differences in the generator (T016) or the views (T032–T033), never in the fixtures.
 
 **Checkpoint**: The bundled catalog is verified faithful to 9router. MVP.
 
@@ -275,7 +275,7 @@ other model fields, matching 9router's `providerModels.js`.
 
 ### Tests for User Story 2 ⚠️ write first, confirm they fail
 
-- [ ] T038 [P] [US2] Write the lookup parity test in `crates/zerorouter-registry/tests/parity/lookup.rs` (SC-004). For every row in `lookup.json`, `Registry::model(alias, model)` must match the fixture. Map through the parity conventions:
+- [X] T038 [P] [US2] Write the lookup parity test in `crates/zerorouter-registry/tests/parity/lookup.rs` (SC-004). For every row in `lookup.json`, `Registry::model(alias, model)` must match the fixture. Map through the parity conventions:
   - `declared` ↔ `isValidModel`;
   - `upstream_id` ↔ `getModelUpstreamId`;
   - `kind: None` ↔ `null`;
@@ -283,7 +283,7 @@ other model fields, matching 9router's `providerModels.js`.
   - `quota_family: None` ↔ `"normal"`;
   - `strip: None` ↔ `[]`;
   - `name` ↔ `findModelName`.
-- [ ] T039 [P] [US2] Write explicit US2 scenario unit tests in a `#[cfg(test)] mod tests` block in `crates/zerorouter-registry/src/lookup.rs`:
+- [X] T039 [P] [US2] Write explicit US2 scenario unit tests in a `#[cfg(test)] mod tests` block in `crates/zerorouter-registry/src/lookup.rs`:
   - `(high)` is stripped and re-appended;
   - a preset suffix is kept when the request has none and replaced when it has one;
   - `m(a(b))` is not stripped;
@@ -295,19 +295,19 @@ other model fields, matching 9router's `providerModels.js`.
 
 ### Implementation for User Story 2
 
-- [ ] T040 [US2] Implement the pure lookup functions in `crates/zerorouter-registry/src/lookup.rs`, following the behaviour of `ref/9router/open-sse/config/providerModels.js` (`isValidModel`, `findModelName`, `getModelUpstreamId`).
+- [X] T040 [US2] Implement the pure lookup functions in `crates/zerorouter-registry/src/lookup.rs`, following the behaviour of `ref/9router/open-sse/config/providerModels.js` (`isValidModel`, `findModelName`, `getModelUpstreamId`).
   - `split_suffix(id) -> (&str, Option<&str>)`: a single `regex_lite::Regex` `\([^()]+\)\s*$` in a `LazyLock`, "only a final parenthesized group containing no parentheses counts" (FR-019).
   - `normalise_version_sep`: a digit-dash-digit sequence → digit-dot-digit (FR-020).
   - `upstream_id(model: Option<&Model>, base, suffix) -> String`: declared `upstream_id`, else the model id; then the request suffix, else the declared preset suffix. An undeclared model gives base + suffix (FR-021).
   - `derive_model_name`: a port of `ref/9router/open-sse/providers/models/namePatterns.js` `deriveModelName`.
-- [ ] T041 [US2] Add the per-provider model indices to `crates/zerorouter-registry/src/registry.rs`: an exact `HashMap<Box<str>, ModelIdx>`, plus a normalised-key map built **only** when `version_separator_tolerance` is true ([R11](research.md#r11-performance)).
+- [X] T041 [US2] Add the per-provider model indices to `crates/zerorouter-registry/src/registry.rs`: an exact `HashMap<Box<str>, ModelIdx>`, plus a normalised-key map built **only** when `version_separator_tolerance` is true ([R11](research.md#r11-performance)).
   - Implement the catalog view on `CapabilitySection`: provider models whose `kind == Some(kind)`, plus `section.models`. For `llm`, include models with `kind == None` without changing their `kind`.
-- [ ] T042 [US2] Implement `Registry::model(provider, model_id) -> Result<ModelInfo, NotFound>` and `Registry::upstream_id(...)` in `crates/zerorouter-registry/src/registry.rs`, with `ModelInfo` as specified in [contracts/registry-api.md](contracts/registry-api.md#library).
+- [X] T042 [US2] Implement `Registry::model(provider, model_id) -> Result<ModelInfo, NotFound>` and `Registry::upstream_id(...)` in `crates/zerorouter-registry/src/registry.rs`, with `ModelInfo` as specified in [contracts/registry-api.md](contracts/registry-api.md#library).
   - Passthrough providers return `declared = true` for any id.
   - `upstream_id` never fails for a known provider.
   - An unknown provider → `NotFound::Provider`.
-- [ ] T043 [US2] Implement `crates/zerorouter-cli/src/cmd/model.rs`: `model PROVIDER MODEL [--json]` prints `ModelInfo`. Exit 0 when the provider is found, 2 on `NotFound`.
-- [ ] T044 [US2] Run `cargo test -p zerorouter-registry --test parity` (all modules) and the `lookup` unit tests until they are green.
+- [X] T043 [US2] Implement `crates/zerorouter-cli/src/cmd/model.rs`: `model PROVIDER MODEL [--json]` prints `ModelInfo`. Exit 0 when the provider is found, 2 on `NotFound`.
+- [X] T044 [US2] Run `cargo test -p zerorouter-registry --test parity` (all modules) and the `lookup` unit tests until they are green.
 
 **Checkpoint**: US1 and US2 both pass independently.
 
