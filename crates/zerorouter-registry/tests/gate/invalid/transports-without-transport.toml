@@ -1,0 +1,6 @@
+# expect: transports: requires [transport] to be set
+id = "x"
+category = "apikey"
+
+[[transports]]
+base_url = "https://api.x.example/v1/chat/completions"

@@ -1,0 +1,6 @@
+# expect: transport.base_url: URL must not carry credentials
+id = "x"
+category = "apikey"
+
+[transport]
+base_url = "https://u:p@api.x.example/v1"

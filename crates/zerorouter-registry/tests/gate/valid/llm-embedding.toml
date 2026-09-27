@@ -1,0 +1,10 @@
+id = "two-kinds"
+category = "apikey"
+
+[transport]
+base_url = "https://api.two.example/v1/chat/completions"
+
+[capabilities.llm]
+
+[capabilities.embedding]
+endpoint = { base_url = "https://api.two.example/v1/embeddings" }

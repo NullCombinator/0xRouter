@@ -4,7 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**0router** (null router) — a from-scratch Rust implementation of [9router](ref/9router/)'s core routing engine. The project is currently pre-code: infrastructure and tooling are in place, the first Rust crate has not yet been written. The JS reference lives in `ref/9router/`.
+**0router** (null router) — a from-scratch Rust implementation of [9router](ref/9router/)'s core routing engine. The JS reference lives in `ref/9router/`.
+
+Workspace layout:
+
+| Path | Contents |
+|---|---|
+| `crates/zerorouter-registry` | Provider and unified-model registry: plugin schema, validation gate, lookup, reload |
+| `crates/zerorouter-cli` | `zerorouter` CLI: `check`, `validate`, `resolve`, `model`, `providers` |
+| `plugins/bundled/` | Bundled provider plugins (TOML), generated from `ref/9router` |
+| `tools/gen-bundled/` | Generator for the bundled plugins, credentials, and parity oracle |
+| `tests/fixtures/9router/` | Parity oracle snapshots (generated; never hand-edit) |
+| `docs/` | Plugin-author and operator documentation |
+
+After updating `ref/9router`, regenerate with `node tools/gen-bundled/generate.mjs` and commit the output on its own, naming the ref SHA. Build commands need `export CARGO_HOME=$PWD/.cargo-home`.
 
 0router re-implements 9router's core routing engine in Rust, with a different routing decision (cache-aware, per-agent isolation, windowed amortization), a unified provider entity model (one plugin = one provider with per-modality sections), unified models as routing targets, first-class support for non-text model types, latency observability, testable combos, and a plugin model where third-party providers are declared as TOML data files. See `init.md` for the full intention and `init.md`→`constitution.md` for the non-negotiable invariants.
 

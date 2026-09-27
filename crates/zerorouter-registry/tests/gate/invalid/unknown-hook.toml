@@ -1,0 +1,9 @@
+# expect: transport.auth.hooks[0]
+id = "x"
+category = "apikey"
+
+[transport]
+base_url = "https://api.x.example/v1/chat/completions"
+
+[transport.auth]
+hooks = ["exec_shell"]

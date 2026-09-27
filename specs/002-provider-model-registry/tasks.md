@@ -323,7 +323,7 @@ and 8 give the documented output.
 
 ### Tests for User Story 3 ⚠️ write first, confirm they fail
 
-- [ ] T045 [P] [US3] Write the US3 tests in `crates/zerorouter-registry/tests/unified.rs`, each writing a temp `config.toml`:
+- [X] T045 [P] [US3] Write the US3 tests in `crates/zerorouter-registry/tests/unified.rs`, each writing a temp `config.toml`:
   - s1: `sonnet` over `kr/claude-sonnet-4-5` and `openrouter/anthropic/claude-sonnet-4.5` → two members in declaration order; kiro upstream `claude-sonnet-4.5`; openrouter upstream unchanged.
   - s2: an unknown member provider, or an uncatalogued member model on a non-passthrough provider, → an error naming `unified_model[i].members[j]`.
   - s3: conflicting member kinds → rejected; an untyped member does not conflict.
@@ -340,7 +340,7 @@ and 8 give the documented output.
     - `""`, `"/gpt-4o"`, and `"openai/"` → `NotFound::EmptyTarget`;
     - `members = []` → `unified_model[i].members: must not be empty`;
     - a missing `config.toml` → no unified models.
-- [ ] T046 [P] [US3] Write the reload test in `crates/zerorouter-registry/tests/reload.rs` (FR-024 – FR-026, SC-007).
+- [X] T046 [P] [US3] Write the reload test in `crates/zerorouter-registry/tests/reload.rs` (FR-024 – FR-026, SC-007).
   - 8 reader threads call `snapshot().resolve("probe")` in a loop while the main thread reloads 200 times, alternating config A (`probe` has 1 member) and config B (`probe` has 2 members). Every observed resolution has 1 or 2 members, never an error or a mix.
   - A reload with invalid `config.toml` returns `Err` with every error listed, and the old snapshot is still served.
   - A no-change reload gives the same provider count and no duplicates.
@@ -348,12 +348,12 @@ and 8 give the documented output.
 
 ### Implementation for User Story 3
 
-- [ ] T047 [P] [US3] Define `OperatorConfig` in `crates/zerorouter-registry/src/schema/config.rs` per [contracts/operator-config.md](contracts/operator-config.md), with `deny_unknown_fields` throughout.
+- [X] T047 [P] [US3] Define `OperatorConfig` in `crates/zerorouter-registry/src/schema/config.rs` per [contracts/operator-config.md](contracts/operator-config.md), with `deny_unknown_fields` throughout.
   - `schema`.
   - `unified_model: Vec<UnifiedModelDecl { name, kind: Option<ModelKind>, members: Vec<MemberDecl { provider, model }> }>`.
   - `provider: BTreeMap<String, ProviderSettings { allow_uncatalogued_models: bool = true }>`.
   - `plugin_decisions: BTreeMap<String, Decision { Replace, Decline }>`.
-- [ ] T048 [US3] Implement config loading and validation in `crates/zerorouter-registry/src/load.rs`. A missing file means the default config. Use exactly the error shapes of [operator-config.md § Validation](contracts/operator-config.md#validation):
+- [X] T048 [US3] Implement config loading and validation in `crates/zerorouter-registry/src/load.rs`. A missing file means the default config. Use exactly the error shapes of [operator-config.md § Validation](contracts/operator-config.md#validation):
   - "must be non-empty and must not contain `/`";
   - a duplicate name;
   - "`members`: must not be empty";
@@ -366,8 +366,8 @@ and 8 give the documented output.
   - Resolve each member's `upstream_id` once, at load, with `lookup::upstream_id` (FR-021).
   - Expose this as one function, `validate_config(config, providers, mode) -> (Vec<UnifiedModel>, Vec<ValidationError>, Vec<Dropped>)`, which both startup and reload (T060) call against the candidate provider set.
   - Startup exception ([operator-config.md § Validation](contracts/operator-config.md#validation)): in startup mode, a unified model whose member names the id of a user plugin skipped at startup is dropped and recorded in `LoadReport`, not fatal. Every other error is fatal at startup. In reload mode there is no exception.
-- [ ] T049 [US3] Add `unified_models: HashMap<Box<str>, UnifiedIdx>`, `settings`, `unified_model(name)`, and `unified_models()` to `crates/zerorouter-registry/src/registry.rs`. `settings` falls back to the `ProviderSettings` default for providers that are not listed.
-- [ ] T050 [US3] Implement `Registry::resolve(target) -> Result<Resolution, NotFound>` in `crates/zerorouter-registry/src/resolve.rs`.
+- [X] T049 [US3] Add `unified_models: HashMap<Box<str>, UnifiedIdx>`, `settings`, `unified_model(name)`, and `unified_models()` to `crates/zerorouter-registry/src/registry.rs`. `settings` falls back to the `ProviderSettings` default for providers that are not listed.
+- [X] T050 [US3] Implement `Registry::resolve(target) -> Result<Resolution, NotFound>` in `crates/zerorouter-registry/src/resolve.rs`.
   - Empty → `EmptyTarget`.
   - Contains `/` → split at the first `/`. An empty provider part or an empty model part → `EmptyTarget`. Otherwise provider via the alias index, then model lookup:
     - catalogued, or a passthrough provider → `Direct { catalogued: true, … }`;
@@ -375,16 +375,16 @@ and 8 give the documented output.
     - otherwise `NotFound::Model`.
   - Otherwise → `Unified` or `NotFound::UnifiedModel`. Never infer a provider (FR-014a).
   - The only allocation is the upstream ID.
-- [ ] T051 [US3] Complete `RegistryHandle` in `crates/zerorouter-registry/src/lib.rs`.
+- [X] T051 [US3] Complete `RegistryHandle` in `crates/zerorouter-registry/src/lib.rs`.
   - `open(home)` also loads `config.toml`. An invalid config is fatal at startup.
   - `reload()` takes the reload mutex, builds a full candidate from disk, and validates everything. On any error it returns `ReloadError { errors }` and leaves the active snapshot unchanged. On success it calls `store(Arc::new(candidate))` and returns its `LoadReport`.
   - Document that reload does blocking I/O and that async callers should use `spawn_blocking`.
   - No file watching (FR-026).
-- [ ] T052 [US3] Implement `crates/zerorouter-cli/src/cmd/resolve.rs`: `resolve TARGET [--home DIR] [--json]`.
+- [X] T052 [US3] Implement `crates/zerorouter-cli/src/cmd/resolve.rs`: `resolve TARGET [--home DIR] [--json]`.
   - Print the resolution: provider(s), upstream IDs, and the catalogued flag.
   - Exit 0 when found, 2 on `NotFound`.
   - The `--json` shape is stable because the quickstart parses it.
-- [ ] T053 [US3] Run `cargo test -p zerorouter-registry --test unified --test reload` and quickstart steps 5–6 until they are green.
+- [X] T053 [US3] Run `cargo test -p zerorouter-registry --test unified --test reload` and quickstart steps 5–6 until they are green.
 
 **Checkpoint**: Unified models and direct addressing work on top of the bundled set, and
 reload is safe.
@@ -402,7 +402,7 @@ and 7 give the documented output.
 
 ### Tests for User Story 4 ⚠️ write first, confirm they fail
 
-- [ ] T054 [P] [US4] Create the gate corpus in `crates/zerorouter-registry/tests/gate/`.
+- [X] T054 [P] [US4] Create the gate corpus in `crates/zerorouter-registry/tests/gate/`.
   - `valid/minimal.toml` and `valid/typical.toml`, copied from [plugin-schema.md](contracts/plugin-schema.md).
   - `valid/llm-embedding.toml`, which declares only `llm` and `embedding` sections.
   - `valid/bare-models.toml`, which declares `models = ["m-a", "m-b"]`.
@@ -430,14 +430,14 @@ and 7 give the documented output.
     - `bad-default-region`;
     - `bad-credential-fallback`;
     - `parse-error`.
-- [ ] T055 [US4] Write the gate test in `crates/zerorouter-registry/tests/gate.rs` (US4 s1–s4, SC-003). Depends on T054.
+- [X] T055 [US4] Write the gate test in `crates/zerorouter-registry/tests/gate.rs` (US4 s1–s4, SC-003). Depends on T054.
   - Every `valid/*` file is accepted, and `minimal.toml` has no transport.
   - Every `invalid/*` file is rejected. Its rendered error contains the file name, `line:col`, the field path, the `# expect:` substring, and, for enum rules, the allowed values.
   - `llm-embedding.toml`: `capability(llm)` and `capability(embedding)` are `Some`, and `capability(tts)` is `Ok(None)`.
   - `bare-models.toml`: two models with ids `m-a` and `m-b` and derived names.
   - Catalog states (FR-005): `minimal.toml` has `models == None` (catalog unknown); a bundled provider that 9router lists with an empty model list (e.g. zed) has `models == Some([])` (offers none). Pick the provider by reading its generated file, not by assumption.
   - Every one of the 121 `BUNDLED` sources passes `validate`.
-- [ ] T056 [P] [US4] Write the plugin tests in `crates/zerorouter-registry/tests/plugins.rs`, each on a temp `ZEROROUTER_HOME`:
+- [X] T056 [P] [US4] Write the plugin tests in `crates/zerorouter-registry/tests/plugins.rs`, each on a temp `ZEROROUTER_HOME`:
   - s5: a user `kiro.toml` with no decision → bundled kiro is active and the report shows a pending conflict. `replace` → the user plugin is active. `decline` → bundled is active and the user plugin is reported as declined.
   - s6: a user `gemini-cli.toml` identical to the bundled one + `replace` → the credential is `Available`. The same file with `oauth2.googleapis.com` → `evil.example` → `Withheld`, and the report names the offending URL.
   - s7: two user plugins with the same id → both are skipped and reported with both paths. Two providers claiming one alias → a reported conflict naming both.
@@ -448,24 +448,24 @@ and 7 give the documented output.
 
 ### Implementation for User Story 4
 
-- [ ] T057 [US4] Implement user plugin discovery in `crates/zerorouter-registry/src/load.rs`.
+- [X] T057 [US4] Implement user plugin discovery in `crates/zerorouter-registry/src/load.rs`.
   - Read `$ZEROROUTER_HOME/plugins/*.toml`: top level only, sorted, other extensions ignored.
   - Run each file through `validate` with `PluginSource::User(path)`.
   - At startup (FR-010), skip invalid files and record them in `LoadReport.skipped`.
   - On reload (FR-024), any invalid file fails the whole candidate.
-- [ ] T058 [US4] Implement conflict resolution in `crates/zerorouter-registry/src/load.rs` following the [data-model state machine](data-model.md#plugin-conflict-fr-013).
+- [X] T058 [US4] Implement conflict resolution in `crates/zerorouter-registry/src/load.rs` following the [data-model state machine](data-model.md#plugin-conflict-fr-013).
   - A bundled id with a user duplicate and no decision → `Pending`: the bundled plugin is active and the conflict is reported.
   - `replace` → the user plugin is active.
   - `decline` → the bundled plugin is active and the user plugin is reported as declined.
   - Two user plugins with the same id → both skipped at startup, and the reload is rejected.
   - Then run the `credential_fallback` reference check over the final active set.
-- [ ] T059 [US4] Record withheld credentials in the report in `crates/zerorouter-registry/src/registry.rs`. When `credentials::bind` returns `Withheld { offending_url }` for a replaced provider, add it to `LoadReport.withheld_credentials` with a message saying OAuth for `<id>` will not work because of `<url>` (FR-012a).
-- [ ] T060 [US4] Wire user plugins into config validation in `crates/zerorouter-registry/src/lib.rs`. Do not add a second validator; call T048's `validate_config` against the candidate provider set (bundled + active user plugins).
+- [X] T059 [US4] Record withheld credentials in the report in `crates/zerorouter-registry/src/registry.rs`. When `credentials::bind` returns `Withheld { offending_url }` for a replaced provider, add it to `LoadReport.withheld_credentials` with a message saying OAuth for `<id>` will not work because of `<url>` (FR-012a).
+- [X] T060 [US4] Wire user plugins into config validation in `crates/zerorouter-registry/src/lib.rs`. Do not add a second validator; call T048's `validate_config` against the candidate provider set (bundled + active user plugins).
   - `open()`: startup mode, passing the ids of skipped user plugins so their unified models are dropped and reported.
   - `reload()`: reload mode. A member whose provider is missing from the candidate → an error naming the unified model and the provider, and the whole reload is rejected.
-- [ ] T061 [P] [US4] Implement `crates/zerorouter-cli/src/cmd/validate.rs`: `validate FILE…` runs the gate on each file and prints `OK <file>` or each rendered `ValidationError`. Exit 0 if all files are valid, else 1.
-- [ ] T062 [US4] Extend `crates/zerorouter-cli/src/cmd/check.rs` to print the full `LoadReport`: pending conflicts, declined plugins, withheld credentials with their offending URL, and skipped user plugins with their errors.
-- [ ] T063 [US4] Run `cargo test -p zerorouter-registry --test gate --test plugins --test reload` and quickstart steps 4 and 7 until they are green.
+- [X] T061 [P] [US4] Implement `crates/zerorouter-cli/src/cmd/validate.rs`: `validate FILE…` runs the gate on each file and prints `OK <file>` or each rendered `ValidationError`. Exit 0 if all files are valid, else 1.
+- [X] T062 [US4] Extend `crates/zerorouter-cli/src/cmd/check.rs` to print the full `LoadReport`: pending conflicts, declined plugins, withheld credentials with their offending URL, and skipped user plugins with their errors.
+- [X] T063 [US4] Run `cargo test -p zerorouter-registry --test gate --test plugins --test reload` and quickstart steps 4 and 7 until they are green.
 
 **Checkpoint**: All four user stories are independently functional.
 
@@ -473,17 +473,17 @@ and 7 give the documented output.
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T064 [P] Write the Criterion benchmark in `crates/zerorouter-registry/benches/resolve.rs` ([R11](research.md#r11-performance), constitution benchmark gate).
+- [X] T064 [P] Write the Criterion benchmark in `crates/zerorouter-registry/benches/resolve.rs` ([R11](research.md#r11-performance), constitution benchmark gate).
   - `load`: a full `RegistryHandle::open` with a two-unified-model config. Target < 50 ms.
   - `resolve`: `kr/claude-sonnet-4-5`, `kr/claude-sonnet-4-5(high)`, a unified `sonnet`, `openai/brand-new-model`, and a not-found bare name. Target p50 < 1 µs.
   - Save the results with `cargo bench -p zerorouter-registry --bench resolve -- --save-baseline slice-002`.
-- [ ] T065 [P] Write operator and plugin-author documentation in `docs/plugins.md` and `docs/operator-config.md`, drawn from `contracts/`. They must be enough on their own to declare a two-member unified model (SC-005).
-- [ ] T066 Run `/rust-parity-audit` on `crates/zerorouter-registry/src/lookup.rs` and `crates/zerorouter-registry/src/views.rs` (constitution parity-audit gate).
+- [X] T065 [P] Write operator and plugin-author documentation in `docs/plugins.md` and `docs/operator-config.md`, drawn from `contracts/`. They must be enough on their own to declare a two-member unified model (SC-005).
+- [X] T066 Run `/rust-parity-audit` on `crates/zerorouter-registry/src/lookup.rs` and `crates/zerorouter-registry/src/views.rs` (constitution parity-audit gate).
   - Fix every **must-fix** finding.
   - Record the deliberate deviations from [R10](research.md#r10-where-0router-deliberately-differs-from-9router-lookups) as accepted.
-- [ ] T067 Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace`, and fix everything they report.
-- [ ] T068 Run all 9 steps of [quickstart.md](quickstart.md) end to end with a scratch `ZEROROUTER_HOME`, and correct the quickstart wherever the real output differs.
-- [ ] T069 [P] Update the "What this is" section of `CLAUDE.md` to replace "pre-code … first Rust crate has not yet been written" with the workspace layout, and add the `generate.mjs` regeneration command.
+- [X] T067 Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace`, and fix everything they report.
+- [X] T068 Run all 9 steps of [quickstart.md](quickstart.md) end to end with a scratch `ZEROROUTER_HOME`, and correct the quickstart wherever the real output differs.
+- [X] T069 [P] Update the "What this is" section of `CLAUDE.md` to replace "pre-code … first Rust crate has not yet been written" with the workspace layout, and add the `generate.mjs` regeneration command.
 
 ---
 

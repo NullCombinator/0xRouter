@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 
 use indexmap::IndexMap;
-use serde::ser::{SerializeMap, SerializeSeq, Serializer};
 use serde::Serialize;
+use serde::ser::{SerializeMap, SerializeSeq, Serializer};
 
 use crate::credentials::{ResolvedCredential, SecretString};
 use crate::registry::Registry;
@@ -97,7 +97,10 @@ impl Registry {
             ),
             (
                 "anthropic",
-                group(&[("token", claude.and_then(|o| o.token_url.as_deref())), ("auth", Some(ANTHROPIC_API_AUTHORIZE))]),
+                group(&[
+                    ("token", claude.and_then(|o| o.token_url.as_deref())),
+                    ("auth", Some(ANTHROPIC_API_AUTHORIZE)),
+                ]),
             ),
             (
                 "iflow",

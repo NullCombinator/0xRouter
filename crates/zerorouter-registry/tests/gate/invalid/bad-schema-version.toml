@@ -1,0 +1,4 @@
+# expect: schema: unsupported schema version 2; expected 1
+schema = 2
+id = "x"
+category = "apikey"

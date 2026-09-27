@@ -1,0 +1,9 @@
+# expect: transport.executor_params.api_key
+id = "x"
+category = "apikey"
+
+[transport]
+base_url = "https://api.x.example/v1/chat/completions"
+
+[transport.executor_params]
+api_key = "x"

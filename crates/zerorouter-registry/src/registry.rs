@@ -31,7 +31,7 @@ pub struct UnifiedMember {
     pub requested: String,
     /// FR-021.
     pub upstream_id: String,
-    /// `false` only for an undeclared model on a passthrough provider.
+    /// `false`: not in the catalog, accepted because the provider is passthrough.
     pub catalogued: bool,
 }
 
@@ -192,6 +192,11 @@ impl Registry {
         self.catalogs[p].upstream_id(self.models_at(p), model_id)
     }
 
+    /// [`find_at`](Self::find_at) and [`upstream_at`](Self::upstream_at) in one pass.
+    pub(crate) fn lookup_at(&self, p: usize, model_id: &str) -> (Option<&Model>, String) {
+        self.catalogs[p].find_with_upstream(self.models_at(p), model_id)
+    }
+
     fn provider_index(&self, token: &str) -> Result<usize, NotFound> {
         self.index_of(token).ok_or_else(|| NotFound::Provider { token: token.to_owned() })
     }
@@ -220,22 +225,20 @@ impl Registry {
             .flatten()
             .filter(|m| m.kind == Some(kind) || (kind == CapabilityKind::Llm && m.kind.is_none()))
             .map(CatalogEntry::Provider);
-        let section = p
-            .capabilities
-            .get(&kind)
-            .into_iter()
-            .flat_map(|s| s.models.iter().flatten())
-            .map(CatalogEntry::Section);
+        let section =
+            p.capabilities.get(&kind).into_iter().flat_map(|s| s.models.iter().flatten()).map(CatalogEntry::Section);
         Ok(own.chain(section).collect())
     }
 
     /// 9router's per-model queries in one view (FR-019 – FR-022).
     pub fn model(&self, provider: &str, model_id: &str) -> Result<ModelInfo<'_>, NotFound> {
         let p = self.provider_index(provider)?;
-        let found = self.find_at(p, model_id);
-        let name = match found {
-            Some(m) => m.name.as_deref().map_or_else(|| Cow::Owned(derive_model_name(&m.id)), Cow::Borrowed),
-            None => Cow::Owned(model_id.to_owned()),
+        let (found, upstream_id) = self.lookup_at(p, model_id);
+        // 9router `found?.name || modelId`: an empty declared name falls back to the request.
+        let name = match found.map(|m| (m, m.name.as_deref())) {
+            Some((_, Some(n))) if !n.is_empty() => Cow::Borrowed(n),
+            Some((m, None)) => Cow::Owned(derive_model_name(&m.id)),
+            _ => Cow::Owned(model_id.to_owned()),
         };
         Ok(ModelInfo {
             declared: found.is_some() || self.providers[p].passthrough_models,
@@ -245,7 +248,7 @@ impl Registry {
             supported_formats: found.and_then(|m| m.supported_formats.as_deref()),
             quota_family: found.and_then(|m| m.quota_family.as_deref()),
             strip: found.and_then(|m| m.strip.as_deref()),
-            upstream_id: self.upstream_at(p, model_id),
+            upstream_id,
             model: found,
         })
     }

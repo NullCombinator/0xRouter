@@ -1,0 +1,4 @@
+# expect: models[0]
+id = "x"
+category = "apikey"
+models = [1]

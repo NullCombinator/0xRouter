@@ -5,17 +5,8 @@
 
 /// Terms that mark a key as credential-bearing, matched case-insensitively on the key
 /// with `-` read as `_`.
-const DENYLIST: &[&str] = &[
-    "secret",
-    "password",
-    "passwd",
-    "api_key",
-    "apikey",
-    "access_token",
-    "refresh_token",
-    "cookie",
-    "authorization",
-];
+const DENYLIST: &[&str] =
+    &["secret", "password", "passwd", "api_key", "apikey", "access_token", "refresh_token", "cookie", "authorization"];
 
 /// Returns the denylisted term `key` hits, if any. Any key containing `token` is also
 /// rejected unless it names a URL or endpoint (`token_url`, `tokenEndpoint`).
@@ -30,10 +21,7 @@ pub fn check_map_key(key: &str) -> Option<&'static str> {
 
 /// Rejects userinfo and secret-like query keys in an absolute http(s) URL.
 pub fn check_url(url: &str) -> Result<(), &'static str> {
-    let rest = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-        .ok_or("must be an http(s) URL")?;
+    let rest = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")).ok_or("must be an http(s) URL")?;
     let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     if rest[..authority_end].contains('@') {
         return Err("URL must not carry credentials");
@@ -46,10 +34,7 @@ pub fn check_query(s: &str) -> Result<(), &'static str> {
     let Some(q) = s.split('#').next().and_then(|s| s.split_once('?')).map(|(_, q)| q) else {
         return Ok(());
     };
-    let secret = q
-        .split('&')
-        .map(|kv| kv.split_once('=').map_or(kv, |(k, _)| k))
-        .any(|k| check_map_key(k).is_some());
+    let secret = q.split('&').map(|kv| kv.split_once('=').map_or(kv, |(k, _)| k)).any(|k| check_map_key(k).is_some());
     if secret { Err("URL must not carry credentials") } else { Ok(()) }
 }
 

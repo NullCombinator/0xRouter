@@ -127,7 +127,7 @@ One entry in a provider's catalog (FR-004, FR-005).
 
 | Field | Type | Rule |
 |---|---|---|
-| `id` | `String` | **Required.** Unique within the provider. Must not end in a thinking suffix unless it is a declared preset (see `upstream_id`) |
+| `id` | `String` | **Required.** Unique per `(id, kind)` within the provider (R13). Must not end in a thinking suffix unless it is a declared preset (see `upstream_id`) |
 | `name` | `Option<String>` | Absent → derived display name (9router `deriveModelName`) |
 | `kind` | `Option<ModelKind>` | `None` = no declared type (FR-004). 9router `type` normalises here |
 | `upstream_id` | `Option<String>` | May carry a preset thinking suffix |
@@ -137,8 +137,8 @@ One entry in a provider's catalog (FR-004, FR-005).
 | `strip` | `Option<Vec<ContentKind>>` | `image`, `audio`, … |
 | `context_length`, `max_output_tokens`, `dimensions` | `Option<u64>` | |
 | `rate_multiplier` | `Option<f64>` | |
-| `capabilities` | `Option<Map<String, bool>>` | Model feature flags (not `CapabilityKind`) |
-| `params` | `Option<Map<String, Scalar>>` | Key denylist (R5) |
+| `capabilities` | `Option<Vec<String>>` | Model feature flags such as `vision` and `thinking` (not `CapabilityKind`) |
+| `params` | `Option<Vec<String>>` | Supported request parameter names; key denylist (R5) |
 | `description` | `Option<String>` | |
 
 ### CapabilitySection
@@ -221,9 +221,11 @@ keeps them (Key Entities).
 ```text
 resolve(target: &str) -> Result<Resolution, NotFound>
 
-Resolution::Direct  { provider: &ProviderEntity, requested: String, upstream_id: String,
+Resolution::Direct  { provider: &ProviderEntity, requested: &str, upstream_id: String,
                       catalogued: bool }                           // FR-017
-Resolution::Unified { model: &UnifiedModel, members: &[ResolvedMember] }  // FR-016
+Resolution::Unified(&UnifiedModel)     // members pre-resolved at load  // FR-016
+
+// catalogued = found in the catalog (R13)
 
 NotFound::Provider { token }                     // FR-018
 NotFound::UnifiedModel { name }                  // FR-014a (bare name)

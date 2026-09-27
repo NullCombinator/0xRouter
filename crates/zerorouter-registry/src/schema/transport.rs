@@ -64,17 +64,8 @@ impl Transport {
         ]
         .into_iter()
         .filter_map(|(k, v)| v.as_deref().map(|v| (k.to_owned(), v)));
-        let lists = self
-            .base_urls
-            .iter()
-            .flatten()
-            .enumerate()
-            .map(|(i, u)| (format!("base_urls[{i}]"), u.as_str()));
-        let regions = self
-            .regions
-            .iter()
-            .flatten()
-            .map(|(k, u)| (format!("regions.{k}"), u.as_str()));
+        let lists = self.base_urls.iter().flatten().enumerate().map(|(i, u)| (format!("base_urls[{i}]"), u.as_str()));
+        let regions = self.regions.iter().flatten().map(|(k, u)| (format!("regions.{k}"), u.as_str()));
         single.chain(lists).chain(regions)
     }
 }
@@ -83,10 +74,7 @@ impl Transport {
 #[serde(untagged)]
 pub enum RetryPolicy {
     Attempts(u32),
-    Policy {
-        attempts: u32,
-        delay_ms: Option<u64>,
-    },
+    Policy { attempts: u32, delay_ms: Option<u64> },
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

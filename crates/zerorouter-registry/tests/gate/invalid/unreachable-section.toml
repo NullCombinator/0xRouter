@@ -1,0 +1,5 @@
+# expect: capabilities.tts: no endpoint and provider has no transport
+id = "x"
+category = "apikey"
+
+[capabilities.tts]

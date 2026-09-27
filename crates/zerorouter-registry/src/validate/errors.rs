@@ -69,11 +69,7 @@ impl fmt::Display for ValidationError {
         if self.line > 0 {
             write!(f, ":{}:{}", self.line, self.col)?;
         }
-        if self.path.is_root() {
-            write!(f, ": {}", self.rule)
-        } else {
-            write!(f, " {}: {}", self.path, self.rule)
-        }
+        if self.path.is_root() { write!(f, ": {}", self.rule) } else { write!(f, " {}: {}", self.path, self.rule) }
     }
 }
 

@@ -1,0 +1,9 @@
+# expect: models[1].id: duplicate of models[0]
+id = "x"
+category = "apikey"
+
+[[models]]
+id = "m"
+
+[[models]]
+id = "m"

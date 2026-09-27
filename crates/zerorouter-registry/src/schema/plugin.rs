@@ -86,9 +86,7 @@ impl ProviderEntity {
 
     /// Lookup tokens this provider owns: its id, `alias`, and `aliases` (never `ui_alias`).
     pub fn tokens(&self) -> impl Iterator<Item = &str> {
-        std::iter::once(self.id.as_str())
-            .chain(self.alias.as_deref())
-            .chain(self.aliases.iter().map(String::as_str))
+        std::iter::once(self.id.as_str()).chain(self.alias.as_deref()).chain(self.aliases.iter().map(String::as_str))
     }
 
     /// `transport` followed by every `transports[]` entry.

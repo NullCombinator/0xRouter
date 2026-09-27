@@ -1,0 +1,10 @@
+# expect: transport.default_region: "eu" is not a key of regions
+id = "x"
+category = "apikey"
+
+[transport]
+base_url = "https://api.x.example/v1/chat/completions"
+default_region = "eu"
+
+[transport.regions]
+us = "https://us.x.example/v1"

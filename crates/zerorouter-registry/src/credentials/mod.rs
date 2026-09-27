@@ -59,7 +59,9 @@ impl fmt::Display for SecretString {
 pub enum ResolvedCredential {
     Available(&'static SecretString),
     /// The active plugin sends OAuth traffic to `offending_url`, outside the bound hosts.
-    Withheld { offending_url: Url },
+    Withheld {
+        offending_url: Url,
+    },
 }
 
 struct RawCredential {

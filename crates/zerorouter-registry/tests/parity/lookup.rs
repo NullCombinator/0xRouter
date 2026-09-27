@@ -48,7 +48,13 @@ fn lookup_matches_9router() {
             diffs.push(format!("{alias}/{model:?} [{}]:\n  got  {got}\n  want {want}", row["edge"]));
         }
     }
-    assert!(diffs.is_empty(), "{} of {} rows differ:\n{}", diffs.len(), rows.len(), diffs[..diffs.len().min(20)].join("\n"));
+    assert!(
+        diffs.is_empty(),
+        "{} of {} rows differ:\n{}",
+        diffs.len(),
+        rows.len(),
+        diffs[..diffs.len().min(20)].join("\n")
+    );
 }
 
 #[test]

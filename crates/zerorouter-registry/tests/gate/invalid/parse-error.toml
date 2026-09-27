@@ -1,0 +1,3 @@
+# expect: extra `=`
+id = "x"
+category = = "apikey"

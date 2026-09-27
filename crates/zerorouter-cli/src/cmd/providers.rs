@@ -35,7 +35,13 @@ pub(crate) fn run(home: Option<PathBuf>, capability: Option<&str>, as_json: bool
                 r["id"].as_str().unwrap_or_default(),
                 r["alias"].as_str().unwrap_or("-"),
                 r["category"].as_str().unwrap_or_default(),
-                r["capabilities"].as_array().into_iter().flatten().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(",")
+                r["capabilities"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
             );
         }
     }

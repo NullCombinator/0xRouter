@@ -23,7 +23,8 @@ pub enum Resolution<'a> {
         /// The model part of the target, as sent.
         requested: &'a str,
         upstream_id: String,
-        /// `false`: undeclared, allowed by `allow_uncatalogued_models`.
+        /// `false`: not in the catalog, forwarded because the provider is passthrough or
+        /// allows uncatalogued models.
         catalogued: bool,
     },
     Unified(&'a UnifiedModel),
@@ -43,10 +44,11 @@ impl Registry {
         }
         let p = self.index_of(token).ok_or_else(|| NotFound::Provider { token: token.to_owned() })?;
         let provider = &self.providers[p];
-        let catalogued = provider.passthrough_models || self.find_at(p, model).is_some();
-        if !catalogued && !self.settings(&provider.id).allow_uncatalogued_models {
+        let (found, upstream_id) = self.lookup_at(p, model);
+        let catalogued = found.is_some();
+        if !catalogued && !provider.passthrough_models && !self.settings(&provider.id).allow_uncatalogued_models {
             return Err(NotFound::Model { provider: provider.id.clone(), model: model.to_owned() });
         }
-        Ok(Resolution::Direct { provider, requested: model, upstream_id: self.upstream_at(p, model), catalogued })
+        Ok(Resolution::Direct { provider, requested: model, upstream_id, catalogued })
     }
 }

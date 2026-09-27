@@ -1,0 +1,8 @@
+# expect: capabilities
+id = "x"
+category = "apikey"
+
+[transport]
+base_url = "https://api.x.example/v1/chat/completions"
+
+[capabilities.telepathy]

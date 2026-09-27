@@ -1,0 +1,9 @@
+# expect: oauth.params.refresh_token: unknown OAuth parameter; allowed: 
+id = "x"
+category = "oauth"
+
+[oauth]
+client_id = "abc"
+
+[oauth.params]
+refresh_token = "x"

@@ -1,0 +1,2 @@
+# expect: missing field `category`
+id = "x"

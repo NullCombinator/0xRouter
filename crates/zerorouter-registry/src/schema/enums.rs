@@ -164,9 +164,8 @@ mod tests {
 
     #[test]
     fn unknown_value_lists_allowed() {
-        let err = toml::from_str::<std::collections::BTreeMap<String, Quirk>>("q = \"run_script\"")
-            .unwrap_err()
-            .to_string();
+        let err =
+            toml::from_str::<std::collections::BTreeMap<String, Quirk>>("q = \"run_script\"").unwrap_err().to_string();
         assert!(err.contains("unknown quirk \"run_script\"; allowed: preserve_cache_control"), "{err}");
     }
 

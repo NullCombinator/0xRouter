@@ -8,7 +8,9 @@ use toml::de::{DeTable, DeValue};
 
 use super::errors::{FieldPath, Seg, ValidationError, line_col};
 use super::secrets::{check_map_key, check_query, check_url};
-use crate::schema::{CapabilityKind, KNOWN_OAUTH_PARAMS, KNOWN_SECTION_FORMATS, PluginFile, PluginSource, ProviderEntity, Transport};
+use crate::schema::{
+    CapabilityKind, KNOWN_OAUTH_PARAMS, KNOWN_SECTION_FORMATS, PluginFile, PluginSource, ProviderEntity, Transport,
+};
 
 /// Parses and checks one plugin file. Returns every error found, not just the first.
 pub fn validate(src: &str, source: PluginSource, file: &str) -> Result<ProviderEntity, Vec<ValidationError>> {

@@ -13,13 +13,34 @@ use regex_lite::Regex;
 
 use crate::schema::Model;
 
-static SUFFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\([^()]+\)\s*$").expect("suffix regex"));
+/// JavaScript's `\s` and `String.prototype.trim` set (WhiteSpace + LineTerminator). Not
+/// `char::is_whitespace`, which adds U+0085 and drops U+FEFF.
+fn is_js_space(c: char) -> bool {
+    matches!(
+        c,
+        '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}'
+    )
+}
+
+fn js_trim(s: &str) -> &str {
+    s.trim_matches(is_js_space)
+}
+
+/// Byte offset where 9router's `/\([^()]+\)\s*$/` matches, if it does: the nearest `(`
+/// before a final `)` with at least one character and no parentheses between them.
+/// A backward scan; regex-lite would try every start position.
+fn suffix_start(id: &str) -> Option<usize> {
+    let body = id.trim_end_matches(is_js_space).strip_suffix(')')?;
+    let open = body.rfind(['(', ')'])?;
+    (body.as_bytes()[open] == b'(' && open + 1 < body.len()).then_some(open)
+}
 
 /// Splits a thinking suffix: `("claude-opus-4", Some("(high)"))`. The base is trimmed
 /// only when a suffix is present, as in 9router.
 pub fn split_suffix(id: &str) -> (&str, Option<&str>) {
-    match SUFFIX.find(id) {
-        Some(m) => (id[..m.start()].trim(), Some(&id[m.start()..])),
+    match suffix_start(id) {
+        Some(i) => (js_trim(&id[..i]), Some(&id[i..])),
         None => (id, None),
     }
 }
@@ -86,18 +107,22 @@ impl Catalog {
 
     /// 9router `getModelUpstreamId`.
     pub(crate) fn upstream_id(&self, models: &[Model], id: &str) -> String {
+        self.find_with_upstream(models, id).1
+    }
+
+    /// `find(id)` and `upstream_id(id)` in one pass. 9router looks up the full id for the
+    /// first and the suffix-free base for the second; without a suffix they are the same.
+    pub(crate) fn find_with_upstream<'m>(&self, models: &'m [Model], id: &str) -> (Option<&'m Model>, String) {
         let (base, suffix) = split_suffix(id);
-        let found = self.find(models, base);
-        upstream_id(found, base, suffix)
+        let by_base = self.find(models, base);
+        let found = if suffix.is_none() { by_base } else { self.find(models, id) };
+        (found, upstream_id(by_base, base, suffix))
     }
 }
 
 /// `id` with a final suffix removed and whitespace trimmed (9router `baseModelId`).
 fn strip_suffix(id: &str) -> &str {
-    match SUFFIX.find(id) {
-        Some(m) => id[..m.start()].trim(),
-        None => id.trim(),
-    }
+    js_trim(suffix_start(id).map_or(id, |i| &id[..i]))
 }
 
 /// FR-021. `base`/`suffix` come from [`split_suffix`] on the requested id.
@@ -157,10 +182,7 @@ fn title_case(s: &str) -> String {
 
 /// Display name for a model that declares none (9router `deriveModelName`).
 pub fn derive_model_name(id: &str) -> String {
-    NAME_PATTERNS
-        .iter()
-        .find_map(|(re, f)| re.captures(id).map(|m| f(&m)))
-        .unwrap_or_else(|| id.to_owned())
+    NAME_PATTERNS.iter().find_map(|(re, f)| re.captures(id).map(|m| f(&m))).unwrap_or_else(|| id.to_owned())
 }
 
 #[cfg(test)]
@@ -171,6 +193,38 @@ mod tests {
         ids.iter()
             .map(|(id, up)| Model { id: (*id).into(), upstream_id: up.map(Into::into), ..Model::default() })
             .collect()
+    }
+
+    /// The scan agrees with 9router's regex. regex-lite's `\s` is ASCII-only, so the
+    /// oracle is limited to ASCII inputs; JS-only whitespace is checked separately.
+    #[test]
+    fn suffix_scan_matches_the_regex() {
+        let re = regex_lite::Regex::new(r"\([^()]+\)\s*$").unwrap();
+        for id in [
+            "m",
+            "m(high)",
+            "m (high)",
+            "m(high) \t",
+            "m()",
+            "m(a(b))",
+            "m(a)(b)",
+            "m(a)x",
+            "(x)",
+            "()",
+            ")",
+            "(",
+            "m(a b)",
+            "m((a)",
+            "m(a))",
+            "m(\n)",
+            "a(b)c(d) ",
+            "",
+        ] {
+            assert_eq!(suffix_start(id), re.find(id).map(|m| m.start()), "{id:?}");
+        }
+        assert_eq!(split_suffix("m(high)\u{3000}"), ("m", Some("(high)\u{3000}")));
+        assert_eq!(split_suffix("m\u{FEFF}(high)"), ("m", Some("(high)")));
+        assert_eq!(strip_suffix("\u{A0}m\u{A0}"), "m");
     }
 
     #[test]

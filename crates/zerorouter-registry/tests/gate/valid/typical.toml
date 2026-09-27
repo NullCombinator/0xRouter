@@ -1,0 +1,32 @@
+schema = 1
+id = "acme"
+category = "apikey"
+alias = "ac"
+aliases = ["acme-ai"]
+
+[auth]
+kind = "apikey"
+header = "Authorization"
+scheme = "bearer"
+
+[transport]
+base_url = "https://api.acme.example/v1/chat/completions"
+format = "openai"
+validate_url = "https://api.acme.example/v1/models"
+headers = { "User-Agent" = "0router" }
+quirks = ["preserve_cache_control"]
+
+[capabilities.llm]            # served by [transport]
+
+[capabilities.embedding]
+endpoint = { base_url = "https://api.acme.example/v1/embeddings" }
+
+[[models]]
+id = "acme-large-2.1"
+upstream_id = "acme/large-2.1"
+context_length = 200000
+
+[[models]]
+id = "acme-embed-1"
+kind = "embedding"
+dimensions = 1024

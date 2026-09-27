@@ -58,9 +58,7 @@ pub enum ParamValue {
 /// The OAuth host set (FR-012a): hosts of every URL that may receive the client secret.
 /// `user_info_url`, `device_code_url`, and `oauth.endpoints` are excluded.
 pub fn host_set(oauth: Option<&OAuthDecl>, transports: &[&Transport]) -> BTreeSet<String> {
-    oauth_urls(oauth, transports)
-        .filter_map(|u| Url::parse(u).ok()?.host_str().map(str::to_owned))
-        .collect()
+    oauth_urls(oauth, transports).filter_map(|u| Url::parse(u).ok()?.host_str().map(str::to_owned)).collect()
 }
 
 /// The URLs behind [`host_set`], in declaration order.
@@ -68,12 +66,8 @@ pub(crate) fn oauth_urls<'a>(
     oauth: Option<&'a OAuthDecl>,
     transports: &'a [&'a Transport],
 ) -> impl Iterator<Item = &'a str> {
-    let declared = oauth
-        .into_iter()
-        .flat_map(|o| [&o.authorize_url, &o.token_url, &o.refresh_url]);
-    let on_transports = transports
-        .iter()
-        .flat_map(|t| [&t.token_url, &t.refresh_url, &t.auth_url]);
+    let declared = oauth.into_iter().flat_map(|o| [&o.authorize_url, &o.token_url, &o.refresh_url]);
+    let on_transports = transports.iter().flat_map(|t| [&t.token_url, &t.refresh_url, &t.auth_url]);
     declared.chain(on_transports).filter_map(|u| u.as_deref())
 }
 

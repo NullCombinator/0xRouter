@@ -275,10 +275,14 @@ not providers. The generator writes them separately to `tts-tables.json`: synthe
 → `{ provider, models }`, with the owning provider taken from `ttsModels.js`.
 
 The Rust parity tests compare the composed registry views against these fixtures. There
-are two documented deviations, and they are asserted explicitly:
+are three documented deviations, and they are asserted explicitly:
 - the 4 unowned alias tokens return not-found;
 - the 8 TTS tables are checked against `capabilities.tts.models` of their owning
-  provider, not as top-level keys.
+  provider, not as top-level keys;
+- `mimo-free` has no `mmf` alias, because `mmf` is also the id of another provider.
+  `id_to_alias` maps `mimo-free` to itself (`ui_alias = "mmf"` keeps the display name),
+  and the three `lookup.json` rows for undeclared models under `mmf` expect not-valid,
+  because `mmf` is not passthrough.
 
 The Codex review-suffix and Muse Spark branches in `getModelUpstreamId` and
 `getModelTargetFormat` are excluded from the oracle inputs (spec Assumptions).
@@ -298,6 +302,8 @@ The Codex review-suffix and Muse Spark branches in `getModelUpstreamId` and
 | `modelKind()` defaults to `"llm"` | `Option<ModelKind>`; `None` = no declared type | FR-004 |
 | `PROVIDER_MODELS` keyed by alias, with `[]` vs missing collapsed at some call sites | `models: Option<Vec<Model>>` per capability section; explicit `[]` stays distinct | Edge case |
 | Quirks as a free-form object | Closed enum of named quirks | R4 |
+| `isValidModel` is true for any model when the caller passes the provider in `passthroughProviders` | `passthrough_models` is a plugin flag. A passthrough provider accepts uncatalogued models whatever `allow_uncatalogued_models` says | FR-017 |
+| `getModelQuotaFamily` / `getModelStrip` / `getModelTargetFormat` fill in defaults (`"normal"`, `[]`, `null`) | `ModelInfo` fields are `Option`, with no defaults filled in | FR-022 |
 
 ---
 
@@ -339,3 +345,48 @@ These are the baselines future regressions are judged against.
 | `clap` (cli only) | `zerorouter-cli` arguments |
 
 No `tokio`, `inventory`, or `once_cell` in the library. Static tables use `std::sync::LazyLock`.
+
+---
+
+## R13. Implementation deviations from these documents (slice 002)
+
+These were found while implementing. The code and the contracts in `docs/` are
+authoritative wherever they differ from the earlier sections.
+
+**Schema**, to cover the full bundled census:
+- `AuthKind` adds `cookie` and `none`, and `AuthScheme` adds a `cursor` template variant.
+- Model `capabilities` and `params` are string lists, not maps. The capability set adds
+  `thinking` and `image_gen`.
+- Section endpoints carry extra fields.
+- New fields: `models_fetcher`, `api_key_hint`, and the display extras.
+- Transport `retry` values are a number or `{ attempts, delay_ms }`.
+- `usage` values are a string or a list.
+- `headers` is optional.
+- `anthropic_version` is a bool.
+- The `kilocode_org` auth hook is added.
+- URLs are stored as `String`, and checked by the gate rather than typed.
+- An empty transport `base_url` means the operator supplies it (azure).
+- The sentinel `base_url` in sections is dropped.
+
+**Uniqueness**: a model id is unique per `(id, kind)`, not per provider. `gemini-2.5-pro` is
+both an `llm` and an `stt` model. A lookup by id returns the first entry, as `findModel`
+does.
+
+**`catalogued`** in `Resolution::Direct` and `UnifiedMember` means "found in the catalog".
+When it is `false`, the model was forwarded because the provider is passthrough or allows
+uncatalogued models.
+
+**CLI**: `validate_user_plugin` runs the gate plus the cross-plugin checks: `credential_fallback`
+must name a bundled provider or the plugin itself.
+
+**Lookup**: the thinking-suffix regex is replaced by a backward scan. It is equivalent,
+as a unit test checks against the regex, and it uses JavaScript's whitespace set.
+`find` and `upstream_id` share one pass, which brings direct resolve from about 5 µs to
+about 465 ns.
+
+**Build**: the dev profile optimises dependencies at `opt-level = 2` and the registry at
+`opt-level = 1`, so debug loads and the 200-reload test stay fast. `rustfmt.toml` sets
+`max_width = 120`.
+
+**Placeholder**: bundled plugins carry `license = "MIT"` as a placeholder until 9router's
+licence is confirmed.

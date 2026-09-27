@@ -24,7 +24,7 @@ mod views;
 pub use credentials::{ResolvedCredential, SecretString};
 pub use load::{
     DroppedUnifiedModel, LoadReport, OperatorHome, PluginConflict, ReloadError, SkippedPlugin, StartupError,
-    WithheldCredential,
+    WithheldCredential, validate_user_plugin,
 };
 pub use lookup::{derive_model_name, normalise_version_sep, split_suffix};
 pub use registry::{CatalogEntry, ModelInfo, Registry, UnifiedMember, UnifiedModel};
@@ -57,9 +57,7 @@ impl RegistryHandle {
     /// are skipped and listed in [`Registry::report`].
     pub fn open(home: OperatorHome) -> Result<Self, StartupError> {
         let registry = load::build(&home, load::Mode::Startup).map_err(|errors| StartupError { errors })?;
-        Ok(Self {
-            inner: Arc::new(Inner { active: ArcSwap::from_pointee(registry), reload: Mutex::new(()), home }),
-        })
+        Ok(Self { inner: Arc::new(Inner { active: ArcSwap::from_pointee(registry), reload: Mutex::new(()), home }) })
     }
 
     /// A consistent snapshot. Hold it for the whole request (FR-025).

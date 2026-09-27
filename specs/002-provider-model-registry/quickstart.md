@@ -35,8 +35,11 @@ cargo test -p zerorouter-registry --test parity
 - 83 composed transports equal `tests/fixtures/9router/providers.json`;
 - 113 alias tokens resolve as in `alias.json`, and `qw`, `dv`, `devin`, `devin-cli`
   return not-found;
-- the 83-entry id-to-alias map and all OAuth URL groups match;
-- every row of `lookup.json` matches: all 935 bundled models plus the edge inputs.
+- the 83-entry id-to-alias map and all OAuth URL groups match, except that `mimo-free`
+  maps to itself: 0router drops its `mmf` alias, which collides with another provider;
+- all 2493 rows of `lookup.json` match: the 987 declared models of the 100 catalogued
+  providers plus 1506 edge inputs. The three `mmf` rows for undeclared models expect
+  not-valid, because `mmf` is no longer a passthrough alias.
 
 ## 3. No secrets in plugins (US1 scenario 4 · SC-002)
 
@@ -123,4 +126,8 @@ cargo bench -p zerorouter-registry --bench resolve
 - full load under 50 ms;
 - `resolve` p50 under 1 µs.
 
-Record the numbers as the Criterion baseline for later slices.
+Record the numbers as the Criterion baseline for later slices:
+`cargo bench -p zerorouter-registry --bench resolve -- --save-baseline slice-002`.
+
+Measured for slice 002 (release build, median): load ≈ 15 ms; resolve direct ≈ 465 ns,
+direct with suffix ≈ 869 ns, unified ≈ 48 ns, uncatalogued ≈ 226 ns, not found ≈ 88 ns.

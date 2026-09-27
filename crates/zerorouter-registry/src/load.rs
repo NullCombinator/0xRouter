@@ -13,7 +13,7 @@ use std::{env, fs, io};
 
 use url::Url;
 
-use crate::registry::{Registry, UnifiedModel, UnifiedMember, token_clashes, token_path};
+use crate::registry::{Registry, UnifiedMember, UnifiedModel, token_clashes, token_path};
 use crate::schema::{Decision, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings};
 use crate::validate::gate::{parse, positioned};
 use crate::validate::{FieldPath, ValidationError, validate};
@@ -153,6 +153,22 @@ impl Loaded {
     }
 }
 
+/// What `zerorouter-cli validate` runs on a user plugin file: the gate, then the
+/// cross-plugin reference checks against the bundled set. `auth.credential_fallback` must
+/// name a bundled provider or the plugin itself; other user plugins are not consulted.
+pub fn validate_user_plugin(src: &str, path: &Path) -> Result<ProviderEntity, Vec<ValidationError>> {
+    let file = path.display().to_string();
+    let entity = validate(src, PluginSource::User(path.to_owned()), &file)?;
+    if let Some(x) = entity.auth.as_ref().and_then(|a| a.credential_fallback.as_deref()) {
+        let bundled = bundled()?;
+        if !entity.tokens().any(|t| t == x) && !bundled.iter().any(|l| l.entity.tokens().any(|t| t == x)) {
+            let path = FieldPath::of("auth.credential_fallback");
+            return Err(vec![positioned(src, &file, path, format!("unknown provider {x:?}"))]);
+        }
+    }
+    Ok(entity)
+}
+
 /// Every embedded plugin through the gate. Any error is fatal.
 #[cfg(test)]
 pub(crate) fn load_bundled() -> Result<Vec<ProviderEntity>, Vec<ValidationError>> {
@@ -186,13 +202,14 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<Val
 
     let mut report = LoadReport::default();
     let mut errors = Vec::new();
-    let skip = |report: &mut LoadReport, errors: &mut Vec<ValidationError>, l: &Loaded, e: Vec<ValidationError>| {
-        match (mode, l.user_path()) {
-            (Mode::Startup, Some(p)) => {
-                report.skipped.push(SkippedPlugin { path: p.to_owned(), id: l.entity.id.clone(), errors: e })
-            }
-            _ => errors.extend(e),
+    let skip = |report: &mut LoadReport, errors: &mut Vec<ValidationError>, l: &Loaded, e: Vec<ValidationError>| match (
+        mode,
+        l.user_path(),
+    ) {
+        (Mode::Startup, Some(p)) => {
+            report.skipped.push(SkippedPlugin { path: p.to_owned(), id: l.entity.id.clone(), errors: e })
         }
+        _ => errors.extend(e),
     };
 
     // User plugins, then duplicate user ids (both skipped / rejected).
@@ -205,7 +222,10 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<Val
     for idx in by_id.values().filter(|v| v.len() > 1) {
         let paths = idx.iter().map(|&i| user[i].file.as_str()).collect::<Vec<_>>().join(", ");
         for &i in idx {
-            let e = user[i].error(FieldPath::of("id"), format!("id {:?} declared by more than one user plugin: {paths}", user[i].entity.id));
+            let e = user[i].error(
+                FieldPath::of("id"),
+                format!("id {:?} declared by more than one user plugin: {paths}", user[i].entity.id),
+            );
             skip(&mut report, &mut errors, &user[i], vec![e]);
             dup.insert(i);
         }
@@ -223,7 +243,8 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<Val
             active.push(u);
             continue;
         };
-        let conflict = || PluginConflict { id: u.entity.id.clone(), path: u.user_path().unwrap_or(Path::new("")).to_owned() };
+        let conflict =
+            || PluginConflict { id: u.entity.id.clone(), path: u.user_path().unwrap_or(Path::new("")).to_owned() };
         match config.plugin_decisions.get(&u.entity.id) {
             None => report.pending_conflicts.push(conflict()),
             Some(Decision::Decline) => report.declined.push(conflict()),
@@ -287,7 +308,12 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<Val
 }
 
 /// Top-level `*.toml` files in `plugins/`, sorted. Invalid files are skipped at startup.
-fn discover(home: &OperatorHome, mode: Mode, report: &mut LoadReport, errors: &mut Vec<ValidationError>) -> Vec<Loaded> {
+fn discover(
+    home: &OperatorHome,
+    mode: Mode,
+    report: &mut LoadReport,
+    errors: &mut Vec<ValidationError>,
+) -> Vec<Loaded> {
     let dir = home.plugins_dir();
     let entries = match fs::read_dir(&dir) {
         Ok(e) => e,
@@ -387,7 +413,10 @@ pub(crate) fn validate_config(
                 if excused(&m.provider) {
                     drop_for.get_or_insert_with(|| m.provider.clone());
                 } else {
-                    err(mb.key("provider"), format!("unknown provider {:?} (unified model {:?})", m.provider, decl.name));
+                    err(
+                        mb.key("provider"),
+                        format!("unknown provider {:?} (unified model {:?})", m.provider, decl.name),
+                    );
                 }
                 continue;
             };

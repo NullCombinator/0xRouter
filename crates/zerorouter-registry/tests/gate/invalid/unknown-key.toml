@@ -1,0 +1,7 @@
+# expect: oauth.client_secret: unknown field
+id = "x"
+category = "oauth"
+
+[oauth]
+client_id = "abc"
+client_secret = "shh"

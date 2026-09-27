@@ -1,0 +1,7 @@
+# expect: transport.quirks[0]
+id = "x"
+category = "apikey"
+
+[transport]
+base_url = "https://api.x.example/v1/chat/completions"
+quirks = ["run_script"]
