@@ -53,3 +53,55 @@ provider tokens give `NotFound::Provider`, where JS falls back to returning the 
 
 There are no Critical, High or Medium findings. The fixture-backed parity tests pass: 83
 transports, 113 alias tokens, 5 OAuth groups and 2493 lookup rows.
+
+---
+
+# Parity audit, round 2: everything else that copies 9router behaviour
+
+Date: 2026-09-27. Gates first: `cargo fmt --all --check`, `cargo clippy --workspace
+--all-targets -- -D warnings` and `cargo test --workspace` all pass.
+
+## Scope
+
+| Rust | JS | Purpose |
+|---|---|---|
+| `resolve.rs` (`Registry::resolve`) | `services/model.js` (`parseModel`, `getModelInfoCore`) | Target classification |
+| `registry.rs` (alias index, `catalog`, `model`) | `services/model.js` (`ALIAS_TO_PROVIDER_ID`, `MEDIA_ONLY_ALIASES`), `providers/index.js` (`PROVIDER_MODELS`) | Token → provider, provider → catalog |
+| `schema/model.rs` (`Entry`) | `providers/models/schema.js` (`normalizeModel`) | Bare-string model entries, name fallback |
+| `schema/enums.rs`, `oauth_params.rs`, `section_formats.rs` | registry `category`, `serviceKinds`, `strip`, `executors/default.js` `HEADER_HOOKS`, `providers/schema.js` `PROVIDER_DEFAULTS` | Closed value sets |
+| `credentials/` | `buildTransport` `clientSecret` injection | Bundled OAuth client secrets |
+
+Out of scope: `tools/gen-bundled/generate.mjs` is JavaScript that reads 9router directly.
+Its output is checked end to end by the fixture-backed parity tests.
+
+## Checks
+
+- **Target parsing**: the target is split at the first `/`, as `indexOf("/")` does ✓. The
+  empty target, `/x`, `x/`, bare names and unknown tokens return not-found. These are
+  intentional deviations (R10, FR-014a, FR-018).
+- **Alias index**: id, `alias` and `aliases[]` map to the id ✓. The media-only aliases (`el`,
+  `jina`, `polly`) are plugin `alias` fields and are covered by the 117-token oracle ✓.
+  JS object assignment lets the last registry entry win, while 0router rejects clashes at
+  load. The one bundled clash, `mmf`, is the R9 deviation.
+- **Closed sets**:
+  - Categories (`apikey`, `oauth`, `free`, `freeTier`, `webCookie`), `HEADER_HOOKS`
+    (`kimiHeaders`, `clineHeaders`, `kilocodeOrg`) and `serviceKinds` (10 values) match
+    9router exactly ✓.
+  - The default transport format is `openai`, as in `PROVIDER_DEFAULTS.format` ✓.
+  - `strip` has only `image` and `audio` as content kinds. The other `strip:` lists in
+    9router are tool-name filters, not model entries.
+- **normalizeModel**: a bare string becomes `{ id }`, and the name is derived only when it
+  is absent ✓. An empty name stays empty, as `name !== undefined` does. `findModelName`
+  then falls back to the requested id (round 1, fix #1) ✓.
+- **Credentials**: every composed transport that 9router gives a `clientSecret` gets the
+  same secret (checked with `matches` in the 83-transport test) ✓. Host binding
+  (FR-012a) is 0router-only.
+
+## Findings
+
+| # | File | Pattern | Finding | Severity | Status |
+|---|---|---|---|---|---|
+| 4 | `registry.rs` (catalogs) | Interface parity | 9router keys `PROVIDER_MODELS` by `alias \|\| id`, so a lookup by provider id or by an `aliases[]` entry finds no models. 0router reaches the catalog from any token. The request path is unaffected: `chatCore.js:81` always converts the provider id to its alias before looking anything up, and `grok-cli.js` tries both keys | Low | Accepted |
+| 5 | `registry.rs` (alias index) | State parity | JS alias map: the last writer wins on a clash. 0router rejects clashes at load (FR-013) | Low | Accepted: no bundled clashes remain (R9) |
+
+There are no Critical, High or Medium findings, and no code changes were needed in round 2.
