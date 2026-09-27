@@ -33,15 +33,31 @@ The gate allows rw to `~/.claude-0router`, `~/Desktop/0router`, and standard tem
 
 ## MCP servers
 
-All three are wired in `.mcp.json`:
+All four are wired in `.mcp.json`, which is gitignored because it holds the agentmemory HMAC secrets. They are enabled in `~/.claude-0router/settings.json` (`enabledMcpjsonServers`).
 
 | Server | Port | Purpose |
 |---|---|---|
-| `agentmemory` | 3211 | Main agent memory (coder-instance profile) |
-| `agentmemory-team` | 3212 | Subagent memory (architect profile, `TEAM_ID=0router`, `scope=shared`) |
-| `code-review-graph` | — | Structural graph of `ref/9router` (Tree-sitter parsed) |
+| `agentmemory` | 3211 | Main-session memory |
+| `agentmemory-team` | 3212 | Subagent memory (`TEAM_ID=0router`) |
+| `code-review-graph` | — | Structural graph of `ref/9router` (JS oracle, static at the ref SHA) |
+| `code-review-graph-0router` | — | Structural graph of this repo's tracked files (Rust). `--auto-watch` keeps it current |
 
-**Which instance to use:** main agent sessions → `mcp__agentmemory__*`. Subagents spawned from workflows → `mcp__agentmemory-team__*`. Both share the same underlying data space via TEAM_ID.
+**The two memory instances are separate stores.** Nothing written to one is visible from the other, and `memory_team_share` does not bridge them. Main sessions use `mcp__agentmemory__*`. Subagents can reach only `mcp__agentmemory-team__*`, according to the `tools:` allowlist in their agent frontmatter. Anything a subagent must know goes to the team instance.
+
+**Session protocol (main session):**
+1. Start: run `memory_slot_get` on `project_context`, `pending_items` and `guidance`, then `memory_smart_search` on the task.
+2. Before porting, auditing or changing shared code:
+   - trace 9router callers with `code-review-graph` (`query_graph_tool`, `get_affected_flows_tool`);
+   - check 0router callers and blast radius with `code-review-graph-0router` (`query_graph_tool`, `get_impact_radius_tool`, `detect_changes_tool`).
+   Prefer these to grep for structure questions.
+3. End of a slice or commit:
+   - `memory_save` each decision the code doesn't show, to both instances when subagents need it;
+   - update `pending_items`;
+   - `memory_lesson_save` anything learned the hard way.
+
+The file memory (`~/.claude-0router/projects/.../memory/`) holds only short pointers and user feedback. Project knowledge lives in agentmemory.
+
+**Rebuilding graphs:** use `code-review-graph build|update|postprocess --repo <path>`. Under Landlock, SQLite's default temp directory is denied, so run these with `SQLITE_TMPDIR=/tmp`, or the full-text index silently fails to build. The MCP entries already set it. Rebuild the `ref/9router` graph only after updating the ref.
 
 ## Reference codebase
 

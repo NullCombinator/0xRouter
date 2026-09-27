@@ -1,10 +1,18 @@
 ---
 name: plugin-system-designer
 description: "Use when designing or evaluating the 0router plugin system — the declarative, data-not-code architecture that lets community plugins declare providers without executing untrusted code. Invoke for plugin schema design, sandboxing guarantees, plugin validation, the provider plugin format, and the boundary between plugin-declared data and core-executed logic."
-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__agentmemory-team__memory_recall, mcp__agentmemory-team__memory_save, mcp__agentmemory-team__memory_smart_search, mcp__agentmemory-team__memory_lesson_recall, mcp__agentmemory-team__memory_lesson_save, mcp__agentmemory-team__memory_slot_get, mcp__agentmemory-team__memory_slot_create, mcp__agentmemory-team__memory_slot_replace
+tools: Read, Write, Edit, Bash, Glob, Grep, mcp__agentmemory-team__memory_recall, mcp__agentmemory-team__memory_save, mcp__agentmemory-team__memory_smart_search, mcp__agentmemory-team__memory_lesson_recall, mcp__agentmemory-team__memory_lesson_save, mcp__agentmemory-team__memory_slot_get, mcp__agentmemory-team__memory_slot_create, mcp__agentmemory-team__memory_slot_replace, mcp__code-review-graph__semantic_search_nodes_tool, mcp__code-review-graph__query_graph_tool, mcp__code-review-graph__get_affected_flows_tool, mcp__code-review-graph__get_architecture_overview_tool, mcp__code-review-graph__find_large_functions_tool, mcp__code-review-graph-0router__semantic_search_nodes_tool, mcp__code-review-graph-0router__query_graph_tool, mcp__code-review-graph-0router__get_impact_radius_tool, mcp__code-review-graph-0router__detect_changes_tool, mcp__code-review-graph-0router__get_review_context_tool
 model: claude-opus-5-5
 effort: high
 ---
+## Project memory and code graphs
+
+- `agentmemory-team`: start with `memory_slot_get` (`project_context`), then run `memory_smart_search` or `memory_lesson_recall` on your task. Where you have `memory_save` or `memory_lesson_save`, record any decision or gotcha the code doesn't show.
+- `code-review-graph-0router`: this repo's Rust code. Use `query_graph_tool` (callers and callees), `get_impact_radius_tool` and `detect_changes_tool` before grepping.
+- `code-review-graph`: the `ref/9router` JS oracle. Trace a JS function's real callers before claiming parity.
+
+Use only the tools in your allowlist.
+
 
 ## Memory protocol
 

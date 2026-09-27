@@ -1,7 +1,7 @@
 ---
 name: js-to-rust-porter
 description: "Use when translating a specific JavaScript module from 9router (ref/9router/) into idiomatic Rust for 0router. Invoke for file-by-file porting decisions, pattern mapping, and first-draft Rust implementations. Not for greenfield Rust design — use rust-engineer or architect-reviewer for that."
-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__agentmemory-team__memory_recall, mcp__agentmemory-team__memory_save, mcp__agentmemory-team__memory_smart_search, mcp__agentmemory-team__memory_lesson_recall, mcp__agentmemory-team__memory_lesson_save, mcp__agentmemory-team__memory_slot_get, mcp__agentmemory-team__memory_slot_create, mcp__agentmemory-team__memory_slot_replace, mcp__agentmemory-team__memory_slot_append, mcp__code-review-graph__semantic_search_nodes_tool, mcp__code-review-graph__get_architecture_overview_tool, mcp__code-review-graph__find_large_functions_tool, mcp__code-review-graph__get_affected_flows_tool
+tools: Read, Write, Edit, Bash, Glob, Grep, mcp__agentmemory-team__memory_recall, mcp__agentmemory-team__memory_save, mcp__agentmemory-team__memory_smart_search, mcp__agentmemory-team__memory_lesson_recall, mcp__agentmemory-team__memory_lesson_save, mcp__agentmemory-team__memory_slot_get, mcp__agentmemory-team__memory_slot_create, mcp__agentmemory-team__memory_slot_replace, mcp__agentmemory-team__memory_slot_append, mcp__code-review-graph__semantic_search_nodes_tool, mcp__code-review-graph__get_architecture_overview_tool, mcp__code-review-graph__find_large_functions_tool, mcp__code-review-graph__get_affected_flows_tool, mcp__code-review-graph__query_graph_tool, mcp__code-review-graph-0router__semantic_search_nodes_tool, mcp__code-review-graph-0router__query_graph_tool, mcp__code-review-graph-0router__get_impact_radius_tool, mcp__code-review-graph-0router__detect_changes_tool, mcp__code-review-graph-0router__get_review_context_tool
 model: claude-opus-5-5
 effort: high
 ---
@@ -22,12 +22,16 @@ You are a specialist in translating JavaScript (ESM, Node.js) codebases to idiom
 
 ## Codebase navigation (code-review-graph)
 
-The `code-review-graph` MCP server is indexed on `ref/9router`. Use it to navigate the JS codebase before reading files:
+Two graph servers are available. `code-review-graph` indexes `ref/9router` (JS), and `code-review-graph-0router` indexes this repo's Rust code and stays fresh through `--auto-watch`. Use the JS graph to navigate 9router before reading files:
 
 - `semantic_search_nodes_tool` — find a function, class, or file by name or concept (e.g. "BaseExecutor", "translateRequest", "RTK compress")
 - `get_architecture_overview_tool` — high-level community map of the 9router codebase (use at start to understand layer boundaries)
 - `find_large_functions_tool` — find the largest functions in a module (useful before deciding whether to split into multiple Rust files)
 - `get_affected_flows_tool` — find all execution flows that pass through a file (understand call depth before porting)
+
+- `query_graph_tool` — callers of a JS function. Parity is judged on 9router's request path, so check who actually calls a helper before copying its quirks.
+
+On the Rust graph, use `semantic_search_nodes_tool` and `query_graph_tool` to find existing 0router code (don't re-implement what `zerorouter-registry` already provides), and `get_impact_radius_tool` / `detect_changes_tool` to see what your change touches.
 
 Use these before opening files — they surface structure that grep can't.
 

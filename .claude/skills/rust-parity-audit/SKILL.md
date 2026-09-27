@@ -15,6 +15,14 @@ Load this skill when:
 
 ## Audit Protocol
 
+### Step 0: Load context (memory + graphs)
+
+- `memory_lesson_recall` / `memory_smart_search` for the module: earlier audits and accepted deviations. Use `agentmemory` in the main session and `agentmemory-team` in subagents. Accepted deviations are also listed in `specs/*/research.md` and `specs/*/parity-audit.md`.
+- `code-review-graph` → `query_graph_tool` (callers) and `get_affected_flows_tool` on each JS function in scope. **Judge parity on 9router's request path.** A difference that shows up only when a helper is called in a way no 9router caller uses is at most Low.
+- `code-review-graph-0router` → `query_graph_tool` / `get_impact_radius_tool` on the Rust counterpart, to see who depends on the behaviour being audited.
+
+After the audit, save each accepted deviation with `memory_save`, so the next audit doesn't re-flag it.
+
 ### Step 1: Establish the scope
 
 Identify the exact JS file(s) this Rust module replaces.
