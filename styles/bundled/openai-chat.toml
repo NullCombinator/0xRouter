@@ -1,0 +1,138 @@
+# OpenAI Chat Completions (`/v1/chat/completions`): the openai SDKs, most OpenAI-compatible tools.
+# contracts/api-style-schema.md; 9router oracle open-sse/translator/formats/openai.js.
+schema = 1
+kind = "api-style"
+id = "openai-chat"
+
+[access_key]
+carriers = [{ header = "authorization", scheme = "bearer" }]
+
+# Codex sends `session_id`; other clients may pin their prompt cache with `prompt_cache_key`.
+[session]
+carriers = [{ header = "session_id" }, { path = "prompt_cache_key" }]
+
+[[routes]]
+method = "POST"
+path = "/v1/chat/completions"
+op = "generate"
+type = "text"
+model = { body = "model" }
+stream = { body = "stream" }
+
+# The default model list; anthropic-messages takes requests carrying `anthropic-version`.
+[[routes]]
+method = "GET"
+path = "/v1/models"
+op = "list_models"
+type = "text"
+
+[text.layout]
+system = "first_message"
+messages = "messages"
+content = "content"
+content_form = "string_when_text_only"
+tool_calls = "message_field"
+tool_results = "tool_role_message"
+arguments = "json_string"
+alternation = "as_is"
+
+# `cache_control` on chat parts is an OpenRouter extension for Anthropic models.
+[text.parts.text]
+data = { type = "text", text = "{part.text}", cache_control = "{part.cache_control?}" }
+
+[text.parts.image]
+data = { type = "image_url", image_url = { url = "{media}" }, cache_control = "{part.cache_control?}" }
+codec = "data_url"
+
+[text.parts.tool_call]
+data = { id = "{call.id}", type = "function", function = { name = "{call.name}", arguments = "{call.arguments}" } }
+
+[text.parts.tool_result]
+data = { role = "tool", tool_call_id = "{result.id}", content = "{result.content}" }
+
+[text.tools]
+data = { type = "function", function = { name = "{tool.name}", description = "{tool.description?}", parameters = "{tool.parameters?}" } }
+choice = { path = "tool_choice", auto = "auto", required = "required", none = "none", named = { type = "function", function = { name = "{tool.name}" } } }
+
+[text.params]
+max_tokens = "max_tokens"
+temperature = "temperature"
+top_p = "top_p"
+stop = "stop"
+seed = "seed"
+presence_penalty = "presence_penalty"
+frequency_penalty = "frequency_penalty"
+user = "user"
+parallel_tool_calls = "parallel_tool_calls"
+thinking = { path = "reasoning_effort", form = "effort" }
+response_format = { path = "response_format", form = "chat_response_format" }
+
+[text.finish]
+stop = "stop"
+length = "length"
+tool_calls = "tool_calls"
+function_call = "tool_calls"
+content_filter = "content_filter"
+error = "error"
+
+[text.finish_out]
+tool_calls = "tool_calls"
+
+[text.usage]
+input = "usage.prompt_tokens"
+output = "usage.completion_tokens"
+cache_read = "usage.prompt_tokens_details.cached_tokens"
+reasoning = "usage.completion_tokens_details.reasoning_tokens"
+input_semantics = "includes_cache"
+
+[text.response]
+id_prefix = "chatcmpl-"
+body = { id = "{response.id}", object = "chat.completion", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, message = { role = "assistant", content = "{response.text?}", reasoning_content = "{response.thinking?}", tool_calls = "{response.tool_calls?}" }, finish_reason = "{response.finish}" }], usage = { prompt_tokens = "{usage.input?}", completion_tokens = "{usage.output?}", total_tokens = "{usage.total?}", prompt_tokens_details = { cached_tokens = "{usage.cache_read?}" }, completion_tokens_details = { reasoning_tokens = "{usage.reasoning?}" } } }
+
+[text.stream]
+framing = "sse_data_done"
+blocks = "implicit"
+tool_arguments = "fragments"
+
+# Decode templates leave out `object` and `created`: several OpenAI-compatible upstreams
+# omit them.
+[[text.stream.events]]
+on = "preamble"
+data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { role = "assistant", content = "" } }] }
+match = { id = "{response.id}", model = "{response.model?}" }
+
+[[text.stream.events]]
+on = "text_delta"
+data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { content = "{delta.text}" } }] }
+match = { choices = [{ delta = { content = "{delta.text}" } }] }
+
+[[text.stream.events]]
+on = "thinking_delta"
+data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { reasoning_content = "{delta.thinking}" } }] }
+match = { choices = [{ delta = { reasoning_content = "{delta.thinking}" } }] }
+
+[[text.stream.events]]
+on = "block_start:tool_call"
+data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { tool_calls = [{ index = "{tool.ordinal}", id = "{block.id}", type = "function", function = { name = "{block.name}", arguments = "" } }] } }] }
+match = { choices = [{ delta = { tool_calls = [{ index = "{tool.ordinal?}", id = "{block.id}", function = { name = "{block.name}" } }] } }] }
+
+[[text.stream.events]]
+on = "tool_arguments"
+data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { tool_calls = [{ index = "{tool.ordinal}", function = { arguments = "{delta.arguments}" } }] } }] }
+match = { choices = [{ delta = { tool_calls = [{ index = "{tool.ordinal?}", function = { arguments = "{delta.arguments}" } }] } }] }
+
+[[text.stream.events]]
+on = "finish"
+data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = {}, finish_reason = "{finish}" }] }
+match = { choices = [{ finish_reason = "{finish}" }] }
+
+[[text.stream.events]]
+on = "usage"
+when_request = "stream_options.include_usage"
+data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [], usage = { prompt_tokens = "{usage.input}", completion_tokens = "{usage.output}", total_tokens = "{usage.total?}", prompt_tokens_details = { cached_tokens = "{usage.cache_read?}" }, completion_tokens_details = { reasoning_tokens = "{usage.reasoning?}" } } }
+match = { usage = { prompt_tokens = "{usage.input}" } }
+
+[errors]
+body = { error = { message = "{error.message}", type = "{error.type}", code = "{error.code}", zerorouter = "{error.details}" } }
+type_map = { 400 = "invalid_request_error", 401 = "invalid_request_error", 403 = "invalid_request_error", 404 = "invalid_request_error", 429 = "rate_limit_exceeded", 500 = "server_error", 502 = "server_error", 503 = "server_error" }
+stream_event = { data = "{error.body}" }

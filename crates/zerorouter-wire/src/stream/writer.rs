@@ -250,11 +250,14 @@ impl<'s> StreamWriter<'s> {
 
     fn done(&mut self, out: &mut String) {
         self.stop(out);
-        let finish = self.finish.unwrap_or(if self.answer.iter().any(|p| matches!(p, Part::ToolCall { .. })) {
-            FinishReason::ToolCalls
-        } else {
-            FinishReason::Stop
-        });
+        // Some wires report a plain completion even when the turn ended in tool calls
+        // (Responses `completed`); clients act on the tool-calls reason.
+        let calls = self.answer.iter().any(|p| matches!(p, Part::ToolCall { .. }));
+        let finish = match self.finish {
+            None | Some(FinishReason::Stop) if calls => FinishReason::ToolCalls,
+            Some(f) => f,
+            None => FinishReason::Stop,
+        };
         self.finish = Some(finish);
         self.emit(StreamOn::Finish, &Bindings::new(), out);
         if !self.state.usage.is_empty() {

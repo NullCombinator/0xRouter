@@ -1,0 +1,153 @@
+# Gemini generateContent (`/v1beta/models/{model}:generateContent`): the Gemini CLI and the
+# google-genai SDKs. contracts/api-style-schema.md; 9router oracle
+# src/app/api/v1beta/models/[...path]/route.js and open-sse/translator/formats/gemini.js.
+schema = 1
+kind = "api-style"
+id = "gemini"
+
+[access_key]
+carriers = [
+  { header = "x-goog-api-key", scheme = "raw" },
+  { query = "key", scheme = "raw" },
+  { header = "authorization", scheme = "bearer" },
+]
+
+# The Gemini CLI sends no session id of its own; clients that do use 9router's header keys.
+[session]
+carriers = [{ header = "x-session-id" }, { header = "session-id" }]
+
+# `{model*}` takes `provider/model` names, as 9router's `[...path]` route does. Clients ask
+# for SSE with `?alt=sse`; the SDKs and the Gemini CLI always do.
+[[routes]]
+method = "POST"
+path = "/v1beta/models/{model*}:generateContent"
+op = "generate"
+type = "text"
+model = { path = "model" }
+
+[[routes]]
+method = "POST"
+path = "/v1beta/models/{model*}:streamGenerateContent"
+op = "generate"
+type = "text"
+model = { path = "model" }
+stream = { path_suffix = ":streamGenerateContent" }
+
+[text.layout]
+system = "system_instruction"
+messages = "contents"
+content = "parts"
+roles = { assistant = "model", tool = "user" }
+tool_calls = "function_call_part"
+tool_results = "function_response_part"
+arguments = "json_object"
+tool_result_match = "name"
+tool_result_content = "object"
+
+# A thought is a text part marked `thought`; plain text must not have the mark.
+[text.parts.text]
+data = { text = "{part.text}" }
+match = { text = "{part.text}", thought = "{null}" }
+
+[text.parts.thinking]
+data = { text = "{part.text}", thought = true, thoughtSignature = "{part.signature?}" }
+
+# `{media}` is the whole part: `{ inlineData = … }` or `{ fileData = … }`.
+[text.parts.image]
+data = "{media}"
+codec = "gemini_inline_data"
+
+[text.parts.tool_call]
+data = { functionCall = { id = "{call.id?}", name = "{call.name}", args = "{call.arguments}" } }
+
+[text.parts.tool_result]
+data = { functionResponse = { id = "{result.id?}", name = "{result.name}", response = "{result.content}" } }
+
+[text.tools]
+data = { name = "{tool.name}", description = "{tool.description?}", parameters = "{tool.parameters?}" }
+wrap = [{ functionDeclarations = "{tools.list}" }]
+choice = { path = "toolConfig.functionCallingConfig", auto = { mode = "AUTO" }, required = { mode = "ANY" }, none = { mode = "NONE" }, named = { mode = "ANY", allowedFunctionNames = ["{tool.name}"] } }
+
+[text.params]
+max_tokens = "generationConfig.maxOutputTokens"
+temperature = "generationConfig.temperature"
+top_p = "generationConfig.topP"
+top_k = "generationConfig.topK"
+stop = "generationConfig.stopSequences"
+seed = "generationConfig.seed"
+presence_penalty = "generationConfig.presencePenalty"
+frequency_penalty = "generationConfig.frequencyPenalty"
+thinking = { path = "generationConfig.thinkingConfig", form = "gemini_thinking_config" }
+response_format = { path = "generationConfig", form = "gemini_response_schema" }
+
+[text.finish]
+STOP = "stop"
+FINISH_REASON_UNSPECIFIED = "stop"
+OTHER = "stop"
+MAX_TOKENS = "length"
+SAFETY = "content_filter"
+RECITATION = "content_filter"
+BLOCKLIST = "content_filter"
+PROHIBITED_CONTENT = "content_filter"
+SPII = "content_filter"
+IMAGE_SAFETY = "content_filter"
+MALFORMED_FUNCTION_CALL = "error"
+UNEXPECTED_TOOL_CALL = "error"
+
+# Gemini has no tool-calls reason: a turn that calls tools ends with STOP.
+[text.finish_out]
+stop = "STOP"
+tool_calls = "STOP"
+content_filter = "SAFETY"
+error = "MALFORMED_FUNCTION_CALL"
+
+[text.usage]
+input = "usageMetadata.promptTokenCount"
+output = "usageMetadata.candidatesTokenCount"
+cache_read = "usageMetadata.cachedContentTokenCount"
+reasoning = "usageMetadata.thoughtsTokenCount"
+input_semantics = "includes_cache"
+
+[text.response]
+body = { candidates = [{ content = { role = "model", parts = "{response.content}" }, finishReason = "{response.finish}", index = 0 }], usageMetadata = { promptTokenCount = "{usage.input?}", candidatesTokenCount = "{usage.output?}", cachedContentTokenCount = "{usage.cache_read?}", thoughtsTokenCount = "{usage.reasoning?}", totalTokenCount = "{usage.total?}" }, modelVersion = "{response.model}", responseId = "{response.id}" }
+
+# Every chunk is a whole response. A function call arrives whole in one part.
+[text.stream]
+framing = "sse_data"
+blocks = "implicit"
+tool_arguments = "whole"
+
+[[text.stream.events]]
+on = "preamble"
+data = { modelVersion = "{response.model}", responseId = "{response.id}" }
+match = { modelVersion = "{response.model?}", responseId = "{response.id}" }
+
+[[text.stream.events]]
+on = "text_delta"
+data = { candidates = [{ content = { role = "model", parts = [{ text = "{delta.text}" }] }, index = 0 }], modelVersion = "{response.model}", responseId = "{response.id}" }
+match = { candidates = [{ content = { parts = [{ text = "{delta.text}", thought = "{null}" }] } }] }
+
+[[text.stream.events]]
+on = "thinking_delta"
+data = { candidates = [{ content = { role = "model", parts = [{ text = "{delta.thinking}", thought = true }] }, index = 0 }], modelVersion = "{response.model}", responseId = "{response.id}" }
+match = { candidates = [{ content = { parts = [{ text = "{delta.thinking}", thought = true }] } }] }
+
+[[text.stream.events]]
+on = "tool_arguments"
+data = { candidates = [{ content = { role = "model", parts = [{ functionCall = { id = "{block.id}", name = "{block.name}", args = "{block.arguments_json}" } }] }, index = 0 }], modelVersion = "{response.model}", responseId = "{response.id}" }
+match = { candidates = [{ content = { parts = [{ functionCall = { id = "{block.id?}", name = "{block.name}", args = "{block.arguments_json?}" } }] } }] }
+
+[[text.stream.events]]
+on = "finish"
+data = { candidates = [{ content = { role = "model", parts = [] }, finishReason = "{finish}", index = 0 }], modelVersion = "{response.model}", responseId = "{response.id}" }
+match = { candidates = [{ finishReason = "{finish}" }] }
+
+[[text.stream.events]]
+on = "usage"
+data = { usageMetadata = { promptTokenCount = "{usage.input}", candidatesTokenCount = "{usage.output}", cachedContentTokenCount = "{usage.cache_read?}", thoughtsTokenCount = "{usage.reasoning?}", totalTokenCount = "{usage.total?}" }, modelVersion = "{response.model}", responseId = "{response.id}" }
+match = { usageMetadata = { promptTokenCount = "{usage.input}" } }
+
+[errors]
+body = { error = { code = "{error.code}", message = "{error.message}", status = "{error.type}", zerorouter = "{error.details}" } }
+type_map = { 400 = "INVALID_ARGUMENT", 401 = "UNAUTHENTICATED", 403 = "PERMISSION_DENIED", 404 = "NOT_FOUND", 429 = "RESOURCE_EXHAUSTED", 500 = "INTERNAL", 502 = "UNAVAILABLE", 503 = "UNAVAILABLE", 504 = "DEADLINE_EXCEEDED" }
+stream_event = { data = "{error.body}" }

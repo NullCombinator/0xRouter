@@ -327,7 +327,7 @@ fn check_route(s: &StyleFile, r: &Route, base: &FieldPath, err: &mut impl FnMut(
 }
 
 /// Parameter names in a route path. `{name}` may sit inside a segment with literal text
-/// around it (`{model}:generateContent`); `{name*}` must be a whole final segment.
+/// around it (`{model*}:generateContent`); `{name*}` must be in the final segment.
 fn path_params(path: &str) -> Result<Vec<String>, String> {
     if !path.starts_with('/') {
         return Err(format!("route path {path:?} must start with `/`"));
@@ -351,8 +351,8 @@ fn path_params(path: &str) -> Result<Vec<String>, String> {
             Some(n) => (n, true),
             None => (inner, false),
         };
-        if rest && (i + 1 != segs.len() || *seg != format!("{{{inner}}}")) {
-            return Err(format!("`{{{inner}}}` must be the whole last path segment"));
+        if rest && i + 1 != segs.len() {
+            return Err(format!("`{{{inner}}}` must be in the last path segment"));
         }
         if !is_token_underscore(name) {
             return Err(format!("`{{{inner}}}`: path placeholders are `{{name}}` or `{{name*}}`"));
@@ -683,8 +683,9 @@ fn is_token_underscore(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
+/// Letters, digits, `-` and `_` (Codex sends `session_id`).
 fn is_header_name(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 #[cfg(test)]
@@ -779,7 +780,7 @@ stream_event = { data = "{error.body}" }
     fn corpus_cases() {
         fails(&BASE.replace("{part.text}", "{request.api_key}"), "text.parts.text.data.text: unknown placeholder {request.api_key}");
         fails(&BASE.replace("{part.text}", "{a+b}"), "expressions are not allowed");
-        fails(&BASE.replace("/v1/models/{model*}", "/v1/{model*}/x"), "must be the whole last path segment");
+        fails(&BASE.replace("/v1/models/{model*}", "/v1/{model*}/x"), "must be in the last path segment");
         fails(&BASE.replace("[text.parts.text]", "[text.parts.textx]"), "unknown part kind");
         fails(&BASE.replace("content_filter = \"content_filter\"\n", ""), "finish map is not total: no unique style reason for IR content_filter");
         fails(&BASE.replace("message = \"{error.message}\"", "message = \"x\""), "must place {error.message}");

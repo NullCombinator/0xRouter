@@ -39,6 +39,7 @@ pub fn decode(wire: &Style, body: &Value) -> Result<Response, CodecError> {
     }
     let has_calls = content.iter().any(|p| matches!(p, Part::ToolCall { .. }));
     let finish = match (b.str("response.finish"), b.str("response.status")) {
+        (Some(r), _) if has_calls && t.finish_to_ir(r) == FinishReason::Stop => FinishReason::ToolCalls,
         (Some(r), _) => t.finish_to_ir(r),
         (None, Some("incomplete")) => FinishReason::Length,
         (None, _) if has_calls => FinishReason::ToolCalls,

@@ -10,6 +10,7 @@ use zerorouter_registry::schema::{
 use zerorouter_registry::template::{FieldPath, Template};
 
 use super::CodecError;
+use crate::ir::Role;
 
 #[derive(Debug, Clone)]
 pub struct Style {
@@ -239,8 +240,12 @@ impl TextStyle {
         self.layout.roles.get(ir).cloned().unwrap_or_else(|| ir.to_owned())
     }
 
-    /// This style's role name → IR role name.
+    /// This style's role name → IR role name. A name that is also an unrenamed IR role
+    /// keeps its meaning: gemini's `tool = "user"` must not turn every user turn into one.
     pub fn role_in<'a>(&'a self, style: &'a str) -> &'a str {
+        if Role::parse(style).is_some() && !self.layout.roles.contains_key(style) {
+            return style;
+        }
         self.layout.roles.iter().find(|(_, v)| *v == style).map_or(style, |(k, _)| k.as_str())
     }
 

@@ -5,7 +5,7 @@
 //! the reader opens and closes blocks itself, so the IR stream always has explicit blocks.
 
 use serde_json::Value;
-use zerorouter_registry::schema::{BlockModel, StreamOn, ToolArgumentsMode};
+use zerorouter_registry::schema::{BlockModel, FinishReason, StreamOn, ToolArgumentsMode};
 
 use super::Frame;
 use crate::codec::{CodecError, Style, TextStyle};
@@ -25,12 +25,13 @@ pub struct StreamReader<'s> {
     t: &'s TextStyle,
     preamble_seen: bool,
     open: Option<Open>,
+    saw_tool: bool,
     done: bool,
 }
 
 impl<'s> StreamReader<'s> {
     pub fn new(wire: &'s Style) -> Result<Self, CodecError> {
-        Ok(Self { t: wire.text()?, preamble_seen: false, open: None, done: false })
+        Ok(Self { t: wire.text()?, preamble_seen: false, open: None, saw_tool: false, done: false })
     }
 
     /// True once the provider signalled the end of the stream.
@@ -107,16 +108,10 @@ impl<'s> StreamReader<'s> {
                     });
                 }
             }
-            StreamOn::BlockStartText => {
-                self.close(out);
-                self.open = Some(Open::Text);
-                out.push(Event::BlockStart(BlockKind::Text));
-            }
-            StreamOn::BlockStartThinking => {
-                self.close(out);
-                self.open = Some(Open::Thinking);
-                out.push(Event::BlockStart(BlockKind::Thinking));
-            }
+            // A style may announce one block with several events (Responses
+            // `output_item.added`, then `content_part.added`); the first opens it.
+            StreamOn::BlockStartText => self.ensure(Open::Text, BlockKind::Text, out),
+            StreamOn::BlockStartThinking => self.ensure(Open::Thinking, BlockKind::Thinking, out),
             StreamOn::BlockStartToolCall => {
                 self.start_tool(b, out);
                 self.whole_arguments(b, whole && implicit, out);
@@ -158,7 +153,12 @@ impl<'s> StreamReader<'s> {
                     self.close(out);
                 }
                 if let Some(r) = b.str("finish") {
-                    out.push(Event::Finish(self.t.finish_to_ir(r)));
+                    // Responses `completed` and Gemini `STOP` also end a turn that called tools.
+                    let f = match self.t.finish_to_ir(r) {
+                        FinishReason::Stop if self.saw_tool => FinishReason::ToolCalls,
+                        f => f,
+                    };
+                    out.push(Event::Finish(f));
                 }
             }
             StreamOn::Error => out.push(Event::Error(ErrorEvent {
@@ -184,6 +184,7 @@ impl<'s> StreamReader<'s> {
 
     fn start_tool(&mut self, b: &Bindings, out: &mut Vec<Event>) {
         self.close(out);
+        self.saw_tool = true;
         self.open = Some(Open::Tool(b.get("tool.ordinal").cloned()));
         out.push(Event::BlockStart(BlockKind::ToolCall {
             id: b.str("block.id").unwrap_or_default().to_owned(),

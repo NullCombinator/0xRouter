@@ -1,0 +1,179 @@
+# Anthropic Messages (`/v1/messages`): Claude Code, the anthropic SDKs.
+# contracts/api-style-schema.md; 9router oracle open-sse/translator/formats/claude.js.
+schema = 1
+kind = "api-style"
+id = "anthropic-messages"
+
+[access_key]
+carriers = [{ header = "x-api-key", scheme = "raw" }, { header = "authorization", scheme = "bearer" }]
+
+[session]
+carriers = [{ extractor = "claude_code_user_id" }, { header = "x-claude-code-session-id" }]
+
+[[routes]]
+method = "POST"
+path = "/v1/messages"
+op = "generate"
+type = "text"
+model = { body = "model" }
+stream = { body = "stream" }
+
+[[routes]]
+method = "POST"
+path = "/v1/messages/count_tokens"
+op = "count_tokens"
+type = "text"
+model = { body = "model" }
+
+# `/v1/models` is shared with the OpenAI styles; Anthropic clients always send
+# `anthropic-version`, so they get this shape and everyone else gets openai-chat's.
+[[routes]]
+method = "GET"
+path = "/v1/models"
+op = "list_models"
+type = "text"
+discriminator = { header_present = "anthropic-version" }
+
+[[routes]]
+method = "GET"
+path = "/v1/models/{model*}"
+op = "get_model"
+type = "text"
+model = { path = "model" }
+discriminator = { header_present = "anthropic-version" }
+
+[text.layout]
+system = "top_level_field"
+messages = "messages"
+content = "content"
+content_form = "string_when_text_only"
+tool_calls = "content_part"
+tool_results = "content_part"
+arguments = "json_object"
+
+[text.parts.text]
+data = { type = "text", text = "{part.text}", cache_control = "{part.cache_control?}" }
+
+[text.parts.image]
+data = { type = "image", source = "{media}", cache_control = "{part.cache_control?}" }
+codec = "anthropic_source"
+
+[text.parts.tool_call]
+data = { type = "tool_use", id = "{call.id}", name = "{call.name}", input = "{call.arguments}", cache_control = "{part.cache_control?}" }
+
+[text.parts.tool_result]
+data = { type = "tool_result", tool_use_id = "{result.id}", content = "{result.content}", is_error = "{result.is_error?}", cache_control = "{part.cache_control?}" }
+
+[text.parts.thinking]
+data = { type = "thinking", thinking = "{part.text}", signature = "{part.signature?}" }
+
+[text.tools]
+data = { name = "{tool.name}", description = "{tool.description?}", input_schema = "{tool.parameters}", cache_control = "{tool.cache_control?}" }
+choice = { path = "tool_choice", auto = { type = "auto" }, required = { type = "any" }, none = { type = "none" }, named = { type = "tool", name = "{tool.name}" } }
+
+[text.params]
+max_tokens = "max_tokens"
+temperature = "temperature"
+top_p = "top_p"
+top_k = "top_k"
+stop = "stop_sequences"
+thinking = { path = "thinking", form = "budget_tokens" }
+
+[text.finish]
+end_turn = "stop"
+stop_sequence = "stop"
+pause_turn = "stop"
+max_tokens = "length"
+model_context_window_exceeded = "length"
+tool_use = "tool_calls"
+refusal = "content_filter"
+
+# Anthropic has no error stop reason; a failed turn ends as `end_turn` after the error event.
+[text.finish_out]
+stop = "end_turn"
+length = "max_tokens"
+error = "end_turn"
+
+[text.usage]
+input = "usage.input_tokens"
+output = "usage.output_tokens"
+cache_read = "usage.cache_read_input_tokens"
+cache_write = "usage.cache_creation_input_tokens"
+input_semantics = "excludes_cache"
+
+[text.response]
+id_prefix = "msg_"
+body = { id = "{response.id}", type = "message", role = "assistant", model = "{response.model}", content = "{response.content}", stop_reason = "{response.finish}", usage = { input_tokens = "{usage.input?}", output_tokens = "{usage.output?}", cache_read_input_tokens = "{usage.cache_read?}", cache_creation_input_tokens = "{usage.cache_write?}" } }
+
+[text.count_tokens]
+response = { input_tokens = "{count.input}" }
+
+[text.stream]
+framing = "sse_named"
+blocks = "explicit"
+tool_arguments = "fragments"
+
+# SDK accumulators push onto `message.content` and write into `message.usage`, so both
+# must exist in `message_start` even before usage is known.
+[[text.stream.events]]
+on = "preamble"
+event = "message_start"
+data = { type = "message_start", message = { id = "{response.id}", type = "message", role = "assistant", model = "{response.model}", content = [], usage = { input_tokens = "{usage.input?}", output_tokens = "{usage.output?}", cache_read_input_tokens = "{usage.cache_read?}", cache_creation_input_tokens = "{usage.cache_write?}" } } }
+match = { type = "message_start", message = { id = "{response.id}", model = "{response.model}", usage = { input_tokens = "{usage.input?}", cache_read_input_tokens = "{usage.cache_read?}", cache_creation_input_tokens = "{usage.cache_write?}" } } }
+
+[[text.stream.events]]
+on = "block_start:text"
+event = "content_block_start"
+data = { type = "content_block_start", index = "{block.index}", content_block = { type = "text", text = "" } }
+
+[[text.stream.events]]
+on = "block_start:thinking"
+event = "content_block_start"
+data = { type = "content_block_start", index = "{block.index}", content_block = { type = "thinking", thinking = "" } }
+
+[[text.stream.events]]
+on = "block_start:tool_call"
+event = "content_block_start"
+data = { type = "content_block_start", index = "{block.index}", content_block = { type = "tool_use", id = "{block.id}", name = "{block.name}", input = {} } }
+match = { type = "content_block_start", content_block = { type = "tool_use", id = "{block.id}", name = "{block.name}" } }
+
+[[text.stream.events]]
+on = "text_delta"
+event = "content_block_delta"
+data = { type = "content_block_delta", index = "{block.index}", delta = { type = "text_delta", text = "{delta.text}" } }
+
+[[text.stream.events]]
+on = "thinking_delta"
+event = "content_block_delta"
+data = { type = "content_block_delta", index = "{block.index}", delta = { type = "thinking_delta", thinking = "{delta.thinking}" } }
+
+[[text.stream.events]]
+on = "signature"
+event = "content_block_delta"
+data = { type = "content_block_delta", index = "{block.index}", delta = { type = "signature_delta", signature = "{delta.signature}" } }
+
+[[text.stream.events]]
+on = "tool_arguments"
+event = "content_block_delta"
+data = { type = "content_block_delta", index = "{block.index}", delta = { type = "input_json_delta", partial_json = "{delta.arguments}" } }
+
+[[text.stream.events]]
+on = "block_stop"
+event = "content_block_stop"
+data = { type = "content_block_stop", index = "{block.index}" }
+
+[[text.stream.events]]
+on = "finish"
+event = "message_delta"
+data = { type = "message_delta", delta = { stop_reason = "{finish}" }, usage = { input_tokens = "{usage.input?}", output_tokens = "{usage.output?}", cache_read_input_tokens = "{usage.cache_read?}", cache_creation_input_tokens = "{usage.cache_write?}" } }
+
+[[text.stream.events]]
+on = "done"
+event = "message_stop"
+data = { type = "message_stop" }
+
+[errors]
+body = { type = "error", error = { type = "{error.type}", message = "{error.message}" }, zerorouter = "{error.details}" }
+type_map = { 400 = "invalid_request_error", 401 = "authentication_error", 403 = "permission_error", 404 = "not_found_error", 429 = "rate_limit_error", 500 = "api_error", 503 = "api_error", 529 = "overloaded_error" }
+stream_event = { event = "error", data = "{error.body}" }
+keepalive = { event = "ping", data = { type = "ping" } }

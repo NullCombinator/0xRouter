@@ -394,22 +394,22 @@ Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-p
 
 ### Implementation for User Story 1
 
-- [ ] T049 [P] [US1] Write `styles/bundled/anthropic-messages.toml`.
+- [x] T049 [P] [US1] Write `styles/bundled/anthropic-messages.toml`.
   - Routes: `POST /v1/messages`, plus the `anthropic-version`-discriminated `GET /v1/models`, `GET /v1/models/{model*}` and `/v1/messages/count_tokens`. The last three are wired in US6; declare them here.
   - Carriers: `x-api-key`, then Bearer.
   - Session carriers: the `claude_code_user_id` extractor, then `x-claude-code-session-id`.
   - The full `[text]` codec, including stream events (`message_start`, `content_block_*`, `message_delta`, `message_stop`, `ping`).
   - `[errors]` with a top-level `zerorouter` field and the type map from the contract.
-- [ ] T050 [P] [US1] Write `styles/bundled/openai-chat.toml` with its text routes and codec.
+- [x] T050 [P] [US1] Write `styles/bundled/openai-chat.toml` with its text routes and codec.
   - Routes: `/v1/chat/completions`, plus the default `GET /v1/models`.
   - Carrier: Bearer. Session carriers: Codex `session_id` header, then the `prompt_cache_key` body path.
   - Stream: `sse_data_done`, implicit blocks, tool-argument fragments.
   - Errors: `error.zerorouter`.
   - The non-text sections come in US3.
-- [ ] T051 [P] [US1] Write `styles/bundled/openai-responses.toml`.
+- [x] T051 [P] [US1] Write `styles/bundled/openai-responses.toml`.
   - Route `/v1/responses`. `/v1/responses/input_tokens` is declared here and wired in US6.
   - The `output_item` layouts, and the named SSE events `response.created`, `response.in_progress`, `response.output_item.added`/`done`, `response.output_text.delta`/`done`, `response.function_call_arguments.delta`/`done`, `response.completed` and `response.failed`, with `{sequence.number}`, `{output.index}` and `{response.rendered}`.
-- [ ] T052 [P] [US1] Write `styles/bundled/gemini.toml`.
+- [x] T052 [P] [US1] Write `styles/bundled/gemini.toml`.
   - Routes: `:generateContent` and `:streamGenerateContent` on `/v1beta/models/{model*}`.
   - Carriers: `x-goog-api-key`, then `?key=`, then Bearer.
   - Session header as the Gemini CLI sends it.

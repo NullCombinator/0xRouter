@@ -54,6 +54,8 @@ pub(crate) fn place(t: &TextStyle, k: PartKind) -> Place {
             ToolResultsLayout::ToolRoleMessage | ToolResultsLayout::OutputItem => Place::Item,
             ToolResultsLayout::ContentPart | ToolResultsLayout::FunctionResponsePart => Place::Inline,
         },
+        // Responses carries reasoning as its own item, like function calls.
+        PartKind::Thinking if t.layout.tool_calls == ToolCallsLayout::OutputItem => Place::Item,
         _ => Place::Inline,
     }
 }
@@ -265,6 +267,12 @@ impl<'a> Decoder<'a> {
             self.leftovers(tpl, item, at);
             return Some((Message { role: Role::Tool, parts: vec![p] }, true));
         }
+        if place(t, PartKind::Thinking) == Place::Item
+            && let Some((p, tpl)) = self.part_match(PartKind::Thinking, item)
+        {
+            self.leftovers(tpl, item, at);
+            return Some((Message { role: Role::Assistant, parts: vec![p] }, true));
+        }
         None
     }
 
@@ -356,6 +364,18 @@ impl<'a> Decoder<'a> {
     }
 
     fn result_content(&self, v: Option<&Value>) -> ResultContent {
+        // The object form wraps a plain result as `{ result = … }`; unwrap it (9router
+        // reads `response.result` the same way).
+        if self.t.layout.tool_result_content == ToolResultContent::Object
+            && let Some(Value::Object(o)) = v
+            && let (1, Some(inner)) = (o.len(), o.get("result"))
+            && !inner.is_object()
+        {
+            return match inner {
+                Value::String(s) => ResultContent::Text(s.clone()),
+                other => ResultContent::Json(other.clone()),
+            };
+        }
         match v {
             None | Some(Value::Null) => ResultContent::Text(String::new()),
             Some(Value::String(s)) => ResultContent::Text(s.clone()),
