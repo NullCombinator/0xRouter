@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Runs every available harness against a running `zerorouter serve` (see README.md).
-# Needs ZR_BASE (http://host:port), ZR_KEY (an agent key) and ZR_MODEL. Each harness
+# Needs ZR_BASE (http://host:port), ZR_KEY (an agent key) and ZR_MODEL; ZR_MODEL_MESSAGES
+# (a messages-wire model) adds the headroom chain (headroom.sh). Each harness
 # sends one whole and one streamed request and expects the text "Hello".
 # Fails if any harness fails, or if fewer than two ran (SC-001).
 set -u
@@ -33,6 +34,18 @@ else
 fi
 if command -v claude >/dev/null; then run "claude code" bash "$here/claude.sh"; else echo "skip claude code: claude not on PATH"; fi
 if command -v codex >/dev/null; then run "codex" bash "$here/codex.sh"; else echo "skip codex: codex not on PATH"; fi
+# The headroom chain counts only when it ran (77 = skipped).
+if [ -n "${ZR_MODEL_MESSAGES:-}" ]; then
+  echo "== headroom chain"
+  bash "$here/headroom.sh"
+  case $? in
+    0) passed=$((passed + 1)); echo "ok   headroom chain" ;;
+    77) ;;
+    *) failed=$((failed + 1)); echo "FAIL headroom chain" ;;
+  esac
+else
+  echo "skip headroom chain: ZR_MODEL_MESSAGES not set"
+fi
 
 echo "passed $passed, failed $failed"
 [ "$failed" -eq 0 ] && [ "$passed" -ge 2 ]
