@@ -115,12 +115,13 @@ Never remove a field from the schema without a deprecation period. Plugins are c
 
 ## Relation to 9router's provider registry
 
-9router's `open-sse/providers/registry/` has one JS file per provider. In 0router:
-- Built-in providers (complex formats, OAuth flows) → Rust modules in `src/providers/builtin/`
-- Standard providers (OpenAI-compatible, Anthropic-compatible) → TOML plugin files in `plugins/builtin/`
-- Community providers → TOML files users drop into `~/.0router/plugins/`
+9router's `open-sse/providers/registry/` has one JS file per provider. In 0router every provider is a TOML plugin, and code lives only in the core:
+- Built-in behaviour (wire formats, quirks, auth hooks, executor params) → core crates (`crates/zerorouter-wire` codecs, `crates/zerorouter-engine`). A plugin selects it by name and never supplies it (see "Named built-ins" in `docs/plugins.md`).
+- Bundled providers → `plugins/bundled/`, embedded in the binary at build time.
+- Community providers → `plugins/community/`, also embedded; the operator installs one with `zerorouter plugins install <id>`. Both are slice 003 work, not built yet.
+- User providers → TOML files in `$ZEROROUTER_HOME/plugins/` (default `~/.0router/plugins/`).
 
-The registry auto-generation step (`scripts/migrate-registry.mjs` in 9router) becomes: at startup, scan `plugins/` directories and validate/load each TOML file.
+9router's registry generation (`scripts/migrate-registry.mjs`) becomes `tools/gen-bundled/generate.mjs`, which writes the bundled plugins (and, from slice 003, the community ones) from `ref/9router`. At startup, `crates/zerorouter-registry` validates and loads bundled plugins, user plugins, and `config.toml`.
 
 ## Checklist for a new plugin capability
 
