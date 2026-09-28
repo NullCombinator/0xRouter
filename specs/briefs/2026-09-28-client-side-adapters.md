@@ -167,3 +167,23 @@ Scope brief: specs/briefs/2026-09-28-client-side-adapters.md
 | Failure signals | C✓ failure |
 | Constraints | C✓ amendment, C✓ content, C✓ providers, K I, K V, K Architecture |
 | Out of scope | C✓ others, C✓ order, C✓ providers |
+
+## Clarify additions (2026-09-28)
+
+Confirmed during `/speckit-specify` and `/speckit-clarify`, after the command above was run. None
+contradicts a row above. The catalogue rows **add scope** the playback didn't describe: the user
+picked the catalogue over Claude's recommended "local source only".
+
+| Tag | Claim | Source | Spec |
+|---|---|---|---|
+| C✓ | Guardrail also stops added or changed tool definitions and tool results; removals allowed and recorded | Q1: A (specify) | FR-016, US3-5 |
+| C✓ | A suspect adapter stops serving every key until cleared; bound keys work as plain clients | Q2: A (specify) | FR-017, US3-6 |
+| C✓ | Guardrail checks responses too, streamed or not; events already sent aren't recalled | clarify: A | FR-016, US3-4 |
+| U | Install from operator-supplied source **and** from a 0router-hosted catalogue, both in this slice; same gate, build, review and decision | clarify: C | FR-031, US2-8, SC-012 |
+| C✓ | The catalogue is contacted only on operator action (browse, install, check for updates); never in the background | clarify: A | FR-031, FR-029, SC-012 |
+| C✓ | A kit-changing 0router upgrade rebuilds the same reviewed source automatically, with no new review; a failed rebuild → plain client + alert | clarify: A | FR-032, SC-013 |
+| C✓ | The catalogue is an index file in a 0router-owned public repository; authors listed by pull request; no hosted service; this slice builds the format, first entries (Claude Code) and install side | clarify: A | FR-031, US5 |
+
+Note for research.md (P): each catalogue entry pins every version to a source fingerprint, and a
+fetched source that doesn't match is refused before the gate (spec Assumptions, technical
+decision).
