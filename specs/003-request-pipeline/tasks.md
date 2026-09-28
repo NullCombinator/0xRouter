@@ -344,7 +344,7 @@ in CI), and every request produces a record.
   - Also write stream-event fixtures: upstream frames in, client frames out.
   - Header: the ref SHA. Commit the output on its own.
 - [X] T043 [P] [US1] Write the translation parity tests in `crates/zerorouter-wire/tests/parity_translate.rs`. They compare the wire codecs and the four style files against every `tests/fixtures/9router/translate/**` case, with differences allowed only through `tests/parity/deviations.toml`.
-- [ ] T044 [P] [US1] Write the deviation assertions in `crates/zerorouter-wire/tests/deviations.rs`, one test per row of [R4](research.md#r4-translation-behaviour-parity-and-deliberate-deviations):
+- [X] T044 [P] [US1] Write the deviation assertions in `crates/zerorouter-wire/tests/deviations.rs`, one test per row of [R4](research.md#r4-translation-behaviour-parity-and-deliberate-deviations):
   - no Claude Code system prompt;
   - `response_format` goes to the native field, or the result is `CannotCarry`;
   - no fingerprint tools;
