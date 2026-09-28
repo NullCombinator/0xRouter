@@ -1,5 +1,6 @@
 //! A scripted upstream on `127.0.0.1:0`. Each request takes the next [`Step`] queued for
-//! its path (longest matching prefix), else the next default step, else a 404.
+//! its path (longest matching prefix), else the next default step, else the responder's
+//! answer, else a 404.
 //!
 //! It records every request, counts accepted TCP connections and notes when a client
 //! drops a streamed body before its end.
@@ -107,10 +108,14 @@ impl Received {
     }
 }
 
+/// Answers any request no queued step is left for.
+pub type Responder = Arc<dyn Fn(&Received) -> Step + Send + Sync>;
+
 #[derive(Default)]
 struct Inner {
     by_path: Mutex<Vec<(String, VecDeque<Step>)>>,
     default: Mutex<VecDeque<Step>>,
+    responder: Mutex<Option<Responder>>,
     received: Mutex<Vec<Received>>,
     connections: AtomicUsize,
     disconnects: Mutex<Vec<Instant>>,
@@ -174,6 +179,12 @@ impl MockUpstream {
         }
     }
 
+    /// Answers every request that no queued step is left for, however many arrive and in
+    /// whatever order (real clients).
+    pub fn respond(&self, f: impl Fn(&Received) -> Step + Send + Sync + 'static) {
+        *lock(&self.inner.responder) = Some(Arc::new(f));
+    }
+
     pub fn received(&self) -> Vec<Received> {
         lock(&self.inner.received).clone()
     }
@@ -231,14 +242,11 @@ async fn handle(State(inner): State<Arc<Inner>>, req: Request) -> Response {
     let (parts, body) = req.into_parts();
     let body = axum::body::to_bytes(body, usize::MAX).await.unwrap_or_default();
     let path_and_query = parts.uri.path_and_query().map_or_else(|| parts.uri.path().to_owned(), |p| p.to_string());
-    lock(&inner.received).push(Received {
-        method: parts.method,
-        path_and_query: path_and_query.clone(),
-        headers: parts.headers,
-        body,
-        at: Instant::now(),
-    });
-    let Some(step) = next_step(&inner, parts.uri.path()) else {
+    let received = Received { method: parts.method, path_and_query: path_and_query.clone(), headers: parts.headers, body, at: Instant::now() };
+    let responder = lock(&inner.responder).clone();
+    let step = next_step(&inner, parts.uri.path()).or_else(|| responder.map(|f| f(&received)));
+    lock(&inner.received).push(received);
+    let Some(step) = step else {
         return head(404, &[]).body(Body::from(format!("mock upstream: no step scripted for {path_and_query}"))).expect("response");
     };
     match step {

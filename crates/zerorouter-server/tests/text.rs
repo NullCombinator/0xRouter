@@ -1,87 +1,15 @@
 //! Text generation over HTTP (T056): each bundled client style against a scripted
 //! OpenAI-compatible provider, streamed and not, with errors and a client that goes away.
 
-use std::sync::Arc;
+mod common;
+
 use std::time::Duration;
 
+use common::{SECRET, chat_stream, chat_whole, server};
 use serde_json::{Value, json};
-use tokio::net::TcpListener;
-use zerorouter_engine::keys::{self, Keys};
 use zerorouter_engine::records::{Outcome, Query};
-use zerorouter_engine::state::Engine;
-use zerorouter_engine::testkit::{MockUpstream, Step};
-use zerorouter_registry::OperatorHome;
+use zerorouter_engine::testkit::Step;
 use zerorouter_server::relay::REQUEST_ID;
-use zerorouter_server::serve::{App, run};
-
-const SECRET: &str = "sk-mock-SENTINEL-0002";
-
-struct Server {
-    _dir: tempfile::TempDir,
-    engine: Arc<Engine>,
-    mock: MockUpstream,
-    base: String,
-    key: String,
-    stop: Option<tokio::sync::oneshot::Sender<()>>,
-}
-
-impl Drop for Server {
-    fn drop(&mut self) {
-        if let Some(s) = self.stop.take() {
-            let _ = s.send(());
-        }
-    }
-}
-
-async fn server() -> Server {
-    let mock = MockUpstream::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("config.toml"), "allow_private_endpoints = true\n").unwrap();
-    std::fs::create_dir(dir.path().join("plugins")).unwrap();
-    let plugin = format!(
-        "schema = 2\nid = \"mockco\"\ncategory = \"apikey\"\n[auth]\nkind = \"apikey\"\n[endpoints.text]\nurl = \"{}\"\nwire = \"openai-chat\"\n[[models]]\nid = \"m1\"\n",
-        mock.url("/v1/chat/completions")
-    );
-    std::fs::write(dir.path().join("plugins/mockco.toml"), plugin).unwrap();
-    let accounts = format!("schema = 1\n[[account]]\nprovider = \"mockco\"\nname = \"main\"\nsecret = \"{SECRET}\"\n");
-    zerorouter_engine::files::write_private(&dir.path().join(zerorouter_engine::accounts::FILE), &accounts).unwrap();
-    let mut keys = Keys::default();
-    let (key, _) = keys.issue("laptop", None).unwrap();
-    zerorouter_engine::files::write_private(&dir.path().join(keys::FILE), &keys.to_toml()).unwrap();
-
-    let (engine, _) = Engine::open(OperatorHome::new(dir.path())).unwrap();
-    let engine = Arc::new(engine);
-    let app = App::new(engine.clone()).unwrap();
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    tokio::spawn(run(app, listener, async {
-        let _ = stopped.await;
-    }));
-    Server { _dir: dir, engine, mock, base, key, stop: Some(stop) }
-}
-
-fn chat_whole() -> Step {
-    Step::json(
-        200,
-        json!({"id": "up-1", "object": "chat.completion", "created": 1, "model": "m1", "choices": [{"index": 0, "message": {"role": "assistant", "content": "hi there"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 3, "completion_tokens": 2}}),
-    )
-}
-
-fn chat_stream() -> Step {
-    let chunk = |delta: Value, finish: Value| {
-        (None, json!({"id": "up-1", "object": "chat.completion.chunk", "model": "m1", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}))
-    };
-    Step::sse(
-        &[
-            chunk(json!({"role": "assistant", "content": "Hel"}), Value::Null),
-            chunk(json!({"content": "lo"}), Value::Null),
-            chunk(json!({}), json!("stop")),
-            (None, json!({"id": "up-1", "object": "chat.completion.chunk", "model": "m1", "choices": [], "usage": {"prompt_tokens": 5, "completion_tokens": 2}})),
-        ],
-        true,
-    )
-}
 
 fn json_body(v: &Value) -> String {
     v.to_string()

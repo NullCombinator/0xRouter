@@ -17,10 +17,26 @@ npm_config_cache=/tmp/npm-cache-0router npm install --prefix tests/harness opena
 ## Run
 
 ```bash
-ZR_HARNESS=1 cargo test -p zerorouter-server --test harness
+ZR_HARNESS=1 cargo test -p zerorouter-server --test harness -- --nocapture
 ```
 
-The test starts the server and the mocks, then calls `run.sh`.
+The test starts the server over a scripted OpenAI-compatible provider (`mockco/m1`,
+answering "Hello"), then calls `run.sh`. Against a server you run yourself:
+
+```bash
+ZR_BASE=http://127.0.0.1:20129 ZR_KEY=0r-… ZR_MODEL=anthropic/claude-sonnet-4-20250514 tests/harness/run.sh
+```
+
+| Harness | Script | Styles |
+|---|---|---|
+| Python SDKs | `py/*.py` | openai chat and responses, anthropic messages, google-genai |
+| Node SDKs | `node/*.mjs` | the same four |
+| Claude Code | `claude.sh` (`claude -p`, throwaway `CLAUDE_CONFIG_DIR`) | anthropic messages |
+| Codex CLI | `codex.sh` (`codex exec`, throwaway `CODEX_HOME`) | openai responses |
+
+Each sends one whole and one streamed request and expects the text "Hello" (Claude Code
+and Codex send what they send). A missing tool is skipped with a message; `run.sh` fails
+on any failure, or if fewer than two harnesses ran (SC-001).
 
 ## Tool availability (checked 2026-09-27, T008)
 

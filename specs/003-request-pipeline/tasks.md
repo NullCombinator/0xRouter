@@ -437,7 +437,7 @@ Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-p
   - `accounts add <provider> <name> [--env VAR] [--order N]` reads the secret from stdin, never argv, and warns if stdin is a TTY without hiding the input.
   - `keys issue <name> [--break restart|error_event]` prints the key once.
   - Both write through T030/T031.
-- [ ] T058 [US1] Write the harness scripts in `tests/harness/` and the runner `tests/harness/run.sh`.
+- [x] T058 [US1] Write the harness scripts in `tests/harness/` and the runner `tests/harness/run.sh`.
   - Python and Node scripts per style: `openai` chat and responses, `anthropic` messages, `google-genai` generateContent.
   - Each sends one streamed and one non-streamed text request to a running `zerorouter serve` backed by mock upstreams, and exits non-zero on any SDK error.
   - Also Claude Code (`claude -p`, with `ANTHROPIC_BASE_URL`) and Codex (`codex exec`, with `OPENAI_BASE_URL`) runners, each skipped with a message when the tool is absent.
