@@ -2,17 +2,20 @@
 //! one. A request holds the snapshot it started with until it ends; a failed reload keeps
 //! the previous one.
 
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwap;
 use zerorouter_registry::{LoadReport, OperatorHome, Registry, RegistryHandle, RuntimeSettings, StartupError};
+use zerorouter_wire::codec::Style;
 
 use crate::accounts::{self, Accounts};
 use crate::files::FileError;
 use crate::keys::{self, Keys};
 use crate::records::RecordStore;
 use crate::redact::Redactor;
+use crate::upstream;
 
 #[derive(Debug)]
 pub struct EngineState {
@@ -20,12 +23,20 @@ pub struct EngineState {
     pub accounts: Accounts,
     pub keys: Keys,
     pub redactor: Arc<Redactor>,
+    /// Every loaded style, compiled once per snapshot, by id.
+    pub styles: BTreeMap<String, Arc<Style>>,
+    /// The upstream client for this snapshot's `allow_private_endpoints`.
+    pub http: reqwest::Client,
     pub generation: u64,
 }
 
 impl EngineState {
     pub fn settings(&self) -> &RuntimeSettings {
         self.registry.runtime()
+    }
+
+    pub fn style(&self, id: &str) -> Option<&Arc<Style>> {
+        self.styles.get(id)
     }
 }
 
@@ -75,7 +86,19 @@ fn assemble(registry: Arc<Registry>, mut accounts: Accounts, keys: Keys, generat
     let unused_accounts = accounts.unused(&registry).map(|a| format!("{}/{}", a.provider, a.name)).collect();
     let redactor = Arc::new(Redactor::new(accounts.iter().filter_map(|a| a.secret.as_ref())));
     let report = StateReport { generation, registry: registry.report().clone(), unused_accounts };
-    (EngineState { registry, accounts, keys, redactor, generation }, report)
+    // The gate proved every loaded style compiles; one that doesn't is left out, not fatal.
+    let styles = registry
+        .styles()
+        .filter_map(|f| match Style::compile(f) {
+            Ok(s) => Some((f.id.clone(), Arc::new(s))),
+            Err(e) => {
+                tracing::error!("style {} not compiled: {e}", f.id);
+                None
+            }
+        })
+        .collect();
+    let http = upstream::client(registry.runtime().allow_private_endpoints);
+    (EngineState { registry, accounts, keys, redactor, styles, http, generation }, report)
 }
 
 impl Engine {

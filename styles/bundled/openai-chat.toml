@@ -88,6 +88,8 @@ input_semantics = "includes_cache"
 [text.response]
 id_prefix = "chatcmpl-"
 body = { id = "{response.id}", object = "chat.completion", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, message = { role = "assistant", content = "{response.text?}", reasoning_content = "{response.thinking?}", tool_calls = "{response.tool_calls?}" }, finish_reason = "{response.finish}" }], usage = { prompt_tokens = "{usage.input?}", completion_tokens = "{usage.output?}", total_tokens = "{usage.total?}", prompt_tokens_details = { cached_tokens = "{usage.cache_read?}" }, completion_tokens_details = { reasoning_tokens = "{usage.reasoning?}" } } }
+# Like the stream events, decoding leaves out `object` and `created`.
+match = { id = "{response.id}", model = "{response.model?}", choices = [{ message = { content = "{response.text?}", reasoning_content = "{response.thinking?}", tool_calls = "{response.tool_calls?}" }, finish_reason = "{response.finish?}" }], usage = { prompt_tokens = "{usage.input?}", completion_tokens = "{usage.output?}", total_tokens = "{usage.total?}", prompt_tokens_details = { cached_tokens = "{usage.cache_read?}" }, completion_tokens_details = { reasoning_tokens = "{usage.reasoning?}" } } }
 
 [text.stream]
 framing = "sse_data_done"

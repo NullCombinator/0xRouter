@@ -425,7 +425,7 @@ Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-p
     - **opencode**: per-wire endpoints under `/zen/v1` and `/zen/go/v1`, per-model `wires` from the seed, `force_stream` where 9router forces it, `x-api-key` on `/messages` (endpoint `auth`), and `[session] header = "x-opencode-session"` with `derive = "ses_time_base62"` (zen) or `"ses_sha256_hex32"` (go).
   - No `systemone` section, no fingerprint tools, no User-Agent spoofing.
   - Add `[[deviation]]` rows for every slice 002 parity field that now differs.
-- [ ] T055 [US1] Implement the happy-path attempt in `crates/zerorouter-engine/src/attempt.rs` and `src/plan.rs`. Depends on T027, T028, T034, T035, T054, T148–T151.
+- [x] T055 [US1] Implement the happy-path attempt in `crates/zerorouter-engine/src/attempt.rs` and `src/plan.rs`. Depends on T027, T028, T034, T035, T054, T148–T151.
   - Resolve the target (slice 002 `resolve`), build a one-candidate `RequestPlan` (first account in operator order), and choose the endpoint: the native pair first, then the model's `wires` order.
   - Build the body: `forward` (T148) on a same-style endpoint, `encode` otherwise, and put the drop list on the attempt (T150). Send, and read frames into IR events on a bounded channel.
   - Honour the `CancellationToken` with `tokio::select!` on every await.

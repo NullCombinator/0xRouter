@@ -14,7 +14,7 @@ use crate::usage;
 /// Reads a provider's non-stream body written in `wire`'s style.
 pub fn decode(wire: &Style, body: &Value) -> Result<Response, CodecError> {
     let t = wire.text()?;
-    let b = match_value(&t.response, body)
+    let b = match_value(t.response_match.as_ref().unwrap_or(&t.response), body)
         .ok_or_else(|| CodecError::decode("", format!("the body doesn't have the {} response shape", wire.id)))?;
     let mut d = Decoder::new(t, &wire.id);
     let mut content = Vec::new();

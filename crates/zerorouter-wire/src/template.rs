@@ -177,9 +177,21 @@ fn matches(t: &Template, v: Option<&Value>, acc: Vec<Bindings>) -> Vec<Bindings>
             }
         }
         Template::Object(fields) => {
-            let Some(obj) = v.and_then(Value::as_object) else { return fail() };
+            let Some(obj) = v.and_then(Value::as_object) else {
+                return if matches!(v, None | Some(Value::Null)) && optional(t) { acc } else { fail() };
+            };
             fields.iter().fold(acc, |acc, (k, t)| matches(t, obj.get(k), acc))
         }
+    }
+}
+
+/// Whether `t` binds nothing required: an optional hole, or an object of only those. Such
+/// an object may be absent (`usage.prompt_tokens_details` on a provider that omits it).
+fn optional(t: &Template) -> bool {
+    match t {
+        Template::Hole { optional, .. } => *optional,
+        Template::Object(fields) => !fields.is_empty() && fields.iter().all(|(_, t)| optional(t)),
+        _ => false,
     }
 }
 
@@ -388,6 +400,9 @@ mod tests {
         assert!(match_value(&tpl, &json!({ "choices": [{ "delta": { "content": null } }] })).is_none());
         let opt = t(r#"{ a = "{x?}" }"#);
         assert_eq!(match_value(&opt, &json!({})), Some(Bindings::new()));
+        let nested = t(r#"{ usage = { n = "{u.n?}", d = { c = "{u.c?}" } }, k = { kind = "x", v = "{v?}" } }"#);
+        assert!(match_value(&nested, &json!({ "usage": { "n": 1 }, "k": { "kind": "x" } })).is_some(), "an all-optional object may be absent");
+        assert!(match_value(&nested, &json!({ "usage": { "n": 1 } })).is_none(), "an object with a literal may not");
     }
 
     #[test]

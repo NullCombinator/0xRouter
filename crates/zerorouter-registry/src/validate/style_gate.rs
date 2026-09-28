@@ -485,6 +485,10 @@ fn check_text(t: &TextCodec, base: &FieldPath, err: &mut impl FnMut(FieldPath, S
     check_usage_paths(&t.usage, &base.key("usage"), err);
     check_template(&t.response.body, placeholders::RESPONSE, &base.key("response").key("body"), err);
     check_reversible(&t.response.body, &base.key("response").key("body"), err);
+    if let Some(m) = &t.response.match_ {
+        check_template(m, placeholders::RESPONSE, &base.key("response").key("match"), err);
+        check_reversible(m, &base.key("response").key("match"), err);
+    }
     check_stream_events(&t.stream.events, &base.key("stream").key("events"), err);
     if let Some(c) = &t.count_tokens {
         check_template(&c.response, placeholders::COUNT, &base.key("count_tokens").key("response"), err);

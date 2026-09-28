@@ -35,6 +35,8 @@ pub struct TextStyle {
     pub usage: UsageSel,
     pub id_prefix: String,
     pub response: Template,
+    /// The decode template for `response`, when it differs.
+    pub response_match: Option<Template>,
     pub framing: Framing,
     pub blocks: BlockModel,
     pub tool_arguments: ToolArgumentsMode,
@@ -224,6 +226,7 @@ impl TextStyle {
             usage: UsageSel::compile(&t.usage)?,
             id_prefix: t.response.id_prefix.clone(),
             response: tpl(&t.response.body, "text.response.body")?,
+            response_match: t.response.match_.as_ref().map(|m| tpl(m, "text.response.match")).transpose()?,
             framing: t.stream.framing,
             blocks: t.stream.blocks,
             tool_arguments: t.stream.tool_arguments,

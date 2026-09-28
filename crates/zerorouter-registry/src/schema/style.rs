@@ -287,6 +287,9 @@ pub struct ResponseDecl {
     pub id_prefix: String,
     /// The body template. Blocks are placed by the layout.
     pub body: toml::Value,
+    /// Decode template when it differs from `body` (defaults to `body`).
+    #[serde(rename = "match")]
+    pub match_: Option<toml::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
