@@ -1,6 +1,7 @@
 //! Views in 9router's shapes: the composed transport (`buildTransport`), the alias maps,
 //! and the OAuth URL groups. They exist for parity checks and for the execution slice.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use indexmap::IndexMap;
@@ -10,7 +11,8 @@ use serde::ser::{SerializeMap, SerializeSeq, Serializer};
 use crate::credentials::{ResolvedCredential, SecretString};
 use crate::registry::Registry;
 use crate::schema::{
-    AuthPlacement, CopilotParams, ExecutorParams, RetryPolicy, StringOrList, Transport, TransportAuth, WireFormat,
+    AuthPlacement, CopilotParams, Endpoint, ExecutorParams, ModelType, ProviderEntity, RetryPolicy, StringOrList,
+    Transport, TransportAuth, WireFormat,
 };
 
 /// The plugin transport as the executor will use it: `format` defaulted, the OAuth
@@ -18,11 +20,12 @@ use crate::schema::{
 /// client secret when its bound hosts match (FR-012a).
 ///
 /// Serialises to 9router's camelCase transport shape. `client_secret` is never serialised.
+/// For a schema-2 provider the transport is derived from its text endpoints.
 #[derive(Debug, Clone)]
 pub struct ComposedTransport<'a> {
-    pub transport: &'a Transport,
+    pub transport: Cow<'a, Transport>,
     /// The provider's alternative transports, as declared.
-    pub transports: &'a [Transport],
+    pub transports: Cow<'a, [Transport]>,
     pub format: WireFormat,
     pub client_id: Option<&'a str>,
     pub token_url: Option<&'a str>,
@@ -50,18 +53,25 @@ impl Registry {
     /// `None` for a catalog-only provider (no transport) or an unknown token.
     pub fn composed_transport(&self, provider: &str) -> Option<ComposedTransport<'_>> {
         let p = self.provider(provider).ok()?;
-        let t = p.transport.as_ref()?;
+        let (t, transports) = match &p.transport {
+            Some(t) => (Cow::Borrowed(t), Cow::Borrowed(p.transports.as_slice())),
+            None => {
+                let mut derived = p.endpoints.get(&ModelType::Text)?.0.iter().map(|e| from_endpoint(p, e));
+                (Cow::Owned(derived.next()?), Cow::Owned(derived.collect()))
+            }
+        };
         let oauth = p.oauth.as_ref();
+        let declared = p.transport.as_ref();
         Some(ComposedTransport {
-            transport: t,
-            transports: &p.transports,
             format: t.format.unwrap_or(WireFormat::Openai),
-            client_id: t.client_id.as_deref().or_else(|| oauth?.client_id.as_deref()),
-            token_url: t.token_url.as_deref().or_else(|| oauth?.token_url.as_deref()),
+            client_id: declared.and_then(|t| t.client_id.as_deref()).or_else(|| oauth?.client_id.as_deref()),
+            token_url: declared.and_then(|t| t.token_url.as_deref()).or_else(|| oauth?.token_url.as_deref()),
             client_secret: match self.credentials.get(&p.id) {
                 Some(ResolvedCredential::Available(s)) => Some(*s),
                 _ => None,
             },
+            transport: t,
+            transports,
         })
     }
 
@@ -81,6 +91,8 @@ impl Registry {
     pub fn oauth_urls_view(&self) -> OAuthUrlsView<'_> {
         let oauth = |id: &str| self.provider(id).ok().and_then(|p| p.oauth.as_ref());
         let composed = |id: &str| self.composed_transport(id);
+        // OAuth providers are schema 1, so their declared transport is the composed one.
+        let declared = |id: &str| self.provider(id).ok()?.transport.as_ref();
 
         let codex = oauth("codex");
         let claude = oauth("claude");
@@ -126,14 +138,44 @@ impl Registry {
             token_urls: pick(&["claude", "codex", "iflow", "kiro", "xai", "grok-cli", "cline", "kimi"], |id| {
                 composed(id)?.token_url
             }),
-            auth_urls: pick(&["iflow", "kiro"], |id| composed(id)?.transport.auth_url.as_deref()),
+            auth_urls: pick(&["iflow", "kiro"], |id| declared(id)?.auth_url.as_deref()),
             // 9router lists grok-cli's token URL as its refresh URL.
             refresh_urls: pick(&["cline", "kimi", "xai", "grok-cli"], |id| {
-                let c = composed(id)?;
-                if id == "grok-cli" { c.token_url } else { c.transport.refresh_url.as_deref() }
+                if id == "grok-cli" { composed(id)?.token_url } else { declared(id)?.refresh_url.as_deref() }
             }),
             client_ids: pick(&["claude", "codex", "iflow", "kimi", "grok-cli"], |id| composed(id)?.client_id),
         }
+    }
+}
+
+/// A schema-1 transport equivalent of one schema-2 text endpoint (the conversion table in
+/// contracts/provider-schema-v2.md, read backwards). `None` format means an unmapped wire.
+fn from_endpoint(p: &ProviderEntity, e: &Endpoint) -> Transport {
+    let format = e.wire.as_deref().and_then(|w| match w {
+        "openai-chat" => Some(WireFormat::Openai),
+        "anthropic-messages" => Some(WireFormat::Claude),
+        "openai-responses" => Some(WireFormat::OpenaiResponses),
+        "gemini" => Some(WireFormat::Gemini),
+        _ => None,
+    });
+    let retry = e.retry.iter().map(|(code, r)| {
+        (code.clone(), RetryPolicy::Policy { attempts: r.retries, delay_ms: Some(r.delay_ms) })
+    });
+    let auth = p.auth.as_ref().filter(|a| a.header.is_some() || a.scheme.is_some()).map(|a| TransportAuth {
+        header: a.header.clone(),
+        scheme: a.scheme,
+        ..TransportAuth::default()
+    });
+    Transport {
+        base_url: Some(e.url.clone()),
+        format,
+        headers: (!e.headers.is_empty()).then(|| e.headers.clone()),
+        force_stream: e.force_stream.then_some(true),
+        timeout_ms: e.timeout_ms,
+        stall_timeout_ms: e.stall_timeout_ms,
+        retry: (!e.retry.is_empty()).then(|| retry.collect()),
+        auth,
+        ..Transport::default()
     }
 }
 
@@ -166,7 +208,7 @@ fn js_name(table: &[(&str, &'static str)], name: &'static str) -> &'static str {
 impl Serialize for ComposedTransport<'_> {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut map = s.serialize_map(None)?;
-        entries(&mut map, self.transport, Some(self))?;
+        entries(&mut map, &self.transport, Some(self))?;
         map.end()
     }
 }
@@ -223,7 +265,7 @@ fn entries<M: SerializeMap>(map: &mut M, t: &Transport, c: Option<&ComposedTrans
         executor_params(map, e)?;
     }
     match c {
-        Some(c) if !c.transports.is_empty() => map.serialize_entry("transports", &RawList(c.transports)),
+        Some(c) if !c.transports.is_empty() => map.serialize_entry("transports", &RawList(&c.transports)),
         _ => Ok(()),
     }
 }

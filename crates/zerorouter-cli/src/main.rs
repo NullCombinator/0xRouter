@@ -1,5 +1,9 @@
-//! `zerorouter-cli`: the operator's view of the registry (contracts/registry-api.md § CLI).
-//! It never serves requests.
+//! `zerorouter`: the operator CLI (slice 002 registry commands, slice 003
+//! contracts/operator-cli.md). `serve` runs the server; every other command works on the
+//! files in `$ZEROROUTER_HOME` and, where a server is running, tells it to reload.
+//!
+//! Exit codes: 0 ok, 1 invalid input or file, 2 usage, 3 plugin not supported by this core,
+//! 4 no running server.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -10,7 +14,7 @@ use zerorouter_registry::{OperatorHome, RegistryHandle};
 mod cmd;
 
 #[derive(Parser)]
-#[command(name = "zerorouter-cli", version, about)]
+#[command(name = "zerorouter", version, about)]
 struct Cli {
     /// Operator home. Defaults to `$ZEROROUTER_HOME`, else `~/.0router`.
     #[arg(long, global = true, value_name = "DIR")]
@@ -41,6 +45,26 @@ enum Command {
         #[arg(long, value_name = "KIND")]
         capability: Option<String>,
     },
+    /// Run the server in the foreground. Logs go to stderr, redacted.
+    Serve {
+        #[arg(long, value_name = "ADDR")]
+        listen: Option<String>,
+    },
+    /// Provider accounts (`accounts.toml`).
+    #[command(subcommand)]
+    Accounts(cmd::accounts::Command),
+    /// Agent keys (`keys.toml`).
+    #[command(subcommand)]
+    Keys(cmd::keys::Command),
+    /// Operator defaults for request handling.
+    #[command(subcommand)]
+    Behaviour(cmd::behaviour::Command),
+    /// Request records of the running server.
+    #[command(subcommand)]
+    Records(cmd::records::Command),
+    /// Bundled, installed and community plugins.
+    #[command(subcommand)]
+    Plugins(cmd::plugins::Command),
 }
 
 /// Opens the registry, or prints the startup errors and exits 1.
@@ -60,6 +84,12 @@ fn main() -> ExitCode {
         Command::Resolve { target } => cmd::resolve::run(cli.home, &target, cli.json),
         Command::Model { provider, model } => cmd::model::run(cli.home, &provider, &model, cli.json),
         Command::Providers { capability } => cmd::providers::run(cli.home, capability.as_deref(), cli.json),
+        Command::Serve { listen } => cmd::serve::run(cli.home, listen),
+        Command::Accounts(c) => cmd::accounts::run(cli.home, c, cli.json),
+        Command::Keys(c) => cmd::keys::run(cli.home, c, cli.json),
+        Command::Behaviour(c) => cmd::behaviour::run(cli.home, c),
+        Command::Records(c) => cmd::records::run(cli.home, c, cli.json),
+        Command::Plugins(c) => cmd::plugins::run(cli.home, c, cli.json),
     };
     result.unwrap_or_else(|code| code)
 }

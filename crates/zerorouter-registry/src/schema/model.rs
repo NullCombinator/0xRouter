@@ -29,6 +29,8 @@ pub struct Model {
     pub description: Option<String>,
     pub thinking: Option<bool>,
     pub image_gen: Option<bool>,
+    /// Schema 2: wire styles this model accepts, in preference order after the native pair.
+    pub wires: Option<Vec<String>>,
 }
 
 /// A `models` element: a full table or a bare ID string (9router `normalizeModel`).

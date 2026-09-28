@@ -16,11 +16,28 @@ arc-swap = "1.9"
 url = "2.5"
 regex-lite = "0.1"
 indexmap = { version = "2", features = ["serde"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 criterion = "0.8"
 clap = { version = "4.6", features = ["derive"] }
 tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "signal", "fs", "macros", "io-util", "sync"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+axum = "0.8"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "http2", "multipart"] }
+futures-util = "0.3"
+bytes = "1"
+memchr = "2"
+sha2 = "0.10"
+base64 = "0.22"
+getrandom = "0.3"
+aho-corasick = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ulid = "1"
 zerorouter-registry = { path = "crates/zerorouter-registry" }
+zerorouter-wire = { path = "crates/zerorouter-wire" }
+zerorouter-engine = { path = "crates/zerorouter-engine" }
+zerorouter-server = { path = "crates/zerorouter-server" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

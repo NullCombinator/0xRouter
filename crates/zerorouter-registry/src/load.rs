@@ -13,12 +13,15 @@ use std::{env, fs, io};
 
 use url::Url;
 
-use crate::registry::{Registry, UnifiedMember, UnifiedModel, token_clashes, token_path};
-use crate::schema::{Decision, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings};
+use crate::registry::{Registry, RuntimeSettings, UnifiedMember, UnifiedModel, token_clashes, token_path};
+use crate::schema::{Decision, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings, StyleFile};
 use crate::validate::gate::{parse, positioned};
-use crate::validate::{FieldPath, ValidationError, validate};
+use crate::validate::{
+    FieldPath, GateCtx, ValidationError, check_route_collisions, validate_style, validate_with,
+};
 
 include!(concat!(env!("OUT_DIR"), "/bundled_plugins.rs"));
+include!(concat!(env!("OUT_DIR"), "/bundled_styles.rs"));
 
 /// The operator's directory: `config.toml` and `plugins/*.toml`. Missing parts are not errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +67,8 @@ pub struct LoadReport {
     pub skipped: Vec<SkippedPlugin>,
     /// Unified models dropped at startup because a member's plugin was skipped.
     pub dropped_unified_models: Vec<DroppedUnifiedModel>,
+    /// Gate warnings and stripped forwarding entries from loaded plugins.
+    pub diagnostics: Vec<ValidationError>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -158,9 +163,11 @@ impl Loaded {
 /// name a bundled provider or the plugin itself; other user plugins are not consulted.
 pub fn validate_user_plugin(src: &str, path: &Path) -> Result<ProviderEntity, Vec<ValidationError>> {
     let file = path.display().to_string();
-    let entity = validate(src, PluginSource::User(path.to_owned()), &file)?;
+    let styles = styles()?;
+    let ctx = gate_ctx(&styles, false);
+    let entity = validate_with(src, PluginSource::User(path.to_owned()), &file, &ctx)?.entity;
     if let Some(x) = entity.auth.as_ref().and_then(|a| a.credential_fallback.as_deref()) {
-        let bundled = bundled()?;
+        let bundled = bundled(&ctx, &mut Vec::new())?;
         if !entity.tokens().any(|t| t == x) && !bundled.iter().any(|l| l.entity.tokens().any(|t| t == x)) {
             let path = FieldPath::of("auth.credential_fallback");
             return Err(vec![positioned(src, &file, path, format!("unknown provider {x:?}"))]);
@@ -172,16 +179,65 @@ pub fn validate_user_plugin(src: &str, path: &Path) -> Result<ProviderEntity, Ve
 /// Every embedded plugin through the gate. Any error is fatal.
 #[cfg(test)]
 pub(crate) fn load_bundled() -> Result<Vec<ProviderEntity>, Vec<ValidationError>> {
-    bundled().map(|v| v.into_iter().map(|l| l.entity).collect())
+    let ctx = gate_ctx(&styles()?, false);
+    bundled(&ctx, &mut Vec::new()).map(|v| v.into_iter().map(|l| l.entity).collect())
 }
 
-fn bundled() -> Result<Vec<Loaded>, Vec<ValidationError>> {
+/// Every embedded style through the style gate, then the cross-style route check. Any
+/// error is fatal and names the file (US7-4).
+fn styles() -> Result<Vec<StyleFile>, Vec<ValidationError>> {
+    load_styles(BUNDLED_STYLES)
+}
+
+fn load_styles(sources: &[(&str, &str)]) -> Result<Vec<StyleFile>, Vec<ValidationError>> {
+    let mut loaded = Vec::with_capacity(sources.len());
+    let mut errors = Vec::new();
+    for (name, src) in sources {
+        let file = format!("styles/bundled/{name}");
+        match validate_style(src, &file) {
+            Ok(style) => loaded.push((file, *src, style)),
+            Err(e) => errors.extend(e),
+        }
+    }
+    let mut first: HashMap<&str, &str> = HashMap::new();
+    for (file, src, style) in &loaded {
+        if let Some(other) = first.insert(&style.id, file) {
+            let rule = format!("style id {:?} is also declared by {other}", style.id);
+            errors.push(positioned(src, file, FieldPath::of("id"), rule));
+        }
+    }
+    let refs: Vec<(&str, &str, &StyleFile)> = loaded.iter().map(|(f, src, s)| (f.as_str(), *src, s)).collect();
+    errors.extend(check_route_collisions(&refs));
+    if errors.is_empty() { Ok(loaded.into_iter().map(|(_, _, s)| s).collect()) } else { Err(errors) }
+}
+
+/// What the plugin gate needs to know about the loaded styles.
+fn gate_ctx(styles: &[StyleFile], allow_private: bool) -> GateCtx {
+    GateCtx {
+        style_ids: styles.iter().map(|s| s.id.clone()).collect(),
+        style_ops: styles.iter().map(|s| (s.id.clone(), s.routes.iter().map(|r| r.op).collect())).collect(),
+        style_carriers: style_carriers(styles).map(str::to_owned).collect(),
+        strict: false,
+        allow_private,
+    }
+}
+
+pub(crate) fn style_carriers(styles: &[StyleFile]) -> impl Iterator<Item = &str> {
+    styles.iter().flat_map(|s| s.access_key.carriers.iter().filter_map(|c| c.header.as_deref()))
+}
+
+/// Bundled plugins load under `strict`: forwarding a floor name is an error.
+fn bundled(ctx: &GateCtx, diagnostics: &mut Vec<ValidationError>) -> Result<Vec<Loaded>, Vec<ValidationError>> {
+    let ctx = GateCtx { strict: true, ..ctx.clone() };
     let mut out = Vec::with_capacity(BUNDLED.len());
     let mut errors = Vec::new();
     for (name, src) in BUNDLED {
         let file = format!("plugins/bundled/{name}");
-        match validate(src, PluginSource::Bundled, &file) {
-            Ok(entity) => out.push(Loaded { entity, src: Cow::Borrowed(src), file }),
+        match validate_with(src, PluginSource::Bundled, &file, &ctx) {
+            Ok(g) => {
+                diagnostics.extend(g.diagnostics);
+                out.push(Loaded { entity: g.entity, src: Cow::Borrowed(src), file });
+            }
             Err(e) => errors.extend(e),
         }
     }
@@ -190,7 +246,7 @@ fn bundled() -> Result<Vec<Loaded>, Vec<ValidationError>> {
 
 /// Builds a full snapshot from `home`.
 pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<ValidationError>> {
-    let bundled = bundled()?;
+    let styles = styles()?;
     let config_file = home.config_file();
     let config_name = config_file.display().to_string();
     let config_src = read_optional(&config_file).map_err(|e| vec![io_error(&config_file, &e)])?;
@@ -201,6 +257,8 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<Val
     let config_src = config_src.unwrap_or_default();
 
     let mut report = LoadReport::default();
+    let ctx = gate_ctx(&styles, config.allow_private_endpoints);
+    let bundled = bundled(&ctx, &mut report.diagnostics)?;
     let mut errors = Vec::new();
     let skip = |report: &mut LoadReport, errors: &mut Vec<ValidationError>, l: &Loaded, e: Vec<ValidationError>| match (
         mode,
@@ -213,7 +271,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<Val
     };
 
     // User plugins, then duplicate user ids (both skipped / rejected).
-    let mut user = discover(home, mode, &mut report, &mut errors);
+    let mut user = discover(home, mode, &ctx, &mut report, &mut errors);
     let mut by_id: HashMap<&str, Vec<usize>> = HashMap::new();
     for (i, u) in user.iter().enumerate() {
         by_id.entry(&u.entity.id).or_default().push(i);
@@ -295,6 +353,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<Val
     let skipped_ids: BTreeSet<String> = report.skipped.iter().map(|s| s.id.clone()).collect();
 
     let mut registry = Registry::new(active.into_iter().map(|l| l.entity).collect());
+    registry.set_styles(styles);
     let outcome = validate_config(&config, &config_src, &config_name, &registry, &bundled_ids, mode, &skipped_ids);
     errors.extend(outcome.errors);
     if !errors.is_empty() {
@@ -303,7 +362,12 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<Val
     report.dropped_unified_models = outcome.dropped;
     report.unified_models = outcome.unified.len();
     report.withheld_credentials = registry.withheld_credentials();
-    registry.set_operator_state(outcome.unified, outcome.settings, report);
+    let runtime = RuntimeSettings {
+        allow_private_endpoints: config.allow_private_endpoints,
+        server: config.server.clone(),
+        pipeline: config.pipeline,
+    };
+    registry.set_operator_state(outcome.unified, outcome.settings, runtime, report);
     Ok(registry)
 }
 
@@ -311,6 +375,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<Val
 fn discover(
     home: &OperatorHome,
     mode: Mode,
+    ctx: &GateCtx,
     report: &mut LoadReport,
     errors: &mut Vec<ValidationError>,
 ) -> Vec<Loaded> {
@@ -335,9 +400,12 @@ fn discover(
         let file = path.display().to_string();
         let result = fs::read_to_string(&path)
             .map_err(|e| vec![io_error(&path, &e)])
-            .and_then(|src| validate(&src, PluginSource::User(path.clone()), &file).map(|entity| (entity, src)));
+            .and_then(|src| validate_with(&src, PluginSource::User(path.clone()), &file, ctx).map(|g| (g, src)));
         match result {
-            Ok((entity, src)) => out.push(Loaded { entity, src: Cow::Owned(src), file }),
+            Ok((g, src)) => {
+                report.diagnostics.extend(g.diagnostics);
+                out.push(Loaded { entity: g.entity, src: Cow::Owned(src), file });
+            }
             Err(e) if mode == Mode::Startup => {
                 let id = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
                 report.skipped.push(SkippedPlugin { path, id, errors: e });
@@ -479,11 +547,119 @@ pub(crate) fn validate_config(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::schema::ModelType;
+    use crate::validate::style_gate::tests::BASE;
 
     #[test]
     fn every_bundled_plugin_validates() {
         let providers = load_bundled().unwrap_or_else(|e| panic!("{}", render(&e)));
         assert_eq!(providers.len(), BUNDLED.len());
+    }
+
+    #[test]
+    fn malformed_style_names_the_file() {
+        let bad = BASE.replace("[text.layout]", "[text.layout]\nbogus = 1");
+        let errs = load_styles(&[("a.toml", BASE), ("b.toml", &bad)]).unwrap_err();
+        assert!(errs.iter().all(|e| e.file == "styles/bundled/b.toml"), "{}", render(&errs));
+        assert!(render(&errs).contains("bogus"), "{}", render(&errs));
+    }
+
+    #[test]
+    fn duplicate_style_id_is_an_error() {
+        let other = BASE.replace("/v1/chat", "/v2/chat").replace("/v1/models", "/v2/models");
+        let errs = load_styles(&[("a.toml", BASE), ("b.toml", &other)]).unwrap_err();
+        assert!(render(&errs).contains("also declared by styles/bundled/a.toml"), "{}", render(&errs));
+    }
+
+    #[test]
+    fn gate_ctx_carries_style_ops_and_carriers() {
+        let styles = load_styles(&[("a.toml", BASE)]).unwrap();
+        let ctx = gate_ctx(&styles, true);
+        assert!(ctx.style_ids.contains("mini") && ctx.allow_private && !ctx.strict);
+        assert!(ctx.style_ops["mini"].contains(&crate::schema::RouteOp::Generate));
+        assert_eq!(ctx.style_carriers, ["authorization"]);
+    }
+
+    #[test]
+    fn schema2_user_plugin_exposes_endpoints_and_floor() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugins = dir.path().join("plugins");
+        fs::create_dir(&plugins).unwrap();
+        fs::write(
+            plugins.join("acme.toml"),
+            r#"schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-acme-key"
+
+[[endpoints.embeddings]]
+url = "https://api.acme.example/v1/embeddings"
+body = { model = "{model.upstream_id}", input = "{input.text}" }
+response = { vector = "data[0].embedding" }
+
+[forwarding.to_client]
+headers = ["request-id", "set-cookie"]
+"#,
+        )
+        .unwrap();
+        let reg = build(&OperatorHome::new(dir.path()), Mode::Startup).unwrap();
+        assert!(reg.report().skipped.is_empty(), "{:#?}", reg.report().skipped);
+        assert_eq!(reg.endpoints("acme", ModelType::Embeddings).len(), 1);
+        assert!(reg.endpoints("acme", ModelType::Text).is_empty());
+        assert!(reg.endpoints("nobody", ModelType::Text).is_empty());
+        assert!(reg.floor().blocks("X-Acme-Key") && reg.floor().blocks("authorization"));
+        assert_eq!(reg.styles().count(), BUNDLED_STYLES.len());
+        // A user plugin forwarding a floor name loads with the entry stripped.
+        assert!(render(&reg.report().diagnostics).contains("entry stripped"), "{:#?}", reg.report().diagnostics);
+    }
+
+    #[test]
+    fn schema2_text_endpoints_compose_a_transport() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugins = dir.path().join("plugins");
+        fs::create_dir(&plugins).unwrap();
+        fs::write(
+            plugins.join("acme.toml"),
+            r#"schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-api-key"
+
+[[endpoints.text]]
+url = "https://api.acme.example/v1/messages"
+wire = "anthropic-messages"
+headers = { "anthropic-version" = "2023-06-01" }
+retry = { 429 = { retries = 1, delay_ms = 2000 } }
+
+[[endpoints.text]]
+url = "https://api.acme.example/v1/chat/completions"
+wire = "openai-chat"
+"#,
+        )
+        .unwrap();
+        let reg = build(&OperatorHome::new(dir.path()), Mode::Startup).unwrap();
+        let got = serde_json::to_value(reg.composed_transport("acme").unwrap()).unwrap();
+        assert_eq!(
+            got,
+            serde_json::json!({
+                "baseUrl": "https://api.acme.example/v1/messages",
+                "format": "claude",
+                "headers": { "anthropic-version": "2023-06-01" },
+                "retry": { "429": { "attempts": 1, "delayMs": 2000 } },
+                "auth": { "header": "x-api-key" },
+                "transports": [{
+                    "baseUrl": "https://api.acme.example/v1/chat/completions",
+                    "format": "openai",
+                    "auth": { "header": "x-api-key" }
+                }]
+            })
+        );
     }
 
     #[test]

@@ -1,0 +1,10 @@
+# Every deliberate deviation of 0router from its 9router oracle (spec 003, research R26).
+#
+# A parity comparison skips exactly the listed (provider or style, fixture, field) and fails
+# if a listed deviation no longer differs, so this file can't go stale.
+#
+# [[deviation]]
+# provider = "anthropic"          # or style = "gemini"
+# fixture = "providers"             # the oracle file under tests/fixtures/9router/
+# field = "headers.user-agent"
+# reason = "no User-Agent spoofing (R4)"

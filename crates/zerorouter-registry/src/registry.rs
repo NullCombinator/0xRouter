@@ -4,12 +4,13 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::credentials::{self, ResolvedCredential};
-use crate::load::{LoadReport, WithheldCredential};
+use crate::floor::Floor;
+use crate::load::{LoadReport, WithheldCredential, style_carriers};
 use crate::lookup::{Catalog, derive_model_name};
 use crate::resolve::NotFound;
 use crate::schema::{
-    CapabilityKind, CapabilitySection, ContentKind, Model, ModelKind, ProviderEntity, ProviderSettings, SectionModel,
-    WireFormat,
+    CapabilityKind, CapabilitySection, ContentKind, Endpoint, Model, ModelKind, ModelType, PipelineSettings,
+    ProviderEntity, ProviderSettings, SectionModel, ServerSettings, StyleFile, WireFormat,
 };
 use crate::validate::FieldPath;
 
@@ -79,6 +80,17 @@ pub struct Registry {
     unified_index: HashMap<Box<str>, usize>,
     settings: BTreeMap<String, ProviderSettings>,
     report: LoadReport,
+    styles: Vec<StyleFile>,
+    floor: Floor,
+    runtime: RuntimeSettings,
+}
+
+/// The `config.toml` settings the request pipeline reads (spec 003).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RuntimeSettings {
+    pub allow_private_endpoints: bool,
+    pub server: ServerSettings,
+    pub pipeline: PipelineSettings,
 }
 
 /// A lookup token claimed by two providers.
@@ -139,7 +151,7 @@ impl Registry {
                 Some((p.id.clone(), credentials::bind(entry, p)))
             })
             .collect();
-        Self {
+        let mut registry = Self {
             providers,
             alias_index,
             catalogs,
@@ -148,15 +160,34 @@ impl Registry {
             unified_index: HashMap::new(),
             settings: BTreeMap::new(),
             report: LoadReport::default(),
-        }
+            styles: Vec::new(),
+            floor: Floor::default(),
+            runtime: RuntimeSettings::default(),
+        };
+        registry.compute_floor();
+        registry
+    }
+
+    pub(crate) fn set_styles(&mut self, styles: Vec<StyleFile>) {
+        self.styles = styles;
+        self.compute_floor();
+    }
+
+    /// The security floor: the static names, every loaded style's key carriers, and every
+    /// provider's auth header.
+    fn compute_floor(&mut self) {
+        let auth = self.providers.iter().filter_map(|p| p.auth.as_ref()?.header.as_deref());
+        self.floor = Floor::computed(style_carriers(&self.styles), auth);
     }
 
     pub(crate) fn set_operator_state(
         &mut self,
         unified: Vec<UnifiedModel>,
         settings: BTreeMap<String, ProviderSettings>,
+        runtime: RuntimeSettings,
         report: LoadReport,
     ) {
+        self.runtime = runtime;
         self.unified_index = unified.iter().enumerate().map(|(i, u)| (u.name.as_str().into(), i)).collect();
         self.unified = unified;
         self.settings = settings;
@@ -208,6 +239,25 @@ impl Registry {
 
     pub fn providers(&self) -> impl Iterator<Item = &ProviderEntity> {
         self.providers.iter()
+    }
+
+    /// The loaded API styles, in file-name order.
+    pub fn styles(&self) -> impl Iterator<Item = &StyleFile> {
+        self.styles.iter()
+    }
+
+    pub fn style(&self, id: &str) -> Option<&StyleFile> {
+        self.styles.iter().find(|s| s.id == id)
+    }
+
+    /// A provider's schema-2 endpoints for `t`, in declared order. Empty when the provider
+    /// is unknown or declares none for `t`.
+    pub fn endpoints(&self, provider: &str, t: ModelType) -> &[Endpoint] {
+        self.provider(provider).ok().and_then(|p| p.endpoints.get(&t)).map_or(&[], |e| &e.0)
+    }
+
+    pub fn floor(&self) -> &Floor {
+        &self.floor
     }
 
     /// `Ok(None)` means the provider exists but does not offer `kind` (FR-003).
@@ -281,5 +331,9 @@ impl Registry {
 
     pub fn report(&self) -> &LoadReport {
         &self.report
+    }
+
+    pub fn runtime(&self) -> &RuntimeSettings {
+        &self.runtime
     }
 }

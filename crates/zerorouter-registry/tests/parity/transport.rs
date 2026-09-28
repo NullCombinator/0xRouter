@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+use crate::deviations::Deviations;
 use crate::{bundled, fixture};
 
 #[test]
@@ -13,6 +14,7 @@ fn composed_transports_match_9router() {
     assert_eq!(with_transport.len(), 83);
     assert_eq!(reg.providers().filter(|p| p.transport.is_none()).count(), 38);
 
+    let deviations = Deviations::load();
     let mut diffs = Vec::new();
     for id in with_transport {
         let Some(want) = expected.get(id) else {
@@ -23,8 +25,9 @@ fn composed_transports_match_9router() {
         let secret = want.as_object_mut().unwrap().remove("clientSecret");
         let composed = reg.composed_transport(id).unwrap();
         let got = serde_json::to_value(&composed).unwrap();
-        if got != want {
-            diffs.push(format!("{id}:\n  got  {got}\n  want {want}"));
+        let differs = deviations.compare(id, "providers", &got, &want);
+        if !differs.is_empty() {
+            diffs.extend(differs);
         } else if header_order(&got) != header_order(&want) {
             diffs.push(format!("{id}: header order {:?} != {:?}", header_order(&got), header_order(&want)));
         }

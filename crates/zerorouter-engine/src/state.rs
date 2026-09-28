@@ -1,0 +1,182 @@
+//! The engine snapshot: registry, accounts, agent keys, settings and redactor, swapped as
+//! one. A request holds the snapshot it started with until it ends; a failed reload keeps
+//! the previous one.
+
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+
+use arc_swap::ArcSwap;
+use zerorouter_registry::{LoadReport, OperatorHome, Registry, RegistryHandle, RuntimeSettings, StartupError};
+
+use crate::accounts::{self, Accounts};
+use crate::files::FileError;
+use crate::keys::{self, Keys};
+use crate::records::RecordStore;
+use crate::redact::Redactor;
+
+#[derive(Debug)]
+pub struct EngineState {
+    pub registry: Arc<Registry>,
+    pub accounts: Accounts,
+    pub keys: Keys,
+    pub redactor: Arc<Redactor>,
+    pub generation: u64,
+}
+
+impl EngineState {
+    pub fn settings(&self) -> &RuntimeSettings {
+        self.registry.runtime()
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum StateError {
+    #[error(transparent)]
+    File(#[from] FileError),
+    #[error("{0}")]
+    Registry(String),
+    #[error("reload task failed: {0}")]
+    Join(String),
+}
+
+impl From<StartupError> for StateError {
+    fn from(e: StartupError) -> Self {
+        Self::Registry(e.to_string())
+    }
+}
+
+/// What a load or reload reports besides succeeding.
+#[derive(Debug, Clone, Default)]
+pub struct StateReport {
+    pub generation: u64,
+    pub registry: LoadReport,
+    /// `provider/name` of accounts whose provider isn't loaded.
+    pub unused_accounts: Vec<String>,
+}
+
+pub struct Engine {
+    registry: RegistryHandle,
+    state: ArcSwap<EngineState>,
+    /// Shared with the log writer, so log lines follow reloads.
+    redactor: Arc<ArcSwap<Redactor>>,
+    pub records: RecordStore,
+    generation: AtomicU64,
+    reload: Mutex<()>,
+}
+
+fn operator_files(home: &OperatorHome) -> Result<(Accounts, Keys), FileError> {
+    let accounts = Accounts::load(&home.path().join(accounts::FILE))?;
+    let keys = Keys::load(&home.path().join(keys::FILE))?;
+    Ok((accounts, keys))
+}
+
+fn assemble(registry: Arc<Registry>, mut accounts: Accounts, keys: Keys, generation: u64) -> (EngineState, StateReport) {
+    accounts.bind_unbound(&registry);
+    let unused_accounts = accounts.unused(&registry).map(|a| format!("{}/{}", a.provider, a.name)).collect();
+    let redactor = Arc::new(Redactor::new(accounts.iter().filter_map(|a| a.secret.as_ref())));
+    let report = StateReport { generation, registry: registry.report().clone(), unused_accounts };
+    (EngineState { registry, accounts, keys, redactor, generation }, report)
+}
+
+impl Engine {
+    /// Loads everything under `home`. Refuses shared `accounts.toml` / `keys.toml`.
+    pub fn open(home: OperatorHome) -> Result<(Self, StateReport), StateError> {
+        let (accounts, keys) = operator_files(&home)?;
+        let registry = RegistryHandle::open(home)?;
+        let (state, report) = assemble(registry.snapshot(), accounts, keys, 1);
+        let redactor = Arc::new(ArcSwap::new(state.redactor.clone()));
+        let engine = Self {
+            registry,
+            state: ArcSwap::from_pointee(state),
+            redactor,
+            records: RecordStore::default(),
+            generation: AtomicU64::new(1),
+            reload: Mutex::new(()),
+        };
+        Ok((engine, report))
+    }
+
+    /// The snapshot to hold for one request.
+    pub fn snapshot(&self) -> Arc<EngineState> {
+        self.state.load_full()
+    }
+
+    pub fn home(&self) -> &OperatorHome {
+        self.registry.home()
+    }
+
+    /// The redactor cell the log writer reads.
+    pub fn redactor(&self) -> Arc<ArcSwap<Redactor>> {
+        self.redactor.clone()
+    }
+
+    /// Re-reads every file and swaps the snapshot. Operator files are read before the
+    /// registry is touched, so any failure leaves everything as it was. Blocking.
+    pub fn reload_blocking(&self) -> Result<StateReport, StateError> {
+        let _guard = self.reload.lock().unwrap_or_else(|e| e.into_inner());
+        let (accounts, keys) = operator_files(self.registry.home())?;
+        self.registry.reload().map_err(|e| StateError::Registry(e.to_string()))?;
+        let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let (state, report) = assemble(self.registry.snapshot(), accounts, keys, generation);
+        self.redactor.store(state.redactor.clone());
+        self.state.store(Arc::new(state));
+        Ok(report)
+    }
+
+    /// [`reload_blocking`](Self::reload_blocking) on the blocking pool.
+    pub async fn reload(self: &Arc<Self>) -> Result<StateReport, StateError> {
+        let this = self.clone();
+        tokio::task::spawn_blocking(move || this.reload_blocking()).await.map_err(|e| StateError::Join(e.to_string()))?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn write_private(path: &std::path::Path, text: &str) {
+        crate::files::write_private(path, text).unwrap();
+    }
+
+    #[tokio::test]
+    async fn reload_swaps_and_a_failed_reload_keeps_the_old_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = OperatorHome::new(dir.path());
+        write_private(
+            &dir.path().join(accounts::FILE),
+            "schema = 1\n[[account]]\nprovider = \"anthropic\"\nname = \"main\"\nsecret = \"sk-ant-SENTINEL-000\"\n[[account]]\nprovider = \"nope\"\nname = \"x\"\nsecret = \"sk-nope-00000000\"\n",
+        );
+        let (engine, report) = Engine::open(home).unwrap();
+        let engine = Arc::new(engine);
+        assert_eq!(report.unused_accounts, ["nope/x"]);
+        let before = engine.snapshot();
+        assert_eq!(before.generation, 1);
+        assert!(!before.accounts.get("anthropic", "main").unwrap().hosts.is_empty(), "bound at load");
+        assert_eq!(engine.redactor().load().redact("sk-ant-SENTINEL-000"), "***");
+
+        let r = engine.reload().await.unwrap();
+        assert_eq!(r.generation, 2);
+        assert_eq!(before.generation, 1, "a held snapshot doesn't change");
+
+        let path = dir.path().join(accounts::FILE);
+        fs::write(&path, "schema = 1\n[[account]]\nbroken").unwrap();
+        assert!(engine.reload().await.is_err());
+        assert_eq!(engine.snapshot().generation, 2);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        let err = engine.reload().await.unwrap_err().to_string();
+        assert!(err.contains("chmod 600"), "{err}");
+        assert_eq!(engine.snapshot().generation, 2);
+    }
+
+    #[test]
+    fn open_refuses_shared_key_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(keys::FILE);
+        fs::write(&path, "schema = 1\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        let err = Engine::open(OperatorHome::new(dir.path())).err().unwrap().to_string();
+        assert!(err.contains("keys.toml") && err.contains("chmod 600"), "{err}");
+    }
+}

@@ -8,6 +8,7 @@ use serde_json::Value;
 use zerorouter_registry::{OperatorHome, Registry, RegistryHandle};
 
 mod alias;
+mod deviations;
 mod lookup;
 mod oauth;
 mod transport;

@@ -1,0 +1,28 @@
+[package]
+name = "zerorouter-wire"
+version = "0.1.0"
+description = "Client API-style interpreter for 0router: IR, codecs, and stream framing (no I/O)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+bytes.workspace = true
+memchr.workspace = true
+base64.workspace = true
+thiserror.workspace = true
+indexmap.workspace = true
+zerorouter-registry.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "wire"
+harness = false
+
+[lints]
+workspace = true

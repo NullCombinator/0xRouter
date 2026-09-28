@@ -58,6 +58,7 @@ macro_rules! closed_enum {
         }
     };
 }
+pub(crate) use closed_enum;
 
 closed_enum!(
     /// Provider category (FR-006). Spellings follow 9router.

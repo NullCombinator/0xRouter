@@ -1,0 +1,173 @@
+//! The server: one fallback handler that matches a style route, checks the access key and
+//! dispatches. The route table follows the engine snapshot and is rebuilt after a reload.
+
+use std::future::Future;
+use std::sync::{Arc, Mutex};
+
+use axum::extract::{Request, State};
+use axum::http::StatusCode;
+use axum::response::Response;
+use serde_json::json;
+use tokio::net::TcpListener;
+use zerorouter_engine::clock;
+use zerorouter_engine::keys::AgentId;
+use zerorouter_engine::records::{self, Outcome, RequestRecord};
+use zerorouter_engine::state::{Engine, EngineState};
+use zerorouter_wire::error_body;
+
+use crate::auth;
+use crate::relay;
+use crate::router::{Matched, RouteTable};
+
+pub struct App {
+    pub engine: Arc<Engine>,
+    routes: Mutex<(u64, Arc<RouteTable>)>,
+}
+
+impl App {
+    /// Fails if a loaded style's routes don't build.
+    pub fn new(engine: Arc<Engine>) -> Result<Arc<Self>, String> {
+        let st = engine.snapshot();
+        let table = Arc::new(RouteTable::build(st.registry.styles())?);
+        Ok(Self::with_routes(engine, table))
+    }
+
+    /// Serves `table` until the next reload.
+    pub fn with_routes(engine: Arc<Engine>, table: Arc<RouteTable>) -> Arc<Self> {
+        let generation = engine.snapshot().generation;
+        Arc::new(Self { engine, routes: Mutex::new((generation, table)) })
+    }
+
+    /// The route table for `st`. Built once per generation; a failed build keeps the old one.
+    fn table(&self, st: &EngineState) -> Arc<RouteTable> {
+        let mut cur = self.routes.lock().unwrap_or_else(|e| e.into_inner());
+        if cur.0 != st.generation {
+            match RouteTable::build(st.registry.styles()) {
+                Ok(t) => *cur = (st.generation, Arc::new(t)),
+                Err(e) => tracing::error!("route table not rebuilt, keeping the previous one: {e}"),
+            }
+        }
+        cur.1.clone()
+    }
+}
+
+pub fn router(app: Arc<App>) -> axum::Router {
+    axum::Router::new().fallback(dispatch).with_state(app)
+}
+
+fn style_error(m: &Matched<'_>, status: u16, message: &str, id: &str) -> Response {
+    let body = error_body::body(&m.entry.style.codec, status, message, json!({ "record_id": id }));
+    relay::json(status, &body, id)
+}
+
+async fn dispatch(State(app): State<Arc<App>>, req: Request) -> Response {
+    let id = records::new_id();
+    let arrived = clock::now_rfc3339();
+    let st = app.engine.snapshot();
+    let table = app.table(&st);
+    let candidates = table.candidates(req.method(), req.uri().path(), req.headers());
+    let Some(first) = candidates.first() else {
+        let msg = format!("0router: no route for {} {}", req.method(), req.uri().path());
+        return relay::json(404, &error_body::openai(404, "invalid_request_error", &msg), &id);
+    };
+    let style = &first.entry.style;
+    let mut record = RequestRecord::new(id.clone(), arrived, style.file.id.clone());
+    record.op = Some(first.entry.route.op);
+    record.model_type = Some(first.entry.route.model_type);
+
+    let key = match auth::check(&st.keys, &style.file.access_key.carriers, req.headers(), req.uri().query()) {
+        Ok(k) => k,
+        Err(refusal) => {
+            record.outcome = Outcome::Refused;
+            app.engine.records.insert(record);
+            return style_error(first, 401, refusal.message(), &id);
+        }
+    };
+    record.agent = Some(AgentId::new(key.id.clone(), None));
+    record.outcome = Outcome::Failed;
+    app.engine.records.insert(record);
+    style_error(first, StatusCode::NOT_IMPLEMENTED.as_u16(), "0router: this route isn't served yet", &id)
+}
+
+/// Serves `app` on `listener` until `shutdown` resolves, then lets open requests finish.
+pub async fn run(app: Arc<App>, listener: TcpListener, shutdown: impl Future<Output = ()> + Send + 'static) -> std::io::Result<()> {
+    axum::serve(listener, router(app)).with_graceful_shutdown(shutdown).await
+}
+
+/// Resolves on SIGINT or SIGTERM.
+pub async fn signal() {
+    let int = tokio::signal::ctrl_c();
+    #[cfg(unix)]
+    {
+        let mut term = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(s) => s,
+            Err(_) => {
+                let _ = int.await;
+                return;
+            }
+        };
+        tokio::select! {
+            _ = int => {}
+            _ = term.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = int.await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zerorouter_engine::keys::{self, Keys};
+    use zerorouter_engine::records::Query;
+    use zerorouter_registry::OperatorHome;
+
+    #[tokio::test]
+    async fn refuses_bad_keys_in_the_style_shape_and_404s_unknown_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut keys = Keys::default();
+        let (good, _) = keys.issue("laptop", None).unwrap();
+        zerorouter_engine::files::write_private(&dir.path().join(keys::FILE), &keys.to_toml()).unwrap();
+        let (engine, _) = Engine::open(OperatorHome::new(dir.path())).unwrap();
+        let engine = Arc::new(engine);
+        let style = crate::router::tests::style_with_routes("mini", "routes = []");
+        let app = App::with_routes(engine.clone(), Arc::new(RouteTable::build([&style]).unwrap()));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let server = tokio::spawn(run(app, listener, async {
+            let _ = stopped.await;
+        }));
+        let c = reqwest::Client::new();
+        let url = format!("http://{addr}/mini/messages");
+
+        let r = c.post(&url).body("{}").send().await.unwrap();
+        assert_eq!(r.status(), 401);
+        let id = r.headers()[relay::REQUEST_ID].to_str().unwrap().to_owned();
+        let body: serde_json::Value = serde_json::from_slice(&r.bytes().await.unwrap()).unwrap();
+        assert_eq!(body["type"], "error");
+        assert_eq!(body["error"]["type"], "authentication_error");
+        assert_eq!(body["zerorouter"]["record_id"], id.as_str());
+        let rec = engine.records.get(&id).unwrap();
+        assert_eq!(rec.outcome, Outcome::Refused);
+        assert!(rec.agent.is_none());
+
+        let r = c.post(&url).header("x-api-key", "0r-unknown").send().await.unwrap();
+        assert_eq!(r.status(), 401);
+
+        let r = c.post(&url).header("x-api-key", &good).send().await.unwrap();
+        assert_eq!(r.status(), 501, "authenticated; no route is served yet");
+
+        let r = c.get(format!("http://{addr}/nope")).send().await.unwrap();
+        assert_eq!(r.status(), 404);
+        assert!(r.headers().contains_key(relay::REQUEST_ID));
+        let body: serde_json::Value = serde_json::from_slice(&r.bytes().await.unwrap()).unwrap();
+        assert_eq!(body["error"]["type"], "invalid_request_error");
+
+        assert_eq!(engine.records.query(&Query::default()).len(), 3, "no record for an unknown path");
+        stop.send(()).unwrap();
+        server.await.unwrap().unwrap();
+    }
+}

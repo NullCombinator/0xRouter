@@ -7,9 +7,13 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 
 use super::capability::CapabilitySection;
+use super::endpoint::Endpoints;
 use super::enums::{AuthHook, AuthKind, AuthScheme, CapabilityKind, Category};
+use super::forwarding::Forwarding;
 use super::model::{Model, de_models};
 use super::oauth::OAuthDecl;
+use super::primitives::ModelType;
+use super::session::ProviderSession;
 use super::transport::Transport;
 
 /// One plugin file, as parsed. Only `id` and `category` are required (FR-006).
@@ -39,6 +43,42 @@ pub struct PluginFile {
     #[serde(default)]
     pub capabilities: BTreeMap<CapabilityKind, CapabilitySection>,
     pub display: Option<Display>,
+    /// Schema 2: upstream endpoints per model type.
+    #[serde(default)]
+    pub endpoints: BTreeMap<ModelType, Endpoints>,
+    pub forwarding: Option<Forwarding>,
+    pub session: Option<ProviderSession>,
+    /// Inert names used only by the fit check.
+    #[serde(default)]
+    pub requires: Vec<String>,
+}
+
+impl PluginFile {
+    /// `schema`, defaulting to 1.
+    pub fn schema_version(&self) -> i64 {
+        self.schema.unwrap_or(1)
+    }
+
+    /// Schema-1 execution keys present in this file, by path. Schema 2 declares these
+    /// under `endpoints`.
+    pub fn schema1_execution_keys(&self) -> Vec<String> {
+        let mut keys = Vec::new();
+        if self.transport.is_some() {
+            keys.push("transport".to_owned());
+        }
+        if !self.transports.is_empty() {
+            keys.push("transports".to_owned());
+        }
+        for (kind, sec) in &self.capabilities {
+            if sec.endpoint.is_some() {
+                keys.push(format!("capabilities.{kind}.endpoint"));
+            }
+        }
+        if self.auth.as_ref().is_some_and(|a| !a.hooks.is_empty()) {
+            keys.push("auth.hooks".to_owned());
+        }
+        keys
+    }
 }
 
 /// A validated provider, as the registry holds it.
@@ -59,6 +99,10 @@ pub struct ProviderEntity {
     pub models: Option<Vec<Model>>,
     pub capabilities: BTreeMap<CapabilityKind, CapabilitySection>,
     pub display: Option<Display>,
+    pub endpoints: BTreeMap<ModelType, Endpoints>,
+    pub forwarding: Option<Forwarding>,
+    pub session: Option<ProviderSession>,
+    pub requires: Vec<String>,
     pub source: PluginSource,
 }
 
@@ -80,6 +124,10 @@ impl ProviderEntity {
             models: f.models,
             capabilities: f.capabilities,
             display: f.display,
+            endpoints: f.endpoints,
+            forwarding: f.forwarding,
+            session: f.session,
+            requires: f.requires,
             source,
         }
     }

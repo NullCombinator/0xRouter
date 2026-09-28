@@ -30,6 +30,26 @@ use crate::schema::{ProviderEntity, oauth_urls};
 pub struct SecretString(Box<str>);
 
 impl SecretString {
+    /// Wraps an operator secret (an account key read from `accounts.toml` or the
+    /// environment).
+    pub fn new(value: impl Into<Box<str>>) -> Self {
+        Self(value.into())
+    }
+
+    /// Lends the value to `f` for the one place that must send it: the upstream client
+    /// setting the auth header. The value can't outlive the call through this API.
+    pub fn with_exposed<R>(&self, f: impl FnOnce(&str) -> R) -> R {
+        f(&self.0)
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// Compares against `candidate` without revealing the value.
     pub fn matches(&self, candidate: &str) -> bool {
         let (a, b) = (self.0.as_bytes(), candidate.as_bytes());

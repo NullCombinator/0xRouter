@@ -13,11 +13,13 @@ use std::sync::{Arc, Mutex};
 use arc_swap::ArcSwap;
 
 mod credentials;
+pub mod floor;
 mod load;
 mod lookup;
 mod registry;
 mod resolve;
 pub mod schema;
+pub mod template;
 pub mod validate;
 mod views;
 
@@ -27,7 +29,7 @@ pub use load::{
     WithheldCredential, validate_user_plugin,
 };
 pub use lookup::{derive_model_name, normalise_version_sep, split_suffix};
-pub use registry::{CatalogEntry, ModelInfo, Registry, UnifiedMember, UnifiedModel};
+pub use registry::{CatalogEntry, ModelInfo, Registry, RuntimeSettings, UnifiedMember, UnifiedModel};
 pub use resolve::{NotFound, Resolution};
 pub use schema::{CapabilityKind, ModelKind, PluginSource, ProviderEntity};
 pub use validate::ValidationError;
