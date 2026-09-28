@@ -34,6 +34,7 @@ aho-corasick = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ulid = "1"
+httpdate = "1"
 zerorouter-registry = { path = "crates/zerorouter-registry" }
 zerorouter-wire = { path = "crates/zerorouter-wire" }
 zerorouter-engine = { path = "crates/zerorouter-engine" }

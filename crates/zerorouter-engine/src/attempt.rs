@@ -290,7 +290,7 @@ impl Engine {
             };
             if !(200..300).contains(&status) {
                 let message = st.redactor.redact(&error_message(&raw)).into_owned();
-                return Err(self.fail(&id, arrived, classify::by_status(status), Failure::new(status, message)));
+                return Err(self.fail(&id, arrived, classify::upstream(status, &String::from_utf8_lossy(&raw)).class, Failure::new(status, message)));
             }
             let value: Value = match serde_json::from_slice(&raw) {
                 Ok(v) => v,

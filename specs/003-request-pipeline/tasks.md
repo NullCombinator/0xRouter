@@ -462,7 +462,7 @@ informational error in its own style.
 ### Tests for User Story 2 ⚠️
 
 - [X] T061 [US2] Add the classification oracle to `generate.mjs`. Run `checkFallbackError` over the `tests/unit/account-fallback-4xx.test.js` cases plus a generated grid (statuses 400–599 × the ERROR_RULES texts × JSON and plain bodies), and write `tests/fixtures/9router/classify/cases.json`.
-- [ ] T062 [P] [US2] Write classification parity in `crates/zerorouter-engine/tests/classify.rs` against `tests/fixtures/9router/classify/cases.json`: the verdict, the cooldown, and the backoff level progression (2000·2^(level−1), capped at 300 000, max level 15).
+- [X] T062 [P] [US2] Write classification parity in `crates/zerorouter-engine/tests/classify.rs` against `tests/fixtures/9router/classify/cases.json`: the verdict, the cooldown, and the backoff level progression (2000·2^(level−1), capped at 300 000, max level 15).
 - [ ] T063 [P] [US2] Write `crates/zerorouter-engine/tests/retry.rs` for every row of the [R7](research.md#r7-retry-order-and-budgets) budget table:
   - 502, network error and connect timeout: 3 retries at 3 s;
   - 503: 3 × 2 s;
@@ -496,11 +496,11 @@ informational error in its own style.
 
 ### Implementation for User Story 2
 
-- [ ] T068 [US2] Port the classification in `crates/zerorouter-engine/src/classify.rs` ([R6](research.md#r6-error-classification)).
+- [X] T068 [US2] Port the classification in `crates/zerorouter-engine/src/classify.rs` ([R6](research.md#r6-error-classification)).
   - Text rules come first: lowercase substring, first match wins, against `"[<status>]: <raw body>"`.
   - The status rules come next.
   - Result: `Verdict { class, fallback: bool, cooldown: Cooldown }`, with the classes from data-model `Attempt.class`.
-- [ ] T069 [US2] Implement cooldowns in `crates/zerorouter-engine/src/cooldown.rs`.
+- [X] T069 [US2] Implement cooldowns in `crates/zerorouter-engine/src/cooldown.rs`.
   - Keyed by "`(provider id, account name, model id) → { until: Instant, backoff_level: u8 (≤ 15) }`".
   - A success clears the model's cooldown and, when no other cooldown is active, resets the level (9router `auth.js:326-333`).
   - Provide `earliest_end()` for `retry-after`.

@@ -2536,6 +2536,7 @@ dependencies = [
  "criterion",
  "futures-util",
  "getrandom 0.3.4",
+ "httpdate",
  "indexmap",
  "reqwest",
  "serde",
