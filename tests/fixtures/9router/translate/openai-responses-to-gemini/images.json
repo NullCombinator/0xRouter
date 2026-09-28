@@ -1,0 +1,80 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "from": "openai-responses",
+    "to": "gemini",
+    "stream": true,
+    "input": {
+      "model": "m1",
+      "stream": true,
+      "input": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "what is this?"
+            },
+            {
+              "type": "input_image",
+              "image_url": "data:image/png;base64,AAA"
+            },
+            {
+              "type": "input_image",
+              "image_url": "https://example.com/cat.png"
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "model": "m1",
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "what is this?"
+            },
+            {
+              "inlineData": {
+                "mime_type": "image/png",
+                "data": "AAA"
+              }
+            },
+            {
+              "fileData": {
+                "fileUri": "https://example.com/cat.png",
+                "mimeType": "image/*"
+              }
+            }
+          ]
+        }
+      ],
+      "generationConfig": {},
+      "safetySettings": [
+        {
+          "category": "HARM_CATEGORY_HATE_SPEECH",
+          "threshold": "OFF"
+        },
+        {
+          "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+          "threshold": "OFF"
+        },
+        {
+          "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+          "threshold": "OFF"
+        },
+        {
+          "category": "HARM_CATEGORY_HARASSMENT",
+          "threshold": "OFF"
+        },
+        {
+          "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
+          "threshold": "OFF"
+        }
+      ]
+    }
+  }
+}

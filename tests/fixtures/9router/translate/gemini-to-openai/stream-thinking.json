@@ -1,0 +1,120 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "wire": "gemini",
+    "client": "openai",
+    "upstream": [
+      {
+        "candidates": [
+          {
+            "content": {
+              "role": "model",
+              "parts": [
+                {
+                  "text": "adding",
+                  "thought": true
+                }
+              ]
+            },
+            "index": 0
+          }
+        ],
+        "modelVersion": "m1",
+        "responseId": "gem-up3"
+      },
+      {
+        "candidates": [
+          {
+            "content": {
+              "role": "model",
+              "parts": [
+                {
+                  "text": "4",
+                  "thoughtSignature": "sig-1"
+                }
+              ]
+            },
+            "finishReason": "STOP",
+            "index": 0
+          }
+        ],
+        "usageMetadata": {
+          "promptTokenCount": 5,
+          "candidatesTokenCount": 1,
+          "thoughtsTokenCount": 2,
+          "totalTokenCount": 8
+        },
+        "modelVersion": "m1",
+        "responseId": "gem-up3"
+      }
+    ],
+    "client_events": [
+      {
+        "id": "chatcmpl-gem-up3",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "role": "assistant"
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-gem-up3",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "reasoning_content": "adding"
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-gem-up3",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "content": "4"
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-gem-up3",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {},
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2005,
+          "completion_tokens": 3,
+          "total_tokens": 2008,
+          "completion_tokens_details": {
+            "reasoning_tokens": 2
+          }
+        }
+      }
+    ]
+  }
+}

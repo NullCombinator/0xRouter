@@ -1,0 +1,77 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "from": "claude",
+    "to": "openai-responses",
+    "stream": true,
+    "input": {
+      "model": "m1",
+      "max_tokens": 256,
+      "stream": true,
+      "system": "be brief",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "hello"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "how are you?"
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "model": "m1",
+      "input": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "hi"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "hello"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "how are you?"
+            }
+          ]
+        }
+      ],
+      "stream": true,
+      "store": false,
+      "instructions": "be brief",
+      "max_output_tokens": 256
+    }
+  }
+}

@@ -1,0 +1,210 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "wire": "openai",
+    "client": "openai-responses",
+    "upstream": [
+      {
+        "id": "chatcmpl-up2",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "call_1",
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": ""
+                  }
+                }
+              ]
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-up2",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "function": {
+                    "arguments": "{\"city\":"
+                  }
+                }
+              ]
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-up2",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "function": {
+                    "arguments": "\"Oslo\"}"
+                  }
+                }
+              ]
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-up2",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 9,
+          "completion_tokens": 4,
+          "total_tokens": 13
+        }
+      },
+      "[DONE]"
+    ],
+    "client_events": [
+      {
+        "event": "response.created",
+        "data": {
+          "type": "response.created",
+          "response": {
+            "id": "resp_chatcmpl-up2",
+            "object": "response",
+            "created_at": 1700000000,
+            "status": "in_progress",
+            "background": false,
+            "error": null,
+            "output": []
+          },
+          "sequence_number": 1
+        }
+      },
+      {
+        "event": "response.in_progress",
+        "data": {
+          "type": "response.in_progress",
+          "response": {
+            "id": "resp_chatcmpl-up2",
+            "object": "response",
+            "created_at": 1700000000,
+            "status": "in_progress"
+          },
+          "sequence_number": 2
+        }
+      },
+      {
+        "event": "response.output_item.added",
+        "data": {
+          "type": "response.output_item.added",
+          "output_index": 0,
+          "item": {
+            "id": "fc_call_1",
+            "type": "function_call",
+            "arguments": "",
+            "call_id": "call_1",
+            "name": "get_weather"
+          },
+          "sequence_number": 3
+        }
+      },
+      {
+        "event": "response.function_call_arguments.delta",
+        "data": {
+          "type": "response.function_call_arguments.delta",
+          "item_id": "fc_call_1",
+          "output_index": 0,
+          "delta": "{\"city\":",
+          "sequence_number": 4
+        }
+      },
+      {
+        "event": "response.function_call_arguments.delta",
+        "data": {
+          "type": "response.function_call_arguments.delta",
+          "item_id": "fc_call_1",
+          "output_index": 0,
+          "delta": "\"Oslo\"}",
+          "sequence_number": 5
+        }
+      },
+      {
+        "event": "response.function_call_arguments.done",
+        "data": {
+          "type": "response.function_call_arguments.done",
+          "item_id": "fc_call_1",
+          "output_index": 0,
+          "arguments": "{\"city\":\"Oslo\"}",
+          "sequence_number": 6
+        }
+      },
+      {
+        "event": "response.output_item.done",
+        "data": {
+          "type": "response.output_item.done",
+          "output_index": 0,
+          "item": {
+            "id": "fc_call_1",
+            "type": "function_call",
+            "arguments": "{\"city\":\"Oslo\"}",
+            "call_id": "call_1",
+            "name": "get_weather"
+          },
+          "sequence_number": 7
+        }
+      },
+      {
+        "event": "response.completed",
+        "data": {
+          "type": "response.completed",
+          "response": {
+            "id": "resp_chatcmpl-up2",
+            "object": "response",
+            "created_at": 1700000000,
+            "status": "completed",
+            "background": false,
+            "error": null,
+            "usage": {
+              "input_tokens": 9,
+              "output_tokens": 4,
+              "total_tokens": 13
+            }
+          },
+          "sequence_number": 8
+        }
+      }
+    ]
+  }
+}

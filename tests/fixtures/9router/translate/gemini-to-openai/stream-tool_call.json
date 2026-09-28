@@ -1,0 +1,97 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "wire": "gemini",
+    "client": "openai",
+    "upstream": [
+      {
+        "candidates": [
+          {
+            "content": {
+              "role": "model",
+              "parts": [
+                {
+                  "functionCall": {
+                    "name": "get_weather",
+                    "args": {
+                      "city": "Oslo"
+                    }
+                  }
+                }
+              ]
+            },
+            "finishReason": "STOP",
+            "index": 0
+          }
+        ],
+        "usageMetadata": {
+          "promptTokenCount": 9,
+          "candidatesTokenCount": 4,
+          "totalTokenCount": 13
+        },
+        "modelVersion": "m1",
+        "responseId": "gem-up2"
+      }
+    ],
+    "client_events": [
+      {
+        "id": "chatcmpl-gem-up2",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "role": "assistant"
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-gem-up2",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "tool_calls": [
+                {
+                  "id": "get_weather-1700000000000-0",
+                  "index": 0,
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{\"city\":\"Oslo\"}"
+                  }
+                }
+              ]
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-gem-up2",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2009,
+          "completion_tokens": 4,
+          "total_tokens": 2013
+        }
+      }
+    ]
+  }
+}

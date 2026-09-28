@@ -1,0 +1,173 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "wire": "claude",
+    "client": "openai",
+    "upstream": [
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_up2",
+          "type": "message",
+          "role": "assistant",
+          "model": "m1",
+          "content": [],
+          "stop_reason": null,
+          "usage": {
+            "input_tokens": 9,
+            "output_tokens": 0
+          }
+        }
+      },
+      {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "tool_use",
+          "id": "toolu_1",
+          "name": "get_weather",
+          "input": {}
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "input_json_delta",
+          "partial_json": "{\"city\":"
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "input_json_delta",
+          "partial_json": "\"Oslo\"}"
+        }
+      },
+      {
+        "type": "content_block_stop",
+        "index": 0
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "tool_use",
+          "stop_sequence": null
+        },
+        "usage": {
+          "output_tokens": 4
+        }
+      },
+      {
+        "type": "message_stop"
+      }
+    ],
+    "client_events": [
+      {
+        "id": "chatcmpl-msg_up2",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "role": "assistant"
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-msg_up2",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "toolu_1",
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": ""
+                  }
+                }
+              ]
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-msg_up2",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "toolu_1",
+                  "function": {
+                    "arguments": "{\"city\":"
+                  }
+                }
+              ]
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-msg_up2",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "toolu_1",
+                  "function": {
+                    "arguments": "\"Oslo\"}"
+                  }
+                }
+              ]
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-msg_up2",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2009,
+          "completion_tokens": 4,
+          "total_tokens": 2013
+        }
+      }
+    ]
+  }
+}

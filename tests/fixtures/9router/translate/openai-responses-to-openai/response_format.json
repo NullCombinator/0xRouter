@@ -1,0 +1,62 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "from": "openai-responses",
+    "to": "openai",
+    "stream": true,
+    "input": {
+      "model": "m1",
+      "stream": true,
+      "input": "give me a city",
+      "text": {
+        "format": {
+          "type": "json_schema",
+          "name": "city",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        }
+      }
+    },
+    "output": {
+      "model": "m1",
+      "stream": true,
+      "text": {
+        "format": {
+          "type": "json_schema",
+          "name": "city",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        }
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "give me a city"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

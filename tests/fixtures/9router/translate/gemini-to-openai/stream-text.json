@@ -1,0 +1,131 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "wire": "gemini",
+    "client": "openai",
+    "upstream": [
+      {
+        "candidates": [
+          {
+            "content": {
+              "role": "model",
+              "parts": [
+                {
+                  "text": "Hel"
+                }
+              ]
+            },
+            "index": 0
+          }
+        ],
+        "modelVersion": "m1",
+        "responseId": "gem-up1"
+      },
+      {
+        "candidates": [
+          {
+            "content": {
+              "role": "model",
+              "parts": [
+                {
+                  "text": "lo"
+                }
+              ]
+            },
+            "index": 0
+          }
+        ],
+        "modelVersion": "m1",
+        "responseId": "gem-up1"
+      },
+      {
+        "candidates": [
+          {
+            "content": {
+              "role": "model",
+              "parts": [
+                {
+                  "text": ""
+                }
+              ]
+            },
+            "finishReason": "STOP",
+            "index": 0
+          }
+        ],
+        "usageMetadata": {
+          "promptTokenCount": 5,
+          "candidatesTokenCount": 2,
+          "totalTokenCount": 7
+        },
+        "modelVersion": "m1",
+        "responseId": "gem-up1"
+      }
+    ],
+    "client_events": [
+      {
+        "id": "chatcmpl-gem-up1",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "role": "assistant"
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-gem-up1",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "content": "Hel"
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-gem-up1",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "content": "lo"
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-gem-up1",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {},
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2005,
+          "completion_tokens": 2,
+          "total_tokens": 2007
+        }
+      }
+    ]
+  }
+}

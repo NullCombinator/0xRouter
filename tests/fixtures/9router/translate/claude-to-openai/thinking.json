@@ -1,0 +1,60 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "from": "claude",
+    "to": "openai",
+    "stream": true,
+    "input": {
+      "model": "m1",
+      "max_tokens": 4096,
+      "stream": true,
+      "thinking": {
+        "type": "enabled",
+        "budget_tokens": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "2+2?"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "adding",
+              "signature": "sig-1"
+            },
+            {
+              "type": "text",
+              "text": "4"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "and 3+3?"
+        }
+      ]
+    },
+    "output": {
+      "model": "m1",
+      "messages": [
+        {
+          "role": "user",
+          "content": "2+2?"
+        },
+        {
+          "role": "assistant",
+          "content": "4"
+        },
+        {
+          "role": "user",
+          "content": "and 3+3?"
+        }
+      ],
+      "stream": true,
+      "max_tokens": 4096
+    }
+  }
+}

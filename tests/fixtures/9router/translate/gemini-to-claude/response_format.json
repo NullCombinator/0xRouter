@@ -1,0 +1,60 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "from": "gemini",
+    "to": "claude",
+    "stream": false,
+    "input": {
+      "generationConfig": {
+        "responseMimeType": "application/json",
+        "responseSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        }
+      },
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "give me a city"
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "model": "m1",
+      "max_tokens": 64000,
+      "stream": false,
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "give me a city"
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "type": "text",
+          "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+          "cache_control": {
+            "type": "ephemeral",
+            "ttl": "1h"
+          }
+        }
+      ]
+    }
+  }
+}

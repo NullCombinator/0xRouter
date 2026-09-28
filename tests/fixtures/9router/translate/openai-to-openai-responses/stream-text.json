@@ -1,0 +1,235 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "wire": "openai",
+    "client": "openai-responses",
+    "upstream": [
+      {
+        "id": "chatcmpl-up1",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "role": "assistant",
+              "content": ""
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-up1",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "content": "Hel"
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-up1",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "content": "lo"
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-up1",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {},
+            "finish_reason": "stop"
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-up1",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [],
+        "usage": {
+          "prompt_tokens": 5,
+          "completion_tokens": 2,
+          "total_tokens": 7
+        }
+      },
+      "[DONE]"
+    ],
+    "client_events": [
+      {
+        "event": "response.created",
+        "data": {
+          "type": "response.created",
+          "response": {
+            "id": "resp_chatcmpl-up1",
+            "object": "response",
+            "created_at": 1700000000,
+            "status": "in_progress",
+            "background": false,
+            "error": null,
+            "output": []
+          },
+          "sequence_number": 1
+        }
+      },
+      {
+        "event": "response.in_progress",
+        "data": {
+          "type": "response.in_progress",
+          "response": {
+            "id": "resp_chatcmpl-up1",
+            "object": "response",
+            "created_at": 1700000000,
+            "status": "in_progress"
+          },
+          "sequence_number": 2
+        }
+      },
+      {
+        "event": "response.output_item.added",
+        "data": {
+          "type": "response.output_item.added",
+          "output_index": 0,
+          "item": {
+            "id": "msg_resp_chatcmpl-up1_0",
+            "type": "message",
+            "content": [],
+            "role": "assistant"
+          },
+          "sequence_number": 3
+        }
+      },
+      {
+        "event": "response.content_part.added",
+        "data": {
+          "type": "response.content_part.added",
+          "item_id": "msg_resp_chatcmpl-up1_0",
+          "output_index": 0,
+          "content_index": 0,
+          "part": {
+            "type": "output_text",
+            "annotations": [],
+            "logprobs": [],
+            "text": ""
+          },
+          "sequence_number": 4
+        }
+      },
+      {
+        "event": "response.output_text.delta",
+        "data": {
+          "type": "response.output_text.delta",
+          "item_id": "msg_resp_chatcmpl-up1_0",
+          "output_index": 0,
+          "content_index": 0,
+          "delta": "Hel",
+          "logprobs": [],
+          "sequence_number": 5
+        }
+      },
+      {
+        "event": "response.output_text.delta",
+        "data": {
+          "type": "response.output_text.delta",
+          "item_id": "msg_resp_chatcmpl-up1_0",
+          "output_index": 0,
+          "content_index": 0,
+          "delta": "lo",
+          "logprobs": [],
+          "sequence_number": 6
+        }
+      },
+      {
+        "event": "response.output_text.done",
+        "data": {
+          "type": "response.output_text.done",
+          "item_id": "msg_resp_chatcmpl-up1_0",
+          "output_index": 0,
+          "content_index": 0,
+          "text": "Hello",
+          "logprobs": [],
+          "sequence_number": 7
+        }
+      },
+      {
+        "event": "response.content_part.done",
+        "data": {
+          "type": "response.content_part.done",
+          "item_id": "msg_resp_chatcmpl-up1_0",
+          "output_index": 0,
+          "content_index": 0,
+          "part": {
+            "type": "output_text",
+            "annotations": [],
+            "logprobs": [],
+            "text": "Hello"
+          },
+          "sequence_number": 8
+        }
+      },
+      {
+        "event": "response.output_item.done",
+        "data": {
+          "type": "response.output_item.done",
+          "output_index": 0,
+          "item": {
+            "id": "msg_resp_chatcmpl-up1_0",
+            "type": "message",
+            "content": [
+              {
+                "type": "output_text",
+                "annotations": [],
+                "logprobs": [],
+                "text": "Hello"
+              }
+            ],
+            "role": "assistant"
+          },
+          "sequence_number": 9
+        }
+      },
+      {
+        "event": "response.completed",
+        "data": {
+          "type": "response.completed",
+          "response": {
+            "id": "resp_chatcmpl-up1",
+            "object": "response",
+            "created_at": 1700000000,
+            "status": "completed",
+            "background": false,
+            "error": null,
+            "usage": {
+              "input_tokens": 5,
+              "output_tokens": 2,
+              "total_tokens": 7
+            }
+          },
+          "sequence_number": 10
+        }
+      }
+    ]
+  }
+}

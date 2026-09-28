@@ -1,0 +1,75 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "from": "openai",
+    "to": "openai-responses",
+    "stream": true,
+    "input": {
+      "model": "m1",
+      "stream": true,
+      "reasoning_effort": "high",
+      "messages": [
+        {
+          "role": "user",
+          "content": "2+2?"
+        },
+        {
+          "role": "assistant",
+          "content": "4",
+          "reasoning_content": "adding"
+        },
+        {
+          "role": "user",
+          "content": "and 3+3?"
+        }
+      ]
+    },
+    "output": {
+      "model": "m1",
+      "input": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "2+2?"
+            }
+          ]
+        },
+        {
+          "type": "reasoning",
+          "summary": [
+            {
+              "type": "summary_text",
+              "text": "adding"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "4"
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "and 3+3?"
+            }
+          ]
+        }
+      ],
+      "stream": true,
+      "store": false,
+      "instructions": ""
+    }
+  }
+}

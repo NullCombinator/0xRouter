@@ -1,0 +1,126 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "from": "claude",
+    "to": "openai",
+    "stream": true,
+    "input": {
+      "model": "m1",
+      "max_tokens": 256,
+      "stream": true,
+      "messages": [
+        {
+          "role": "user",
+          "content": "weather in Oslo?"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "checking"
+            },
+            {
+              "type": "tool_use",
+              "id": "toolu_1",
+              "name": "get_weather",
+              "input": {
+                "city": "Oslo"
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "tool_use_id": "toolu_1",
+              "content": "rain",
+              "is_error": true
+            },
+            {
+              "type": "text",
+              "text": "thanks"
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "name": "get_weather",
+          "description": "d",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ]
+          }
+        }
+      ],
+      "tool_choice": {
+        "type": "auto"
+      }
+    },
+    "output": {
+      "model": "m1",
+      "messages": [
+        {
+          "role": "user",
+          "content": "weather in Oslo?"
+        },
+        {
+          "role": "assistant",
+          "content": "checking",
+          "tool_calls": [
+            {
+              "id": "toolu_1",
+              "type": "function",
+              "function": {
+                "name": "get_weather",
+                "arguments": "{\"city\":\"Oslo\"}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "toolu_1",
+          "content": "rain"
+        },
+        {
+          "role": "user",
+          "content": "thanks"
+        }
+      ],
+      "stream": true,
+      "max_tokens": 32000,
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "d",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ]
+            }
+          }
+        }
+      ],
+      "tool_choice": "auto"
+    }
+  }
+}

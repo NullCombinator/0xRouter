@@ -1,0 +1,74 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "from": "gemini",
+    "to": "openai",
+    "stream": false,
+    "input": {
+      "generationConfig": {
+        "thinkingConfig": {
+          "thinkingBudget": 2048,
+          "includeThoughts": true
+        }
+      },
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "2+2?"
+            }
+          ]
+        },
+        {
+          "role": "model",
+          "parts": [
+            {
+              "text": "adding",
+              "thought": true
+            },
+            {
+              "text": "4",
+              "thoughtSignature": "sig-1"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "and 3+3?"
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "model": "m1",
+      "messages": [
+        {
+          "role": "user",
+          "content": "2+2?"
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "adding"
+            },
+            {
+              "type": "text",
+              "text": "4"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": "and 3+3?"
+        }
+      ],
+      "stream": false
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "from": "openai",
+    "to": "openai-responses",
+    "stream": true,
+    "input": {
+      "model": "m1",
+      "stream": true,
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "what is this?"
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "data:image/png;base64,AAA"
+              }
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "https://example.com/cat.png"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "model": "m1",
+      "input": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "what is this?"
+            },
+            {
+              "type": "input_image",
+              "image_url": "data:image/png;base64,AAA",
+              "detail": "auto"
+            },
+            {
+              "type": "input_image",
+              "image_url": "https://example.com/cat.png",
+              "detail": "auto"
+            }
+          ]
+        }
+      ],
+      "stream": true,
+      "store": false,
+      "instructions": ""
+    }
+  }
+}

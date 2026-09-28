@@ -1,0 +1,65 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "from": "gemini",
+    "to": "openai",
+    "stream": false,
+    "input": {
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "be brief"
+          }
+        ]
+      },
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "hi"
+            }
+          ]
+        },
+        {
+          "role": "model",
+          "parts": [
+            {
+              "text": "hello"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "how are you?"
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "model": "m1",
+      "messages": [
+        {
+          "role": "system",
+          "content": "be brief"
+        },
+        {
+          "role": "user",
+          "content": "hi"
+        },
+        {
+          "role": "assistant",
+          "content": "hello"
+        },
+        {
+          "role": "user",
+          "content": "how are you?"
+        }
+      ],
+      "stream": false
+    }
+  }
+}

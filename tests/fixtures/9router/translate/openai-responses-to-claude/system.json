@@ -1,0 +1,52 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "from": "openai-responses",
+    "to": "claude",
+    "stream": true,
+    "input": {
+      "model": "m1",
+      "stream": true,
+      "instructions": "be brief",
+      "max_output_tokens": 256,
+      "temperature": 0.2,
+      "input": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ]
+    },
+    "output": {
+      "model": "m1",
+      "max_tokens": 256,
+      "stream": true,
+      "temperature": 0.2,
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "hi"
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "type": "text",
+          "text": "You are Claude Code, Anthropic's official CLI for Claude."
+        },
+        {
+          "type": "text",
+          "text": "be brief",
+          "cache_control": {
+            "type": "ephemeral",
+            "ttl": "1h"
+          }
+        }
+      ]
+    }
+  }
+}

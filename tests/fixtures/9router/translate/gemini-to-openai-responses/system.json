@@ -1,0 +1,51 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "from": "gemini",
+    "to": "openai-responses",
+    "stream": false,
+    "input": {
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "be brief"
+          }
+        ]
+      },
+      "generationConfig": {
+        "maxOutputTokens": 256,
+        "temperature": 0.2
+      },
+      "contents": [
+        {
+          "role": "user",
+          "parts": [
+            {
+              "text": "hi"
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "model": "m1",
+      "input": [
+        {
+          "type": "message",
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "hi"
+            }
+          ]
+        }
+      ],
+      "stream": true,
+      "store": false,
+      "instructions": "be brief",
+      "temperature": 0.2,
+      "max_output_tokens": 256
+    }
+  }
+}

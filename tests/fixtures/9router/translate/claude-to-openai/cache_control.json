@@ -1,0 +1,51 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "from": "claude",
+    "to": "openai",
+    "stream": true,
+    "input": {
+      "model": "m1",
+      "max_tokens": 256,
+      "stream": true,
+      "system": [
+        {
+          "type": "text",
+          "text": "be brief",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "hi",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "model": "m1",
+      "messages": [
+        {
+          "role": "system",
+          "content": "be brief"
+        },
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ],
+      "stream": true,
+      "max_tokens": 256
+    }
+  }
+}

@@ -1,0 +1,163 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "wire": "openai-responses",
+    "client": "openai",
+    "upstream": [
+      {
+        "type": "response.created",
+        "sequence_number": 0,
+        "response": {
+          "id": "resp_up1",
+          "object": "response",
+          "status": "in_progress",
+          "model": "m1",
+          "output": []
+        }
+      },
+      {
+        "type": "response.output_item.added",
+        "sequence_number": 1,
+        "output_index": 0,
+        "item": {
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "status": "in_progress",
+          "content": []
+        }
+      },
+      {
+        "type": "response.content_part.added",
+        "sequence_number": 2,
+        "output_index": 0,
+        "item_id": "msg_1",
+        "content_index": 0,
+        "part": {
+          "type": "output_text",
+          "text": ""
+        }
+      },
+      {
+        "type": "response.output_text.delta",
+        "sequence_number": 3,
+        "output_index": 0,
+        "item_id": "msg_1",
+        "content_index": 0,
+        "delta": "Hel"
+      },
+      {
+        "type": "response.output_text.delta",
+        "sequence_number": 4,
+        "output_index": 0,
+        "item_id": "msg_1",
+        "content_index": 0,
+        "delta": "lo"
+      },
+      {
+        "type": "response.output_text.done",
+        "sequence_number": 5,
+        "output_index": 0,
+        "item_id": "msg_1",
+        "content_index": 0,
+        "text": "Hello"
+      },
+      {
+        "type": "response.output_item.done",
+        "sequence_number": 6,
+        "output_index": 0,
+        "item": {
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "status": "completed",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "Hello"
+            }
+          ]
+        }
+      },
+      {
+        "type": "response.completed",
+        "sequence_number": 7,
+        "response": {
+          "id": "resp_up1",
+          "object": "response",
+          "status": "completed",
+          "model": "m1",
+          "output": [
+            {
+              "id": "msg_1",
+              "type": "message",
+              "role": "assistant",
+              "status": "completed",
+              "content": [
+                {
+                  "type": "output_text",
+                  "text": "Hello"
+                }
+              ]
+            }
+          ],
+          "usage": {
+            "input_tokens": 5,
+            "output_tokens": 2,
+            "total_tokens": 7
+          }
+        }
+      }
+    ],
+    "client_events": [
+      {
+        "id": "chatcmpl-1700000000000",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "content": "Hel"
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-1700000000000",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {
+              "content": "lo"
+            },
+            "finish_reason": null
+          }
+        ]
+      },
+      {
+        "id": "chatcmpl-1700000000000",
+        "object": "chat.completion.chunk",
+        "created": 1700000000,
+        "model": "m1",
+        "choices": [
+          {
+            "index": 0,
+            "delta": {},
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 2005,
+          "completion_tokens": 2,
+          "total_tokens": 2007
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,178 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "wire": "claude",
+    "client": "openai-responses",
+    "upstream": [
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_up2",
+          "type": "message",
+          "role": "assistant",
+          "model": "m1",
+          "content": [],
+          "stop_reason": null,
+          "usage": {
+            "input_tokens": 9,
+            "output_tokens": 0
+          }
+        }
+      },
+      {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "tool_use",
+          "id": "toolu_1",
+          "name": "get_weather",
+          "input": {}
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "input_json_delta",
+          "partial_json": "{\"city\":"
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "input_json_delta",
+          "partial_json": "\"Oslo\"}"
+        }
+      },
+      {
+        "type": "content_block_stop",
+        "index": 0
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "tool_use",
+          "stop_sequence": null
+        },
+        "usage": {
+          "output_tokens": 4
+        }
+      },
+      {
+        "type": "message_stop"
+      }
+    ],
+    "client_events": [
+      {
+        "event": "response.created",
+        "data": {
+          "type": "response.created",
+          "response": {
+            "id": "resp_chatcmpl-msg_up2",
+            "object": "response",
+            "created_at": 1700000000,
+            "status": "in_progress",
+            "background": false,
+            "error": null,
+            "output": []
+          },
+          "sequence_number": 1
+        }
+      },
+      {
+        "event": "response.in_progress",
+        "data": {
+          "type": "response.in_progress",
+          "response": {
+            "id": "resp_chatcmpl-msg_up2",
+            "object": "response",
+            "created_at": 1700000000,
+            "status": "in_progress"
+          },
+          "sequence_number": 2
+        }
+      },
+      {
+        "event": "response.output_item.added",
+        "data": {
+          "type": "response.output_item.added",
+          "output_index": 0,
+          "item": {
+            "id": "fc_toolu_1",
+            "type": "function_call",
+            "arguments": "",
+            "call_id": "toolu_1",
+            "name": "get_weather"
+          },
+          "sequence_number": 3
+        }
+      },
+      {
+        "event": "response.function_call_arguments.delta",
+        "data": {
+          "type": "response.function_call_arguments.delta",
+          "item_id": "fc_toolu_1",
+          "output_index": 0,
+          "delta": "{\"city\":",
+          "sequence_number": 4
+        }
+      },
+      {
+        "event": "response.function_call_arguments.delta",
+        "data": {
+          "type": "response.function_call_arguments.delta",
+          "item_id": "fc_toolu_1",
+          "output_index": 0,
+          "delta": "\"Oslo\"}",
+          "sequence_number": 5
+        }
+      },
+      {
+        "event": "response.function_call_arguments.done",
+        "data": {
+          "type": "response.function_call_arguments.done",
+          "item_id": "fc_toolu_1",
+          "output_index": 0,
+          "arguments": "{\"city\":\"Oslo\"}",
+          "sequence_number": 6
+        }
+      },
+      {
+        "event": "response.output_item.done",
+        "data": {
+          "type": "response.output_item.done",
+          "output_index": 0,
+          "item": {
+            "id": "fc_toolu_1",
+            "type": "function_call",
+            "arguments": "{\"city\":\"Oslo\"}",
+            "call_id": "toolu_1",
+            "name": "get_weather"
+          },
+          "sequence_number": 7
+        }
+      },
+      {
+        "event": "response.completed",
+        "data": {
+          "type": "response.completed",
+          "response": {
+            "id": "resp_chatcmpl-msg_up2",
+            "object": "response",
+            "created_at": 1700000000,
+            "status": "completed",
+            "background": false,
+            "error": null,
+            "usage": {
+              "input_tokens": 9,
+              "output_tokens": 4,
+              "total_tokens": 13
+            }
+          },
+          "sequence_number": 8
+        }
+      }
+    ]
+  }
+}
