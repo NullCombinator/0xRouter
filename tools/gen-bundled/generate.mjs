@@ -665,7 +665,7 @@ export async function resolve(spec, ctx, next) {
 }`;
 register(`data:text/javascript,${encodeURIComponent(hooks)}`);
 const { translateRequest, translateResponse, initState } = await imp("open-sse/translator/index.js");
-const { hasValuableContent } = await imp("open-sse/utils/streamHelpers.js");
+const { hasValuableContent, formatSSE } = await imp("open-sse/utils/streamHelpers.js");
 const { extractUsage, mergeUsage, hasValidUsage, estimateUsage, addBufferToUsage, filterUsageForFormat } = await imp("open-sse/utils/usageTracking.js");
 
 const frozen = (fn) => {
@@ -705,7 +705,8 @@ for (const from of TEXT_FORMATS) {
 
 // Stream cases: the provider's events in `wire`'s format, and what 9router's translate-mode
 // SSE transform (open-sse/utils/stream.js) sends a `client`: each event translated, empty
-// chunks filtered, usage put on the finish chunk, then the terminal flush.
+// chunks filtered, usage put on the finish chunk, then the terminal flush; each frame as
+// formatSSE writes it, `{ event?, data }`.
 // The request the stream answers, for 9router's usage estimate when a finish chunk has none.
 const STREAM_BODY = { model: "m1", messages: [{ role: "user", content: "hi" }] };
 let streamCases = 0;
@@ -729,7 +730,13 @@ for (const wire of TEXT_FORMATS) {
                 item.usage = filterUsageForFormat(addBufferToUsage(state.usage), client);
               }
             }
-            emitted.push(JSON.parse(JSON.stringify(item)));
+            // What the client reads: formatSSE's event name and payload.
+            const frame = {};
+            for (const line of formatSSE(item, client).split("\n")) {
+              if (line.startsWith("event: ")) frame.event = line.slice(7);
+              else if (line.startsWith("data: ")) frame.data = JSON.parse(line.slice(6));
+            }
+            emitted.push(frame);
           }
         };
         for (const ev of upstream) {
@@ -744,7 +751,7 @@ for (const wire of TEXT_FORMATS) {
         emit(translateResponse(wire, client, null, state), true);
         return emitted;
       });
-      writeTranslate(`${wire}-to-${client}`, `stream-${name}`, { wire, client, upstream, client_events: out });
+      writeTranslate(`${wire}-to-${client}`, `stream-${name}`, { wire, client, upstream, client_frames: out });
       streamCases++;
     }
   }
