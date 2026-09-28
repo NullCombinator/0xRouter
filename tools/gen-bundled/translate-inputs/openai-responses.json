@@ -1,0 +1,44 @@
+{
+  "plain": { "model": "m1", "stream": true, "input": "hi" },
+  "system": { "model": "m1", "stream": true, "instructions": "be brief", "max_output_tokens": 256, "temperature": 0.2, "input": [{ "role": "user", "content": "hi" }] },
+  "multi_turn": {
+    "model": "m1", "stream": true, "instructions": "be brief",
+    "input": [
+      { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "hi" }] },
+      { "type": "message", "role": "assistant", "content": [{ "type": "output_text", "text": "hello" }] },
+      { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "how are you?" }] }
+    ]
+  },
+  "tools": {
+    "model": "m1", "stream": true,
+    "input": [
+      { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "weather in Oslo?" }] },
+      { "type": "function_call", "call_id": "call_1", "name": "get_weather", "arguments": "{\"city\":\"Oslo\"}" },
+      { "type": "function_call_output", "call_id": "call_1", "output": "rain" },
+      { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "thanks" }] }
+    ],
+    "tools": [{ "type": "function", "name": "get_weather", "description": "d", "parameters": { "type": "object", "properties": { "city": { "type": "string" } }, "required": ["city"] } }],
+    "tool_choice": "auto"
+  },
+  "images": {
+    "model": "m1", "stream": true,
+    "input": [{ "type": "message", "role": "user", "content": [
+      { "type": "input_text", "text": "what is this?" },
+      { "type": "input_image", "image_url": "data:image/png;base64,AAA" },
+      { "type": "input_image", "image_url": "https://example.com/cat.png" }
+    ] }]
+  },
+  "thinking": {
+    "model": "m1", "stream": true, "reasoning": { "effort": "high" },
+    "input": [
+      { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "2+2?" }] },
+      { "type": "reasoning", "id": "rs_1", "summary": [{ "type": "summary_text", "text": "adding" }], "encrypted_content": "enc-1" },
+      { "type": "message", "role": "assistant", "content": [{ "type": "output_text", "text": "4" }] },
+      { "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "and 3+3?" }] }
+    ]
+  },
+  "response_format": {
+    "model": "m1", "stream": true, "input": "give me a city",
+    "text": { "format": { "type": "json_schema", "name": "city", "schema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] } } }
+  }
+}

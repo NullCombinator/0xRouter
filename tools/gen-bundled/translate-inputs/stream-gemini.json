@@ -1,0 +1,14 @@
+{
+  "text": [
+    { "candidates": [{ "content": { "role": "model", "parts": [{ "text": "Hel" }] }, "index": 0 }], "modelVersion": "m1", "responseId": "gem-up1" },
+    { "candidates": [{ "content": { "role": "model", "parts": [{ "text": "lo" }] }, "index": 0 }], "modelVersion": "m1", "responseId": "gem-up1" },
+    { "candidates": [{ "content": { "role": "model", "parts": [{ "text": "" }] }, "finishReason": "STOP", "index": 0 }], "usageMetadata": { "promptTokenCount": 5, "candidatesTokenCount": 2, "totalTokenCount": 7 }, "modelVersion": "m1", "responseId": "gem-up1" }
+  ],
+  "tool_call": [
+    { "candidates": [{ "content": { "role": "model", "parts": [{ "functionCall": { "name": "get_weather", "args": { "city": "Oslo" } } }] }, "finishReason": "STOP", "index": 0 }], "usageMetadata": { "promptTokenCount": 9, "candidatesTokenCount": 4, "totalTokenCount": 13 }, "modelVersion": "m1", "responseId": "gem-up2" }
+  ],
+  "thinking": [
+    { "candidates": [{ "content": { "role": "model", "parts": [{ "text": "adding", "thought": true }] }, "index": 0 }], "modelVersion": "m1", "responseId": "gem-up3" },
+    { "candidates": [{ "content": { "role": "model", "parts": [{ "text": "4", "thoughtSignature": "sig-1" }] }, "finishReason": "STOP", "index": 0 }], "usageMetadata": { "promptTokenCount": 5, "candidatesTokenCount": 1, "thoughtsTokenCount": 2, "totalTokenCount": 8 }, "modelVersion": "m1", "responseId": "gem-up3" }
+  ]
+}

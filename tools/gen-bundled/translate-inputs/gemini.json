@@ -1,0 +1,44 @@
+{
+  "plain": { "contents": [{ "role": "user", "parts": [{ "text": "hi" }] }] },
+  "system": {
+    "systemInstruction": { "parts": [{ "text": "be brief" }] },
+    "generationConfig": { "maxOutputTokens": 256, "temperature": 0.2 },
+    "contents": [{ "role": "user", "parts": [{ "text": "hi" }] }]
+  },
+  "multi_turn": {
+    "systemInstruction": { "parts": [{ "text": "be brief" }] },
+    "contents": [
+      { "role": "user", "parts": [{ "text": "hi" }] },
+      { "role": "model", "parts": [{ "text": "hello" }] },
+      { "role": "user", "parts": [{ "text": "how are you?" }] }
+    ]
+  },
+  "tools": {
+    "contents": [
+      { "role": "user", "parts": [{ "text": "weather in Oslo?" }] },
+      { "role": "model", "parts": [{ "text": "checking" }, { "functionCall": { "name": "get_weather", "args": { "city": "Oslo" } } }] },
+      { "role": "user", "parts": [{ "functionResponse": { "name": "get_weather", "response": { "result": "rain" } } }, { "text": "thanks" }] }
+    ],
+    "tools": [{ "functionDeclarations": [{ "name": "get_weather", "description": "d", "parameters": { "type": "object", "properties": { "city": { "type": "string" } }, "required": ["city"] } }] }],
+    "toolConfig": { "functionCallingConfig": { "mode": "AUTO" } }
+  },
+  "images": {
+    "contents": [{ "role": "user", "parts": [
+      { "text": "what is this?" },
+      { "inlineData": { "mimeType": "image/png", "data": "AAA" } },
+      { "fileData": { "mimeType": "image/png", "fileUri": "https://example.com/cat.png" } }
+    ] }]
+  },
+  "thinking": {
+    "generationConfig": { "thinkingConfig": { "thinkingBudget": 2048, "includeThoughts": true } },
+    "contents": [
+      { "role": "user", "parts": [{ "text": "2+2?" }] },
+      { "role": "model", "parts": [{ "text": "adding", "thought": true }, { "text": "4", "thoughtSignature": "sig-1" }] },
+      { "role": "user", "parts": [{ "text": "and 3+3?" }] }
+    ]
+  },
+  "response_format": {
+    "generationConfig": { "responseMimeType": "application/json", "responseSchema": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] } },
+    "contents": [{ "role": "user", "parts": [{ "text": "give me a city" }] }]
+  }
+}

@@ -11,14 +11,16 @@
 //   crates/zerorouter-registry/src/schema/section_formats.rs
 //   crates/zerorouter-registry/src/credentials/bundled.rs
 //   tests/fixtures/9router/*.json
+//   tests/fixtures/9router/translate/<from>-to-<to>/<case>.json, from tools/gen-bundled/translate-inputs
 //
 // Any registry key this script does not know how to map is a hard error: keys are
 // never dropped silently (R4).
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { register } from "node:module";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const REF = join(ROOT, "ref", "9router");
@@ -637,7 +639,119 @@ writeFixture("oauth-urls.json", oauthFixture);
 writeFixture("lookup.json", lookupRows);
 writeFixture("tts-tables.json", ttsFixture);
 
+// ── Translator oracle (T042) ────────────────────────────────────────────────
+//
+// 9router's translator reaches into the Next.js app (`@/` imports, extensionless paths) and
+// two npm packages ref/9router doesn't vendor. A resolve hook maps the first and stubs the
+// second, so nothing is installed into the ref. Clock, randomness and uuids are frozen while
+// the translator runs, so regenerating writes the same bytes.
+
+const stubs = {
+  uuid: "export const v4 = () => '00000000-0000-4000-8000-000000000000'; export default { v4 };",
+  undici: "export class Agent {} export class ProxyAgent {} export const fetch = globalThis.fetch; export const setGlobalDispatcher = () => {}; export default {};",
+};
+const hooks = `import { existsSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+const STUBS = ${JSON.stringify(stubs)};
+const SRC = ${JSON.stringify(pathToFileURL(join(REF, "src")).href + "/")};
+const isFile = (u) => { try { const p = fileURLToPath(u); return existsSync(p) && statSync(p).isFile(); } catch { return false; } };
+export async function resolve(spec, ctx, next) {
+  if (spec in STUBS) return { url: "data:text/javascript," + encodeURIComponent(STUBS[spec]), shortCircuit: true };
+  let base = null;
+  if (spec.startsWith("@/")) base = new URL(spec.slice(2), SRC).href;
+  else if ((spec.startsWith(".") || spec.startsWith("/")) && ctx.parentURL?.startsWith("file:")) base = new URL(spec, ctx.parentURL).href;
+  if (base) for (const u of [base, base + ".js", base + "/index.js"]) if (isFile(u)) return { url: u, format: "module", shortCircuit: true };
+  return next(spec, ctx);
+}`;
+register(`data:text/javascript,${encodeURIComponent(hooks)}`);
+const { translateRequest, translateResponse, initState } = await imp("open-sse/translator/index.js");
+const { hasValuableContent } = await imp("open-sse/utils/streamHelpers.js");
+const { extractUsage, mergeUsage, hasValidUsage, estimateUsage, addBufferToUsage, filterUsageForFormat } = await imp("open-sse/utils/usageTracking.js");
+
+const frozen = (fn) => {
+  const saved = [Date.now, Math.random, crypto.randomUUID];
+  let seed = 1;
+  Date.now = () => 1_700_000_000_000;
+  Math.random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  crypto.randomUUID = () => "00000000-0000-4000-8000-000000000000";
+  try { return fn(); } finally { [Date.now, Math.random, crypto.randomUUID] = saved; }
+};
+
+// The four text formats 0router ships styles for. 9router covers every ordered pair on the
+// request side (a direct translator or the OpenAI pivot). On the response side it has no
+// openai→gemini translator, so a Gemini client gets OpenAI chunks: those pairs aren't written.
+const TEXT_FORMATS = ["openai", "claude", "openai-responses", "gemini"];
+const RESPONSE_CLIENTS = ["openai", "claude", "openai-responses"];
+const inputsDir = join(ROOT, "tools", "gen-bundled", "translate-inputs");
+const readInput = (name) => JSON.parse(readFileSync(join(inputsDir, `${name}.json`), "utf8"));
+const translateDir = join(fixDir, "translate");
+rmSync(translateDir, { recursive: true, force: true });
+const writeTranslate = (pair, name, data) => {
+  mkdirSync(join(translateDir, pair), { recursive: true });
+  writeFileSync(join(translateDir, pair, `${name}.json`), `${JSON.stringify({ source: HEADER, data }, null, 2)}\n`);
+};
+
+let requestCases = 0;
+for (const from of TEXT_FORMATS) {
+  for (const [name, body] of Object.entries(readInput(from))) {
+    for (const to of TEXT_FORMATS.filter((t) => t !== from)) {
+      const stream = body.stream ?? false;
+      const output = frozen(() => translateRequest(from, to, "m1", structuredClone(body), stream));
+      writeTranslate(`${from}-to-${to}`, name, { from, to, stream, input: body, output: JSON.parse(JSON.stringify(output)) });
+      requestCases++;
+    }
+  }
+}
+
+// Stream cases: the provider's events in `wire`'s format, and what 9router's translate-mode
+// SSE transform (open-sse/utils/stream.js) sends a `client`: each event translated, empty
+// chunks filtered, usage put on the finish chunk, then the terminal flush.
+// The request the stream answers, for 9router's usage estimate when a finish chunk has none.
+const STREAM_BODY = { model: "m1", messages: [{ role: "user", content: "hi" }] };
+let streamCases = 0;
+for (const wire of TEXT_FORMATS) {
+  for (const [name, upstream] of Object.entries(readInput(`stream-${wire}`))) {
+    for (const client of RESPONSE_CLIENTS.filter((c) => c !== wire)) {
+      const out = frozen(() => {
+        const state = { ...initState(client), provider: null, toolNameMap: null, customToolNames: new Set(), model: "m1", sessionId: null, targetFormat: wire };
+        const emitted = [];
+        let contentLength = 0;
+        const emit = (items, flush) => {
+          for (const item of items ?? []) {
+            if (item === null || item === undefined) continue;
+            if (!flush) {
+              if (!hasValuableContent(item, client)) continue;
+              const finish = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
+              if (state.finishReason && finish && !hasValidUsage(item.usage) && contentLength > 0) {
+                state.usage = estimateUsage(STREAM_BODY, contentLength, client);
+                item.usage = filterUsageForFormat(state.usage, client);
+              } else if (state.finishReason && finish && state.usage) {
+                item.usage = filterUsageForFormat(addBufferToUsage(state.usage), client);
+              }
+            }
+            emitted.push(JSON.parse(JSON.stringify(item)));
+          }
+        };
+        for (const ev of upstream) {
+          if (ev === "[DONE]") continue;
+          const d = ev.choices?.[0]?.delta;
+          for (const t of [ev.delta?.text, ev.delta?.thinking, d?.content, d?.reasoning_content]) if (t) contentLength += t.length;
+          for (const part of ev.candidates?.[0]?.content?.parts ?? []) if (typeof part.text === "string") contentLength += part.text.length;
+          const extracted = extractUsage(ev);
+          if (extracted) state.usage = mergeUsage(state.usage, extracted);
+          emit(translateResponse(wire, client, structuredClone(ev), state), false);
+        }
+        emit(translateResponse(wire, client, null, state), true);
+        return emitted;
+      });
+      writeTranslate(`${wire}-to-${client}`, `stream-${name}`, { wire, client, upstream, client_events: out });
+      streamCases++;
+    }
+  }
+}
+
 console.log(`ref/9router@${SHA}`);
 console.log(`  ${plugins.length} plugins, ${credentials.length} credentials (${credentials.map((c) => c.provider_id).join(", ")})`);
 console.log(`  ${oauthParamKeys.size} oauth params, ${sectionFormats.size} section formats, ${lookupRows.length} lookup rows`);
+console.log(`  translate oracle: ${requestCases} request cases, ${streamCases} stream cases`);
 for (const n of notes) console.log(`  note: ${n}`);
