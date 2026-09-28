@@ -1,9 +1,7 @@
 //! Text generation over HTTP (T056): each bundled client style against a scripted
-//! OpenAI-compatible provider, streamed and not, with errors and a client that goes away.
+//! OpenAI-compatible provider, streamed and not, and errors.
 
 mod common;
-
-use std::time::Duration;
 
 use common::{SECRET, chat_stream, chat_whole, server};
 use serde_json::{Value, json};
@@ -124,29 +122,4 @@ async fn errors_come_back_in_the_clients_style() {
     let r = c.post(&url).header("x-api-key", &s.key).body("{not json").send().await.unwrap();
     assert_eq!(r.status(), 400);
     assert_eq!(s.mock.received().len(), 1, "only the first request reached the provider");
-}
-
-#[tokio::test]
-async fn a_client_that_goes_away_cancels_the_upstream_stream() {
-    let s = server().await;
-    let first = format!("data: {}\n\n", json!({"id": "up-1", "choices": [{"index": 0, "delta": {"content": "Hel"}}]}));
-    s.mock.push([Step::StallAfter { frames: vec![first.into()], hold: Duration::from_secs(30) }]);
-    let mut r = reqwest::Client::new()
-        .post(format!("{}/v1/chat/completions", s.base))
-        .bearer_auth(&s.key)
-        .body(json_body(&json!({"model": "mockco/m1", "stream": true, "messages": [{"role": "user", "content": "hi"}]})))
-        .send()
-        .await
-        .unwrap();
-    let id = r.headers()[REQUEST_ID].to_str().unwrap().to_owned();
-    let chunk = r.chunk().await.unwrap().unwrap();
-    assert!(String::from_utf8_lossy(&chunk).contains("data: "));
-    drop(r);
-    for _ in 0..400 {
-        if s.engine.records.get(&id).unwrap().outcome == Outcome::Cancelled && !s.mock.disconnects().is_empty() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    panic!("record {:?}; upstream disconnects {}", s.engine.records.get(&id).unwrap().outcome, s.mock.disconnects().len());
 }

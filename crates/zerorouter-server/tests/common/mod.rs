@@ -22,6 +22,8 @@ pub struct Server {
     pub mock: MockUpstream,
     pub base: String,
     pub key: String,
+    /// A key issued and then revoked.
+    pub revoked: String,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
@@ -59,6 +61,8 @@ pub async fn server_with(extra: impl FnOnce(&MockUpstream) -> Vec<(&'static str,
     zerorouter_engine::files::write_private(&dir.path().join(zerorouter_engine::accounts::FILE), &accounts).unwrap();
     let mut keys = Keys::default();
     let (key, _) = keys.issue("laptop", None).unwrap();
+    let (revoked, _) = keys.issue("old", None).unwrap();
+    keys.revoke("old").unwrap();
     zerorouter_engine::files::write_private(&dir.path().join(keys::FILE), &keys.to_toml()).unwrap();
 
     let (engine, report) = Engine::open(OperatorHome::new(dir.path())).unwrap();
@@ -71,7 +75,7 @@ pub async fn server_with(extra: impl FnOnce(&MockUpstream) -> Vec<(&'static str,
     tokio::spawn(run(app, listener, async {
         let _ = stopped.await;
     }));
-    Server { _dir: dir, engine, mock, base, key, stop: Some(stop) }
+    Server { _dir: dir, engine, mock, base, key, revoked, stop: Some(stop) }
 }
 
 /// A whole chat completion saying "hi there".

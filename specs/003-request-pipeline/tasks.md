@@ -360,12 +360,12 @@ in CI), and every request produces a record.
   - The bodies must be valid for the client style: the stream grammar, block start before deltas, no reused index, and a terminal event.
   - `x-0router-request-id` must be present.
   - Client-visible usage must equal the mock's usage (US1-1).
-- [ ] T046 [P] [US1] Write the access-key and session tests in `crates/zerorouter-server/tests/auth.rs`.
+- [X] T046 [P] [US1] Write the access-key and session tests in `crates/zerorouter-server/tests/auth.rs`.
   - No key, an unknown key and a revoked key each return 401 in the style's shape, and the mock received nothing (US1-4). Run this in all four styles.
   - The Gemini `?key=` carrier works.
   - Two Claude Code sessions (`metadata.user_id` `_session_` form) under one key are distinct agents in their records (US1-5).
-- [ ] T047 [P] [US1] Write the cancellation test in `crates/zerorouter-server/tests/cancel.rs`. When the client drops mid-stream, the mock sees the disconnect within 1 s (SC-010, US1-6), and the record is `cancelled`.
-- [ ] T048 [P] [US1] Write the passthrough test in `crates/zerorouter-server/tests/passthrough.rs`. In a native pair and in a translated pair, the prompt text (system, messages, tool results) reaches the mock byte-for-byte equal as a string value (US1-7).
+- [X] T047 [P] [US1] Write the cancellation test in `crates/zerorouter-server/tests/cancel.rs`. When the client drops mid-stream, the mock sees the disconnect within 1 s (SC-010, US1-6), and the record is `cancelled`.
+- [X] T048 [P] [US1] Write the passthrough test in `crates/zerorouter-server/tests/passthrough.rs`. In a native pair and in a translated pair, the prompt text (system, messages, tool results) reaches the mock byte-for-byte equal as a string value (US1-7).
 
 ### Optimizer pass-through (amendment 2026-09-28) ⚠️ before T049
 
