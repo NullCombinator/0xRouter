@@ -19,7 +19,7 @@ Workspace layout:
 
 After updating `ref/9router`, regenerate with `node tools/gen-bundled/generate.mjs` and commit the output on its own, naming the ref SHA. Build commands need `export CARGO_HOME=$PWD/.cargo-home`.
 
-0router re-implements 9router's core routing engine in Rust, with a different routing decision (cache-aware, per-agent isolation, windowed amortization), a unified provider entity model (one plugin = one provider with per-modality sections), unified models as routing targets, first-class support for non-text model types, latency observability, testable combos, and a plugin model where third-party providers are declared as TOML data files. See `init.md` for the full intention and `init.md`→`constitution.md` for the non-negotiable invariants.
+0router re-implements 9router's core routing engine in Rust, with a different routing decision (cache-aware, per-agent isolation, windowed amortization), a unified provider entity model (one plugin = one provider with per-modality sections), unified models as routing targets, first-class support for non-text model types, latency observability, testable combos, and a two-sided plugin model: third-party providers are declared as TOML data files, and harness adapters run as sandboxed WASM. See `init.md` for the full intention and `init.md`→`constitution.md` for the non-negotiable invariants.
 
 ## Running this identity
 
@@ -131,8 +131,8 @@ The porting skill set (load before any translation work):
 The 10 recurring patterns in 9router and their Rust equivalents are catalogued in `.claude/skills/port-js-to-rust/SKILL.md`. The most important:
 
 - **Fail-open middleware** (`try { ... } catch { return null }`) → `Result::ok()` returning `Option<T>`. Never panic in these paths.
-- **Class hierarchy** (BaseExecutor + subclasses) → Rust `trait` (with `async_trait` for `dyn` compatibility) + closed `enum` for the builtin provider set; `Box<dyn Trait>` only for plugin-extensible runtime dispatch.
-- **Side-effect self-registration** (translator `register(from, to, ...)` on import) → static table for builtins. `inventory` is acceptable for intra-binary registration; it is **not** for plugin extension (plugins are data, not code).
+- **Class hierarchy** (BaseExecutor + subclasses) → Rust `trait` (with `async_trait` for `dyn` compatibility) + closed `enum` for the builtin provider set; `Box<dyn Trait>` only for runtime dispatch that genuinely needs it (today, only third-party harness adapters behind the WASM sandbox).
+- **Side-effect self-registration** (translator `register(from, to, ...)` on import) → static table for builtins. `inventory` is acceptable for intra-binary registration; it is **not** for any plugin extension point.
 - **AbortController/Signal** → `tokio_util::sync::CancellationToken` + `tokio::select!`
 - **SSE streaming** → `axum::response::sse::Sse<impl Stream>` with `futures::StreamExt` adaptors; never buffer.
 
@@ -140,10 +140,13 @@ The 10 recurring patterns in 9router and their Rust equivalents are catalogued i
 
 ## Plugin safety invariant
 
-A 0router plugin **is data, not code**. It declares endpoints, auth schemes, model IDs, and parameter mappings in a TOML file. The core alone acts on those declarations. A plugin must never:
-- Execute code or scripts
-- Make network requests directly
-- Read the filesystem
-- Receive secrets
+0router has plugins on both sides of the router (constitution v3.0.0, Principle I). No plugin of either kind may make network requests, read or write the filesystem, or receive secrets. The core does all sending and injects secrets only at execution.
 
-If a feature requires a plugin to run code, it belongs in the core as a built-in.
+- A **provider plugin** is **data, not code**. It declares endpoints, auth schemes, model IDs, and parameter mappings in a TOML file, and the core alone acts on those declarations. If a provider needs code, it belongs in the core as a built-in.
+- A **harness adapter** handles one client harness's quirks and may be code, but only sandboxed code. Built-in adapters (hermes) are core code. A third-party adapter:
+  - ships as Rust source only, depends only on 0router's adapter kit (no other crates, build scripts or proc macros), and is compiled to WASM by a builder service separate from the core;
+  - runs only inside the sandbox, and only if its source matches the reviewed source;
+  - goes live only after an operator-decided review; it never updates automatically, and the previous version keeps serving meanwhile;
+  - is checked on every request by a rule-based guardrail: if it adds or changes a tool call, the core drops its changes and sends the unmodified request.
+
+An adapter may change request content only where its harness's coupling requires it, and every change is recorded (Principle IV).

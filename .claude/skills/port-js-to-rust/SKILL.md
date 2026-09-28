@@ -157,7 +157,7 @@ inventory::submit!(TranslatorRegistration {
 // Somewhere in the crate root: inventory::collect!(TranslatorRegistration);
 ```
 
-**Rule**: Prefer the explicit static table. Use `inventory` only for intra-binary registration where the table would otherwise span many files inconveniently. `inventory` MUST NOT be used for plugin extension points — plugins are data, not code, and cannot contribute link-time registrations.
+**Rule**: Prefer the explicit static table. Use `inventory` only for intra-binary registration where the table would otherwise span many files inconveniently. `inventory` MUST NOT be used for any plugin extension point. Provider plugins are data, and harness adapters run only inside the WASM sandbox, so neither can contribute link-time registrations.
 
 ---
 

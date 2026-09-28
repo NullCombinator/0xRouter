@@ -1,9 +1,12 @@
 # Writing a provider plugin
 
-A 0router plugin is one TOML file that declares one provider: where its API lives, how
+A provider plugin is one TOML file that declares one provider: where its API lives, how
 requests authenticate, and which models it offers. It is **data, not code**. The core
-reads the declarations and acts on them. A plugin cannot run code, make network
+reads the declarations and acts on them. A provider plugin cannot run code, make network
 requests, read files, or hold secrets.
+
+This page covers provider plugins only. 0router's other plugin kind, the harness adapter,
+may be sandboxed code and has its own rules (constitution Principle I).
 
 Install a plugin by copying it into `$ZEROROUTER_HOME/plugins/` (default
 `~/.0router/plugins/`). Only `*.toml` files at the top level are read. Check it first:
