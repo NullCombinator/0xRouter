@@ -117,9 +117,12 @@ Agent → Optimizer → 0router → Provider
 ```
 
 0router is a clean downstream for optimizers. It MUST expose a standard API surface that
-accepts requests an optimizer has already rewritten. It MUST pass through the unknown
-fields and headers an optimizer adds, without rejecting or stripping them. At least one
-real optimizer chain (agent → headroom → 0router) MUST be tested end to end.
+accepts requests an optimizer has already rewritten. Where the provider speaks the
+client's API style, it MUST pass through the unknown fields and headers an optimizer adds,
+without rejecting or stripping them. Across styles, a field the provider's style has no
+place for MAY be dropped, and every dropped field MUST be noted in the request record.
+Prompt content is never dropped. At least one real optimizer chain
+(agent → headroom → 0router) MUST be tested end to end.
 
 **Harness coupling exception**: a harness adapter (Principle I) MAY change request content
 only where its harness's coupling requires it: removing or converting parts the target
@@ -262,7 +265,11 @@ guidance, PATCH for clarifications and wording fixes.
 or SSE streaming MUST reference the relevant principle(s) in its description. Reviewers
 MUST verify compliance before approving.
 
-**Version**: 3.0.0 | **Ratified**: 2026-09-26 | **Last Amended**: 2026-09-28
+**Version**: 3.0.1 | **Ratified**: 2026-09-26 | **Last Amended**: 2026-09-28
+
+**v3.0.1 changes (PATCH)**: Clarified the optimizer pass-through in Scope Discipline (IV).
+It is guaranteed where the provider speaks the client's API style. Across styles, a field
+the provider's style can't hold may be dropped and is recorded; prompt content never is.
 
 **v3.0.0 changes (MAJOR)**: Redefined Plugin Safety (I). Plugins now exist on both sides:
 provider plugins stay data only, and harness adapters may be sandboxed code with no

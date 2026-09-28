@@ -52,6 +52,16 @@ read. Nothing is sent upstream. A record is written with outcome `refused` and n
 slice 002's resolution rules. A model whose type differs from the route's type is refused
 with 400 in the style's error shape, naming both types (FR-012).
 
+## Unknown fields and headers (optimizer pass-through)
+
+A client or optimizer hop may add fields and headers 0router doesn't know. They are never a
+reason to refuse a request (FR-038–FR-041, research R27).
+
+| Route | Unknown body fields | Unknown client headers | Non-stream response |
+|---|---|---|---|
+| same-style (the endpoint speaks the client's style) | sent upstream as received, at any depth | sent upstream, except the floor, hop-by-hop and `x-0router-*` | returned as received |
+| cross-style | dropped where the target style has no place; each drop is in the record | only the plugin's declared list | rebuilt in the client's style |
+
 ## Response headers
 
 | Header | When |

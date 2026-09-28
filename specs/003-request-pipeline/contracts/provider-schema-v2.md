@@ -100,6 +100,10 @@ headers = ["request-id", "retry-after", "anthropic-ratelimit-*"]
 body = []                          # paths copied verbatim; native pairs only
 ```
 
+`to_upstream.headers` governs cross-style attempts. On a same-style attempt (client style =
+endpoint wire), every client header goes upstream except the floor below, and a declared
+`merge` rule still applies to its header (research R27). `to_client` applies to both.
+
 The floor (never forwarded in either direction, whatever is declared):
 - `authorization`, `proxy-authorization`, `x-api-key`, `api-key`, `x-goog-api-key`,
   `xi-api-key`, `cookie`, `set-cookie`, `set-cookie2`, `www-authenticate`,

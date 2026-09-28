@@ -32,6 +32,26 @@ revisit the brief.
   accounts and keys, record cap, latency targets) accepted? → A: The user delegates technical
   decisions to Claude. They stand as Claude's technical decisions, without user sign-off.
 
+### Session 2026-09-28 (amendment: optimizer pass-through)
+
+Constitution v3.0.1, Principle IV. Brief:
+[specs/briefs/2026-09-28-client-side-adapters.md](../briefs/2026-09-28-client-side-adapters.md),
+pre-step 2.
+
+- Q: On a route where the provider speaks the client's API style, what happens to fields and
+  headers 0router doesn't know? → A: The body goes upstream as received, unknown fields at any
+  depth and unknown block types included. 0router changes only what it must, such as the
+  upstream model id. Every client header goes upstream except the security floor.
+- Q: An optimizer adds a field the provider's style has no place for. What happens? → A: It is
+  dropped and the request succeeds. The record lists each dropped field and why. 0router still
+  prefers a provider in the client's style when one can serve. Prompt content is never dropped:
+  a content part the target can't carry still skips that target (R4).
+- Q: Which client headers go upstream across styles? → A: Only the plugin's declared list, so
+  one vendor's headers don't reach another vendor.
+- Q: On a same-style route, is a non-streamed response rebuilt? → A: No. It reaches the client
+  as received, so unknown response fields survive. 0router still reads usage and errors from
+  it. Response headers stay on the plugin's declared list.
+
 ## User Scenarios & Testing *(mandatory)*
 
 This slice has three kinds of user:
@@ -79,6 +99,16 @@ request appears in the CLI record listing.
    upstream request is cancelled and the record shows the request as cancelled by the client.
 7. **Given** an optimizer hop that rewrote the prompt before 0router, **When** it forwards the
    request, **Then** 0router sends the prompt content upstream unchanged.
+8. **Given** an optimizer that adds fields and headers 0router doesn't know, **When** the request
+   goes to a provider that speaks the client's API style, **Then** the provider receives every
+   added field, at any depth, and every added header except the security floor.
+9. **Given** the same request, **When** the only provider that can serve speaks another style,
+   **Then** the request succeeds without the fields that style can't hold, and the record lists
+   each dropped field and why.
+10. **Given** a non-streamed request on a same-style route, **When** the provider's response
+    carries fields 0router doesn't know, **Then** the client receives them.
+11. **Given** a real agent → headroom → 0router chain, **When** the agent sends requests through
+    it, **Then** they complete normally, streamed and not streamed.
 
 ---
 
@@ -283,8 +313,9 @@ files through the same validation gate as plugins.
 **Acceptance Scenarios**:
 
 1. **Given** a plugin declares that a client header is forwarded upstream, **When** a client
-   sends that header, **Then** the provider receives it. Undeclared client headers are not
-   forwarded.
+   in another API style sends that header, **Then** the provider receives it. Undeclared client
+   headers are not forwarded across styles. (On a same-style route every non-floor header goes
+   upstream, FR-039.)
 2. **Given** a plugin declares that a provider response header or body part comes back to the
    client, **When** the provider returns it, **Then** the client receives it.
 3. **Given** a plugin that declares a credential-bearing header (the client's 0router access
@@ -341,6 +372,9 @@ crash and no silent partial load.
   (360 s) is treated as broken, and US4 applies.
 - **Client disconnects during a retry or fallback**: all pending attempts are cancelled, and no
   further upstream request is started.
+- **Fallback crosses styles**: the same-style route fails and the next candidate speaks another
+  style. That attempt sends the translated body with unknown fields dropped, and the record
+  lists what that attempt dropped. Unknown headers go only to the same-style attempts.
 - **Continuation across providers with different API styles**: the partial answer is translated
   into the next provider's style before the request is sent. If the translation isn't possible
   for that pair, the target counts as not supporting continuation.
@@ -394,7 +428,8 @@ crash and no silent partial load.
   pass a validation gate, like provider plugins.
 - **FR-009**: Each provider plugin MUST be able to declare: endpoints per model type, headers,
   error placement, token-counting support, continuation support, which client headers go
-  upstream, and which provider response headers or body parts come back to the client.
+  upstream across styles (FR-039), and which provider response headers or body parts come back
+  to the client.
 - **FR-010**: The core MUST apply forwarding declarations under a security floor. Credentials
   (0router access keys, provider API keys, authorization and cookie headers) MUST never be
   forwarded in either direction, whatever a plugin declares.
@@ -496,6 +531,26 @@ crash and no silent partial load.
 - **FR-037**: The execution and streaming hot paths MUST carry performance benchmarks with a
   recorded baseline. Regressions block merge.
 
+**Optimizer pass-through** (amendment 2026-09-28, Constitution IV)
+
+- **FR-038**: When the provider speaks the client's API style, 0router MUST send the client's
+  body as received, including fields and block types it doesn't know, at any depth. It MAY
+  change only what routing requires: the upstream model id, a stream flag the provider plugin
+  forces, and the usage request that streamed Chat Completions needs to report usage.
+- **FR-039**: When the provider speaks the client's API style, every client header MUST go
+  upstream except the security floor (FR-010), hop-by-hop headers, and `x-0router-*`. Across
+  styles, only the headers the plugin declares go upstream.
+- **FR-040**: Across styles, a field the provider's style has no place for MUST be dropped, and
+  the request record MUST list each dropped field with its path and the reason. Prompt content
+  is never dropped: a content part the target can't carry skips that target (FR-007).
+- **FR-041**: When the provider speaks the client's API style, a non-streamed response MUST
+  reach the client as received, and each stream event MUST keep its name and payload. 0router
+  still reads usage and errors from them.
+- **FR-042**: Among one provider's endpoints, 0router MUST choose the one in the client's API
+  style when it can serve the request. The order of accounts and member providers (stay warm
+  first) is unchanged; weighing the style across members is part of the routing decision
+  (slice 006).
+
 ### Key Entities
 
 - **Client API style**: a data file describing one client-facing API: its requests per model
@@ -552,6 +607,10 @@ crash and no silent partial load.
 - **SC-013**: 0router's own added time before the first byte reaches the client is at most
   10 ms at the 95th percentile in the benchmark suite, and the hot-path benchmarks have a
   committed baseline.
+- **SC-014**: A real agent → headroom → 0router chain completes streamed and non-streamed
+  requests with no client error. On same-style routes, 100% of the fields and non-floor headers
+  headroom adds reach the mock provider, and 100% of unknown response fields reach the client.
+  On cross-style routes, every dropped field appears in the record.
 
 ## Assumptions
 

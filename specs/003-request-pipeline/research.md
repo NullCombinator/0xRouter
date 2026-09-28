@@ -128,7 +128,8 @@ user restated it in the slice description. Listed in plan Complexity Tracking.
 - **SSE to the client** uses `axum::response::sse::Sse<impl Stream>` with `StreamExt`
   adaptors, as Constitution V requires. In a native pair (client style = provider wire),
   each upstream event's `event` name and `data` payload are re-emitted unchanged; only line
-  framing is normalised. Translated pairs emit encoder output.
+  framing is normalised. Translated pairs emit encoder output. A non-stream native body is
+  returned as received too (R27).
 - **Non-SSE streamed bodies** (binary TTS audio, NDJSON) use `Body::from_stream`.
   Constitution V governs SSE; these are not SSE.
 - A `CancelOnDrop` guard owns a `CancellationToken`. Dropping the client body cancels the
@@ -453,6 +454,8 @@ Per provider:
 - Gate: a floor name in a forwarding list is a diagnostic and is stripped (strict mode for
   bundled plugins and CI: error). Bare `*` or a prefix shorter than 3 characters: error.
 - Runtime order upstream: client headers → floor → plugin static headers → core auth last.
+  Which client headers enter depends on the attempt: all of them on a same-style attempt,
+  the declared list on a cross-style one (R27).
   Downstream: provider headers → allowlist → floor → core headers.
 - **SSRF**: the gate rejects plugin URLs with loopback, private, link-local or metadata
   hosts and `localhost`/`*.local`/`*.internal`, unless the operator sets
@@ -565,6 +568,8 @@ under `specs/003-request-pipeline/bench-baseline.md`.
   the continuation checks of R9. Never in CI.
 - **Secrets sentinel** (SC-006), **cancellation** (SC-010), **connection reuse** (SC-011),
   **community fit sweep** (SC-012).
+- **Optimizer chain** (SC-014): agent SDK → `headroom proxy` → 0router → mock provider, in
+  the harness runner, skipped with a message when `headroom` is absent (R27).
 
 ## R26. Deliberate deviations from 9router (summary)
 
@@ -583,3 +588,57 @@ under `specs/003-request-pipeline/bench-baseline.md`.
 | 401/403 refresh sleep on API keys | ~3 s | none | no refresh token |
 | Anthropic model list | absent | present | Claude Code discovery |
 | Account locks | persisted in DB | in memory | persistence is slice 005 |
+| Client headers upstream | none beyond executor-built headers | same-style: all but the floor; cross-style: declared list (R27) | Constitution IV |
+## R27. Optimizer pass-through (amendment 2026-09-28)
+
+Constitution v3.0.1 IV; spec FR-038–FR-042, SC-014, US1-8 to US1-11.
+
+**Decision**: each attempt is **same-style** (client style id = endpoint wire id) or
+**cross-style**, and the two are treated differently.
+
+- **Same-style request body**: the decoder still builds the IR, which the engine needs for
+  records, estimates, continuation and cross-style fallback. The upstream body is not
+  encoded from the IR. It is the client's parsed body (`serde_json::Value`,
+  `preserve_order`) with edits at named paths only: the style's model path → upstream model
+  id, the stream path when the endpoint forces streaming, and `stream_options.include_usage`
+  on a streamed Chat wire (R13). Opaque parts and unknown keys at any depth go through, so
+  `encode` no longer refuses opaque content on a same-style wire. Repairs still run only
+  across styles. Fidelity is JSON-value equality outside the edited paths, not byte
+  equality.
+- **Cross-style request body**: encoded from the IR, as before. The decoder records every
+  key no rule consumed, at any depth (top level, message, part, tool), as a path. When the
+  encoder can't place one, the attempt records `dropped { path, reason }`. The value is
+  never recorded: it may hold prompt text or a secret. Opaque parts still make the target
+  `cannot_carry` (R4): content is never dropped.
+- **Headers**: same-style attempts send every client header except the floor (R18),
+  hop-by-hop headers, `x-0router-*` and `accept-encoding`, then apply the secret-value and
+  CR/LF checks. A declared `merge` rule still applies to its header. Plugin static headers
+  and core auth follow, in R18's order. Cross-style attempts send only the declared list.
+- **Same-style responses**: a non-stream body reaches the client as received. The response
+  codec reads usage and errors from it without rebuilding it. Streams already keep event
+  names and payloads (R5). The preamble hold, keepalive and removing the usage chunk 0router
+  asked for (R13) still apply, because 0router caused them. Response headers stay on the
+  `to_client` allowlist.
+- **Continuation** (R9) to a same-style target starts from the as-received body plus the
+  partial answer, so an optimizer's fields survive a continuation too.
+- **Endpoint choice**: within one provider, the same-style endpoint comes first (T055 already
+  does this). The stay-warm order across accounts and members is unchanged; weighing the
+  style across members belongs to the routing decision (slice 006).
+
+**headroom** (0.37.0, installed at `~/.local/bin/headroom`) is the tested optimizer. On
+Anthropic routes it rewrites `messages`, `system` and `tools`, adds cache-TTL markers and
+may inject tools. It sends `anthropic-beta: context-management-2025-06-27`, and the
+response may carry `context_management`. On OpenAI routes it sets `store: false`,
+`stream_options` and `max_completion_tokens`. Its own `x-headroom-*` headers go to its
+client, not upstream. The chain test runs `headroom proxy` with 0router as its upstream,
+then points a client SDK at headroom. A mock provider asserts what arrived. It is skipped
+with a message when `headroom` is absent, like the Codex runner.
+
+**Parity**: 9router already forwards same-format bodies nearly as received
+(`open-sse/translator/index.js:83`). Rebuilding them through the IR was 0router's own
+deviation, which this corrects. Forwarding client headers is a deliberate deviation (R26).
+
+**Alternatives**: copying unknown fields across styles (OpenAI, Anthropic and Gemini reject
+unknown fields with a 400, which isn't retried); refusing cross-style routes when unknown
+fields are present (fails requests that could be served); raw byte forwarding for same-style
+bodies (the model id and stream edits need a parsed body).

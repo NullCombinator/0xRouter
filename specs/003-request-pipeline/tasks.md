@@ -367,6 +367,31 @@ in CI), and every request produces a record.
 - [ ] T047 [P] [US1] Write the cancellation test in `crates/zerorouter-server/tests/cancel.rs`. When the client drops mid-stream, the mock sees the disconnect within 1 s (SC-010, US1-6), and the record is `cancelled`.
 - [ ] T048 [P] [US1] Write the passthrough test in `crates/zerorouter-server/tests/passthrough.rs`. In a native pair and in a translated pair, the prompt text (system, messages, tool results) reaches the mock byte-for-byte equal as a string value (US1-7).
 
+### Optimizer pass-through (amendment 2026-09-28) ⚠️ before T049
+
+Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-pass-through-amendment-2026-09-28). These change Phase 2 code (T027, T028, T034, T035, T039), so they land before the style files and the attempt path are built on it.
+
+- [ ] T146 [P] [US1] Write the wire pass-through tests in `crates/zerorouter-wire/tests/passthrough.rs` with the mini style (T029).
+  - Same-style: a body with unknown keys at the top level, on a message, on a part and on a tool, plus a block type no template knows, comes out JSON-equal to the input except the model path, the forced stream path and `stream_options.include_usage`.
+  - Cross-style: the same body encodes without the unknown keys, and the returned drop list holds each one's path and a reason, with no values. An unknown block type is still `CannotCarry`.
+  - Same-style non-stream response: unknown response fields survive, and usage is still read from it.
+- [ ] T147 [P] [US1] Extend `crates/zerorouter-server/tests/passthrough.rs` (T048) with the route-level cases.
+  - Same-style: the mock receives every unknown body field and every unknown client header; it never receives a floor header, a hop-by-hop header, `x-0router-*` or the access key (US1-8).
+  - Cross-style: the mock receives no unknown field and no undeclared header; the record's attempt lists each dropped path (US1-9).
+  - A non-stream same-style response with an unknown field reaches the client unchanged, and streamed events keep their names and payloads (US1-10).
+  - Fallback crossing styles: the first, same-style attempt fails with a 503; the second, cross-style attempt records its drops and gets no unknown headers (edge case).
+- [ ] T148 [US1] Implement same-style forwarding and drop tracking in `crates/zerorouter-wire/src/codec/request.rs`. Depends on T027.
+  - `forward(body: &Value, wire: &Style, edits: &Edits) -> Value` returns the client body with edits at named paths only: model path → upstream id, stream path when forced, `stream_options.include_usage` on a streamed Chat wire.
+  - The decoder records every key no rule consumed, at any depth, as a path (`Request::unplaced`). `encode` on a cross-style wire returns the paths it couldn't place with the body. Opaque content still refuses the encode.
+  - `encode` is no longer called for same-style attempts, so opaque content there is not an error.
+- [ ] T149 [US1] Implement the same-style response path in `crates/zerorouter-wire/src/codec/response.rs` and `crates/zerorouter-server/src/relay.rs`. Depends on T028, T039. A non-stream same-style body is returned as received; usage and in-band errors are read from it without rebuilding. The stream path keeps R5's rules.
+- [ ] T150 [US1] Add `dropped: Vec<Dropped { path, reason }>` to `Attempt` in `crates/zerorouter-engine/src/records.rs` ([data-model § Attempt](data-model.md#attempt)), and show it in `records get`. Depends on T035. Unit-test that no value is stored, only the path.
+- [ ] T151 [US1] Implement the same-style header rule in `crates/zerorouter-engine/src/forwarding.rs` and `upstream.rs::build_request`. Depends on T013, T034. Same-style attempts send every client header except the floor, hop-by-hop headers, `x-0router-*` and `accept-encoding`, then apply the secret-value and CR/LF checks and any declared `merge` rule. Cross-style attempts keep the declared list (T122).
+- [ ] T152 [US1] Add the headroom chain runner to `tests/harness/` (extends T058; SC-014, US1-11).
+  - Start `headroom proxy --port <free port> --anthropic-api-url http://127.0.0.1:<0router port> --openai-api-url http://127.0.0.1:<0router port>/v1`. Point the `anthropic` and `openai` Python SDKs at headroom, streamed and not streamed.
+  - The mock provider asserts that headroom's added fields and headers arrived on same-style routes, and the records list the drops on cross-style routes.
+  - Skipped with a message when `headroom` is not on `PATH`. It counts as a harness for SC-001 only when it ran.
+
 ### Implementation for User Story 1
 
 - [ ] T049 [P] [US1] Write `styles/bundled/anthropic-messages.toml`.
@@ -400,9 +425,9 @@ in CI), and every request produces a record.
     - **opencode**: per-wire endpoints under `/zen/v1` and `/zen/go/v1`, per-model `wires` from the seed, `force_stream` where 9router forces it, and `[session] header = "x-opencode-session", derive = "ses_sha256_hex32"`.
   - No `systemone` section, no fingerprint tools, no User-Agent spoofing.
   - Add `[[deviation]]` rows for every slice 002 parity field that now differs.
-- [ ] T055 [US1] Implement the happy-path attempt in `crates/zerorouter-engine/src/attempt.rs` and `src/plan.rs`. Depends on T027, T028, T034, T035, T054.
+- [ ] T055 [US1] Implement the happy-path attempt in `crates/zerorouter-engine/src/attempt.rs` and `src/plan.rs`. Depends on T027, T028, T034, T035, T054, T148–T151.
   - Resolve the target (slice 002 `resolve`), build a one-candidate `RequestPlan` (first account in operator order), and choose the endpoint: the native pair first, then the model's `wires` order.
-  - Translate, send, and read frames into IR events on a bounded channel.
+  - Build the body: `forward` (T148) on a same-style endpoint, `encode` otherwise, and put the drop list on the attempt (T150). Send, and read frames into IR events on a bounded channel.
   - Honour the `CancellationToken` with `tokio::select!` on every await.
   - Finish the record as `succeeded`, `failed` or `cancelled`.
   - When streaming to a Chat wire, set `stream_options.include_usage = true`, and strip the extra usage chunk if the client didn't ask for it ([R13](research.md#r13-usage-and-records)).
@@ -418,7 +443,7 @@ in CI), and every request produces a record.
   - Also Claude Code (`claude -p`, with `ANTHROPIC_BASE_URL`) and Codex (`codex exec`, with `OPENAI_BASE_URL`) runners, each skipped with a message when the tool is absent.
   - `run.sh` fails unless at least two harnesses ran (SC-001).
   - Wire it as `crates/zerorouter-server/tests/harness.rs`, marked `#[ignore]` unless `ZR_HARNESS=1`.
-- [ ] T059 [US1] Run `cargo test -p zerorouter-wire -p zerorouter-server` and `ZR_HARNESS=1 cargo test -p zerorouter-server --test harness`, then fix until green. Run slice 002's parity tests and confirm that only listed deviations differ.
+- [ ] T059 [US1] Run `cargo test -p zerorouter-wire -p zerorouter-server` (including T146–T147) and `ZR_HARNESS=1 cargo test -p zerorouter-server --test harness` (including T152's headroom chain), then fix until green. Run slice 002's parity tests and confirm that only listed deviations differ.
 - [ ] T060 [US1] *operator-run* Live smoke: ask the user to run `! ZR_LIVE=1 cargo test -p zerorouter-engine --test live -- text`. It sends one streamed and one non-streamed request per text provider with their accounts. Also check that opencode API-key requests succeed without fingerprint tools ([R4](research.md#r4-translation-behaviour-parity-and-deliberate-deviations)). Write the test in `crates/zerorouter-engine/tests/live.rs` (skipped unless `ZR_LIVE=1`).
 
 **Checkpoint**: MVP. A standard client gets text answers in its own style from each text
@@ -707,7 +732,7 @@ and plugins with actionable messages.
   - The four shipped styles and the five bundled plugins pass in strict mode (US7-4).
   - `url-localhost` passes when `allow_private_endpoints = true`.
 - [ ] T120 [P] [US7] Write `crates/zerorouter-engine/tests/forwarding.rs`.
-  - A client's `anthropic-beta` reaches the anthropic mock and is appended to any static value. An undeclared client header doesn't reach it (US7-1).
+  - From a cross-style client, a declared `anthropic-beta` reaches the anthropic mock and is appended to any static value, and an undeclared client header doesn't reach it (US7-1). From a same-style client, the undeclared header does reach it (FR-039).
   - The mock's `request-id` and `anthropic-ratelimit-requests-remaining` reach the client (US7-2).
   - A client's `x-api-key`, `authorization` and `cookie` never reach any mock, and a mock `set-cookie` never reaches the client (US7-3).
   - A declared header whose value contains a configured secret is dropped. A value with CR/LF is rejected.
@@ -716,7 +741,7 @@ and plugins with actionable messages.
 ### Implementation for User Story 7
 
 - [ ] T122 [US7] Implement forwarding in `crates/zerorouter-engine/src/forwarding.rs`.
-  - Upstream: client headers from the declaring `from_styles` only, with `merge = replace | append_csv`, then the floor, the secret-value check and the CR/LF check.
+  - Upstream, cross-style attempts: client headers from the declaring `from_styles` only, with `merge = replace | append_csv`, then the floor, the secret-value check and the CR/LF check. Same-style attempts use T151's rule.
   - Downstream: provider headers through the `to_client.headers` allowlist (with `-*` suffix wildcards), then the floor, then the core headers.
   - `to_client.body` paths are copied verbatim, in native pairs only.
   - Use it from `upstream.rs::build_request` and the relay.
@@ -806,7 +831,7 @@ set that installs whole or is refused whole with a message naming every unsuppor
   - Wire (T022–T029) needs T011 only, so it can run in parallel with the registry gate work.
   - Engine (T030–T036) needs T012 and T020 for `upstream.rs` and `state.rs`. The rest is independent.
   - Server (T037–T040) needs T020, T026, T031 and T033.
-- **US1 (Phase 3)**: depends on Foundational. It is the MVP.
+- **US1 (Phase 3)**: depends on Foundational. It is the MVP. The pass-through amendment (T146–T152) comes before T049: T148–T151 change Phase 2 code that T049–T056 build on. T146, T147 and T152 can be written in parallel with them.
 - **US2 (Phase 4)**: depends on US1's attempt path (T055–T056).
 - **US3 (Phase 5)**: depends on US1 (T055) and US2 (T071, so fallback applies to every type).
 - **US4 (Phase 6)**: depends on US2 (the attempt loop and preamble hold, T071–T072).

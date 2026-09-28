@@ -118,6 +118,7 @@ the rest of that provider's accounts, then other members (unified targets only).
 | `started`, `ended` | monotonic offsets from request arrival |
 | `outcome` | `ok` \| `failed { status?, class, reason }` \| `skipped { reason }` \| `cancelled` |
 | `usage` | `Usage?` for segments that produced output |
+| `dropped` | `[{ path, reason }]`: fields a cross-style attempt couldn't place (R27). Paths only, never values. Empty on same-style attempts |
 
 `class` ∈ `transient`, `rate_limited`, `auth`, `not_found`, `request_error`, `network`,
 `timeout`, `stall`, `in_band`, `cannot_carry`, `no_account`.
