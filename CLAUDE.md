@@ -11,8 +11,13 @@ Workspace layout:
 | Path | Contents |
 |---|---|
 | `crates/zerorouter-registry` | Provider and unified-model registry: plugin schema, validation gate, lookup, reload |
+| `crates/zerorouter-wire` | API-style interpreter: translates client bodies ↔ IR ↔ provider wire bodies; no I/O, no async runtime |
+| `crates/zerorouter-engine` | Request engine: operator state snapshot, attempt loop (classification, retry, fallback, stay-warm), upstream calls, request records |
+| `crates/zerorouter-server` | HTTP surface over the engine: style-built routes, access-key check, streaming relay, model lists, token counts, operator socket |
 | `crates/zerorouter-cli` | `zerorouter` CLI: `check`, `validate`, `resolve`, `model`, `providers` |
 | `plugins/bundled/` | Bundled provider plugins (TOML), generated from `ref/9router` |
+| `plugins/community/` | Community provider plugins, embedded and installed on request (slice 003; empty so far) |
+| `styles/bundled/` | Bundled client API styles (data files read by `zerorouter-wire`; slice 003, empty so far) |
 | `tools/gen-bundled/` | Generator for the bundled plugins, credentials, and parity oracle |
 | `tests/fixtures/9router/` | Parity oracle snapshots (generated; never hand-edit) |
 | `docs/` | Plugin-author and operator documentation |
