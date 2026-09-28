@@ -2,7 +2,8 @@
 //! answer in the client's style (T056).
 //!
 //! A streamed answer is written by a task that owns the client style and turns each IR
-//! event into the client's bytes as it arrives. The body the client reads cancels the
+//! event into the client's bytes as it arrives; a provider frame for a client in the wire's
+//! own style goes out unchanged. The body the client reads cancels the
 //! request when dropped, so a client that goes away stops the upstream stream.
 
 use std::convert::Infallible;
@@ -15,7 +16,7 @@ use axum::response::Response;
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use zerorouter_engine::attempt::{self, Answer, TextRequest};
+use zerorouter_engine::attempt::{self, Answer, Piece, TextRequest};
 use zerorouter_engine::keys::AgentId;
 use zerorouter_engine::state::{Engine, EngineState};
 use zerorouter_registry::schema::Framing;
@@ -23,7 +24,6 @@ use zerorouter_registry::template::FieldPath;
 use zerorouter_wire::codec::request;
 use zerorouter_wire::codec::response::{self, ForClient};
 use zerorouter_wire::codec::Style;
-use zerorouter_wire::ir::Event;
 use zerorouter_wire::stream::StreamWriter;
 use zerorouter_wire::template::select_one;
 
@@ -127,7 +127,7 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
         Answer::Events { rx, forced: false } => {
             let framing = client.text().map_or(Framing::SseData, |t| t.framing);
             let (tx, out) = mpsc::channel::<Result<Bytes, Infallible>>(attempt::CHANNEL);
-            tokio::spawn(write_stream(client, inc.body, id.clone(), rx, tx));
+            tokio::spawn(write_stream(client, framing, inc.body, id.clone(), rx, tx));
             let mut out = out;
             let body = futures_util::stream::poll_fn(move |cx| out.poll_recv(cx));
             // The streamed body now owns the cancellation.
@@ -137,16 +137,31 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
     }
 }
 
-/// Writes IR events as the client's stream bytes until the events end or the client goes.
-async fn write_stream(client: Arc<Style>, body: Value, id: String, mut rx: mpsc::Receiver<Event>, tx: mpsc::Sender<Result<Bytes, Infallible>>) {
+/// Writes the answer as the client's stream bytes until it ends or the client goes. The
+/// writer closes the stream only if it wrote it: relayed frames carry their own ending.
+async fn write_stream(
+    client: Arc<Style>,
+    framing: Framing,
+    body: Value,
+    id: String,
+    mut rx: mpsc::Receiver<Piece>,
+    tx: mpsc::Sender<Result<Bytes, Infallible>>,
+) {
     let Ok(mut w) = StreamWriter::new(&client, &body, &id, "", unix_now()) else { return };
-    while let Some(ev) = rx.recv().await {
-        let out = w.write(&ev);
+    let mut relayed = false;
+    while let Some(piece) = rx.recv().await {
+        let out = match piece {
+            Piece::Event(ev) => w.write(&ev),
+            Piece::Frame(f) => {
+                relayed = true;
+                f.to_bytes(framing).unwrap_or_default()
+            }
+        };
         if !out.is_empty() && tx.send(Ok(Bytes::from(out))).await.is_err() {
             return;
         }
     }
-    let out = w.end();
+    let out = if relayed { String::new() } else { w.end() };
     if !out.is_empty() {
         let _ = tx.send(Ok(Bytes::from(out))).await;
     }

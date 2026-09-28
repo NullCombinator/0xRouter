@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use reqwest::header::HeaderMap;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
-use zerorouter_engine::attempt::{self, Answer, TextRequest};
+use zerorouter_engine::attempt::{self, Answer, Piece, TextRequest};
 use zerorouter_engine::keys::AgentId;
 use zerorouter_engine::records::{AttemptOutcome, ErrorClass, Outcome, RequestRecord};
 use zerorouter_engine::state::Engine;
@@ -98,10 +98,10 @@ fn chat_chunks() -> Step {
     )
 }
 
-async fn drain(rx: &mut tokio::sync::mpsc::Receiver<Event>) -> Vec<Event> {
+async fn drain(rx: &mut tokio::sync::mpsc::Receiver<Piece>) -> Vec<Piece> {
     let mut out = Vec::new();
-    while let Some(ev) = rx.recv().await {
-        out.push(ev);
+    while let Some(p) = rx.recv().await {
+        out.push(p);
     }
     out
 }
@@ -158,7 +158,7 @@ async fn cross_style_stream_turns_into_events_with_usage() {
     let Answer::Events { mut rx, forced } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("events") };
     assert!(!forced);
     let events = drain(&mut rx).await;
-    let text: String = events.iter().filter_map(|e| if let Event::TextDelta(t) = e { Some(t.as_str()) } else { None }).collect();
+    let text: String = events.iter().filter_map(|e| if let Piece::Event(Event::TextDelta(t)) = e { Some(t.as_str()) } else { None }).collect();
     assert_eq!(text, "Hello");
 
     let b = s.mock.received()[0].json();
@@ -227,7 +227,7 @@ async fn cancelling_stops_the_upstream_stream_and_the_record_says_so() {
     let id = req.id.clone();
     let Answer::Events { mut rx, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("events") };
     let first = rx.recv().await.unwrap();
-    assert!(first.is_output() || matches!(first, Event::Preamble { .. }), "{first:?}");
+    assert!(matches!(first, Piece::Frame(_)), "a native stream relays frames: {first:?}");
     cancel.cancel();
     let r = settled(&s, &id).await;
     assert_eq!(r.outcome, Outcome::Cancelled);
@@ -241,3 +241,40 @@ async fn cancelling_stops_the_upstream_stream_and_the_record_says_so() {
     panic!("the upstream never saw the connection close");
 }
 
+#[tokio::test]
+async fn a_native_stream_relays_the_providers_frames_unchanged() {
+    let s = setup().await;
+    s.mock.push([chat_chunks(), chat_chunks()]);
+    let frames = |pieces: Vec<Piece>| -> Vec<Value> {
+        pieces
+            .into_iter()
+            .map(|p| match p {
+                Piece::Frame(f) if f.is_done() => json!("[DONE]"),
+                Piece::Frame(f) => serde_json::from_str(&f.data).unwrap(),
+                Piece::Event(e) => panic!("a native stream sent an IR event: {e:?}"),
+            })
+            .collect()
+    };
+
+    // The client didn't ask for usage: the chunk 0router's switch brought in stays behind.
+    let body = json!({"model": "mockco/m1", "stream": true, "messages": [{"role": "user", "content": "hi"}]});
+    let req = request(&s, "openai-chat", "mockco/m1", body, CancellationToken::new());
+    let id = req.id.clone();
+    let Answer::Events { mut rx, forced: false } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("events") };
+    let got = frames(drain(&mut rx).await);
+    assert_eq!(got.len(), 4, "{got:#?}");
+    assert_eq!(got[0]["choices"][0]["delta"], json!({"role": "assistant", "content": "Hel"}), "the provider's chunk as sent");
+    assert_eq!(got[0]["object"], "chat.completion.chunk");
+    assert_eq!(got[3], "[DONE]");
+    assert!(got.iter().all(|v| v.get("usage").is_none()));
+    let u = settled(&s, &id).await.usage.unwrap();
+    assert_eq!((u.input, u.output), (Some(5), Some(2)), "the record still reads the usage");
+
+    // The client asked: the usage chunk goes through too.
+    let body = json!({"model": "mockco/m1", "stream": true, "stream_options": {"include_usage": true}, "messages": [{"role": "user", "content": "hi"}]});
+    let req = request(&s, "openai-chat", "mockco/m1", body, CancellationToken::new());
+    let Answer::Events { mut rx, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("events") };
+    let got = frames(drain(&mut rx).await);
+    assert_eq!(got.len(), 5);
+    assert_eq!(got[3]["usage"]["prompt_tokens"], 5);
+}

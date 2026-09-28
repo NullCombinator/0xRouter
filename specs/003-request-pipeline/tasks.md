@@ -355,7 +355,7 @@ in CI), and every request produces a record.
   - the non-stream second hop is correct.
 
   Add the matching `[[deviation]]` rows to `tests/parity/deviations.toml`.
-- [ ] T045 [P] [US1] Write end-to-end style tests in `crates/zerorouter-server/tests/styles.rs` with the mock upstream.
+- [X] T045 [P] [US1] Write end-to-end style tests in `crates/zerorouter-server/tests/styles.rs` with the mock upstream.
   - Cover each client style × each wire (native and translated), streamed and not.
   - The bodies must be valid for the client style: the stream grammar, block start before deltas, no reused index, and a terminal event.
   - `x-0router-request-id` must be present.

@@ -18,6 +18,31 @@ impl Frame {
     pub fn is_done(&self) -> bool {
         self.data == "[DONE]"
     }
+
+    /// The frame as the client's bytes under `framing`, name and payload unchanged (a
+    /// native pair, R5). `None` for a JSON array, whose brackets and commas belong to the
+    /// whole stream.
+    pub fn to_bytes(&self, framing: Framing) -> Option<String> {
+        match framing {
+            Framing::JsonArray => None,
+            Framing::Ndjson => Some(format!("{}\n", self.data)),
+            _ => {
+                let mut out = String::with_capacity(self.data.len() + 32);
+                if let Some(e) = &self.event {
+                    out.push_str("event: ");
+                    out.push_str(e);
+                    out.push('\n');
+                }
+                for line in self.data.split('\n') {
+                    out.push_str("data: ");
+                    out.push_str(line);
+                    out.push('\n');
+                }
+                out.push('\n');
+                Some(out)
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -240,5 +265,15 @@ mod tests {
         let src = b"[{\"t\":\"a}\\\"[\"},\r\n{\"n\":[1,{\"x\":2}]}\n]";
         let got = split_invariant(Framing::JsonArray, src);
         assert_eq!(got, [frame(None, "{\"t\":\"a}\\\"[\"}"), frame(None, "{\"n\":[1,{\"x\":2}]}")]);
+    }
+
+    #[test]
+    fn a_frame_writes_back_as_it_was_read() {
+        let src = b"event: message_start\ndata: {\"a\":1}\n\ndata: line1\ndata: line2\n\n";
+        let got = split_invariant(Framing::SseNamed, src);
+        let out: String = got.iter().filter_map(|f| f.to_bytes(Framing::SseNamed)).collect();
+        assert_eq!(out.as_bytes(), src);
+        assert_eq!(frame(None, "{}").to_bytes(Framing::Ndjson).as_deref(), Some("{}\n"));
+        assert_eq!(frame(None, "{}").to_bytes(Framing::JsonArray), None);
     }
 }

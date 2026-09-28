@@ -396,6 +396,14 @@ fn arguments_json(s: &str) -> Value {
     serde_json::from_str(s).unwrap_or_else(|_| Value::String(s.to_owned()))
 }
 
+/// Whether `style` reports usage in a stream only on request and `request` (the client's
+/// body) didn't ask: a usage event 0router's own switch brought in stays with 0router (R13).
+pub fn usage_unasked(style: &Style, request: &Value) -> bool {
+    let Ok(t) = style.text() else { return false };
+    let mut rules = t.events.iter().filter(|e| e.on == Some(StreamOn::Usage)).peekable();
+    rules.peek().is_some() && rules.all(|e| e.when_request.as_ref().is_some_and(|p| !truthy(request, p)))
+}
+
 fn truthy(body: &Value, p: &FieldPath) -> bool {
     matches!(select_one(p, body), Some(v) if !matches!(v, Value::Null | Value::Bool(false)))
 }

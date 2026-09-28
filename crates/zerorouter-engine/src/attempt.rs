@@ -3,7 +3,9 @@
 //! The body is the client's own, edited at named paths, when the endpoint speaks the
 //! client's style, and encoded from the IR otherwise (research R27). A streamed answer is
 //! read by a task that frames the provider's bytes, turns them into IR events and sends
-//! them on a bounded channel; the task finishes the record. Every await also watches the
+//! them on a bounded channel; the task finishes the record. When the client streams in the
+//! wire's own style, the task sends the provider's frames unchanged instead (R5, FR-041)
+//! and still reads each one for usage, errors and time to first token. Every await also watches the
 //! request's `CancellationToken`, so a client that goes away stops the upstream work.
 
 use std::sync::Arc;
@@ -14,13 +16,13 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use zerorouter_registry::schema::{InputSemantics, ModelType, RouteOp};
+use zerorouter_registry::schema::{Framing, InputSemantics, ModelType, RouteOp};
 use zerorouter_wire::codec::request::{self, Edits};
 use zerorouter_wire::codec::response::{self, ForClient};
 use zerorouter_wire::codec::{Dropped, Style};
 use zerorouter_wire::ir::{self, ErrorEvent, Event};
 use zerorouter_wire::primitives::session;
-use zerorouter_wire::stream::{Framer, StreamReader, StreamWriter};
+use zerorouter_wire::stream::{Frame, Framer, StreamReader, StreamWriter, usage_unasked};
 
 use crate::accounts;
 use crate::classify;
@@ -54,9 +56,28 @@ pub struct TextRequest {
 pub enum Answer {
     /// A non-stream answer: the provider's bytes, and what the client gets from them.
     Whole { status: u16, content_type: Option<String>, raw: Bytes, answer: Box<ForClient> },
-    /// A streamed answer as IR events. `forced`: the endpoint streams but the client
-    /// didn't ask to; collect it with [`collect`].
-    Events { rx: mpsc::Receiver<Event>, forced: bool },
+    /// A streamed answer. `forced`: the endpoint streams but the client didn't ask to;
+    /// collect it with [`collect`].
+    Events { rx: mpsc::Receiver<Piece>, forced: bool },
+}
+
+/// One piece of a streamed answer.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Piece {
+    /// An IR event, for the client's stream writer.
+    Event(Event),
+    /// A provider frame for a client streaming in the wire's own style: relayed with its
+    /// event name and data unchanged, and no writer involved.
+    Frame(Frame),
+}
+
+/// How the stream task hands the provider's stream on.
+#[derive(Debug, Clone, Copy)]
+struct Relay {
+    /// Send frames unchanged (a native pair) rather than IR events.
+    frames: bool,
+    /// Leave out frames that carry only the usage 0router's own switch asked for (R13).
+    drop_usage: bool,
 }
 
 /// A request that got no answer. `message` is redacted.
@@ -290,20 +311,24 @@ impl Engine {
             return Ok(Answer::Whole { status, content_type, raw, answer: Box::new(answer) });
         }
 
+        let frames = req.stream && c.same_style(&req.client.id) && wire.text().is_ok_and(|t| t.framing != Framing::JsonArray);
+        let relay = Relay { frames, drop_usage: frames && usage_unasked(&req.client, &req.body) };
         let (tx, rx) = mpsc::channel(CHANNEL);
         let engine = self.clone();
         let cancel = req.cancel.clone();
-        tokio::spawn(async move { engine.pump(resp, wire, tx, cancel, id, arrived).await });
+        tokio::spawn(async move { engine.pump(resp, wire, relay, tx, cancel, id, arrived).await });
         Ok(Answer::Events { rx, forced: !req.stream })
     }
 
-    /// Reads a streamed answer into IR events until it ends, the client goes away or
-    /// the request is cancelled, then finishes the record.
+    /// Reads a streamed answer until it ends, the client goes away or the request is
+    /// cancelled, then finishes the record.
+    #[allow(clippy::too_many_arguments)]
     async fn pump(
         self: Arc<Self>,
         mut resp: reqwest::Response,
         wire: Arc<Style>,
-        tx: mpsc::Sender<Event>,
+        relay: Relay,
+        tx: mpsc::Sender<Piece>,
         cancel: CancellationToken,
         id: String,
         arrived: Instant,
@@ -327,27 +352,40 @@ impl Engine {
                     break AttemptOutcome::Failed { status: None, class: ErrorClass::Network, reason };
                 }
             };
-            let mut events = Vec::new();
-            for f in &frames {
-                // A frame the wire's templates can't read carries nothing for the client.
-                events.extend(reader.read(f).unwrap_or_default());
+            let mut pieces = Vec::new();
+            for f in frames {
+                // A frame the wire's templates can't read carries no events; relayed
+                // unchanged, it still reaches a native client.
+                let events = reader.read(&f).unwrap_or_default();
+                let only_usage = !events.is_empty() && events.iter().all(|e| matches!(e, Event::Usage(_)));
+                if relay.frames {
+                    for ev in &events {
+                        self.note(ev, &mut usage, &mut failed, &mut first_output, &id, arrived);
+                    }
+                    if !(relay.drop_usage && only_usage) {
+                        pieces.push(Piece::Frame(f));
+                    }
+                } else {
+                    pieces.extend(events.into_iter().map(Piece::Event));
+                }
             }
             if eof {
-                events.extend(reader.finish());
-            }
-            for ev in events {
-                match &ev {
-                    Event::Usage(u) => usage.merge(*u),
-                    Event::Error(e) => failed = Some(e.clone()),
-                    e if first_output && e.is_output() => {
-                        first_output = false;
-                        self.records.update(&id, |r| r.ttft_ms = Some(ms(arrived)));
+                let tail = reader.finish();
+                if relay.frames {
+                    for ev in &tail {
+                        self.note(ev, &mut usage, &mut failed, &mut first_output, &id, arrived);
                     }
-                    _ => {}
+                } else {
+                    pieces.extend(tail.into_iter().map(Piece::Event));
+                }
+            }
+            for piece in pieces {
+                if let Piece::Event(ev) = &piece {
+                    self.note(ev, &mut usage, &mut failed, &mut first_output, &id, arrived);
                 }
                 tokio::select! {
                     _ = cancel.cancelled() => break 'outer AttemptOutcome::Cancelled,
-                    r = tx.send(ev) => if r.is_err() { break 'outer AttemptOutcome::Cancelled },
+                    r = tx.send(piece) => if r.is_err() { break 'outer AttemptOutcome::Cancelled },
                 }
             }
             if eof || reader.saw_done() {
@@ -360,22 +398,39 @@ impl Engine {
         let usage = (!usage.is_empty()).then(|| Usage::reported(&usage, t.usage.semantics));
         self.finish(&id, arrived, outcome, usage);
     }
+
+    /// What one streamed event tells the record: usage, an in-band error, the first output.
+    fn note(&self, ev: &Event, usage: &mut ir::Usage, failed: &mut Option<ErrorEvent>, first_output: &mut bool, id: &str, arrived: Instant) {
+        match ev {
+            Event::Usage(u) => usage.merge(*u),
+            Event::Error(e) => *failed = Some(e.clone()),
+            e if *first_output && e.is_output() => {
+                *first_output = false;
+                self.records.update(id, |r| r.ttft_ms = Some(ms(arrived)));
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Collects a streamed answer into the non-stream response IR (an endpoint that forces
 /// streaming, for a client that didn't ask for it). An error event ends it.
-pub async fn collect(client: &Style, body: &Value, mut rx: mpsc::Receiver<Event>) -> Result<ir::Response, ErrorEvent> {
+pub async fn collect(client: &Style, body: &Value, mut rx: mpsc::Receiver<Piece>) -> Result<ir::Response, ErrorEvent> {
     let mut w = StreamWriter::new(client, body, "", "", 0).map_err(|e| ErrorEvent {
         status: Some(500),
         kind: None,
         message: e.to_string(),
         raw: None,
     })?;
-    while let Some(ev) = rx.recv().await {
-        if let Event::Error(e) = ev {
-            return Err(e);
+    // A forced stream never relays frames: the client didn't ask to stream.
+    while let Some(piece) = rx.recv().await {
+        match piece {
+            Piece::Event(Event::Error(e)) => return Err(e),
+            Piece::Event(ev) => {
+                w.write(&ev);
+            }
+            Piece::Frame(_) => {}
         }
-        w.write(&ev);
     }
     Ok(w.response())
 }
