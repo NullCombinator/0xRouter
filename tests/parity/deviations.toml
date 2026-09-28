@@ -8,3 +8,96 @@
 # fixture = "providers"             # the oracle file under tests/fixtures/9router/
 # field = "headers.user-agent"
 # reason = "no User-Agent spoofing (R4)"
+
+# The chosen four are schema 2 (T054): the composed view is derived from `[auth]` and
+# `endpoints`, so fields 9router keeps in executor code or registry-only metadata differ.
+
+[[deviation]]
+provider = "anthropic"
+fixture = "providers"
+field = "headers.Anthropic-Beta"
+reason = "no fixed Claude Code beta flags; a client's anthropic-beta is forwarded (append_csv) instead (R4)"
+
+[[deviation]]
+provider = "anthropic"
+fixture = "providers"
+field = "auth"
+reason = "schema 2 declares [auth] explicitly; 9router derives x-api-key from format = claude"
+
+[[deviation]]
+provider = "openrouter"
+fixture = "providers"
+field = "headers"
+reason = "no HTTP-Referer / X-Title attribution headers naming a proxy the operator isn't running (R4)"
+
+[[deviation]]
+provider = "openrouter"
+fixture = "providers"
+field = "thinkingFormat"
+reason = "reasoning fields are the openai-chat style's, not a per-provider flag"
+
+[[deviation]]
+provider = "openrouter"
+fixture = "providers"
+field = "auth"
+reason = "schema 2 declares [auth] explicitly; 9router defaults to Bearer"
+
+[[deviation]]
+provider = "openrouter"
+fixture = "providers"
+field = "transports"
+reason = "adds openrouter's native /api/v1/messages endpoint so Anthropic-style clients stay same-style"
+
+[[deviation]]
+provider = "opencode-zen"
+fixture = "providers"
+field = "headers"
+reason = "9router's empty static header map; schema 2 omits it"
+
+[[deviation]]
+provider = "opencode-zen"
+fixture = "providers"
+field = "usage"
+reason = "the usage (quota) URL is slice 006 operator tooling, not part of the request path"
+
+[[deviation]]
+provider = "opencode-zen"
+fixture = "providers"
+field = "auth"
+reason = "schema 2 declares [auth] explicitly; 9router lists it per transport"
+
+[[deviation]]
+provider = "opencode-zen"
+fixture = "providers"
+field = "transports"
+reason = "the first endpoint is the base transport, not repeated in transports[]; per-endpoint force_stream and the x-api-key placement are declared, not executor code"
+
+[[deviation]]
+provider = "opencode-go"
+fixture = "providers"
+field = "headers"
+reason = "9router's empty static header map; schema 2 omits it"
+
+[[deviation]]
+provider = "opencode-go"
+fixture = "providers"
+field = "usage"
+reason = "the usage (quota) URL is slice 006 operator tooling, not part of the request path"
+
+[[deviation]]
+provider = "opencode-go"
+fixture = "providers"
+field = "auth"
+reason = "schema 2 declares [auth] explicitly; 9router lists it per transport"
+
+[[deviation]]
+provider = "opencode-go"
+fixture = "providers"
+field = "transports"
+reason = "the first endpoint is the base transport, not repeated in transports[]; per-endpoint force_stream and the x-api-key placement are declared, not executor code"
+
+[[deviation]]
+provider = "opencode-zen"
+fixture = "providers"
+field = "forceStream"
+reason = "9router's zen executor sets stream = true in code (free-tier 403 on stream:false); schema 2 declares it"

@@ -416,13 +416,13 @@ Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-p
   - Codec: `system_instruction`, `function_call_part`/`function_response_part`, tool results matched by `name`, and the `gemini_thinking_config` thinking form.
   - Stream: `sse_data` with `?alt=sse`, or a JSON array otherwise.
   - Errors: `error.{code,message,status,zerorouter}`.
-- [ ] T053 [US1] Add the `claude_code_user_id` session extractor and session carrier handling in `crates/zerorouter-wire/src/primitives/session.rs`, and the `ses_sha256_hex32` / `ses_time_base62` derivations (9router `opencode-session` parity, oracle `tests/unit/opencode-session.test.js` → `tests/fixtures/9router/session/*.json` via T042's generator hook).
-- [ ] T054 [US1] Seed the chosen four text providers as schema 2 ([R17](research.md#r17-provider-schema-2-and-the-chosen-five)).
+- [x] T053 [US1] Add the `claude_code_user_id` session extractor and session carrier handling in `crates/zerorouter-wire/src/primitives/session.rs`, and the `ses_sha256_hex32` / `ses_time_base62` derivations (9router `opencode-session` parity, oracle `tests/unit/opencode-session.test.js` → `tests/fixtures/9router/session/*.json` via T042's generator hook).
+- [x] T054 [US1] Seed the chosen four text providers as schema 2 ([R17](research.md#r17-provider-schema-2-and-the-chosen-five)).
   - Change `generate.mjs` to write `tools/gen-bundled/seeds/{anthropic,openrouter,opencode-zen,opencode-go,elevenlabs}.json` and to stop writing those five into `plugins/bundled/`.
   - Hand-write `plugins/bundled/anthropic.toml`, `openrouter.toml`, `opencode-zen.toml` and `opencode-go.toml` as schema 2, with the text endpoints only:
     - **anthropic**: the `anthropic-messages` wire, `anthropic-version: 2023-06-01` as its only static header, and `[token_count]`;
     - **openrouter**: the `openai-chat` and `anthropic-messages` wires;
-    - **opencode**: per-wire endpoints under `/zen/v1` and `/zen/go/v1`, per-model `wires` from the seed, `force_stream` where 9router forces it, and `[session] header = "x-opencode-session", derive = "ses_sha256_hex32"`.
+    - **opencode**: per-wire endpoints under `/zen/v1` and `/zen/go/v1`, per-model `wires` from the seed, `force_stream` where 9router forces it, `x-api-key` on `/messages` (endpoint `auth`), and `[session] header = "x-opencode-session"` with `derive = "ses_time_base62"` (zen) or `"ses_sha256_hex32"` (go).
   - No `systemone` section, no fingerprint tools, no User-Agent spoofing.
   - Add `[[deviation]]` rows for every slice 002 parity field that now differs.
 - [ ] T055 [US1] Implement the happy-path attempt in `crates/zerorouter-engine/src/attempt.rs` and `src/plan.rs`. Depends on T027, T028, T034, T035, T054, T148–T151.
@@ -726,7 +726,7 @@ and plugins with actionable messages.
 ### Tests for User Story 7 ⚠️
 
 - [ ] T117 [P] [US7] Add the style gate corpus in `crates/zerorouter-registry/tests/gate/invalid/styles/`, one file per case with an `.expected` diagnostic: `unknown-key`, `unknown-placeholder` (`{request.api_key}`), `bad-path-template`, `route-collision` (two files), `missing-codec`, `ambiguous-stream-rules`, `finish-map-incomplete`, `error-template-missing-message`, `bad-carrier-scheme`, `unknown-session-extractor`, `unknown-framing` and `expression-in-template` (`{a+b}`).
-- [ ] T118 [P] [US7] Add the schema-2 provider corpus in `crates/zerorouter-registry/tests/gate/invalid/providers/`: `endpoint-unknown-type`, `url-private-ip`, `url-localhost`, `placeholder-in-host`, `wire-and-body`, `unknown-body-placeholder`, `body-secret-key`, `forwarding-wildcard-bare`, `forwarding-bad-merge`, `forwarding-body-secret-path`, `continuation-unknown-method`, `token-count-without-count-style`, `error-rule-bad-status`, `schema2-with-transport` and `model-type-without-endpoint`. Add `crates/zerorouter-registry/tests/gate/strict/forwarding-authorization.toml`, which loads with a diagnostic and the entry stripped in normal mode and is an error in strict mode.
+- [ ] T118 [P] [US7] Add the schema-2 provider corpus in `crates/zerorouter-registry/tests/gate/invalid/providers/`: `endpoint-unknown-type`, `url-private-ip`, `url-localhost`, `placeholder-in-host`, `wire-and-body`, `unknown-body-placeholder`, `body-secret-key`, `forwarding-wildcard-bare`, `forwarding-bad-merge`, `forwarding-body-secret-path`, `continuation-unknown-method`, `token-count-without-count-style`, `error-rule-bad-status`, `schema2-with-transport`, `model-type-without-endpoint` and `endpoint-auth-bad-scheme`. Add `crates/zerorouter-registry/tests/gate/strict/forwarding-authorization.toml`, which loads with a diagnostic and the entry stripped in normal mode and is an error in strict mode.
 - [ ] T119 [US7] Extend `crates/zerorouter-registry/tests/gate.rs`.
   - Every corpus file gets exactly its expected diagnostic.
   - The four shipped styles and the five bundled plugins pass in strict mode (US7-4).

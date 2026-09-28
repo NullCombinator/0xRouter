@@ -1,9 +1,11 @@
 use serde_json::json;
 
-use crate::{bundled, fixture};
+use crate::{bundled, fixture, not_carried};
 
 /// SC-004: every `lookup.json` row, through the parity conventions (`quota_family: None` ↔
-/// `"normal"`, `strip: None` ↔ `[]`, `kind: None` ↔ `null`).
+/// `"normal"`, `strip: None` ↔ `[]`, `kind: None` ↔ `null`, and a single supported format
+/// ↔ that format as `targetFormat`: schema 2's `wires` replace both, and a model with one
+/// wire is forced onto it as 9router's `targetFormat` forces it).
 ///
 /// The generator leaves out the cx `-review` and muse-spark special cases of 9router's
 /// `findModelName` (documented deviation), so the fixture has no rows for them.
@@ -23,6 +25,12 @@ fn lookup_matches_9router() {
     for row in rows {
         let (alias, model) = (row["alias"].as_str().unwrap(), row["model"].as_str().unwrap());
         let info = reg.model(alias, model).unwrap_or_else(|e| panic!("{alias}/{model}: {e}"));
+        if let Some(ty) = row["type"].as_str()
+            && not_carried(&reg.provider(alias).unwrap().id, ty)
+        {
+            assert_ne!(info.kind.map(|k| k.as_str()), Some(ty), "{alias}/{model}: {ty} is carried now; drop it from NOT_CARRIED");
+            continue;
+        }
         let got = json!({
             "isValidModel": info.declared,
             "upstreamId": info.upstream_id,
@@ -44,6 +52,7 @@ fn lookup_matches_9router() {
         for k in ["alias", "model", "edge"] {
             want_map.remove(k);
         }
+        let (got, want) = (forced(got), forced(want));
         if got != want {
             diffs.push(format!("{alias}/{model:?} [{}]:\n  got  {got}\n  want {want}", row["edge"]));
         }
@@ -55,6 +64,14 @@ fn lookup_matches_9router() {
         rows.len(),
         diffs[..diffs.len().min(20)].join("\n")
     );
+}
+
+/// Sets `targetFormat` from a one-entry `supportedFormats`.
+fn forced(mut v: serde_json::Value) -> serde_json::Value {
+    if let Some([only]) = v["supportedFormats"].as_array().map(Vec::as_slice) {
+        v["targetFormat"] = only.clone();
+    }
+    v
 }
 
 #[test]

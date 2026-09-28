@@ -431,8 +431,10 @@ Per provider:
 - **opencode-zen** and **opencode-go**: text endpoints per wire (`/zen/v1` and
   `/zen/go/v1`: chat/completions, messages, responses; gemini models on the chat wire),
   per-model `wires` from 9router's registry; `force_stream` where 9router forces it;
-  `x-opencode-session` derived with the `ses_sha256_hex32` primitive from the agent id.
-  No fingerprint tools, no spoofed User-Agent (R4).
+  `x-opencode-session` derived from the agent id: `ses_time_base62` for opencode-zen and
+  `ses_sha256_hex32` for opencode-go, the two formats 9router's executors send.
+  Bearer auth, except `/messages`, which takes `x-api-key` raw (an endpoint `auth`, as
+  9router's runtime transport does). No fingerprint tools, no spoofed User-Agent (R4).
 - **elevenlabs**: TTS as today plus the new STT section (FR-013).
 - **(user-visible)** `systemone` / "decision" sections of openrouter and opencode-zen are
   not carried: "decision" is not one of the slice's six types. They can return with a

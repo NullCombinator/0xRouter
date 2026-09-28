@@ -5,7 +5,8 @@
 //   node tools/gen-bundled/generate.mjs
 //
 // Outputs (all committed; this script is their only writer):
-//   plugins/bundled/<id>.toml
+//   plugins/bundled/<id>.toml, except the chosen five (hand-maintained schema 2)
+//   tools/gen-bundled/seeds/<id>.json for the chosen five: their evaluated 9router entry
 //   crates/zerorouter-registry/src/schema/oauth_params.rs
 //   crates/zerorouter-registry/src/schema/section_formats.rs
 //   crates/zerorouter-registry/src/credentials/bundled.rs
@@ -556,16 +557,41 @@ if (errors.length) {
   process.exit(1);
 }
 
+// Hand-maintained as schema 2 since slice 003 (T054, T083): never written here again. Their
+// seed is what 9router says today, for a hand diff after a ref update.
+const CHOSEN = ["anthropic", "openrouter", "opencode-zen", "opencode-go", "elevenlabs"];
+const leaks = (text) => /client_secret|GOCSPX-/.test(text) || credentials.some((c) => text.includes(c.client_secret));
+
 const bundledDir = join(ROOT, "plugins", "bundled");
-rmSync(bundledDir, { recursive: true, force: true });
 mkdirSync(bundledDir, { recursive: true });
+for (const f of readdirSync(bundledDir)) {
+  if (f.endsWith(".toml") && !CHOSEN.includes(f.slice(0, -".toml".length))) rmSync(join(bundledDir, f));
+}
+const seedDir = join(ROOT, "tools", "gen-bundled", "seeds");
+rmSync(seedDir, { recursive: true, force: true });
+mkdirSync(seedDir, { recursive: true });
 for (const p of plugins) {
+  if (CHOSEN.includes(p.id)) {
+    const seed = `${JSON.stringify({ source: HEADER, plugin: p }, null, 2)}\n`;
+    if (leaks(seed)) {
+      console.error(`generate.mjs: secret leaked into seeds/${p.id}.json`);
+      process.exit(1);
+    }
+    writeFileSync(join(seedDir, `${p.id}.json`), seed);
+    continue;
+  }
   const toml = toToml(p);
-  if (/client_secret|GOCSPX-/.test(toml) || credentials.some((c) => toml.includes(c.client_secret))) {
+  if (leaks(toml)) {
     console.error(`generate.mjs: secret leaked into ${p.id}.toml`);
     process.exit(1);
   }
   writeFileSync(join(bundledDir, `${p.id}.toml`), toml);
+}
+for (const id of CHOSEN) {
+  if (!plugins.some((p) => p.id === id)) {
+    console.error(`generate.mjs: chosen provider ${id} is gone from ref/9router`);
+    process.exit(1);
+  }
 }
 
 const rsList = (xs) => xs.map((x) => `    ${JSON.stringify(x)},`).join("\n");

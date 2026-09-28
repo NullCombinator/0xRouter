@@ -1,207 +1,30 @@
-# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
-schema = 1
+# OpenRouter (hand-maintained, schema 2; seed tools/gen-bundled/seeds/openrouter.json).
+# Text only for now; the non-text endpoints come with their model types.
+schema = 2
 id = "openrouter"
 category = "freeTier"
 alias = "openrouter"
 passthrough_models = true
 models_fetcher = { url = "https://openrouter.ai/api/v1/models", kind = "openrouter-free" }
 
-[transport]
-base_url = "https://openrouter.ai/api/v1/chat/completions"
-thinking_format = "openai"
-headers = { HTTP-Referer = "https://endpoint-proxy.local", X-Title = "Endpoint Proxy" }
-
-[[models]]
-id = "openai/text-embedding-3-large"
-name = "OpenAI Text Embedding 3 Large"
-kind = "embedding"
-
-[[models]]
-id = "openai/text-embedding-3-small"
-name = "OpenAI Text Embedding 3 Small"
-kind = "embedding"
-
-[[models]]
-id = "openai/text-embedding-ada-002"
-name = "OpenAI Text Embedding Ada 002"
-kind = "embedding"
-
-[[models]]
-id = "qwen/qwen3-embedding-8b"
-name = "Qwen3 Embedding 8B"
-kind = "embedding"
-
-[[models]]
-id = "perplexity/pplx-embed-v1-4b"
-name = "Perplexity Embed V1 4B"
-kind = "embedding"
-
-[[models]]
-id = "perplexity/pplx-embed-v1-0.6b"
-name = "Perplexity Embed V1 0.6B"
-kind = "embedding"
-
-[[models]]
-id = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
-name = "NVIDIA Nemotron Embed VL 1B V2 (Free)"
-kind = "embedding"
-
-[[models]]
-id = "openai/gpt-4o-mini-tts"
-name = "GPT-4o Mini TTS"
-kind = "tts"
-
-[[models]]
-id = "openai/tts-1-hd"
-name = "TTS-1 HD"
-kind = "tts"
-
-[[models]]
-id = "openai/tts-1"
-name = "TTS-1"
-kind = "tts"
-
-[[models]]
-id = "openai/dall-e-3"
-name = "DALL-E 3 (via OpenRouter)"
-params = ["size", "quality", "style", "response_format"]
-kind = "image"
-
-[[models]]
-id = "openai/gpt-image-1"
-name = "GPT Image 1 (via OpenRouter)"
-params = ["n", "size", "quality", "response_format"]
-kind = "image"
-
-[[models]]
-id = "google/imagen-3.0-generate-002"
-name = "Imagen 3 (via OpenRouter)"
-params = ["n", "size"]
-kind = "image"
-
-[[models]]
-id = "black-forest-labs/FLUX.1-schnell"
-name = "FLUX.1 Schnell (via OpenRouter)"
-params = ["n", "size"]
-kind = "image"
-
-[[models]]
-id = "google/veo-3.1"
-name = "Veo 3.1 (via OpenRouter)"
-params = ["duration", "aspect_ratio", "resolution"]
-kind = "video"
-
-[[models]]
-id = "openai/sora-2-pro"
-name = "Sora 2 Pro (via OpenRouter)"
-params = ["duration", "aspect_ratio", "resolution"]
-kind = "video"
-
-[[models]]
-id = "bytedance/seedance-2.0"
-name = "Seedance 2.0 (via OpenRouter)"
-params = ["duration", "aspect_ratio", "resolution"]
-kind = "video"
-
-[[models]]
-id = "typesafe/jev-1.13"
-name = "Jev 1.13"
-kind = "systemone"
-
-[capabilities]
-image_to_text = {}
-llm = {}
-
-[capabilities.embedding.endpoint]
-base_url = "https://openrouter.ai/api/v1/embeddings"
-auth_type = "apikey"
-auth_header = "bearer"
-headers = { HTTP-Referer = "https://endpoint-proxy.local", X-Title = "Endpoint Proxy" }
-
-[capabilities.image.endpoint]
-base_url = "https://openrouter.ai/api/v1/images/generations"
-headers = { HTTP-Referer = "https://endpoint-proxy.local", X-Title = "Endpoint Proxy" }
-
-[capabilities.systemone.endpoint]
-base_url = "https://openrouter.ai/api/v1/systemone"
-headers = { HTTP-Referer = "https://endpoint-proxy.local", X-Title = "Endpoint Proxy" }
-
-[capabilities.tts.endpoint]
-base_url = "https://openrouter.ai/api/v1/chat/completions"
-default_model = "openai/gpt-4o-mini-tts"
-headers = { HTTP-Referer = "https://endpoint-proxy.local", X-Title = "Endpoint Proxy" }
-
-[[capabilities.tts.models]]
-id = "openai/gpt-4o-mini-tts"
-name = "GPT-4o Mini TTS"
-
-[[capabilities.tts.models]]
-id = "openai/tts-1-hd"
-name = "TTS-1 HD"
-
-[[capabilities.tts.models]]
-id = "openai/tts-1"
-name = "TTS-1"
-
-[[capabilities.tts.voices]]
-id = "alloy"
-name = "Alloy"
-
-[[capabilities.tts.voices]]
-id = "ash"
-name = "Ash"
-
-[[capabilities.tts.voices]]
-id = "ballad"
-name = "Ballad"
-
-[[capabilities.tts.voices]]
-id = "cedar"
-name = "Cedar"
-
-[[capabilities.tts.voices]]
-id = "coral"
-name = "Coral"
-
-[[capabilities.tts.voices]]
-id = "echo"
-name = "Echo"
-
-[[capabilities.tts.voices]]
-id = "fable"
-name = "Fable"
-
-[[capabilities.tts.voices]]
-id = "marin"
-name = "Marin"
-
-[[capabilities.tts.voices]]
-id = "nova"
-name = "Nova"
-
-[[capabilities.tts.voices]]
-id = "onyx"
-name = "Onyx"
-
-[[capabilities.tts.voices]]
-id = "sage"
-name = "Sage"
-
-[[capabilities.tts.voices]]
-id = "shimmer"
-name = "Shimmer"
-
-[[capabilities.tts.voices]]
-id = "verse"
-name = "Verse"
-
-[capabilities.video.endpoint]
-base_url = "https://openrouter.ai/api/v1/videos"
-headers = { HTTP-Referer = "https://endpoint-proxy.local", X-Title = "Endpoint Proxy" }
-
 [auth]
 kind = "apikey"
-modes = ["apikey"]
+header = "Authorization"
+scheme = "bearer"
+
+# Any model id passes through, on either wire; a client's own style is tried first.
+[[endpoints.text]]
+url = "https://openrouter.ai/api/v1/chat/completions"
+wire = "openai-chat"
+vision = true
+
+[[endpoints.text]]
+url = "https://openrouter.ai/api/v1/messages"
+wire = "anthropic-messages"
+vision = true
+
+[forwarding.to_client]
+headers = ["retry-after", "x-ratelimit-*"]
 
 [display]
 name = "OpenRouter"

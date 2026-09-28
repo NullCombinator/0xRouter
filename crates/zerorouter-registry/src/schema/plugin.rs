@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use super::capability::CapabilitySection;
 use super::endpoint::Endpoints;
-use super::enums::{AuthHook, AuthKind, AuthScheme, CapabilityKind, Category};
+use super::enums::{AuthHook, AuthKind, AuthScheme, CapabilityKind, Category, WireFormat};
 use super::forwarding::Forwarding;
 use super::model::{Model, de_models};
 use super::oauth::OAuthDecl;
@@ -54,6 +54,10 @@ pub struct PluginFile {
 }
 
 impl PluginFile {
+    pub(crate) fn auth_headers(&self) -> impl Iterator<Item = &str> {
+        auth_headers(self.auth.as_ref(), &self.endpoints)
+    }
+
     /// `schema`, defaulting to 1.
     pub fn schema_version(&self) -> i64 {
         self.schema.unwrap_or(1)
@@ -106,8 +110,29 @@ pub struct ProviderEntity {
     pub source: PluginSource,
 }
 
+fn auth_headers<'a>(auth: Option<&'a AuthDecl>, endpoints: &'a BTreeMap<ModelType, Endpoints>) -> impl Iterator<Item = &'a str> {
+    let per_endpoint = endpoints.values().flat_map(|e| &e.0).filter_map(|e| Some(e.auth.as_ref()?.header.as_str()));
+    auth.and_then(|a| a.header.as_deref()).into_iter().chain(per_endpoint)
+}
+
 impl ProviderEntity {
     pub(crate) fn from_file(f: PluginFile, source: PluginSource) -> Self {
+        // Schema 2 declares model types through `endpoints`; slice 002's capability view
+        // is derived from them.
+        let mut capabilities = f.capabilities;
+        for (ty, eps) in &f.endpoints {
+            capabilities.entry(ty.capability()).or_default();
+            if *ty == ModelType::Text && eps.0.iter().any(|e| e.vision) {
+                capabilities.entry(CapabilityKind::ImageToText).or_default();
+            }
+        }
+        // Schema 2's per-model `wires` stand in for 9router's `supported_formats`.
+        let mut models = f.models;
+        for m in models.iter_mut().flatten() {
+            if let Some(w) = &m.wires {
+                m.supported_formats.get_or_insert_with(|| w.iter().filter_map(|w| WireFormat::from_wire(w)).collect());
+            }
+        }
         Self {
             id: f.id,
             category: f.category,
@@ -121,8 +146,8 @@ impl ProviderEntity {
             transports: f.transports,
             oauth: f.oauth,
             models_fetcher: f.models_fetcher,
-            models: f.models,
-            capabilities: f.capabilities,
+            models,
+            capabilities,
             display: f.display,
             endpoints: f.endpoints,
             forwarding: f.forwarding,
@@ -135,6 +160,17 @@ impl ProviderEntity {
     /// Lookup tokens this provider owns: its id, `alias`, and `aliases` (never `ui_alias`).
     pub fn tokens(&self) -> impl Iterator<Item = &str> {
         std::iter::once(self.id.as_str()).chain(self.alias.as_deref()).chain(self.aliases.iter().map(String::as_str))
+    }
+
+    /// A schema 1 `transport` or a schema 2 text endpoint: what 9router calls a provider
+    /// with a transport.
+    pub fn has_text_transport(&self) -> bool {
+        self.transport.is_some() || self.endpoints.contains_key(&ModelType::Text)
+    }
+
+    /// Every header name this provider's secret goes into: `[auth]`'s and each endpoint's.
+    pub fn auth_headers(&self) -> impl Iterator<Item = &str> {
+        auth_headers(self.auth.as_ref(), &self.endpoints)
     }
 
     /// `transport` followed by every `transports[]` entry.

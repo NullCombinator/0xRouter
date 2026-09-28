@@ -12,7 +12,7 @@ use super::ssrf::check_endpoint_url;
 use super::style_gate::placeholders;
 use crate::floor::{Floor, PatternRisk};
 use crate::schema::{
-    CapabilityKind, Endpoint, Forwarding, KNOWN_OAUTH_PARAMS, KNOWN_SECTION_FORMATS, ModelType, PluginFile,
+    AuthScheme, CapabilityKind, Endpoint, Forwarding, KNOWN_OAUTH_PARAMS, KNOWN_SECTION_FORMATS, ModelType, PluginFile,
     PluginSource, ProviderEntity, RouteOp, Transport,
 };
 use crate::template::{FieldPath as Selector, Template};
@@ -284,8 +284,8 @@ fn schema2_errors(p: &mut PluginFile, ctx: &GateCtx, errors: &mut Found, diags: 
         err(FieldPath::of("session").key("header"), format!("{:?} is not a header name", s.header));
     }
 
-    let own_auth = p.auth.as_ref().and_then(|a| a.header.as_deref());
-    let floor = Floor::computed(ctx.style_carriers.iter().map(String::as_str), own_auth);
+    let own_auth: Vec<String> = p.auth_headers().map(str::to_owned).collect();
+    let floor = Floor::computed(ctx.style_carriers.iter().map(String::as_str), own_auth.iter().map(String::as_str));
     if let Some(f) = p.forwarding.as_mut() {
         check_forwarding(f, &floor, ctx.strict, &mut err, &mut |path, rule| diags.push((path, rule)));
     }
@@ -297,6 +297,14 @@ fn check_endpoint(e: &Endpoint, t: ModelType, base: &FieldPath, ctx: &GateCtx, e
     }
     if !METHODS.contains(&e.method.as_str()) {
         err(base.key("method"), format!("{:?} is not one of {}", e.method, METHODS.join(", ")));
+    }
+    if let Some(a) = &e.auth {
+        if a.header.is_empty() || !a.header.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            err(base.key("auth").key("header"), format!("{:?} is not a header name", a.header));
+        }
+        if !matches!(a.scheme, AuthScheme::Bearer | AuthScheme::Raw) {
+            err(base.key("auth").key("scheme"), format!("{:?}: an endpoint takes `bearer` or `raw`", a.scheme.as_str()));
+        }
     }
     match (&e.wire, &e.body, &e.response) {
         (Some(_), None, None) | (None, Some(_), Some(_)) => {}

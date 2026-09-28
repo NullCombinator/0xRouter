@@ -117,7 +117,8 @@ fn catalog_unknown_is_not_catalog_empty() {
 #[test]
 fn every_bundled_plugin_passes_the_gate() {
     assert_eq!(bundled_sources().len(), 121);
+    // With the bundled styles loaded, as the loader gates them: schema 2 names wires.
     for (file, src) in bundled_sources() {
-        validate(src, PluginSource::Bundled, file).unwrap_or_else(|e| panic!("{file}: {e:?}"));
+        validate_user_plugin(src, Path::new(file)).unwrap_or_else(|e| panic!("{file}: {e:?}"));
     }
 }

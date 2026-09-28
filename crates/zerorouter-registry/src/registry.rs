@@ -176,7 +176,7 @@ impl Registry {
     /// The security floor: the static names, every loaded style's key carriers, and every
     /// provider's auth header.
     fn compute_floor(&mut self) {
-        let auth = self.providers.iter().filter_map(|p| p.auth.as_ref()?.header.as_deref());
+        let auth = self.providers.iter().flat_map(ProviderEntity::auth_headers);
         self.floor = Floor::computed(style_carriers(&self.styles), auth);
     }
 

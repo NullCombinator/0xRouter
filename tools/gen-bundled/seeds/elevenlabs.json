@@ -1,0 +1,50 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "plugin": {
+    "schema": 1,
+    "id": "elevenlabs",
+    "category": "apikey",
+    "alias": "el",
+    "capabilities": {
+      "tts": {
+        "models": [
+          {
+            "id": "eleven_flash_v2_5",
+            "name": "Flash v2.5 (Fastest)"
+          },
+          {
+            "id": "eleven_turbo_v2_5",
+            "name": "Turbo v2.5 (Fast)"
+          },
+          {
+            "id": "eleven_multilingual_v2",
+            "name": "Multilingual v2 (Quality)"
+          },
+          {
+            "id": "eleven_monolingual_v1",
+            "name": "Monolingual v1 (English)"
+          }
+        ],
+        "endpoint": {
+          "base_url": "https://api.elevenlabs.io/v1/text-to-speech",
+          "auth_type": "apikey",
+          "auth_header": "xi-api-key",
+          "format": "elevenlabs"
+        }
+      }
+    },
+    "auth": {
+      "kind": "apikey"
+    },
+    "display": {
+      "name": "ElevenLabs",
+      "icon": "record_voice_over",
+      "color": "#6C47FF",
+      "text_icon": "EL",
+      "website": "https://elevenlabs.io",
+      "notice": {
+        "api_key_url": "https://elevenlabs.io/app/settings/api-keys"
+      }
+    }
+  }
+}

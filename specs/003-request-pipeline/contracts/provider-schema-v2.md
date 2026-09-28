@@ -26,6 +26,7 @@ url = "https://api.anthropic.com/v1/messages"
 wire = "anthropic-messages"        # a loaded style id; OR inline body + response (not both)
 method = "POST"
 headers = { "anthropic-version" = "2023-06-01" }   # static, non-secret
+auth = { header = "x-api-key", scheme = "raw" }    # optional: overrides [auth] placement here
 timeout_ms = 60000                 # time to response headers
 stall_timeout_ms = 360000
 force_stream = false
@@ -46,6 +47,10 @@ trim_trailing_whitespace = true
 unless = ["thinking_enabled", "tool_call_in_progress"]
 models = ["claude-sonnet-4-20250514", "claude-opus-4-20250514"]   # or except_models
 ```
+
+An endpoint `auth` moves the secret for that endpoint only (scheme `bearer` or `raw`);
+opencode's `/messages` takes `x-api-key` while its other routes take a Bearer token. Its
+header joins the forwarding floor like the provider's.
 
 Inline endpoints (non-text, no wire):
 
@@ -85,6 +90,12 @@ wires = ["openai-chat"]            # endpoint choice: native pair first, then th
 header = "x-opencode-session"
 derive = "ses_sha256_hex32"        # ses_sha256_hex32 | ses_time_base62; input is the agent id
 ```
+
+- `ses_sha256_hex32`: `ses_` + 32 hex of a salted SHA-256 (9router opencode-go). A client
+  value in the same header is kept.
+- `ses_time_base62`: opencode's canonical `ses_` + 12 hex + 14 base62 shape, filled from a
+  salted SHA-256 (9router opencode-zen `translateSessionId`). A client value is kept only
+  if it already has that shape.
 
 ## Forwarding and the security floor
 
@@ -152,7 +163,7 @@ than the four; web search, web fetch and systemone sections; quirks, hooks,
 `body-secret-key`, `forwarding-wildcard-bare`, `forwarding-bad-merge`,
 `forwarding-body-secret-path`, `continuation-unknown-method`,
 `token-count-without-count-style`, `error-rule-bad-status`, `schema2-with-transport`,
-`model-type-without-endpoint`; strict-only: `forwarding-authorization`.
+`model-type-without-endpoint`, `endpoint-auth-bad-scheme`; strict-only: `forwarding-authorization`.
 
 `tests/gate/unsupported/` with golden `.expected` messages: `oauth-auth`,
 `cookie-category`, `kiro-format`, `quirk`, `hook`, `executor-requires`,

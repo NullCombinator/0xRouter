@@ -83,7 +83,7 @@ impl Registry {
     /// 9router `PROVIDER_ID_TO_ALIAS`: every provider with a transport → `alias`, else id.
     pub fn id_to_alias(&self) -> BTreeMap<&str, &str> {
         self.providers()
-            .filter(|p| p.transport.is_some())
+            .filter(|p| p.has_text_transport())
             .map(|p| (p.id.as_str(), p.alias.as_deref().unwrap_or(&p.id)))
             .collect()
     }
@@ -151,21 +151,18 @@ impl Registry {
 /// A schema-1 transport equivalent of one schema-2 text endpoint (the conversion table in
 /// contracts/provider-schema-v2.md, read backwards). `None` format means an unmapped wire.
 fn from_endpoint(p: &ProviderEntity, e: &Endpoint) -> Transport {
-    let format = e.wire.as_deref().and_then(|w| match w {
-        "openai-chat" => Some(WireFormat::Openai),
-        "anthropic-messages" => Some(WireFormat::Claude),
-        "openai-responses" => Some(WireFormat::OpenaiResponses),
-        "gemini" => Some(WireFormat::Gemini),
-        _ => None,
-    });
+    let format = e.wire.as_deref().and_then(WireFormat::from_wire);
     let retry = e.retry.iter().map(|(code, r)| {
         (code.clone(), RetryPolicy::Policy { attempts: r.retries, delay_ms: Some(r.delay_ms) })
     });
-    let auth = p.auth.as_ref().filter(|a| a.header.is_some() || a.scheme.is_some()).map(|a| TransportAuth {
-        header: a.header.clone(),
-        scheme: a.scheme,
-        ..TransportAuth::default()
-    });
+    let auth = match &e.auth {
+        Some(a) => Some(TransportAuth { header: Some(a.header.clone()), scheme: Some(a.scheme), ..TransportAuth::default() }),
+        None => p.auth.as_ref().filter(|a| a.header.is_some() || a.scheme.is_some()).map(|a| TransportAuth {
+            header: a.header.clone(),
+            scheme: a.scheme,
+            ..TransportAuth::default()
+        }),
+    };
     Transport {
         base_url: Some(e.url.clone()),
         format,

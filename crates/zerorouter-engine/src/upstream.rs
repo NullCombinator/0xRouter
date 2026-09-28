@@ -133,13 +133,17 @@ pub fn endpoint_url(template: &str, model: &str, voice: Option<&str>) -> Result<
     Url::parse(&url).map_err(|e| BuildError::BadUrl { url: template.to_owned(), reason: e.to_string() })
 }
 
-/// The header the core writes the secret into, and its value.
-fn auth_header(p: &ProviderEntity, secret: &SecretString) -> Result<(HeaderName, HeaderValue), BuildError> {
+/// The header the core writes the secret into, and its value: the endpoint's placement,
+/// else the provider's `[auth]`.
+fn auth_header(p: &ProviderEntity, e: &Endpoint, secret: &SecretString) -> Result<(HeaderName, HeaderValue), BuildError> {
     let auth = p.auth.as_ref();
-    let name = auth.and_then(|a| a.header.as_deref()).map_or(AUTHORIZATION, |h| {
-        HeaderName::from_bytes(h.as_bytes()).unwrap_or(AUTHORIZATION)
+    let header = e.auth.as_ref().map(|a| a.header.as_str()).or_else(|| auth.and_then(|a| a.header.as_deref()));
+    let name = header.map_or(AUTHORIZATION, |h| HeaderName::from_bytes(h.as_bytes()).unwrap_or(AUTHORIZATION));
+    let scheme = e.auth.as_ref().map(|a| a.scheme).or_else(|| auth.and_then(|a| a.scheme)).unwrap_or(if name == AUTHORIZATION {
+        AuthScheme::Bearer
+    } else {
+        AuthScheme::Raw
     });
-    let scheme = auth.and_then(|a| a.scheme).unwrap_or(if name == AUTHORIZATION { AuthScheme::Bearer } else { AuthScheme::Raw });
     let mut value = secret.with_exposed(|s| match scheme {
         AuthScheme::Bearer => Ok(HeaderValue::from_str(&format!("Bearer {s}"))),
         AuthScheme::Raw => Ok(HeaderValue::from_str(s)),
@@ -191,7 +195,7 @@ pub fn build_request(parts: RequestParts) -> Result<Outgoing, BuildError> {
     let no_auth = parts.provider.auth.as_ref().is_some_and(|a| a.no_auth);
     if !no_auth {
         let secret = parts.secret.ok_or_else(|| BuildError::NoSecret(parts.provider.id.clone()))?;
-        let (name, value) = auth_header(parts.provider, secret)?;
+        let (name, value) = auth_header(parts.provider, e, secret)?;
         headers.insert(name, value);
     }
     let header_timeout = Duration::from_millis(e.timeout_ms.unwrap_or_else(|| env_ms("FETCH_CONNECT_TIMEOUT_MS", DEFAULT_TIMEOUT_MS)));
@@ -286,6 +290,38 @@ headers = { "anthropic-beta" = "base-1", "anthropic-version" = "2023-06-01" }
         assert_eq!(bearer.headers[AUTHORIZATION], "Bearer sk-acme-SECRET-1");
         let none = RequestParts { secret: None, ..base };
         assert_eq!(build_request(none).unwrap_err(), BuildError::NoSecret("acme".into()));
+    }
+
+    #[test]
+    fn an_endpoint_auth_moves_the_secret_for_that_endpoint_only() {
+        let p = provider(
+            r#"
+schema = 2
+id = "gw"
+category = "apikey"
+[auth]
+header = "Authorization"
+scheme = "bearer"
+[[endpoints.text]]
+url = "https://gw.example/v1/chat/completions"
+wire = "openai-chat"
+[[endpoints.text]]
+url = "https://gw.example/v1/messages"
+wire = "anthropic-messages"
+auth = { header = "x-api-key", scheme = "raw" }
+"#,
+        );
+        assert_eq!(p.auth_headers().collect::<Vec<_>>(), ["Authorization", "x-api-key"]);
+        let (secret, floor, client) = (SecretString::new("sk-gw-1"), Floor::default(), HeaderMap::new());
+        let redactor = Redactor::new([&secret]);
+        let eps = &p.endpoints.values().next().unwrap().0;
+        let send = |e| build_request(RequestParts { provider: &p, ..other_parts(e, &floor, &redactor, &secret, &client) }).unwrap();
+        let chat = send(&eps[0]);
+        assert_eq!(chat.headers[AUTHORIZATION], "Bearer sk-gw-1");
+        assert!(chat.headers.get("x-api-key").is_none());
+        let messages = send(&eps[1]);
+        assert_eq!(messages.headers["x-api-key"], "sk-gw-1");
+        assert!(messages.headers.get(AUTHORIZATION).is_none());
     }
 
     fn other_parts<'a>(

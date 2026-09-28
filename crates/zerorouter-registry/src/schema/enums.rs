@@ -90,6 +90,19 @@ closed_enum!(
     }
 );
 
+impl WireFormat {
+    /// The slice 002 format for a schema 2 wire style id, for the four bundled styles.
+    pub fn from_wire(wire: &str) -> Option<Self> {
+        match wire {
+            "openai-chat" => Some(Self::Openai),
+            "anthropic-messages" => Some(Self::Claude),
+            "openai-responses" => Some(Self::OpenaiResponses),
+            "gemini" => Some(Self::Gemini),
+            _ => None,
+        }
+    }
+}
+
 closed_enum!(
     /// Request-shaping behaviours built into the core.
     Quirk, "quirk" {

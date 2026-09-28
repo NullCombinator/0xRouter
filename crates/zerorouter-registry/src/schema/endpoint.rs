@@ -8,6 +8,7 @@ use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
+use super::enums::AuthScheme;
 use super::primitives::{BodyEncoding, ContinuationMethod, ContinuationUnless};
 use super::style::MatchRule;
 
@@ -27,6 +28,8 @@ pub struct Endpoint {
     /// Static, non-secret headers.
     #[serde(default)]
     pub headers: IndexMap<String, String>,
+    /// Where the core writes the secret for this endpoint, when not the provider's `[auth]`.
+    pub auth: Option<EndpointAuth>,
     pub encoding: Option<BodyEncoding>,
     /// Time to response headers.
     pub timeout_ms: Option<u64>,
@@ -47,6 +50,14 @@ pub struct Endpoint {
     pub errors: ErrorRules,
     pub token_count: Option<TokenCount>,
     pub continuation: Option<Continuation>,
+}
+
+/// A per-endpoint auth placement (a gateway whose Anthropic route takes `x-api-key`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EndpointAuth {
+    pub header: String,
+    pub scheme: AuthScheme,
 }
 
 fn post() -> String {

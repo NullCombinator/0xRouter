@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::deviations::Deviations;
-use crate::{bundled, fixture};
+use crate::{bundled, fixture, not_carried};
 
 #[test]
 fn composed_transports_match_9router() {
@@ -10,9 +10,9 @@ fn composed_transports_match_9router() {
     let expected = expected.as_object().unwrap();
 
     assert_eq!(reg.providers().count(), 121);
-    let with_transport: Vec<_> = reg.providers().filter(|p| p.transport.is_some()).map(|p| p.id.as_str()).collect();
+    let with_transport: Vec<_> = reg.providers().filter(|p| p.has_text_transport()).map(|p| p.id.as_str()).collect();
     assert_eq!(with_transport.len(), 83);
-    assert_eq!(reg.providers().filter(|p| p.transport.is_none()).count(), 38);
+    assert_eq!(reg.providers().filter(|p| !p.has_text_transport()).count(), 38);
 
     let deviations = Deviations::load();
     let mut diffs = Vec::new();
@@ -28,8 +28,12 @@ fn composed_transports_match_9router() {
         let differs = deviations.compare(id, "providers", &got, &want);
         if !differs.is_empty() {
             diffs.extend(differs);
-        } else if header_order(&got) != header_order(&want) {
-            diffs.push(format!("{id}: header order {:?} != {:?}", header_order(&got), header_order(&want)));
+        } else {
+            let (g, w) = (header_order(&got), header_order(&want));
+            let (g, w): (Vec<_>, Vec<_>) = (g.iter().filter(|h| w.contains(h)).collect(), w.iter().filter(|h| g.contains(h)).collect());
+            if g != w {
+                diffs.push(format!("{id}: header order {g:?} != {w:?}"));
+            }
         }
         match (secret, composed.client_secret) {
             (Some(Value::String(s)), Some(held)) => assert!(held.matches(&s), "{id}: client secret differs"),
@@ -40,7 +44,8 @@ fn composed_transports_match_9router() {
     assert!(diffs.is_empty(), "{} transport differences:\n{}", diffs.len(), diffs.join("\n"));
 }
 
-/// `Value` map equality ignores order; header order is observable upstream.
+/// `Value` map equality ignores order; header order is observable upstream. Compared over
+/// the headers both send (a listed deviation drops some).
 fn header_order(v: &Value) -> Vec<&str> {
     v["headers"].as_object().map(|h| h.keys().map(String::as_str).collect()).unwrap_or_default()
 }
@@ -51,6 +56,10 @@ fn tts_tables_match_9router() {
     for (table, entry) in fixture("tts-tables").as_object().unwrap() {
         let provider = entry["provider"].as_str().unwrap();
         let tts = reg.provider(provider).unwrap().capabilities.get(&zerorouter_registry::CapabilityKind::Tts);
+        if not_carried(provider, "tts") {
+            assert!(tts.is_none(), "{table}: {provider} carries tts now; drop it from NOT_CARRIED");
+            continue;
+        }
         let tts = tts.unwrap_or_else(|| panic!("{table}: {provider} has no tts section"));
         let got: Vec<&str> = match entry["kind"].as_str().unwrap() {
             "models" => tts.models.iter().flatten().map(|m| m.id.as_str()).collect(),

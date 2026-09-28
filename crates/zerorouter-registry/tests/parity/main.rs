@@ -13,6 +13,22 @@ mod lookup;
 mod oauth;
 mod transport;
 
+/// Model types a chosen provider's schema 2 file doesn't carry, with why: (provider,
+/// type, reason). Oracle rows of these are skipped, and a skip that finds the type carried
+/// fails, so the list can't go stale.
+pub(crate) const NOT_CARRIED: &[(&str, &str, &str)] = &[
+    ("opencode-zen", "systemone", "systemone sections are unsupported (fit check)"),
+    ("openrouter", "systemone", "systemone sections are unsupported (fit check)"),
+    ("openrouter", "embedding", "non-text endpoints come with T082"),
+    ("openrouter", "image", "non-text endpoints come with T082"),
+    ("openrouter", "tts", "non-text endpoints come with T082"),
+    ("openrouter", "video", "non-text endpoints come with T082"),
+];
+
+pub(crate) fn not_carried(provider: &str, ty: &str) -> bool {
+    NOT_CARRIED.iter().any(|(p, t, _)| *p == provider && *t == ty)
+}
+
 /// The `data` member of `tests/fixtures/9router/<name>.json`.
 pub(crate) fn fixture(name: &str) -> Value {
     let path =
