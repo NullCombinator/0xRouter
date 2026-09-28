@@ -757,6 +757,38 @@ for (const wire of TEXT_FORMATS) {
   }
 }
 
+// ── Classification oracle (T061) ────────────────────────────────────────────
+//
+// checkFallbackError over the account-fallback-4xx unit cases and a grid: every status
+// 400–599 × each ERROR_RULES text (plus one that matches nothing) × a JSON and a plain body.
+// The text is `[<status>]: <raw body>`, as on 9router's request path (research R6).
+const { checkFallbackError, getQuotaCooldown } = await imp("open-sse/services/accountFallback.js");
+const { ERROR_RULES } = await imp("open-sse/config/errorConfig.js");
+const classifyCases = [];
+const classify = (status, text, level = 0) => {
+  const r = checkFallbackError(status, text, level);
+  classifyCases.push({ status, text, level, fallback: r.shouldFallback, cooldown_ms: r.cooldownMs, new_level: r.newBackoffLevel ?? null });
+};
+classify(400, JSON.stringify({ error: { message: "This model's maximum context length is 1048576 tokens. However, you requested 1186139 tokens", type: "invalid_request_error" } }));
+for (const status of [401, 402, 403, 404, 429]) classify(status, "nope");
+classify(400, "rate limit reached");
+classify(422, "quota exceeded");
+classify(503, "upstream exploded");
+const ruleTexts = [...ERROR_RULES.filter((r) => r.text).map((r) => r.text), "upstream exploded"];
+for (let status = 400; status < 600; status++) {
+  for (const t of ruleTexts) {
+    classify(status, `[${status}]: ${t}`);
+    classify(status, `[${status}]: ${JSON.stringify({ error: { message: `Upstream says: ${t.toUpperCase()}`, type: "x" } })}`);
+  }
+}
+// JSON keys match too: `overloaded_error` hits `overloaded`, `rate_limit_error` hits nothing.
+classify(529, `[529]: ${JSON.stringify({ type: "error", error: { type: "overloaded_error", message: "Overloaded" } })}`);
+classify(400, `[400]: ${JSON.stringify({ error: { type: "rate_limit_error", message: "slow" } })}`);
+for (let level = 0; level <= 16; level++) classify(429, "[429]: ", level);
+const backoff = Array.from({ length: 17 }, (_, level) => ({ level, cooldown_ms: getQuotaCooldown(level) }));
+mkdirSync(join(fixDir, "classify"), { recursive: true });
+writeFixture(join("classify", "cases.json"), { cases: classifyCases, backoff });
+
 console.log(`ref/9router@${SHA}`);
 console.log(`  ${plugins.length} plugins, ${credentials.length} credentials (${credentials.map((c) => c.provider_id).join(", ")})`);
 console.log(`  ${oauthParamKeys.size} oauth params, ${sectionFormats.size} section formats, ${lookupRows.length} lookup rows`);

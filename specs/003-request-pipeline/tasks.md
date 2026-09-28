@@ -461,7 +461,7 @@ informational error in its own style.
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T061 [US2] Add the classification oracle to `generate.mjs`. Run `checkFallbackError` over the `tests/unit/account-fallback-4xx.test.js` cases plus a generated grid (statuses 400–599 × the ERROR_RULES texts × JSON and plain bodies), and write `tests/fixtures/9router/classify/cases.json`.
+- [X] T061 [US2] Add the classification oracle to `generate.mjs`. Run `checkFallbackError` over the `tests/unit/account-fallback-4xx.test.js` cases plus a generated grid (statuses 400–599 × the ERROR_RULES texts × JSON and plain bodies), and write `tests/fixtures/9router/classify/cases.json`.
 - [ ] T062 [P] [US2] Write classification parity in `crates/zerorouter-engine/tests/classify.rs` against `tests/fixtures/9router/classify/cases.json`: the verdict, the cooldown, and the backoff level progression (2000·2^(level−1), capped at 300 000, max level 15).
 - [ ] T063 [P] [US2] Write `crates/zerorouter-engine/tests/retry.rs` for every row of the [R7](research.md#r7-retry-order-and-budgets) budget table:
   - 502, network error and connect timeout: 3 retries at 3 s;
