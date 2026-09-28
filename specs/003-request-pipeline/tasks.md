@@ -338,12 +338,12 @@ in CI), and every request produces a record.
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T042 [US1] Extend `tools/gen-bundled/generate.mjs` with a translator oracle.
+- [X] T042 [US1] Extend `tools/gen-bundled/generate.mjs` with a translator oracle.
   - Import 9router's `open-sse/translator` request and response translators.
   - For each input in `tools/gen-bundled/translate-inputs/*.json`, write the translated output to `tests/fixtures/9router/translate/<from>-to-<to>/<case>.json`. The inputs cover plain text, system, multi-turn, tools with results, images, thinking and `response_format`, for every pair 9router covers among `openai`, `claude`, `openai-responses` and `gemini`.
   - Also write stream-event fixtures: upstream frames in, client frames out.
   - Header: the ref SHA. Commit the output on its own.
-- [ ] T043 [P] [US1] Write the translation parity tests in `crates/zerorouter-wire/tests/parity_translate.rs`. They compare the wire codecs and the four style files against every `tests/fixtures/9router/translate/**` case, with differences allowed only through `tests/parity/deviations.toml`.
+- [X] T043 [P] [US1] Write the translation parity tests in `crates/zerorouter-wire/tests/parity_translate.rs`. They compare the wire codecs and the four style files against every `tests/fixtures/9router/translate/**` case, with differences allowed only through `tests/parity/deviations.toml`.
 - [ ] T044 [P] [US1] Write the deviation assertions in `crates/zerorouter-wire/tests/deviations.rs`, one test per row of [R4](research.md#r4-translation-behaviour-parity-and-deliberate-deviations):
   - no Claude Code system prompt;
   - `response_format` goes to the native field, or the result is `CannotCarry`;

@@ -8,6 +8,7 @@ use zerorouter_registry::schema::{
     StyleFile, TextLayout, ToolArgumentsMode, UsageDecl,
 };
 use zerorouter_registry::template::{FieldPath, Template};
+use serde_json::Value;
 
 use super::CodecError;
 use crate::ir::Role;
@@ -90,6 +91,8 @@ pub struct ParamTpl {
     pub name: String,
     pub path: FieldPath,
     pub form: Option<String>,
+    /// Sent when the client gave no value: the wire requires the field.
+    pub default: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -184,11 +187,13 @@ impl TextStyle {
             .params
             .iter()
             .map(|(name, d)| {
-                let form = match d {
-                    zerorouter_registry::schema::ParamDecl::Form { form, .. } => Some(form.clone()),
-                    zerorouter_registry::schema::ParamDecl::Path(_) => None,
+                use zerorouter_registry::schema::ParamDecl;
+                let (form, default) = match d {
+                    ParamDecl::Form { form, .. } => (Some(form.clone()), None),
+                    ParamDecl::Default { default, .. } => (None, Some(Value::from(*default))),
+                    ParamDecl::Path(_) => (None, None),
                 };
-                Ok(ParamTpl { name: name.clone(), path: path(d.path())?, form })
+                Ok(ParamTpl { name: name.clone(), path: path(d.path())?, form, default })
             })
             .collect::<Result<_, CodecError>>()?;
         let mut finish_out: BTreeMap<FinishReason, String> = t.finish_out.clone();

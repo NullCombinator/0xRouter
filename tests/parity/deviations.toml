@@ -101,3 +101,312 @@ provider = "opencode-zen"
 fixture = "providers"
 field = "forceStream"
 reason = "9router's zen executor sets stream = true in code (free-tier 403 on stream:false); schema 2 declares it"
+
+# ── Translation (T043): `style = "<from>-to-<to>"`, 9router format names, `*` for any side.
+# Fields are dotted paths; `*` matches one key or index, a last `**` everything under it.
+
+# Requests, any target.
+
+[[deviation]]
+style = "*-to-*"
+fixture = "tools"
+field = "max_tokens"
+reason = "the client's output limit is kept; 9router raises it to 32000 when tools are declared"
+
+[[deviation]]
+style = "*-to-*"
+fixture = "tools"
+field = "max_output_tokens"
+reason = "the client's output limit is kept; 9router raises it to 32000 when tools are declared"
+
+[[deviation]]
+style = "*-to-*"
+fixture = "tools"
+field = "generationConfig.maxOutputTokens"
+reason = "the client's output limit is kept; 9router raises it to 32000 when tools are declared"
+
+[[deviation]]
+style = "*-to-*"
+fixture = "tools"
+field = "tool_choice"
+reason = "the client's tool choice is carried (R4); 9router drops Gemini's functionCallingConfig"
+
+[[deviation]]
+style = "gemini-to-*"
+fixture = "tools"
+field = "messages.*"
+reason = "text after a Gemini functionResponse is kept (R4, never truncate); 9router drops it"
+
+[[deviation]]
+style = "gemini-to-*"
+fixture = "tools"
+field = "input.*"
+reason = "text after a Gemini functionResponse is kept (R4, never truncate); 9router drops it"
+
+[[deviation]]
+style = "gemini-to-claude"
+fixture = "tools"
+field = "messages.*.content.*"
+reason = "text after a Gemini functionResponse is kept (R4, never truncate); 9router drops it"
+
+[[deviation]]
+style = "gemini-to-*"
+fixture = "tools"
+field = "**"
+reason = "Gemini calls carry no id: 0router numbers them (call_<name>_<n>) so repeated calls to one function stay paired; 9router names them call_<name>. A { result } response is carried as its text, not as a JSON string"
+
+[[deviation]]
+style = "*-to-*"
+fixture = "images"
+field = "**"
+reason = "URL images are carried (R4, never truncate) and no detail: auto is added; 9router drops a URL image for some targets and adds detail"
+
+[[deviation]]
+style = "*-to-*"
+fixture = "thinking"
+field = "**"
+reason = "the client's thinking setting is carried in the target's own field (R4); thinking text crosses vendors only unsigned and never as answer text, and a foreign signature is dropped; 9router drops the setting and replays reasoning as text or a foreign field"
+
+[[deviation]]
+style = "*-to-*"
+fixture = "response_format"
+field = "**"
+reason = "structured output goes to the target's native field or the target is skipped (R4, CannotCarry); 9router copies the field under the source's name or writes a JSON instruction into the system prompt"
+
+# Requests to an Anthropic Messages wire.
+
+[[deviation]]
+style = "*-to-claude"
+fixture = "*"
+field = "system"
+reason = "no Claude Code system prompt and no 1h cache_control added (R4); a text system prompt stays a string"
+
+[[deviation]]
+style = "*-to-claude"
+fixture = "*"
+field = "messages.*.content"
+reason = "a text-only turn stays a string; 9router rewrites it into blocks to add cache_control"
+
+[[deviation]]
+style = "*-to-claude"
+fixture = "*"
+field = "messages.*.content.*.cache_control"
+reason = "no cache_control 0router wasn't sent (R4)"
+
+[[deviation]]
+style = "*-to-claude"
+fixture = "*"
+field = "tools.*.cache_control"
+reason = "no cache_control 0router wasn't sent (R4)"
+
+[[deviation]]
+style = "*-to-claude"
+fixture = "*"
+field = "_toolNameMap"
+reason = "9router's internal tool-name map leaks into its body"
+
+# Requests to a Gemini wire.
+
+[[deviation]]
+style = "*-to-gemini"
+fixture = "*"
+field = "model"
+reason = "the Gemini wire takes the model in the URL path, not the body"
+
+[[deviation]]
+style = "*-to-gemini"
+fixture = "*"
+field = "safetySettings"
+reason = "0router doesn't turn off the provider's safety filters"
+
+[[deviation]]
+style = "*-to-gemini"
+fixture = "*"
+field = "generationConfig"
+reason = "no empty generationConfig when nothing sets it"
+
+[[deviation]]
+style = "*-to-gemini"
+fixture = "*"
+field = "systemInstruction.role"
+reason = "systemInstruction takes no role in the Gemini API"
+
+[[deviation]]
+style = "*-to-gemini"
+fixture = "tools"
+field = "contents.*.parts.*.thoughtSignature"
+reason = "pending: Gemini 3 wants a thoughtSignature on replayed function calls, and 9router sends a placeholder; no chosen provider uses the Gemini wire yet"
+
+[[deviation]]
+style = "*-to-gemini"
+fixture = "tools"
+field = "contents.*.parts.*.functionResponse.response.**"
+reason = "a text result is { result: text }, and a failed one { error: text } (Gemini's convention for the error flag); 9router nests the text under a name key"
+
+[[deviation]]
+style = "*-to-gemini"
+fixture = "tools"
+field = "toolConfig"
+reason = "the client's tool choice is carried (R4)"
+
+# Requests to an OpenAI Chat wire.
+
+[[deviation]]
+style = "*-to-openai"
+fixture = "*"
+field = "stream_options"
+reason = "a streamed attempt asks for usage so every record has token counts (R13)"
+
+[[deviation]]
+style = "claude-to-openai"
+fixture = "tools"
+field = "messages.*.content"
+reason = "a failed tool result is marked with a readable 'Error: ' prefix where the target has no error flag (R4); 9router drops the flag"
+
+[[deviation]]
+style = "*-to-openai"
+fixture = "*"
+field = "messages.*.content"
+reason = "a text-only turn is sent as a string, and cache_control markers stay on the parts they came on (R4); 9router sends blocks and drops them"
+
+# Requests to an OpenAI Responses wire.
+
+[[deviation]]
+style = "*-to-openai-responses"
+fixture = "*"
+field = "store"
+reason = "store = false and default instructions are Codex requirements; they belong to the Codex provider (OAuth, slice 005), not to every Responses target"
+
+[[deviation]]
+style = "*-to-openai-responses"
+fixture = "*"
+field = "instructions"
+reason = "store = false and default instructions are Codex requirements; they belong to the Codex provider (OAuth, slice 005), not to every Responses target"
+
+[[deviation]]
+style = "gemini-to-openai-responses"
+fixture = "*"
+field = "stream"
+reason = "a Gemini request's streaming is kept; 9router streams every Gemini-sourced Responses call"
+
+[[deviation]]
+style = "claude-to-openai-responses"
+fixture = "cache_control"
+field = "input.**"
+reason = "a system prompt with cache_control stays a system input message, keeping the marker; 9router moves it to instructions and drops the marker"
+
+[[deviation]]
+style = "claude-to-openai-responses"
+fixture = "tools"
+field = "input.*.output"
+reason = "a failed tool result is marked with a readable 'Error: ' prefix where the target has no error flag (R4); 9router drops the flag"
+
+# Streams: `stream-*` cases, the client's frames for one provider stream, compared frame by frame.
+
+[[deviation]]
+style = "*-to-*"
+fixture = "stream-*"
+field = "*.data.id"
+reason = "0router names the stream after its own request id, not the provider's response id or a timestamp"
+
+[[deviation]]
+style = "*-to-*"
+fixture = "stream-*"
+field = "*.data.message.id"
+reason = "0router names the stream after its own request id, not the provider's response id or a timestamp"
+
+[[deviation]]
+style = "*-to-*"
+fixture = "stream-*"
+field = "*.data.usage"
+reason = "usage is reported only when the client asks for it (stream_options.include_usage), and as the provider counted it: no +2000 buffer, no estimate"
+
+[[deviation]]
+style = "*-to-*"
+fixture = "stream-*"
+field = "*.data.usage.*"
+reason = "usage is reported as the provider counted it: no +2000 buffer and no estimate, and a final count waits for the provider's usage event"
+
+[[deviation]]
+style = "*-to-claude"
+fixture = "stream-*"
+field = "*.data.message.usage.*"
+reason = "message_start carries no token counts 0router doesn't have yet; 9router writes zeros"
+
+[[deviation]]
+style = "*-to-openai"
+fixture = "stream-*"
+field = "0.data.choices.0.delta.content"
+reason = "the first chunk is { role: assistant, content: \"\" }, as OpenAI sends it"
+
+[[deviation]]
+style = "gemini-to-*"
+fixture = "stream-tool_call"
+field = "**"
+reason = "Gemini calls carry no id: 0router names them after the request and position; the arguments come as one fragment after the call's opening frame"
+
+[[deviation]]
+style = "gemini-to-*"
+fixture = "stream-thinking"
+field = "**"
+reason = "pending: Gemini's candidatesTokenCount leaves out thoughtsTokenCount, and 0router reports it as the output count; no chosen provider uses the Gemini wire yet"
+
+[[deviation]]
+style = "claude-to-openai"
+fixture = "stream-tool_call"
+field = "*.data.choices.0.delta.tool_calls.0.id"
+reason = "the call id is sent once, on the call's first chunk, as OpenAI does; 9router repeats it on every fragment"
+
+[[deviation]]
+style = "claude-to-openai"
+fixture = "stream-thinking"
+field = "**"
+reason = "thinking is streamed as reasoning_content; 9router also wraps it in <think> tags inside the answer text"
+
+[[deviation]]
+style = "openai-responses-to-openai"
+fixture = "stream-*"
+field = "**"
+reason = "0router opens with a { role: assistant } chunk, as OpenAI does, which shifts every later frame by one; the rest is ids and usage, listed above"
+
+[[deviation]]
+style = "*-to-claude"
+fixture = "stream-tool_call"
+field = "**"
+reason = "tool arguments are relayed as the provider streamed them, fragment by fragment; 9router buffers them into one delta"
+
+[[deviation]]
+style = "*-to-openai-responses"
+fixture = "stream-*"
+field = "*.data.sequence_number"
+reason = "sequence numbers start at 0, as OpenAI's do"
+
+[[deviation]]
+style = "*-to-openai-responses"
+fixture = "stream-*"
+field = "*.data.response.**"
+reason = "the response object carries status and model on every event and its output on completion; no background: false or error: null, and usage details are {} when the provider gave none"
+
+[[deviation]]
+style = "*-to-openai-responses"
+fixture = "stream-*"
+field = "*.data.item_id"
+reason = "item ids derive from 0router's request id"
+
+[[deviation]]
+style = "*-to-openai-responses"
+fixture = "stream-*"
+field = "*.data.item.id"
+reason = "item ids derive from 0router's request id"
+
+[[deviation]]
+style = "*-to-openai-responses"
+fixture = "stream-*"
+field = "*.data.item.status"
+reason = "output items carry status in_progress/completed, as OpenAI's do"
+
+[[deviation]]
+style = "*-to-openai-responses"
+fixture = "stream-thinking"
+field = "**"
+reason = "the reasoning item is closed before the message item opens, and each gets its own output_index; 9router opens the message at the reasoning's index and closes the reasoning after it"

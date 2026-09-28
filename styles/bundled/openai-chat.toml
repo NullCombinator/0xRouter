@@ -100,27 +100,27 @@ tool_arguments = "fragments"
 # omit them.
 [[text.stream.events]]
 on = "preamble"
-data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { role = "assistant", content = "" } }] }
+data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { role = "assistant", content = "" }, finish_reason = "{null}" }] }
 match = { id = "{response.id}", model = "{response.model?}" }
 
 [[text.stream.events]]
 on = "text_delta"
-data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { content = "{delta.text}" } }] }
+data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { content = "{delta.text}" }, finish_reason = "{null}" }] }
 match = { choices = [{ delta = { content = "{delta.text}" } }] }
 
 [[text.stream.events]]
 on = "thinking_delta"
-data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { reasoning_content = "{delta.thinking}" } }] }
+data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { reasoning_content = "{delta.thinking}" }, finish_reason = "{null}" }] }
 match = { choices = [{ delta = { reasoning_content = "{delta.thinking}" } }] }
 
 [[text.stream.events]]
 on = "block_start:tool_call"
-data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { tool_calls = [{ index = "{tool.ordinal}", id = "{block.id}", type = "function", function = { name = "{block.name}", arguments = "" } }] } }] }
+data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { tool_calls = [{ index = "{tool.ordinal}", id = "{block.id}", type = "function", function = { name = "{block.name}", arguments = "" } }] }, finish_reason = "{null}" }] }
 match = { choices = [{ delta = { tool_calls = [{ index = "{tool.ordinal?}", id = "{block.id}", function = { name = "{block.name}" } }] } }] }
 
 [[text.stream.events]]
 on = "tool_arguments"
-data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { tool_calls = [{ index = "{tool.ordinal}", function = { arguments = "{delta.arguments}" } }] } }] }
+data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [{ index = 0, delta = { tool_calls = [{ index = "{tool.ordinal}", function = { arguments = "{delta.arguments}" } }] }, finish_reason = "{null}" }] }
 match = { choices = [{ delta = { tool_calls = [{ index = "{tool.ordinal?}", function = { arguments = "{delta.arguments}" } }] } }] }
 
 [[text.stream.events]]

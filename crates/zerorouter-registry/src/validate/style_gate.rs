@@ -477,6 +477,8 @@ fn check_text(t: &TextCodec, base: &FieldPath, err: &mut impl FnMut(FieldPath, S
                 err(pb, format!("`{name}` needs `{{ path, form }}`"));
             }
             (_, ParamDecl::Form { .. }) => err(pb.key("form"), format!("`{name}` takes a plain field path")),
+            ("max_tokens", ParamDecl::Default { .. }) => {}
+            (_, ParamDecl::Default { .. }) => err(pb.key("default"), format!("only `max_tokens` takes a default, not `{name}`")),
             _ => {}
         }
     }

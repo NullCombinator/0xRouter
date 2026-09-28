@@ -72,7 +72,8 @@ data = { name = "{tool.name}", description = "{tool.description?}", input_schema
 choice = { path = "tool_choice", auto = { type = "auto" }, required = { type = "any" }, none = { type = "none" }, named = { type = "tool", name = "{tool.name}" } }
 
 [text.params]
-max_tokens = "max_tokens"
+# The Messages API refuses a request without max_tokens; 9router's default output limit.
+max_tokens = { path = "max_tokens", default = 64000 }
 temperature = "temperature"
 top_p = "top_p"
 top_k = "top_k"
@@ -118,7 +119,7 @@ tool_arguments = "fragments"
 [[text.stream.events]]
 on = "preamble"
 event = "message_start"
-data = { type = "message_start", message = { id = "{response.id}", type = "message", role = "assistant", model = "{response.model}", content = [], usage = { input_tokens = "{usage.input?}", output_tokens = "{usage.output?}", cache_read_input_tokens = "{usage.cache_read?}", cache_creation_input_tokens = "{usage.cache_write?}" } } }
+data = { type = "message_start", message = { id = "{response.id}", type = "message", role = "assistant", model = "{response.model}", content = [], stop_reason = "{null}", stop_sequence = "{null}", usage = { input_tokens = "{usage.input?}", output_tokens = "{usage.output?}", cache_read_input_tokens = "{usage.cache_read?}", cache_creation_input_tokens = "{usage.cache_write?}" } } }
 match = { type = "message_start", message = { id = "{response.id}", model = "{response.model}", usage = { input_tokens = "{usage.input?}", cache_read_input_tokens = "{usage.cache_read?}", cache_creation_input_tokens = "{usage.cache_write?}" } } }
 
 [[text.stream.events]]

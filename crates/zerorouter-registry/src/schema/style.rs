@@ -256,12 +256,14 @@ pub enum ParamDecl {
         /// Checked by the gate against the param's family (thinking or response format).
         form: String,
     },
+    /// A parameter the wire requires: `default` is sent when the client gave none.
+    Default { path: String, default: u64 },
 }
 
 impl ParamDecl {
     pub fn path(&self) -> &str {
         match self {
-            Self::Path(p) | Self::Form { path: p, .. } => p,
+            Self::Path(p) | Self::Form { path: p, .. } | Self::Default { path: p, .. } => p,
         }
     }
 }

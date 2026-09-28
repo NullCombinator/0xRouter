@@ -9,7 +9,7 @@
 //! dropped, and reports each unplaced key as [`Dropped`] (research R27).
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use serde_json::{Map, Value};
 use zerorouter_registry::schema::{
@@ -149,6 +149,7 @@ pub fn decode(style: &Style, body: &Value) -> Result<Request, CodecError> {
             req.system.extend(m.parts);
         }
     }
+    fill_call_ids(&mut req.messages);
     d.tools(body, &mut req);
     d.params(body, &mut req);
 
@@ -157,6 +158,29 @@ pub fn decode(style: &Style, body: &Value) -> Result<Request, CodecError> {
     req.unplaced.append(&mut d.unplaced);
     req.opaque = d.opaque;
     Ok(req)
+}
+
+/// Gives each id-less tool call (Gemini pairs calls and results by name) an id, and each
+/// id-less result the id of the earliest unanswered call of its name, so a wire that pairs by
+/// id can carry them.
+fn fill_call_ids(messages: &mut [Message]) {
+    let mut open: BTreeMap<String, VecDeque<String>> = BTreeMap::new();
+    let mut n = 0;
+    for p in messages.iter_mut().flat_map(|m| &mut m.parts) {
+        match p {
+            Part::ToolCall { id, name, .. } if id.is_empty() => {
+                n += 1;
+                *id = format!("call_{name}_{n}");
+                open.entry(name.clone()).or_default().push_back(id.clone());
+            }
+            Part::ToolResult { id, name: Some(name), .. } if id.is_empty() => {
+                if let Some(call) = open.get_mut(name.as_str()).and_then(VecDeque::pop_front) {
+                    *id = call;
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 pub(crate) struct Decoder<'a> {
@@ -197,16 +221,24 @@ impl<'a> Decoder<'a> {
 
     fn messages(&mut self, items: &[Value]) -> Vec<Message> {
         let mut out: Vec<Message> = Vec::new();
+        // The last message was built from items alone (a reasoning item before its message).
+        let mut items_only = false;
         for (i, item) in items.iter().enumerate() {
             let at = format!("{}[{i}]", self.t.layout.messages);
             let Some((m, from_item)) = self.message(item, &at) else {
                 self.keep(at, item);
                 continue;
             };
-            // Tool-call and tool-result items join the message before them.
+            // Tool-call, tool-result and reasoning items join the message of their turn.
             match out.last_mut() {
-                Some(last) if from_item && last.role == m.role => last.parts.extend(m.parts),
-                _ => out.push(m),
+                Some(last) if (from_item || items_only) && last.role == m.role => {
+                    last.parts.extend(m.parts);
+                    items_only &= from_item;
+                }
+                _ => {
+                    out.push(m);
+                    items_only = from_item;
+                }
             }
         }
         out
@@ -803,8 +835,15 @@ impl<'a> Encoder<'a> {
                     }
                     None => {}
                 }
-                b.set("result.content", self.result_content(content, role)?);
-                b.set("result.is_error", *is_error);
+                let mut content = self.result_content(content, role)?;
+                if *is_error {
+                    if tpl.for_role(role).mentions("result.is_error") {
+                        b.set("result.is_error", true);
+                    } else {
+                        content = self.flag_error(content, role)?;
+                    }
+                }
+                b.set("result.content", content);
             }
             Part::Thinking { text, signature, .. } => {
                 b.set("part.text", text.as_str());
@@ -850,6 +889,20 @@ impl<'a> Encoder<'a> {
             (ToolResultContent::StringOrParts | ToolResultContent::Parts, ResultContent::Parts(ps)) => parts(ps)?,
             (ToolResultContent::Parts, ResultContent::Text(s)) => parts(&[Part::text(s.clone())])?,
             (ToolResultContent::Parts, ResultContent::Json(v)) => parts(&[Part::text(json_text(v))])?,
+        })
+    }
+
+    /// A failed tool result on a wire with no error flag: the flag becomes readable in the
+    /// content (research R4), under Gemini's `error` key where the result is an object.
+    fn flag_error(&self, content: Value, role: &str) -> Result<Value, CodecError> {
+        Ok(match content {
+            Value::String(s) => Value::String(format!("Error: {s}")),
+            Value::Array(mut ps) => {
+                ps.insert(0, self.part(&Part::text("Error:"), role)?);
+                Value::Array(ps)
+            }
+            Value::Object(mut o) if o.len() == 1 && o.contains_key("result") => serde_json::json!({ "error": o.remove("result") }),
+            v => serde_json::json!({ "error": v }),
         })
     }
 
@@ -924,7 +977,7 @@ impl<'a> Encoder<'a> {
                     };
                     Some(forms::encode_response_format(form, rf))
                 }
-                name => req.params.values.get(name).cloned(),
+                name => req.params.values.get(name).cloned().or_else(|| p.default.clone()),
             };
             if let Some(v) = v {
                 merge_at(out, &p.path, v);

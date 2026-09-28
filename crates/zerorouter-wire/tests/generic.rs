@@ -40,7 +40,7 @@ fn mini_body() -> Value {
                 { "type": "tool_use", "id": "t1", "name": "get_weather", "input": { "city": "Oslo" } }
             ] },
             { "role": "user", "content": [
-                { "type": "tool_result", "tool_use_id": "t1", "content": "rain", "is_error": false },
+                { "type": "tool_result", "tool_use_id": "t1", "content": "rain", "is_error": true },
                 { "type": "text", "text": "thanks" }
             ] }
         ],
@@ -85,7 +85,7 @@ fn request_translates_between_layouts_and_back() {
                 { "role": "assistant", "content": "checking", "tool_calls": [
                     { "id": "t1", "type": "function", "function": { "name": "get_weather", "arguments": "{\"city\":\"Oslo\"}" } }
                 ] },
-                { "role": "tool", "tool_call_id": "t1", "content": "rain" },
+                { "role": "tool", "tool_call_id": "t1", "content": "Error: rain" },
                 { "role": "user", "content": "thanks" }
             ],
             "tools": [{ "type": "function", "function": { "name": "get_weather", "description": "d", "parameters": { "type": "object" } } }],

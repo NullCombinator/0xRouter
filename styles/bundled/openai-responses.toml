@@ -124,31 +124,31 @@ match = { type = "response.output_item.added", item = { type = "message" } }
 [[text.stream.events]]
 on = "block_start:text"
 event = "response.content_part.added"
-data = { type = "response.content_part.added", sequence_number = "{sequence.number}", item_id = "msg_{response.id}_{output.index}", output_index = "{output.index}", content_index = 0, part = { type = "output_text", text = "", annotations = [] } }
+data = { type = "response.content_part.added", sequence_number = "{sequence.number}", item_id = "msg_{response.id}_{output.index}", output_index = "{output.index}", content_index = 0, part = { type = "output_text", text = "", annotations = [], logprobs = [] } }
 match = { type = "response.content_part.added", part = { type = "output_text" } }
 
 [[text.stream.events]]
 on = "text_delta"
 event = "response.output_text.delta"
-data = { type = "response.output_text.delta", sequence_number = "{sequence.number}", item_id = "msg_{response.id}_{output.index}", output_index = "{output.index}", content_index = 0, delta = "{delta.text}" }
+data = { type = "response.output_text.delta", sequence_number = "{sequence.number}", item_id = "msg_{response.id}_{output.index}", output_index = "{output.index}", content_index = 0, delta = "{delta.text}", logprobs = [] }
 match = { type = "response.output_text.delta", delta = "{delta.text}" }
 
 [[text.stream.events]]
 on = "block_stop:text"
 event = "response.output_text.done"
-data = { type = "response.output_text.done", sequence_number = "{sequence.number}", item_id = "msg_{response.id}_{output.index}", output_index = "{output.index}", content_index = 0, text = "{block.full_text}" }
+data = { type = "response.output_text.done", sequence_number = "{sequence.number}", item_id = "msg_{response.id}_{output.index}", output_index = "{output.index}", content_index = 0, text = "{block.full_text}", logprobs = [] }
 match = { type = "response.output_text.done" }
 
 [[text.stream.events]]
 on = "block_stop:text"
 event = "response.content_part.done"
-data = { type = "response.content_part.done", sequence_number = "{sequence.number}", item_id = "msg_{response.id}_{output.index}", output_index = "{output.index}", content_index = 0, part = { type = "output_text", text = "{block.full_text}", annotations = [] } }
+data = { type = "response.content_part.done", sequence_number = "{sequence.number}", item_id = "msg_{response.id}_{output.index}", output_index = "{output.index}", content_index = 0, part = { type = "output_text", text = "{block.full_text}", annotations = [], logprobs = [] } }
 match = { type = "response.content_part.done", part = { type = "output_text" } }
 
 [[text.stream.events]]
 on = "block_stop:text"
 event = "response.output_item.done"
-data = { type = "response.output_item.done", sequence_number = "{sequence.number}", output_index = "{output.index}", item = { id = "msg_{response.id}_{output.index}", type = "message", status = "completed", role = "assistant", content = [{ type = "output_text", text = "{block.full_text}", annotations = [] }] } }
+data = { type = "response.output_item.done", sequence_number = "{sequence.number}", output_index = "{output.index}", item = { id = "msg_{response.id}_{output.index}", type = "message", status = "completed", role = "assistant", content = [{ type = "output_text", text = "{block.full_text}", annotations = [], logprobs = [] }] } }
 match = { type = "response.output_item.done", item = { type = "message" } }
 
 # Reasoning: a reasoning item holding one summary part.

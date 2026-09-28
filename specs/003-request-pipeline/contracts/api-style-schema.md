@@ -65,7 +65,7 @@ alternation = "merge_adjacent"     # merge_adjacent | as_is
 tool_result_match = "id"           # id | name
 
 [text.parts]                       # one template per IR part kind
-[text.params]                      # IR param → field path, or { form, path }
+[text.params]                      # IR param → field path, { form, path }, or { path, default } (max_tokens only: sent when the client gave none)
 [text.finish]                      # style reason → IR reason (text.finish is total over the style's reasons)
 [text.usage]                       # IR usage field → path; input_semantics
 [text.stream]
