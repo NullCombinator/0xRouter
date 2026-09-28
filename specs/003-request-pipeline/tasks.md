@@ -433,7 +433,7 @@ Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-p
   - When streaming to a Chat wire, set `stream_options.include_usage = true`, and strip the extra usage chunk if the client didn't ask for it ([R13](research.md#r13-usage-and-records)).
   - `force_stream`: collect the stream into a non-stream client response through the `Response` IR.
 - [x] T056 [US1] Wire text generation in `crates/zerorouter-server/src/router.rs` and `relay.rs`. Depends on T055. Route `op = generate`, `type = text` → decode (T027) → engine → relay (T039) in the client style, streamed or not.
-- [ ] T057 [US1] Implement `accounts add` and `keys issue` in `crates/zerorouter-cli/src/cmd/accounts.rs` and `keys.rs`.
+- [x] T057 [US1] Implement `accounts add` and `keys issue` in `crates/zerorouter-cli/src/cmd/accounts.rs` and `keys.rs`.
   - `accounts add <provider> <name> [--env VAR] [--order N]` reads the secret from stdin, never argv, and warns if stdin is a TTY without hiding the input.
   - `keys issue <name> [--break restart|error_event]` prints the key once.
   - Both write through T030/T031.
