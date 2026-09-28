@@ -72,6 +72,8 @@ The request lifecycle: `src/app/api/v1/*` → `src/sse/handlers/chat.js` → `op
 
 The project uses speckit 1.0.12 for specification-driven development. Entry point: `/speckit-constitution`. The full SDD cycle: constitution → specify → clarify → plan → tasks → implement → converge. Quality gates: analyze (cross-artifact consistency), checklist (requirements unit tests). The `.specify/` directory holds the integration config, scripts, and workflow templates.
 
+**Until the core is complete, every new slice starts with `/shape-spec`, not `/speckit-specify`.** Claude builds a status snapshot of the core (shipped, partial, absent) and suggests the next slice. Then the user tests the suggestion claim by claim, and the output is a `/speckit-specify` command built only from confirmed claims. Never hand the user a raw `/speckit-specify` description: slice 003's drift came from a scope limit Claude wrote and the user pasted. Briefs are kept in `specs/briefs/`. Once the core is shipped, the user specifies freely.
+
 ## Agents
 
 Project-scoped agents in `.claude/agents/` — invokable as subagents from workflows or directly. Key agents for this project:

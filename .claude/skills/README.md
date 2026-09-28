@@ -82,6 +82,16 @@ webbrowser open, Google Fonts links, one SRI-hashed CDN script, and `claude -p`
 subprocess calls consistent with each script's stated purpose. No exfiltration,
 no prompt injection, no obfuscation found.
 
+## Spec intake (1 skill) — added 2026-09-27
+
+- **shape-spec** — project-authored; runs before `/speckit-specify` during the
+  core-construction phase. Based on `brainstorming`. Claude maps which core
+  capabilities are shipped, partial or absent, then suggests the next slice. The user
+  tests the suggestion through a claim ledger: every suggested claim stays unconfirmed
+  until accepted, and each scope limit is confirmed separately. The output is a
+  `/speckit-specify` command traced to confirmed claims. Written after slice 003's
+  drift, where "no retry, no fallback" came from Claude's suggested text.
+
 ## Spec-kit (10 skills) — from github/spec-kit
 
 Installed 2026-09-26 by `specify init --here --force --non-interactive
