@@ -3,21 +3,25 @@
 
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use axum::response::Response;
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use zerorouter_engine::clock;
 use zerorouter_engine::keys::AgentId;
 use zerorouter_engine::records::{self, Outcome, RequestRecord};
 use zerorouter_engine::state::{Engine, EngineState};
+use zerorouter_registry::schema::{ModelType, RouteOp};
 use zerorouter_wire::error_body;
+use zerorouter_wire::primitives::session;
 
 use crate::auth;
 use crate::relay;
-use crate::router::{Matched, RouteTable};
+use crate::router::{Matched, RouteTable, pick};
+use crate::text;
 
 pub struct App {
     pub engine: Arc<Engine>,
@@ -55,19 +59,25 @@ pub fn router(app: Arc<App>) -> axum::Router {
     axum::Router::new().fallback(dispatch).with_state(app)
 }
 
-fn style_error(m: &Matched<'_>, status: u16, message: &str, id: &str) -> Response {
+pub(crate) fn style_error(m: &Matched<'_>, status: u16, message: &str, id: &str) -> Response {
     let body = error_body::body(&m.entry.style.codec, status, message, json!({ "record_id": id }));
     relay::json(status, &body, id)
 }
 
+/// The largest request body read (base64 images and audio included).
+pub const MAX_BODY: usize = 32 << 20;
+
 async fn dispatch(State(app): State<Arc<App>>, req: Request) -> Response {
     let id = records::new_id();
+    let started = Instant::now();
     let arrived = clock::now_rfc3339();
     let st = app.engine.snapshot();
     let table = app.table(&st);
-    let candidates = table.candidates(req.method(), req.uri().path(), req.headers());
+    let (parts, body) = req.into_parts();
+    let path = parts.uri.path();
+    let candidates = table.candidates(&parts.method, path, &parts.headers);
     let Some(first) = candidates.first() else {
-        let msg = format!("0router: no route for {} {}", req.method(), req.uri().path());
+        let msg = format!("0router: no route for {} {path}", parts.method);
         return relay::json(404, &error_body::openai(404, "invalid_request_error", &msg), &id);
     };
     let style = &first.entry.style;
@@ -75,7 +85,7 @@ async fn dispatch(State(app): State<Arc<App>>, req: Request) -> Response {
     record.op = Some(first.entry.route.op);
     record.model_type = Some(first.entry.route.model_type);
 
-    let key = match auth::check(&st.keys, &style.file.access_key.carriers, req.headers(), req.uri().query()) {
+    let key = match auth::check(&st.keys, &style.file.access_key.carriers, &parts.headers, parts.uri.query()) {
         Ok(k) => k,
         Err(refusal) => {
             record.outcome = Outcome::Refused;
@@ -84,9 +94,53 @@ async fn dispatch(State(app): State<Arc<App>>, req: Request) -> Response {
         }
     };
     record.agent = Some(AgentId::new(key.id.clone(), None));
-    record.outcome = Outcome::Failed;
-    app.engine.records.insert(record);
-    style_error(first, StatusCode::NOT_IMPLEMENTED.as_u16(), "0router: this route isn't served yet", &id)
+
+    let bytes = match axum::body::to_bytes(body, MAX_BODY).await {
+        Ok(b) => b,
+        Err(_) => {
+            record.outcome = Outcome::Failed;
+            app.engine.records.insert(record);
+            return style_error(first, 413, &format!("0router: the request body is over {} MiB", MAX_BODY >> 20), &id);
+        }
+    };
+    let json: Value = if bytes.is_empty() {
+        Value::Null
+    } else {
+        match serde_json::from_slice(&bytes) {
+            Ok(v) => v,
+            Err(e) => {
+                record.outcome = Outcome::Failed;
+                app.engine.records.insert(record);
+                return style_error(first, 400, &format!("0router: the request body isn't JSON: {e}"), &id);
+            }
+        }
+    };
+    let Some(m) = pick(&candidates, &json) else {
+        record.outcome = Outcome::Failed;
+        app.engine.records.insert(record);
+        return style_error(first, 404, &format!("0router: no route for {} {path} with this body", parts.method), &id);
+    };
+    let route = &m.entry.route;
+    let header = |h: &str| parts.headers.get(h).and_then(|v| v.to_str().ok());
+    let session = session::extract(&m.entry.style.file.session.carriers, header, &json);
+    let agent = AgentId::new(key.id.clone(), session.as_deref());
+    record.style.clone_from(&m.entry.style.file.id);
+    record.op = Some(route.op);
+    record.model_type = Some(route.model_type);
+    record.agent = Some(agent.clone());
+
+    match (route.op, route.model_type) {
+        (RouteOp::Generate, ModelType::Text) => {
+            app.engine.records.insert(record);
+            let inc = text::Incoming { id, arrived: started, path, headers: parts.headers.clone(), body: json, agent };
+            text::generate(&app.engine, st, m, inc).await
+        }
+        _ => {
+            record.outcome = Outcome::Failed;
+            app.engine.records.insert(record);
+            style_error(m, StatusCode::NOT_IMPLEMENTED.as_u16(), "0router: this route isn't served yet", &id)
+        }
+    }
 }
 
 /// Serves `app` on `listener` until `shutdown` resolves, then lets open requests finish.
@@ -158,7 +212,7 @@ mod tests {
         assert_eq!(r.status(), 401);
 
         let r = c.post(&url).header("x-api-key", &good).send().await.unwrap();
-        assert_eq!(r.status(), 501, "authenticated; no route is served yet");
+        assert_eq!(r.status(), 400, "authenticated; the body names no model");
 
         let r = c.get(format!("http://{addr}/nope")).send().await.unwrap();
         assert_eq!(r.status(), 404);

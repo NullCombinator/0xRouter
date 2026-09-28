@@ -20,7 +20,7 @@ use zerorouter_wire::template::select_one;
 #[derive(Debug)]
 pub struct StyleEntry {
     pub file: StyleFile,
-    pub codec: Style,
+    pub codec: Arc<Style>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,7 +170,7 @@ impl RouteTable {
         let mut routes = Vec::new();
         for file in styles {
             let codec = Style::compile(file).map_err(|e| format!("style `{}`: {e}", file.id))?;
-            let style = Arc::new(StyleEntry { file: file.clone(), codec });
+            let style = Arc::new(StyleEntry { file: file.clone(), codec: Arc::new(codec) });
             for route in &style.file.routes {
                 let method = Method::from_bytes(route.method.to_ascii_uppercase().as_bytes())
                     .map_err(|_| format!("style `{}`: bad method `{}`", file.id, route.method))?;

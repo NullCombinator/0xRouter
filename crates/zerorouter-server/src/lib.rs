@@ -9,3 +9,4 @@ pub mod operator;
 pub mod relay;
 pub mod router;
 pub mod serve;
+pub mod text;
