@@ -371,7 +371,7 @@ in CI), and every request produces a record.
 
 Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-pass-through-amendment-2026-09-28). These change Phase 2 code (T027, T028, T034, T035, T039), so they land before the style files and the attempt path are built on it.
 
-- [ ] T146 [P] [US1] Write the wire pass-through tests in `crates/zerorouter-wire/tests/passthrough.rs` with the mini style (T029).
+- [X] T146 [P] [US1] Write the wire pass-through tests in `crates/zerorouter-wire/tests/passthrough.rs` with the mini style (T029).
   - Same-style: a body with unknown keys at the top level, on a message, on a part and on a tool, plus a block type no template knows, comes out JSON-equal to the input except the model path, the forced stream path and `stream_options.include_usage`.
   - Cross-style: the same body encodes without the unknown keys, and the returned drop list holds each one's path and a reason, with no values. An unknown block type is still `CannotCarry`.
   - Same-style non-stream response: unknown response fields survive, and usage is still read from it.
@@ -380,13 +380,13 @@ Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-p
   - Cross-style: the mock receives no unknown field and no undeclared header; the record's attempt lists each dropped path (US1-9).
   - A non-stream same-style response with an unknown field reaches the client unchanged, and streamed events keep their names and payloads (US1-10).
   - Fallback crossing styles: the first, same-style attempt fails with a 503; the second, cross-style attempt records its drops and gets no unknown headers (edge case).
-- [ ] T148 [US1] Implement same-style forwarding and drop tracking in `crates/zerorouter-wire/src/codec/request.rs`. Depends on T027.
+- [X] T148 [US1] Implement same-style forwarding and drop tracking in `crates/zerorouter-wire/src/codec/request.rs`. Depends on T027.
   - `forward(body: &Value, wire: &Style, edits: &Edits) -> Value` returns the client body with edits at named paths only: model path → upstream id, stream path when forced, `stream_options.include_usage` on a streamed Chat wire.
   - The decoder records every key no rule consumed, at any depth, as a path (`Request::unplaced`). `encode` on a cross-style wire returns the paths it couldn't place with the body. Opaque content still refuses the encode.
   - `encode` is no longer called for same-style attempts, so opaque content there is not an error.
-- [ ] T149 [US1] Implement the same-style response path in `crates/zerorouter-wire/src/codec/response.rs` and `crates/zerorouter-server/src/relay.rs`. Depends on T028, T039. A non-stream same-style body is returned as received; usage and in-band errors are read from it without rebuilding. The stream path keeps R5's rules.
-- [ ] T150 [US1] Add `dropped: Vec<Dropped { path, reason }>` to `Attempt` in `crates/zerorouter-engine/src/records.rs` ([data-model § Attempt](data-model.md#attempt)), and show it in `records get`. Depends on T035. Unit-test that no value is stored, only the path.
-- [ ] T151 [US1] Implement the same-style header rule in `crates/zerorouter-engine/src/forwarding.rs` and `upstream.rs::build_request`. Depends on T013, T034. Same-style attempts send every client header except the floor, hop-by-hop headers, `x-0router-*` and `accept-encoding`, then apply the secret-value and CR/LF checks and any declared `merge` rule. Cross-style attempts keep the declared list (T122).
+- [X] T149 [US1] Implement the same-style response path in `crates/zerorouter-wire/src/codec/response.rs` and `crates/zerorouter-server/src/relay.rs`. Depends on T028, T039. A non-stream same-style body is returned as received; usage and in-band errors are read from it without rebuilding. The stream path keeps R5's rules.
+- [X] T150 [US1] Add `dropped: Vec<Dropped { path, reason }>` to `Attempt` in `crates/zerorouter-engine/src/records.rs` ([data-model § Attempt](data-model.md#attempt)), and show it in `records get`. Depends on T035. Unit-test that no value is stored, only the path.
+- [X] T151 [US1] Implement the same-style header rule in `crates/zerorouter-engine/src/forwarding.rs` and `upstream.rs::build_request`. Depends on T013, T034. Same-style attempts send every client header except the floor, hop-by-hop headers, `x-0router-*` and `accept-encoding`, then apply the secret-value and CR/LF checks and any declared `merge` rule. Cross-style attempts keep the declared list (T122).
 - [ ] T152 [US1] Add the headroom chain runner to `tests/harness/` (extends T058; SC-014, US1-11).
   - Start `headroom proxy --port <free port> --anthropic-api-url http://127.0.0.1:<0router port> --openai-api-url http://127.0.0.1:<0router port>/v1`. Point the `anthropic` and `openai` Python SDKs at headroom, streamed and not streamed.
   - The mock provider asserts that headroom's added fields and headers arrived on same-style routes, and the records list the drops on cross-style routes.
@@ -675,7 +675,7 @@ queryable from the CLI, account and key management with hot apply, and no secret
   - `ttft_ms` is taken at the first content event written to the client, and `total_ms` at the last byte written. Both are measured from request arrival at the server's socket write, so the server reports write times back to the engine.
   - Carry `break_handling`, `served_by`, `job` and `model_type`.
   - Every string field passes through the redactor.
-- [ ] T106 [US5] Implement `records list [--provider P] [--model UNIFIED] [--limit N] [--json]` and `records show <rq_id> [--json]` in `crates/zerorouter-cli/src/cmd/records.rs`. The text layout follows [contracts/operator-cli.md § records show](contracts/operator-cli.md#records-show-output-text), with `not reported` for `None` usage fields.
+- [ ] T106 [US5] Implement `records list [--provider P] [--model UNIFIED] [--limit N] [--json]` and `records show <rq_id> [--json]` in `crates/zerorouter-cli/src/cmd/records.rs`. The text layout follows [contracts/operator-cli.md § records show](contracts/operator-cli.md#records-show-output-text), with `not reported` for `None` usage fields. Each attempt lists its `dropped` paths and reasons (T150).
 - [ ] T107 [US5] Complete `accounts list|remove|disable|enable` in `crates/zerorouter-cli/src/cmd/accounts.rs` and `keys list|revoke` in `crates/zerorouter-cli/src/cmd/keys.rs`. Each mutating command writes atomically and then sends `reload` over the socket, printing `applied` or `saved; applies at next start`.
 - [ ] T108 [US5] Run `cargo test -p zerorouter-wire --test usage`, `-p zerorouter-engine --test usage_records`, `-p zerorouter-server --test timing --test secrets` and `-p zerorouter-cli --test operator`, then fix until green.
 

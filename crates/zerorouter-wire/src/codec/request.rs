@@ -1,25 +1,29 @@
 //! The generic request codec: a client body in any style → the IR → a wire body.
 //!
 //! Decoding is lenient: a part, tool or item no template matches goes to
-//! [`Request::opaque`]. A native pair forwards the original body anyway; a translation
-//! refuses to encode while anything is opaque, so nothing the client sent is dropped.
+//! [`Request::opaque`], and a key no rule reads goes to [`Request::unplaced`].
+//!
+//! A same-style attempt doesn't encode: [`forward`] sends the client's body with a few
+//! named edits, so everything the client sent reaches the provider. A cross-style attempt
+//! encodes from the IR: it refuses while anything is opaque, since content is never
+//! dropped, and reports each unplaced key as [`Dropped`] (research R27).
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
 use zerorouter_registry::schema::{
-    Alternation, ArgumentsForm, ContentForm, PartKind, ResponseFormatForm, SystemLayout, ThinkingForm, ToolCallsLayout,
-    ToolResultContent, ToolResultMatch, ToolResultsLayout,
+    Alternation, ArgumentsForm, ContentForm, PartKind, ResponseFormatForm, StreamOn, SystemLayout, ThinkingForm,
+    ToolCallsLayout, ToolResultContent, ToolResultMatch, ToolResultsLayout,
 };
 use zerorouter_registry::template::{FieldPath, PathSeg, Template};
 
-use super::{CodecError, PartTpl, Style, TextStyle};
+use super::{CodecError, Dropped, PartTpl, Style, TextStyle};
 use crate::ir::{
     Media, MediaSource, Message, Opaque, Part, Request, ResultContent, Role, Tool, ToolChoice,
 };
 use crate::primitives::{forms, media, repairs};
-use crate::template::{Bindings, match_value, render, select_one, set_path};
+use crate::template::{Bindings, match_value, render, select_one, set_path, unmatched_keys};
 
 /// The field that carries tool calls in the `message_field` layout.
 const TOOL_CALLS_FIELD: &str = "tool_calls";
@@ -64,10 +68,42 @@ fn system_field(l: SystemLayout) -> Option<&'static str> {
     }
 }
 
-fn head(p: &FieldPath) -> Option<&str> {
-    match p.0.first() {
-        Some(PathSeg::Key(k)) => Some(k),
-        _ => None,
+/// The body paths a style's rules read, as a tree. A leaf takes its whole value.
+#[derive(Debug, Default)]
+struct Declared(BTreeMap<String, Option<Declared>>);
+
+impl Declared {
+    /// Adds `p` up to its first index or `[*]`, which then takes the whole value.
+    fn add(&mut self, p: &FieldPath) {
+        let keys: Vec<&str> = p.0.iter().map_while(|s| if let PathSeg::Key(k) = s { Some(k.as_str()) } else { None }).collect();
+        let mut node = self;
+        for (i, k) in keys.iter().enumerate() {
+            let slot = node.0.entry((*k).to_owned()).or_insert_with(|| Some(Declared::default()));
+            if i + 1 == keys.len() {
+                *slot = None;
+                return;
+            }
+            match slot {
+                Some(child) => node = child,
+                None => return,
+            }
+        }
+    }
+
+    fn has(&self, key: &str) -> bool {
+        self.0.contains_key(key)
+    }
+
+    /// Keys of `obj` no path reaches, as paths under `at`.
+    fn unread(&self, obj: &Map<String, Value>, at: &str, out: &mut Vec<String>) {
+        for (k, v) in obj {
+            let here = if at.is_empty() { k.clone() } else { format!("{at}.{k}") };
+            match (self.0.get(k), v) {
+                (None, _) => out.push(here),
+                (Some(Some(child)), Value::Object(o)) => child.unread(o, &here, out),
+                _ => {}
+            }
+        }
     }
 }
 
@@ -93,7 +129,7 @@ pub fn decode(style: &Style, body: &Value) -> Result<Request, CodecError> {
         req.stream = select_one(p, body).and_then(Value::as_bool).unwrap_or(false);
     }
     if let Some(field) = system_field(t.layout.system) {
-        d.used.insert(field.to_owned());
+        d.declared.0.insert(field.to_owned(), None);
         if let Some(v) = obj.get(field) {
             req.system = d.system(v, field);
         }
@@ -114,7 +150,9 @@ pub fn decode(style: &Style, body: &Value) -> Result<Request, CodecError> {
     d.tools(body, &mut req);
     d.params(body, &mut req);
 
-    req.extra = obj.iter().filter(|(k, _)| !d.used.contains(*k)).map(|(k, v)| (k.clone(), v.clone())).collect();
+    req.extra = obj.iter().filter(|(k, _)| !d.declared.has(k)).map(|(k, v)| (k.clone(), v.clone())).collect();
+    d.declared.unread(obj, "", &mut req.unplaced);
+    req.unplaced.append(&mut d.unplaced);
     req.opaque = d.opaque;
     Ok(req)
 }
@@ -123,22 +161,27 @@ pub(crate) struct Decoder<'a> {
     t: &'a TextStyle,
     style_id: &'a str,
     pub(crate) opaque: Vec<Opaque>,
-    used: BTreeSet<String>,
+    /// Keys inside messages, parts and tools that no template reads.
+    unplaced: Vec<String>,
+    declared: Declared,
 }
 
 impl<'a> Decoder<'a> {
     pub(crate) fn new(t: &'a TextStyle, style_id: &'a str) -> Self {
-        Self { t, style_id, opaque: Vec::new(), used: BTreeSet::new() }
+        Self { t, style_id, opaque: Vec::new(), unplaced: Vec::new(), declared: Declared::default() }
     }
 
     fn used(&mut self, p: &FieldPath) {
-        if let Some(h) = head(p) {
-            self.used.insert(h.to_owned());
-        }
+        self.declared.add(p);
     }
 
     fn keep(&mut self, at: String, v: &Value) {
         self.opaque.push(Opaque { at, value: v.clone() });
+    }
+
+    /// Records the keys of `v` that `t` (which matched it) doesn't read.
+    fn leftovers(&mut self, t: &Template, v: &Value, at: &str) {
+        unmatched_keys(t, v, at, &mut self.unplaced);
     }
 
     fn system(&mut self, v: &Value, at: &str) -> Vec<Part> {
@@ -177,38 +220,49 @@ impl<'a> Decoder<'a> {
     pub(crate) fn message(&mut self, item: &Value, at: &str) -> Option<(Message, bool)> {
         let t = self.t;
         let l = &t.layout;
-        if let Some(b) = self.t.message.as_ref().and_then(|mt| match_value(mt, item)) {
+        if let Some((mt, b)) = t.message.as_ref().and_then(|mt| Some((mt, match_value(mt, item)?))) {
             let role = self.role(b.str("message.role")?)?;
             let parts = self.content(b.get("message.content").unwrap_or(&Value::Null), &format!("{at}.content"));
+            self.leftovers(mt, item, at);
             return Some((Message { role, parts }, false));
         }
         if let Some(style_role) = item.get(&l.role).and_then(Value::as_str) {
             if l.tool_results == ToolResultsLayout::ToolRoleMessage && style_role == self.t.role_out("tool") {
-                let p = self.part_as(PartKind::ToolResult, item)?;
+                let (p, tpl) = self.part_match(PartKind::ToolResult, item)?;
+                self.leftovers(tpl, item, at);
                 return Some((Message { role: Role::Tool, parts: vec![p] }, true));
             }
             let role = self.role(style_role)?;
             let mut parts = self.content(item.get(&l.content).unwrap_or(&Value::Null), &format!("{at}.{}", l.content));
-            if l.tool_calls == ToolCallsLayout::MessageField
-                && let Some(Value::Array(calls)) = item.get(TOOL_CALLS_FIELD)
-            {
+            let calls_field = l.tool_calls == ToolCallsLayout::MessageField;
+            if calls_field && let Some(Value::Array(calls)) = item.get(TOOL_CALLS_FIELD) {
                 for (j, c) in calls.iter().enumerate() {
-                    match self.part_as(PartKind::ToolCall, c) {
-                        Some(p) => parts.push(p),
-                        None => self.keep(format!("{at}.{TOOL_CALLS_FIELD}[{j}]"), c),
+                    let at = format!("{at}.{TOOL_CALLS_FIELD}[{j}]");
+                    match self.part_match(PartKind::ToolCall, c) {
+                        Some((p, tpl)) => {
+                            self.leftovers(tpl, c, &at);
+                            parts.push(p);
+                        }
+                        None => self.keep(at, c),
                     }
                 }
+            }
+            if let Some(o) = item.as_object() {
+                let read = |k: &str| k == l.role || k == l.content || (calls_field && k == TOOL_CALLS_FIELD);
+                self.unplaced.extend(o.keys().filter(|k| !read(k)).map(|k| format!("{at}.{k}")));
             }
             return Some((Message { role, parts }, false));
         }
         if l.tool_calls == ToolCallsLayout::OutputItem
-            && let Some(p) = self.part_as(PartKind::ToolCall, item)
+            && let Some((p, tpl)) = self.part_match(PartKind::ToolCall, item)
         {
+            self.leftovers(tpl, item, at);
             return Some((Message { role: Role::Assistant, parts: vec![p] }, true));
         }
         if l.tool_results == ToolResultsLayout::OutputItem
-            && let Some(p) = self.part_as(PartKind::ToolResult, item)
+            && let Some((p, tpl)) = self.part_match(PartKind::ToolResult, item)
         {
+            self.leftovers(tpl, item, at);
             return Some((Message { role: Role::Tool, parts: vec![p] }, true));
         }
         None
@@ -221,9 +275,13 @@ impl<'a> Decoder<'a> {
             Value::Array(items) => {
                 let mut parts = Vec::new();
                 for (j, el) in items.iter().enumerate() {
-                    match self.inline_part(el) {
-                        Some(p) => parts.push(p),
-                        None => self.keep(format!("{at}[{j}]"), el),
+                    let at = format!("{at}[{j}]");
+                    match self.inline_match(el) {
+                        Some((p, tpl)) => {
+                            self.leftovers(tpl, el, &at);
+                            parts.push(p);
+                        }
+                        None => self.keep(at, el),
                     }
                 }
                 parts
@@ -236,12 +294,22 @@ impl<'a> Decoder<'a> {
     }
 
     pub(crate) fn inline_part(&self, v: &Value) -> Option<Part> {
-        DECODE_ORDER.iter().filter(|k| place(self.t, **k) == Place::Inline).find_map(|k| self.part_as(*k, v))
+        self.inline_match(v).map(|(p, _)| p)
+    }
+
+    fn inline_match(&self, v: &Value) -> Option<(Part, &'a Template)> {
+        DECODE_ORDER.iter().filter(|k| place(self.t, **k) == Place::Inline).find_map(|k| self.part_match(*k, v))
     }
 
     pub(crate) fn part_as(&self, kind: PartKind, v: &Value) -> Option<Part> {
-        let tpl = self.t.parts.get(&kind)?;
-        tpl.matchers().filter_map(|m| match_value(m, v)).find_map(|b| self.build(kind, tpl, &b))
+        self.part_match(kind, v).map(|(p, _)| p)
+    }
+
+    /// The part and the template that matched it.
+    fn part_match(&self, kind: PartKind, v: &Value) -> Option<(Part, &'a Template)> {
+        let t: &'a TextStyle = self.t;
+        let tpl = t.parts.get(&kind)?;
+        tpl.matchers().find_map(|m| Some((self.build(kind, tpl, &match_value(m, v)?)?, m)))
     }
 
     fn build(&self, kind: PartKind, tpl: &PartTpl, b: &Bindings) -> Option<Part> {
@@ -308,9 +376,10 @@ impl<'a> Decoder<'a> {
         if let Some(v) = select_one(&tt.path, body) {
             let at = tt.path.to_string();
             let mut defs: Vec<(String, Value)> = Vec::new();
-            let mut unwrap = |d: &mut Self, b: Option<Bindings>, at: String, el: &Value| {
-                match b.as_ref().and_then(|b| b.get("tools.list")) {
+            let mut unwrap = |d: &mut Self, w: &Template, at: String, el: &Value| {
+                match match_value(w, el).as_ref().and_then(|b| b.get("tools.list")) {
                     Some(Value::Array(list)) => {
+                        d.leftovers(w, el, &at);
                         defs.extend(list.iter().enumerate().map(|(i, t)| (format!("{at}.list[{i}]"), t.clone())));
                     }
                     _ => d.keep(at, el),
@@ -320,10 +389,10 @@ impl<'a> Decoder<'a> {
                 // A one-element list template wraps each element (gemini `functionDeclarations`).
                 (Some(Template::Array(each)), Value::Array(items)) if each.len() == 1 => {
                     for (i, el) in items.iter().enumerate() {
-                        unwrap(self, match_value(&each[0], el), format!("{at}[{i}]"), el);
+                        unwrap(self, &each[0], format!("{at}[{i}]"), el);
                     }
                 }
-                (Some(wrap), _) => unwrap(self, match_value(wrap, v), at.clone(), v),
+                (Some(wrap), _) => unwrap(self, wrap, at.clone(), v),
                 (None, Value::Array(items)) => {
                     defs.extend(items.iter().enumerate().map(|(i, d)| (format!("{at}[{i}]"), d.clone())));
                 }
@@ -331,7 +400,10 @@ impl<'a> Decoder<'a> {
             }
             for (a, def) in defs {
                 match match_value(&tt.data, &def).and_then(|b| tool_of(&b)) {
-                    Some(tool) => req.tools.push(tool),
+                    Some(tool) => {
+                        self.leftovers(&tt.data, &def, &a);
+                        req.tools.push(tool);
+                    }
                     None => self.keep(a, &def),
                 }
             }
@@ -339,17 +411,19 @@ impl<'a> Decoder<'a> {
         let Some(c) = &tt.choice else { return };
         self.used(&c.path);
         let Some(v) = select_one(&c.path, body) else { return };
-        let choice = if match_value(&c.auto, v).is_some() {
-            Some(ToolChoice::Auto)
-        } else if match_value(&c.required, v).is_some() {
-            Some(ToolChoice::Required)
-        } else if c.none.as_ref().is_some_and(|n| match_value(n, v).is_some()) {
-            Some(ToolChoice::None)
-        } else {
-            match_value(&c.named, v).and_then(|b| b.str("tool.name").map(|n| ToolChoice::Named(n.to_owned())))
-        };
+        let fixed = [(Some(&c.auto), ToolChoice::Auto), (Some(&c.required), ToolChoice::Required), (c.none.as_ref(), ToolChoice::None)];
+        let choice = fixed
+            .into_iter()
+            .find_map(|(tpl, ch)| Some((ch, tpl.filter(|tpl| match_value(tpl, v).is_some())?)))
+            .or_else(|| {
+                let name = match_value(&c.named, v)?.str("tool.name")?.to_owned();
+                Some((ToolChoice::Named(name), &c.named))
+            });
         match choice {
-            Some(ch) => req.tool_choice = Some(ch),
+            Some((ch, tpl)) => {
+                self.leftovers(tpl, v, &c.path.to_string());
+                req.tool_choice = Some(ch);
+            }
             None => self.keep(c.path.to_string(), v),
         }
     }
@@ -357,9 +431,7 @@ impl<'a> Decoder<'a> {
     fn params(&mut self, body: &Value, req: &mut Request) {
         let t = self.t;
         for p in &t.params {
-            if let Some(h) = head(&p.path) {
-                self.used.insert(h.to_owned());
-            }
+            self.used(&p.path);
             let Some(v) = select_one(&p.path, body) else { continue };
             match p.name.as_str() {
                 "thinking" => {
@@ -404,14 +476,69 @@ fn decode_arguments(form: ArgumentsForm, v: Option<&Value>) -> Value {
 
 // ── Encode ─────────────────────────────────────────────────────────────────────
 
+/// What a same-style attempt changes in the client's body (research R27).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Edits<'a> {
+    /// The upstream model id, written at the style's model path.
+    pub model: Option<&'a str>,
+    /// The stream flag, when the endpoint forces streaming.
+    pub stream: Option<bool>,
+    /// Turns on the request switch of the style's usage stream event (Chat's
+    /// `stream_options.include_usage`), so a streamed answer reports usage (R13). Set it
+    /// on streamed attempts only.
+    pub include_usage: bool,
+}
+
+/// The client's body for a same-style attempt: as received, with `edits` at their named
+/// paths only. Unknown keys and content no template describes go through unchanged.
+pub fn forward(body: &Value, wire: &Style, edits: &Edits) -> Result<Value, CodecError> {
+    let t = wire.text()?;
+    let mut out = body.clone();
+    if let (Some(p), Some(m)) = (&t.model_path, edits.model) {
+        set_path(&mut out, p, Value::String(m.to_owned()));
+    }
+    if let (Some(p), Some(s)) = (&t.stream_path, edits.stream) {
+        set_path(&mut out, p, Value::Bool(s));
+    }
+    if edits.include_usage {
+        let switches = t.events.iter().filter(|e| e.on == Some(StreamOn::Usage)).filter_map(|e| e.when_request.as_ref());
+        for p in switches {
+            set_path(&mut out, p, Value::Bool(true));
+        }
+    }
+    Ok(out)
+}
+
+/// A wire body, and the client's keys it couldn't carry.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Encoded {
+    pub body: Value,
+    pub dropped: Vec<Dropped>,
+}
+
 /// Writes `req` as a `wire` body. `client_style` is the style the client used; the wire's
 /// repairs run only when it differs.
-pub fn encode(req: &Request, wire: &Style, client_style: &str) -> Result<Value, CodecError> {
+///
+/// Refuses while anything is opaque. Each unplaced key comes back as [`Dropped`]: across
+/// styles all of them, since no rule of the client's style read them; in the client's own
+/// style only the nested ones, since top-level keys are copied (use [`forward`] instead).
+pub fn encode(req: &Request, wire: &Style, client_style: &str) -> Result<Encoded, CodecError> {
     let t = wire.text()?;
     if let Some(o) = req.opaque.first() {
         return Err(CodecError::carry(o.at.clone(), "the client sent content no template of its style describes"));
     }
     let same = client_style == wire.id;
+    let reason = if same {
+        "an encode copies only top-level keys the style doesn't read".to_owned()
+    } else {
+        format!("no {client_style} rule reads it, so it has no place in {}", wire.id)
+    };
+    let dropped = req
+        .unplaced
+        .iter()
+        .filter(|p| !(same && req.extra.contains_key(p.as_str())))
+        .map(|p| Dropped { path: p.clone(), reason: reason.clone() })
+        .collect();
     let mut req = Cow::Borrowed(req);
     if !same && !t.repairs.is_empty() {
         let r = req.to_mut();
@@ -438,7 +565,7 @@ pub fn encode(req: &Request, wire: &Style, client_style: &str) -> Result<Value, 
     set_path(&mut out, &t.messages, Value::Array(items));
     e.tools(&req, &mut out)?;
     e.params(&req, &mut out)?;
-    Ok(out)
+    Ok(Encoded { body: out, dropped })
 }
 
 fn call_names(messages: &[Message]) -> BTreeMap<String, String> {

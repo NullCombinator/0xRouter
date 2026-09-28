@@ -56,6 +56,16 @@ pub fn json(status: u16, body: &Value, request_id: &str) -> Response {
     resp
 }
 
+/// A same-style non-stream answer: the provider's bytes as received (research R27).
+pub fn as_received(status: u16, content_type: Option<&str>, body: Bytes, request_id: &str) -> Response {
+    let mut resp = Response::new(Body::from(body));
+    *resp.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::OK);
+    let ct = content_type.and_then(|c| HeaderValue::from_str(c).ok()).unwrap_or(HeaderValue::from_static("application/json"));
+    resp.headers_mut().insert(header::CONTENT_TYPE, ct);
+    stamp(&mut resp, request_id);
+    resp
+}
+
 /// A streamed body; `token` is cancelled when the body is dropped (finished or abandoned).
 pub fn stream<S, E>(status: u16, content_type: &str, body: S, token: CancellationToken, request_id: &str) -> Response
 where
@@ -93,5 +103,14 @@ mod tests {
         drop(resp);
         assert!(token.is_cancelled());
         assert_eq!(json(401, &serde_json::json!({}), "rq_2").headers()[REQUEST_ID], "rq_2");
+    }
+
+    #[tokio::test]
+    async fn a_same_style_body_goes_out_byte_for_byte() {
+        let raw = Bytes::from_static(br#"{"id":"m1",  "context_management":{"applied":[]} ,"x":1}"#);
+        let resp = as_received(200, Some("application/json; charset=utf-8"), raw.clone(), "rq_3");
+        assert_eq!(resp.headers()[header::CONTENT_TYPE], "application/json; charset=utf-8");
+        assert_eq!(resp.headers()[REQUEST_ID], "rq_3");
+        assert_eq!(axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap(), raw);
     }
 }

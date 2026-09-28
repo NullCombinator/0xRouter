@@ -9,6 +9,8 @@ use zerorouter_registry::schema::{InputSemantics, ModelType, RouteOp};
 
 use crate::keys::AgentId;
 
+pub use zerorouter_wire::codec::Dropped;
+
 pub const CAPACITY: usize = 10_000;
 
 /// `rq_` + a ULID, monotonic within the process so ids sort in arrival order.
@@ -119,6 +121,9 @@ pub struct Attempt {
     pub ended: Option<f64>,
     pub outcome: Option<AttemptOutcome>,
     pub usage: Option<Usage>,
+    /// Client body keys this cross-style attempt couldn't carry (research R27). Paths
+    /// only, never values. Empty on same-style attempts.
+    pub dropped: Vec<Dropped>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -352,6 +357,7 @@ mod tests {
             ended: None,
             outcome: None,
             usage: None,
+            dropped: Vec::new(),
         });
         r
     }
@@ -395,6 +401,15 @@ mod tests {
         assert!(!store.update("rq_missing", |_| {}));
         let json = serde_json::to_value(&by_b[0]).unwrap();
         assert_eq!(json["attempts"][0]["outcome"], serde_json::json!({ "state": "failed", "status": 503, "class": "transient", "reason": "overloaded" }));
+    }
+
+    #[test]
+    fn dropped_fields_are_recorded_as_paths_only() {
+        let mut r = rec(0, "a", None);
+        r.attempts[0].dropped = vec![Dropped { path: "messages[0].x_opt".into(), reason: "no place in openai-chat".into() }];
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["attempts"][0]["dropped"], serde_json::json!([{ "path": "messages[0].x_opt", "reason": "no place in openai-chat" }]));
+        assert_eq!(serde_json::to_value(rec(1, "a", None)).unwrap()["attempts"][0]["dropped"], serde_json::json!([]));
     }
 
     #[test]

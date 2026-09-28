@@ -183,6 +183,32 @@ fn matches(t: &Template, v: Option<&Value>, acc: Vec<Bindings>) -> Vec<Bindings>
     }
 }
 
+/// The paths of object keys in `v` that `t` has no field for, at any depth, each under
+/// `at`. A placeholder takes its whole value, so nothing under it is reported. Call it on
+/// a value `t` already matched.
+pub fn unmatched_keys(t: &Template, v: &Value, at: &str, out: &mut Vec<String>) {
+    match (t, v) {
+        (Template::Object(fields), Value::Object(obj)) => {
+            for (k, val) in obj {
+                let here = if at.is_empty() { k.clone() } else { format!("{at}.{k}") };
+                match fields.iter().find(|(f, _)| f == k) {
+                    Some((_, ft)) => unmatched_keys(ft, val, &here, out),
+                    None => out.push(here),
+                }
+            }
+        }
+        (Template::Array(items), Value::Array(arr)) => {
+            for (i, el) in arr.iter().enumerate() {
+                let each = if let [each] = items.as_slice() { Some(each) } else { items.get(i) };
+                if let Some(et) = each {
+                    unmatched_keys(et, el, &format!("{at}[{i}]"), out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 fn keep(ok: bool, acc: Vec<Bindings>) -> Vec<Bindings> {
     if ok { acc } else { Vec::new() }
 }
@@ -338,6 +364,19 @@ mod tests {
         assert_eq!(b.str("delta.text"), Some("yo"));
         let wrong = json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "input_json_delta", "partial_json": "{" } });
         assert!(match_value(&tpl, &wrong).is_none());
+    }
+
+    #[test]
+    fn unmatched_keys_are_reported_at_any_depth_but_not_under_a_placeholder() {
+        let tpl = t(r#"{ type = "function", function = { name = "{n}", parameters = "{p}" }, list = [{ id = "{i}" }] }"#);
+        let v = json!({
+            "type": "function", "x_top": 1,
+            "function": { "name": "f", "strict": true, "parameters": { "anything": { "goes": 1 } } },
+            "list": [{ "id": 1 }, { "id": 2, "x_el": 0 }]
+        });
+        let mut out = Vec::new();
+        unmatched_keys(&tpl, &v, "tools[0]", &mut out);
+        assert_eq!(out, ["tools[0].x_top", "tools[0].function.strict", "tools[0].list[1].x_el"]);
     }
 
     #[test]

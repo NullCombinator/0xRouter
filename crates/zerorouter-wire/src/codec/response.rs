@@ -1,5 +1,6 @@
 //! The generic response codec: a provider body → the [`Response`] IR → a client body.
-//! The second hop always goes through the IR, even for one style on both sides.
+//! Across styles the second hop goes through the IR; in one style the provider's body
+//! goes to the client as received (research R27), and the IR is only read from it.
 
 use serde_json::Value;
 use zerorouter_registry::schema::{FinishReason, PartKind};
@@ -51,6 +52,26 @@ pub fn decode(wire: &Style, body: &Value) -> Result<Response, CodecError> {
         usage: (!u.is_empty()).then_some(u),
         finish: Some(finish),
     })
+}
+
+/// A provider's non-stream answer, ready for the client.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForClient {
+    /// Same style: send the provider's bytes as received. `read` is the IR (usage, finish)
+    /// when the body has the style's response shape.
+    AsReceived { read: Option<Response> },
+    /// Across styles: `body` rebuilt in the client's style from `read`.
+    Rebuilt { read: Response, body: Value },
+}
+
+/// Prepares the provider's non-stream `body`, written in `wire`'s style, for a `client`.
+pub fn for_client(client: &Style, wire: &Style, body: &Value, created: u64) -> Result<ForClient, CodecError> {
+    if client.id == wire.id {
+        return Ok(ForClient::AsReceived { read: decode(wire, body).ok() });
+    }
+    let read = decode(wire, body)?;
+    let body = encode(client, &read, created)?;
+    Ok(ForClient::Rebuilt { read, body })
 }
 
 /// `id` with the style's prefix, unless it already has it.

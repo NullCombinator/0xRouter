@@ -6,6 +6,14 @@ pub(crate) mod style;
 
 pub use style::{EventTpl, PartTpl, Style, TextStyle};
 
+/// A client body key a cross-style attempt couldn't carry (research R27). The value is
+/// never kept: it may hold prompt text or a secret.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Dropped {
+    pub path: String,
+    pub reason: String,
+}
+
 /// Why a translation could not be done.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CodecError {

@@ -15,6 +15,7 @@ use zerorouter_registry::floor::Floor;
 use zerorouter_registry::schema::{AuthScheme, Endpoint, ForwardMerge, ProviderEntity};
 use zerorouter_registry::validate::is_private_ip;
 
+use crate::forwarding;
 use crate::redact::Redactor;
 
 pub const DEFAULT_TIMEOUT_MS: u64 = 60_000;
@@ -149,38 +150,12 @@ fn auth_header(p: &ProviderEntity, secret: &SecretString) -> Result<(HeaderName,
     Ok((name, value))
 }
 
-fn name_matches(pattern: &str, name: &str) -> bool {
-    match pattern.strip_suffix('*') {
-        Some(prefix) => name.len() >= prefix.len() && name[..prefix.len()].eq_ignore_ascii_case(prefix),
-        None => pattern.eq_ignore_ascii_case(name),
-    }
-}
-
-/// Client headers the provider's forwarding rules pass, minus the floor, CR/LF values and
-/// values that contain a secret.
+/// Client headers for this attempt: all of them when the endpoint speaks the client's
+/// style, else the declared list (research R27).
 fn forwarded(parts: &RequestParts) -> Vec<(HeaderName, HeaderValue, ForwardMerge)> {
-    let Some(fwd) = parts.provider.forwarding.as_ref() else { return Vec::new() };
-    let mut out = Vec::new();
-    for rule in &fwd.to_upstream.headers {
-        if !rule.from_styles.is_empty() && !rule.from_styles.iter().any(|s| s == parts.client_style) {
-            continue;
-        }
-        for (name, value) in parts.client_headers {
-            if !name_matches(&rule.name, name.as_str()) || parts.floor.blocks(name.as_str()) {
-                continue;
-            }
-            let bytes = value.as_bytes();
-            if bytes.iter().any(|b| matches!(b, b'\r' | b'\n')) {
-                continue;
-            }
-            let Ok(text) = value.to_str() else { continue };
-            if matches!(parts.redactor.redact(text), std::borrow::Cow::Owned(_)) {
-                continue;
-            }
-            out.push((name.clone(), value.clone(), rule.merge));
-        }
-    }
-    out
+    let rules = parts.provider.forwarding.as_ref().map_or(&[][..], |f| &f.to_upstream.headers[..]);
+    let same_style = parts.endpoint.wire.as_deref() == Some(parts.client_style);
+    forwarding::client_headers(rules, same_style, parts.client_style, parts.client_headers, parts.floor, parts.redactor)
 }
 
 /// Assembles the request: client headers → floor → plugin static headers → core auth.
@@ -295,13 +270,15 @@ headers = { "anthropic-beta" = "base-1", "anthropic-version" = "2023-06-01" }
         assert_eq!(h["anthropic-version"], "2023-06-01");
         assert_eq!(h["x-trace-id"], "t1");
         assert!(h.get("x-trace-leak").is_none(), "a value holding a secret is dropped");
-        assert!(h.get("x-other").is_none());
+        assert_eq!(h["x-other"], "nope", "a same-style attempt passes undeclared headers");
         assert_eq!(h["x-api-key"], "sk-acme-SECRET-1", "core auth is last and replaces the client's key");
         assert!(h["x-api-key"].is_sensitive());
         assert_eq!(out.header_timeout, Duration::from_millis(DEFAULT_TIMEOUT_MS));
 
         let other = build_request(RequestParts { client_style: "openai-chat", ..base }).unwrap();
         assert_eq!(other.headers["anthropic-beta"], "base-1", "from_styles limits the rule");
+        assert_eq!(other.headers["x-trace-id"], "t1");
+        assert!(other.headers.get("x-other").is_none(), "a cross-style attempt passes the declared list only");
 
         p.auth = Some(AuthDecl { header: None, scheme: None, ..AuthDecl::default() });
         let base = RequestParts { provider: &p, client_style: "openai-chat", ..other_parts(&endpoint, &floor, &redactor, &secret, &client) };

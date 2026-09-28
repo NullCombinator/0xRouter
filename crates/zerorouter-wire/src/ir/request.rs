@@ -15,10 +15,14 @@ pub struct Request {
     pub tool_choice: Option<ToolChoice>,
     pub params: Params,
     pub stream: bool,
-    /// Client body keys no rule consumed. Forwarded on native pairs only.
+    /// Top-level client body keys no rule consumed, with their values.
     pub extra: Map<String, Value>,
-    /// Content no template recognised. A native pair forwards the original body; a
-    /// translated pair can't carry it (Constitution IV: never dropped).
+    /// The path of every key no rule consumed, at any depth (top level, message, part,
+    /// tool). A same-style attempt forwards the client's body, so they reach the provider;
+    /// a cross-style attempt records them as dropped (research R27). Paths only.
+    pub unplaced: Vec<String>,
+    /// Content no template recognised. A same-style attempt forwards the client's body; a
+    /// cross-style one can't carry it (Constitution IV: content is never dropped).
     pub opaque: Vec<Opaque>,
 }
 

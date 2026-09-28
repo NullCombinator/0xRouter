@@ -61,14 +61,14 @@ fn request_round_trips_in_its_own_style() {
     assert_eq!(req.params.thinking.as_ref().and_then(|t| t.budget_tokens), Some(2000));
     assert_eq!(req.extra.get("metadata"), Some(&json!({ "user_id": "u" })));
     assert!(matches!(&req.messages[2].parts[0], Part::ToolResult { content: ResultContent::Text(t), .. } if t == "rain"));
-    assert_eq!(request::encode(&req, &s, "mini").unwrap(), body);
+    assert_eq!(request::encode(&req, &s, "mini").unwrap().body, body);
 }
 
 #[test]
 fn request_translates_between_layouts_and_back() {
     let (m, c) = (mini(), chat());
     let req = request::decode(&m, &mini_body()).unwrap();
-    let out = request::encode(&req, &c, "mini").unwrap();
+    let out = request::encode(&req, &c, "mini").unwrap().body;
     assert_eq!(
         out,
         json!({
@@ -99,7 +99,7 @@ fn request_translates_between_layouts_and_back() {
     assert_eq!(again.system, req.system);
     let roles: Vec<Role> = again.messages.iter().map(|m| m.role).collect();
     assert_eq!(roles, [Role::User, Role::Assistant, Role::Tool, Role::User]);
-    let back = request::encode(&again, &m, "minichat").unwrap();
+    let back = request::encode(&again, &m, "minichat").unwrap().body;
     // The tool result and the text after it merge into one user turn again.
     assert_eq!(back["messages"][2]["content"][0]["tool_use_id"], "t1");
     assert_eq!(back["messages"][2]["content"][1], json!({ "type": "text", "text": "thanks" }));
