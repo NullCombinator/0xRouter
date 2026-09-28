@@ -443,7 +443,7 @@ Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-p
   - Also Claude Code (`claude -p`, with `ANTHROPIC_BASE_URL`) and Codex (`codex exec`, with `OPENAI_BASE_URL`) runners, each skipped with a message when the tool is absent.
   - `run.sh` fails unless at least two harnesses ran (SC-001).
   - Wire it as `crates/zerorouter-server/tests/harness.rs`, marked `#[ignore]` unless `ZR_HARNESS=1`.
-- [ ] T059 [US1] Run `cargo test -p zerorouter-wire -p zerorouter-server` (including T146–T147) and `ZR_HARNESS=1 cargo test -p zerorouter-server --test harness` (including T152's headroom chain), then fix until green. Run slice 002's parity tests and confirm that only listed deviations differ.
+- [X] T059 [US1] Run `cargo test -p zerorouter-wire -p zerorouter-server` (including T146–T147) and `ZR_HARNESS=1 cargo test -p zerorouter-server --test harness` (including T152's headroom chain), then fix until green. Run slice 002's parity tests and confirm that only listed deviations differ.
 - [ ] T060 [US1] *operator-run* Live smoke: ask the user to run `! ZR_LIVE=1 cargo test -p zerorouter-engine --test live -- text`. It sends one streamed and one non-streamed request per text provider with their accounts. Also check that opencode API-key requests succeed without fingerprint tools ([R4](research.md#r4-translation-behaviour-parity-and-deliberate-deviations)). Write the test in `crates/zerorouter-engine/tests/live.rs` (skipped unless `ZR_LIVE=1`).
 
 **Checkpoint**: MVP. A standard client gets text answers in its own style from each text
