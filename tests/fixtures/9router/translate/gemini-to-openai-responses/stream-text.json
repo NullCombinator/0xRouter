@@ -62,7 +62,7 @@
         "responseId": "gem-up1"
       }
     ],
-    "client_events": [
+    "client_frames": [
       {
         "event": "response.created",
         "data": {

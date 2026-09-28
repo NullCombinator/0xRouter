@@ -48,70 +48,78 @@
         "responseId": "gem-up3"
       }
     ],
-    "client_events": [
+    "client_frames": [
       {
-        "id": "chatcmpl-gem-up3",
-        "object": "chat.completion.chunk",
-        "created": 1700000000,
-        "model": "m1",
-        "choices": [
-          {
-            "index": 0,
-            "delta": {
-              "role": "assistant"
-            },
-            "finish_reason": null
-          }
-        ]
+        "data": {
+          "id": "chatcmpl-gem-up3",
+          "object": "chat.completion.chunk",
+          "created": 1700000000,
+          "model": "m1",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "role": "assistant"
+              },
+              "finish_reason": null
+            }
+          ]
+        }
       },
       {
-        "id": "chatcmpl-gem-up3",
-        "object": "chat.completion.chunk",
-        "created": 1700000000,
-        "model": "m1",
-        "choices": [
-          {
-            "index": 0,
-            "delta": {
-              "reasoning_content": "adding"
-            },
-            "finish_reason": null
-          }
-        ]
+        "data": {
+          "id": "chatcmpl-gem-up3",
+          "object": "chat.completion.chunk",
+          "created": 1700000000,
+          "model": "m1",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "reasoning_content": "adding"
+              },
+              "finish_reason": null
+            }
+          ]
+        }
       },
       {
-        "id": "chatcmpl-gem-up3",
-        "object": "chat.completion.chunk",
-        "created": 1700000000,
-        "model": "m1",
-        "choices": [
-          {
-            "index": 0,
-            "delta": {
-              "content": "4"
-            },
-            "finish_reason": null
-          }
-        ]
+        "data": {
+          "id": "chatcmpl-gem-up3",
+          "object": "chat.completion.chunk",
+          "created": 1700000000,
+          "model": "m1",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "content": "4"
+              },
+              "finish_reason": null
+            }
+          ]
+        }
       },
       {
-        "id": "chatcmpl-gem-up3",
-        "object": "chat.completion.chunk",
-        "created": 1700000000,
-        "model": "m1",
-        "choices": [
-          {
-            "index": 0,
-            "delta": {},
-            "finish_reason": "stop"
-          }
-        ],
-        "usage": {
-          "prompt_tokens": 2005,
-          "completion_tokens": 3,
-          "total_tokens": 2008,
-          "completion_tokens_details": {
-            "reasoning_tokens": 2
+        "data": {
+          "id": "chatcmpl-gem-up3",
+          "object": "chat.completion.chunk",
+          "created": 1700000000,
+          "model": "m1",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {},
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 2005,
+            "completion_tokens": 3,
+            "total_tokens": 2008,
+            "completion_tokens_details": {
+              "reasoning_tokens": 2
+            }
           }
         }
       }

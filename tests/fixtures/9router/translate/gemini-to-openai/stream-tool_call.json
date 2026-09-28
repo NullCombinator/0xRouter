@@ -33,63 +33,69 @@
         "responseId": "gem-up2"
       }
     ],
-    "client_events": [
+    "client_frames": [
       {
-        "id": "chatcmpl-gem-up2",
-        "object": "chat.completion.chunk",
-        "created": 1700000000,
-        "model": "m1",
-        "choices": [
-          {
-            "index": 0,
-            "delta": {
-              "role": "assistant"
-            },
-            "finish_reason": null
-          }
-        ]
+        "data": {
+          "id": "chatcmpl-gem-up2",
+          "object": "chat.completion.chunk",
+          "created": 1700000000,
+          "model": "m1",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "role": "assistant"
+              },
+              "finish_reason": null
+            }
+          ]
+        }
       },
       {
-        "id": "chatcmpl-gem-up2",
-        "object": "chat.completion.chunk",
-        "created": 1700000000,
-        "model": "m1",
-        "choices": [
-          {
-            "index": 0,
-            "delta": {
-              "tool_calls": [
-                {
-                  "id": "get_weather-1700000000000-0",
-                  "index": 0,
-                  "type": "function",
-                  "function": {
-                    "name": "get_weather",
-                    "arguments": "{\"city\":\"Oslo\"}"
+        "data": {
+          "id": "chatcmpl-gem-up2",
+          "object": "chat.completion.chunk",
+          "created": 1700000000,
+          "model": "m1",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "id": "get_weather-1700000000000-0",
+                    "index": 0,
+                    "type": "function",
+                    "function": {
+                      "name": "get_weather",
+                      "arguments": "{\"city\":\"Oslo\"}"
+                    }
                   }
-                }
-              ]
-            },
-            "finish_reason": null
-          }
-        ]
+                ]
+              },
+              "finish_reason": null
+            }
+          ]
+        }
       },
       {
-        "id": "chatcmpl-gem-up2",
-        "object": "chat.completion.chunk",
-        "created": 1700000000,
-        "model": "m1",
-        "choices": [
-          {
-            "index": 0,
-            "delta": {},
-            "finish_reason": "tool_calls"
+        "data": {
+          "id": "chatcmpl-gem-up2",
+          "object": "chat.completion.chunk",
+          "created": 1700000000,
+          "model": "m1",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {},
+              "finish_reason": "tool_calls"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 2009,
+            "completion_tokens": 4,
+            "total_tokens": 2013
           }
-        ],
-        "usage": {
-          "prompt_tokens": 2009,
-          "completion_tokens": 4,
-          "total_tokens": 2013
         }
       }
     ]

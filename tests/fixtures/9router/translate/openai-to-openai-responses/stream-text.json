@@ -77,7 +77,7 @@
       },
       "[DONE]"
     ],
-    "client_events": [
+    "client_frames": [
       {
         "event": "response.created",
         "data": {

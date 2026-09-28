@@ -102,53 +102,59 @@
         }
       }
     ],
-    "client_events": [
+    "client_frames": [
       {
-        "id": "chatcmpl-1700000000000",
-        "object": "chat.completion.chunk",
-        "created": 1700000000,
-        "model": "m1",
-        "choices": [
-          {
-            "index": 0,
-            "delta": {
-              "reasoning_content": "adding"
-            },
-            "finish_reason": null
-          }
-        ]
+        "data": {
+          "id": "chatcmpl-1700000000000",
+          "object": "chat.completion.chunk",
+          "created": 1700000000,
+          "model": "m1",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "reasoning_content": "adding"
+              },
+              "finish_reason": null
+            }
+          ]
+        }
       },
       {
-        "id": "chatcmpl-1700000000000",
-        "object": "chat.completion.chunk",
-        "created": 1700000000,
-        "model": "m1",
-        "choices": [
-          {
-            "index": 0,
-            "delta": {
-              "content": "4"
-            },
-            "finish_reason": null
-          }
-        ]
+        "data": {
+          "id": "chatcmpl-1700000000000",
+          "object": "chat.completion.chunk",
+          "created": 1700000000,
+          "model": "m1",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "content": "4"
+              },
+              "finish_reason": null
+            }
+          ]
+        }
       },
       {
-        "id": "chatcmpl-1700000000000",
-        "object": "chat.completion.chunk",
-        "created": 1700000000,
-        "model": "m1",
-        "choices": [
-          {
-            "index": 0,
-            "delta": {},
-            "finish_reason": "stop"
+        "data": {
+          "id": "chatcmpl-1700000000000",
+          "object": "chat.completion.chunk",
+          "created": 1700000000,
+          "model": "m1",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {},
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 2005,
+            "completion_tokens": 3,
+            "total_tokens": 2008
           }
-        ],
-        "usage": {
-          "prompt_tokens": 2005,
-          "completion_tokens": 3,
-          "total_tokens": 2008
         }
       }
     ]
