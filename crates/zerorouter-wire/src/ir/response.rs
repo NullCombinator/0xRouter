@@ -1,5 +1,6 @@
 //! The non-stream response IR.
 
+use super::event::{BlockKind, Event};
 use super::request::Part;
 use super::FinishReason;
 
@@ -18,6 +19,31 @@ impl Response {
     /// All text parts joined.
     pub fn text(&self) -> String {
         self.content.iter().filter_map(|p| if let Part::Text { text, .. } = p { Some(text.as_str()) } else { None }).collect()
+    }
+
+    /// The stream events that carry this answer, for a client already streaming when a
+    /// provider answers whole.
+    pub fn events(&self) -> Vec<Event> {
+        let mut out = vec![Event::Preamble { id: self.id.clone(), model: self.model.clone() }];
+        for p in &self.content {
+            match p {
+                Part::Text { text, .. } => out.extend([Event::BlockStart(BlockKind::Text), Event::TextDelta(text.clone())]),
+                Part::Thinking { text, signature, .. } => {
+                    out.extend([Event::BlockStart(BlockKind::Thinking), Event::ThinkingDelta(text.clone())]);
+                    out.extend(signature.clone().map(Event::Signature));
+                }
+                Part::ToolCall { id, name, arguments, .. } => out.extend([
+                    Event::BlockStart(BlockKind::ToolCall { id: id.clone(), name: name.clone() }),
+                    Event::ToolArguments(arguments.to_string()),
+                ]),
+                _ => continue,
+            }
+            out.push(Event::BlockStop);
+        }
+        out.extend(self.usage.map(Event::Usage));
+        out.extend(self.finish.map(Event::Finish));
+        out.push(Event::Done);
+        out
     }
 }
 

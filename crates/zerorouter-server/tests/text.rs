@@ -103,15 +103,15 @@ async fn gemini_client_takes_the_model_from_the_path() {
 #[tokio::test]
 async fn errors_come_back_in_the_clients_style() {
     let s = server().await;
-    s.mock.push([Step::rate_limited(1, json!({"error": {"message": "slow down"}}))]);
+    s.mock.push([Step::json(400, json!({"error": {"message": "bad field"}}))]);
     let c = reqwest::Client::new();
     let url = format!("{}/v1/messages", s.base);
     let r = c.post(&url).header("x-api-key", &s.key).body(json_body(&json!({"model": "mockco/m1", "max_tokens": 8, "messages": [{"role": "user", "content": "hi"}]})))
 .send().await.unwrap();
-    assert_eq!(r.status(), 429);
+    assert_eq!(r.status(), 400);
     let body: Value = serde_json::from_slice(&r.bytes().await.unwrap()).unwrap();
     assert_eq!(body["type"], "error");
-    assert_eq!(body["error"]["message"], "slow down");
+    assert!(body["error"]["message"].as_str().unwrap().starts_with("bad field (record "), "{body}");
 
     let r = c.post(&url).header("x-api-key", &s.key).body(json_body(&json!({"model": "nope/x", "max_tokens": 8, "messages": [{"role": "user", "content": "hi"}]})))
 .send().await.unwrap();

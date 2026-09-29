@@ -19,6 +19,8 @@ use crate::forwarding;
 use crate::redact::Redactor;
 
 pub const DEFAULT_TIMEOUT_MS: u64 = 60_000;
+/// 9router `STREAM_STALL_TIMEOUT_MS`.
+pub const DEFAULT_STALL_MS: u64 = 360_000;
 pub const POOL_IDLE: Duration = Duration::from_secs(90);
 pub const TCP_KEEPALIVE: Duration = Duration::from_secs(60);
 
@@ -28,6 +30,11 @@ pub fn env_ms(name: &str, default: u64) -> u64 {
     let Ok(raw) = std::env::var(name) else { return default };
     let digits: String = raw.trim_start().chars().take_while(char::is_ascii_digit).collect();
     digits.parse().ok().filter(|n| *n > 0).unwrap_or(default)
+}
+
+/// How long `e`'s body may send no byte before it counts as a break (research R10).
+pub fn stall_timeout(e: &Endpoint) -> Duration {
+    Duration::from_millis(e.stall_timeout_ms.unwrap_or_else(|| env_ms("STREAM_STALL_TIMEOUT_MS", DEFAULT_STALL_MS)))
 }
 
 /// Resolves through the system resolver, then refuses loopback, private, link-local and

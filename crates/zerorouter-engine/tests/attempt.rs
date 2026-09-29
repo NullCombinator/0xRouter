@@ -192,15 +192,16 @@ async fn a_forced_stream_is_collected_for_a_whole_client() {
 #[tokio::test]
 async fn a_provider_error_fails_the_record_with_its_class() {
     let s = setup().await;
-    s.mock.push([Step::rate_limited(1, json!({"error": {"message": "slow down", "type": "rate_limit"}}))]);
+    s.mock.push([Step::json(400, json!({"error": {"message": "bad field", "type": "invalid_request_error"}}))]);
     let body = json!({"model": "mockco/m1", "messages": [{"role": "user", "content": "hi"}]});
     let req = request(&s, "openai-chat", "mockco/m1", body, CancellationToken::new());
     let id = req.id.clone();
     let Err(f) = s.engine.text(s.engine.snapshot(), req).await else { panic!("failure") };
-    assert_eq!((f.status, f.message.as_str()), (429, "slow down"));
+    assert_eq!(f.status, 400);
+    assert!(f.message.starts_with(&format!("bad field (record {id})")), "{}", f.message);
     let r = s.engine.records.get(&id).unwrap();
     assert_eq!(r.outcome, Outcome::Failed);
-    assert!(matches!(r.attempts[0].outcome, Some(AttemptOutcome::Failed { class: ErrorClass::RateLimited, .. })));
+    assert!(matches!(r.attempts[0].outcome, Some(AttemptOutcome::Failed { class: ErrorClass::RequestError, .. })));
 }
 
 #[tokio::test]

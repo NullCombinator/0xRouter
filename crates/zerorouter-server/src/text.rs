@@ -110,7 +110,7 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
     let guard = cancel.clone().drop_guard();
     let answer = match engine.text(st, req).await {
         Ok(a) => a,
-        Err(f) => return fail(f.status, &f.message),
+        Err(f) => return crate::serve::style_failure(m, &f, &id),
     };
     match answer {
         Answer::Whole { status, content_type, raw, answer } => match *answer {

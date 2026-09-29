@@ -11,8 +11,10 @@ use zerorouter_registry::{LoadReport, OperatorHome, Registry, RegistryHandle, Ru
 use zerorouter_wire::codec::Style;
 
 use crate::accounts::{self, Accounts};
+use crate::cooldown::Cooldowns;
 use crate::files::FileError;
 use crate::keys::{self, Keys};
+use crate::plan::WarmMap;
 use crate::records::RecordStore;
 use crate::redact::Redactor;
 use crate::upstream;
@@ -71,6 +73,10 @@ pub struct Engine {
     /// Shared with the log writer, so log lines follow reloads.
     redactor: Arc<ArcSwap<Redactor>>,
     pub records: RecordStore,
+    /// Account rests per model and backoff levels (research R6). In memory only.
+    pub cooldowns: Cooldowns,
+    /// The account each agent was last served by, per target (research R8).
+    pub warm: WarmMap,
     generation: AtomicU64,
     reload: Mutex<()>,
 }
@@ -113,6 +119,8 @@ impl Engine {
             state: ArcSwap::from_pointee(state),
             redactor,
             records: RecordStore::default(),
+            cooldowns: Cooldowns::default(),
+            warm: WarmMap::default(),
             generation: AtomicU64::new(1),
             reload: Mutex::new(()),
         };

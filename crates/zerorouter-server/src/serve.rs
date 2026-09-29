@@ -10,6 +10,7 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
+use zerorouter_engine::attempt::Failure;
 use zerorouter_engine::clock;
 use zerorouter_engine::keys::AgentId;
 use zerorouter_engine::records::{self, Outcome, RequestRecord};
@@ -62,6 +63,18 @@ pub fn router(app: Arc<App>) -> axum::Router {
 pub(crate) fn style_error(m: &Matched<'_>, status: u16, message: &str, id: &str) -> Response {
     let body = error_body::body(&m.entry.style.codec, status, message, json!({ "record_id": id }));
     relay::json(status, &body, id)
+}
+
+/// An engine failure in the client's style: the attempt details, and `retry-after` when
+/// every account is resting (research R11).
+pub(crate) fn style_failure(m: &Matched<'_>, f: &Failure, id: &str) -> Response {
+    let details = if f.tried.is_empty() { json!({ "record_id": id }) } else { error_body::details(id, &f.tried) };
+    let body = error_body::body(&m.entry.style.codec, f.status, &f.message, details);
+    let mut r = relay::json(f.status, &body, id);
+    if let Some(secs) = f.retry_after {
+        r.headers_mut().insert(axum::http::header::RETRY_AFTER, secs.into());
+    }
+    r
 }
 
 /// The largest request body read (base64 images and audio included).

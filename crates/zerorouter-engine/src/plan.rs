@@ -5,10 +5,14 @@
 //! then the model's `wires` in declared order, then the provider's other endpoints for
 //! the type in declared order.
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use zerorouter_registry::schema::{Endpoint, ModelType, ProviderEntity};
 use zerorouter_registry::{NotFound, Registry, Resolution};
 
 use crate::accounts::{Account, Accounts};
+use crate::keys::AgentId;
 
 #[derive(Debug, Clone)]
 pub struct Candidate<'s> {
@@ -28,9 +32,24 @@ impl Candidate<'_> {
     }
 }
 
+/// A plan entry that can't be tried, recorded as a `skipped` attempt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Skip {
+    pub provider: String,
+    pub account: Option<String>,
+    pub model: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum Step<'s> {
+    Try(Candidate<'s>),
+    Skip(Skip),
+}
+
 #[derive(Debug, Clone)]
 pub struct RequestPlan<'s> {
-    pub candidates: Vec<Candidate<'s>>,
+    pub steps: Vec<Step<'s>>,
     /// The unified model's name when the target was one.
     pub unified: Option<String>,
 }
@@ -55,6 +74,31 @@ impl PlanError {
     }
 }
 
+/// The account an agent was last served by for a target (research R8).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Warm {
+    pub provider: String,
+    /// `None` for a provider with `auth.no_auth`.
+    pub account: Option<String>,
+}
+
+/// `(agent, target) → the account that last completed a request`. Updated on successful
+/// completion only (a stream counts when it ends); last success wins. Held in memory.
+#[derive(Debug, Default)]
+pub struct WarmMap {
+    inner: Mutex<HashMap<(AgentId, String), Warm>>,
+}
+
+impl WarmMap {
+    pub fn get(&self, agent: &AgentId, target: &str) -> Option<Warm> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).get(&(agent.clone(), target.to_owned())).cloned()
+    }
+
+    pub fn set(&self, agent: &AgentId, target: &str, warm: Warm) {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).insert((agent.clone(), target.to_owned()), warm);
+    }
+}
+
 /// `p`'s endpoints for `ty` that serve `upstream_id`, in try order for a client speaking
 /// `client_style`. `wires` is the model's declared list, if any.
 pub fn endpoints<'p>(p: &'p ProviderEntity, ty: ModelType, upstream_id: &str, wires: Option<&[String]>, client_style: &str) -> Vec<&'p Endpoint> {
@@ -76,6 +120,7 @@ pub fn endpoints<'p>(p: &'p ProviderEntity, ty: ModelType, upstream_id: &str, wi
     out
 }
 
+/// One member's steps: its accounts in operator order, the warm one first, or one skip.
 fn member<'s>(
     registry: &'s Registry,
     accounts: &'s Accounts,
@@ -84,47 +129,67 @@ fn member<'s>(
     upstream_id: String,
     ty: ModelType,
     client_style: &str,
-) -> Result<Candidate<'s>, PlanError> {
+    warm: Option<&Warm>,
+) -> Result<Vec<Step<'s>>, PlanError> {
     let model = registry.model(&provider.id, requested).ok().and_then(|m| m.model);
     let wires = model.and_then(|m| m.wires.as_deref());
     let endpoint = endpoints(provider, ty, &upstream_id, wires, client_style).into_iter().next().ok_or_else(|| {
         PlanError::NoEndpoint { provider: provider.id.clone(), ty, model: requested.to_owned() }
     })?;
-    let no_auth = provider.auth.as_ref().is_some_and(|a| a.no_auth);
-    let account = if no_auth {
-        None
-    } else {
-        Some(accounts.for_provider(&provider.id).next().ok_or_else(|| PlanError::NoAccount { provider: provider.id.clone() })?)
-    };
-    Ok(Candidate { provider, endpoint, account, requested: requested.to_owned(), upstream_id })
+    let candidate = |account| Step::Try(Candidate { provider, endpoint, account, requested: requested.to_owned(), upstream_id: upstream_id.clone() });
+    if provider.auth.as_ref().is_some_and(|a| a.no_auth) {
+        return Ok(vec![candidate(None)]);
+    }
+    let mut mine: Vec<&Account> = accounts.for_provider(&provider.id).collect();
+    if mine.is_empty() {
+        return Err(PlanError::NoAccount { provider: provider.id.clone() });
+    }
+    if let Some(w) = warm.filter(|w| w.provider == provider.id)
+        && let Some(i) = mine.iter().position(|a| w.account.as_deref() == Some(a.name.as_str()))
+    {
+        let a = mine.remove(i);
+        mine.insert(0, a);
+    }
+    Ok(mine.into_iter().map(|a| candidate(Some(a))).collect())
 }
 
-/// The happy-path plan: one candidate, the first account in operator order. A unified
-/// target takes its first member that has an endpoint and an account.
+/// The candidate order for one request (research R7, R8): the warm account first, then its
+/// provider's other accounts in operator order, then, for a unified target, the other
+/// members in declared order, each with its accounts. A member that isn't installed, has
+/// no endpoint for the type or has no account is a skip. `warm` is left out by the caller
+/// when that account is cooling.
 pub fn plan<'s>(
     registry: &'s Registry,
     accounts: &'s Accounts,
     target: &'s str,
     ty: ModelType,
     client_style: &str,
+    warm: Option<&Warm>,
 ) -> Result<RequestPlan<'s>, PlanError> {
     match registry.resolve(target)? {
         Resolution::Direct { provider, requested, upstream_id, .. } => {
-            let c = member(registry, accounts, provider, requested, upstream_id, ty, client_style)?;
-            Ok(RequestPlan { candidates: vec![c], unified: None })
+            let steps = member(registry, accounts, provider, requested, upstream_id, ty, client_style, warm)?;
+            Ok(RequestPlan { steps, unified: None })
         }
         Resolution::Unified(u) => {
-            let mut first_err = None;
-            for m in &u.members {
-                let provider = registry.provider(&m.provider)?;
-                match member(registry, accounts, provider, &m.requested, m.upstream_id.clone(), ty, client_style) {
-                    Ok(c) => return Ok(RequestPlan { candidates: vec![c], unified: Some(u.name.clone()) }),
-                    Err(e) => {
-                        first_err.get_or_insert(e);
-                    }
+            let mut members: Vec<_> = u.members.iter().collect();
+            if let Some(i) = warm.and_then(|w| members.iter().position(|m| m.provider == w.provider)) {
+                let m = members.remove(i);
+                members.insert(0, m);
+            }
+            let mut steps = Vec::new();
+            for m in members {
+                let skip = |reason: String| Step::Skip(Skip { provider: m.provider.clone(), account: None, model: m.upstream_id.clone(), reason });
+                let Ok(provider) = registry.provider(&m.provider) else {
+                    steps.push(skip(format!("provider {} isn't installed", m.provider)));
+                    continue;
+                };
+                match member(registry, accounts, provider, &m.requested, m.upstream_id.clone(), ty, client_style, warm) {
+                    Ok(s) => steps.extend(s),
+                    Err(e) => steps.push(skip(e.to_string())),
                 }
             }
-            Err(first_err.unwrap_or(PlanError::NotFound(NotFound::UnifiedModel { name: u.name.clone() })))
+            Ok(RequestPlan { steps, unified: Some(u.name.clone()) })
         }
     }
 }
