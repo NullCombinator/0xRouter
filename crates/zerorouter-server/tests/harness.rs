@@ -2,13 +2,14 @@
 //! runs `tests/harness/run.sh`. Skipped unless `ZR_HARNESS=1` (needs the SDKs from
 //! `tests/harness/README.md`). With headroom installed, the chain through it (T152) is
 //! checked here: its marked requests reach the provider in the client's own style and are
-//! left out, and recorded, across styles.
+//! left out, and recorded, across styles. Every SDK also meets an all-attempts-failed
+//! request (`broken/m1`, T074).
 
 mod common;
 
 use std::path::Path;
 
-use common::{multi_plugin, reply_by_wire, server_with};
+use common::{broken_plugin, multi_plugin, reply_by_wire, server_with};
 use zerorouter_engine::records::Query;
 use zerorouter_engine::testkit::Received;
 
@@ -25,7 +26,7 @@ async fn sdks_and_harnesses_accept_every_style() {
         eprintln!("skipped: set ZR_HARNESS=1 to run the harness scripts");
         return;
     }
-    let s = server_with(|m| vec![multi_plugin(m)]).await;
+    let s = server_with(|m| vec![multi_plugin(m), broken_plugin(m)]).await;
     // Real clients send as many requests as they like, in their own order.
     s.mock.respond(reply_by_wire);
     let run = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/harness/run.sh");
@@ -37,6 +38,7 @@ async fn sdks_and_harnesses_accept_every_style() {
             .env("ZR_KEY", key)
             .env("ZR_MODEL", "mockco/m1")
             .env("ZR_MODEL_MESSAGES", "multi/m-messages")
+            .env("ZR_MODEL_FAIL", "broken/m1")
             .output()
             .unwrap()
     })
@@ -45,6 +47,10 @@ async fn sdks_and_harnesses_accept_every_style() {
     let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     println!("{text}");
     assert!(out.status.success(), "{text}");
+    // The first 401 rests the account, so the later failed requests are skipped attempts.
+    assert!(s.mock.received().iter().any(|r| r.path_and_query.starts_with("/broken")), "the all-failed checks ran");
+    let failed = s.engine.records.query(&Query::default()).iter().filter(|r| r.target.as_deref() == Some("broken/m1")).count();
+    assert_eq!(failed, 16, "8 SDK scripts, a whole and a streamed request each");
     if text.contains("ok   headroom chain") {
         headroom_chain_kept_the_optimizers_additions(&s);
     }

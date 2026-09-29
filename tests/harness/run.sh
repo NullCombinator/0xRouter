@@ -2,7 +2,9 @@
 # Runs every available harness against a running `zerorouter serve` (see README.md).
 # Needs ZR_BASE (http://host:port), ZR_KEY (an agent key) and ZR_MODEL; ZR_MODEL_MESSAGES
 # (a messages-wire model) adds the headroom chain (headroom.sh). Each harness
-# sends one whole and one streamed request and expects the text "Hello".
+# sends one whole and one streamed request and expects the text "Hello". ZR_MODEL_FAIL
+# (a model whose every attempt fails) makes each SDK also expect its own API error with
+# the record id.
 # Fails if any harness fails, or if fewer than two ran (SC-001).
 set -u
 here=$(cd "$(dirname "$0")" && pwd)

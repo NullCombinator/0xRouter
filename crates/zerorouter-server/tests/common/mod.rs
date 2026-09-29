@@ -143,11 +143,23 @@ wires = ["openai-responses"]
     ("multi", toml)
 }
 
+/// `broken/m1`: every request gets a 401, so every attempt fails (under [`reply_by_wire`]).
+pub fn broken_plugin(mock: &MockUpstream) -> (&'static str, String) {
+    let toml = format!(
+        "schema = 2\nid = \"broken\"\ncategory = \"apikey\"\n[auth]\nkind = \"apikey\"\n[endpoints.text]\nurl = \"{}\"\nwire = \"openai-chat\"\n[[models]]\nid = \"m1\"\n",
+        mock.url("/broken/chat/completions")
+    );
+    ("broken", toml)
+}
+
 /// A reply saying "Hello" with 5 input and 2 output tokens, in the wire the request's path
 /// names, streamed when the request asks for it.
 pub fn reply_by_wire(r: &Received) -> Step {
     let stream = r.json()["stream"] == Value::Bool(true);
     let path = r.path_and_query.as_str();
+    if path.starts_with("/broken") {
+        return Step::json(401, json!({"error": {"message": "invalid api key"}}));
+    }
     if path.contains("/messages") {
         if !stream {
             return Step::json(

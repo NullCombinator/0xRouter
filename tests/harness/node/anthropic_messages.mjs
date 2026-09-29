@@ -1,6 +1,7 @@
 // anthropic SDK, Messages: one whole and one streamed request.
 import assert from "node:assert/strict";
 import Anthropic from "@anthropic-ai/sdk";
+import { check } from "./failed.mjs";
 
 const c = new Anthropic({ baseURL: process.env.ZR_BASE, apiKey: process.env.ZR_KEY, maxRetries: 0 });
 const model = process.env.ZR_MODEL;
@@ -16,3 +17,6 @@ const final = await s.finalMessage();
 assert.equal(text, "Hello");
 assert.equal(final.stop_reason, "end_turn");
 assert.equal(final.usage.output_tokens, 2);
+
+await check(Anthropic.APIError, (m) => c.messages.create({ model: m, max_tokens: 64, messages }));
+await check(Anthropic.APIError, (m) => c.messages.stream({ model: m, max_tokens: 64, messages }).finalMessage());

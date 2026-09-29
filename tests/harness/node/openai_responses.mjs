@@ -1,6 +1,7 @@
 // openai SDK, Responses: one whole and one streamed request.
 import assert from "node:assert/strict";
 import OpenAI from "openai";
+import { check } from "./failed.mjs";
 
 const c = new OpenAI({ baseURL: `${process.env.ZR_BASE}/v1`, apiKey: process.env.ZR_KEY, maxRetries: 0 });
 const model = process.env.ZR_MODEL;
@@ -16,3 +17,6 @@ for await (const e of await c.responses.create({ model, input: "Say hello.", str
 }
 assert.equal(text, "Hello");
 assert.ok(done, "no response.completed event");
+
+await check(OpenAI.APIError, (m) => c.responses.create({ model: m, input: "Say hello." }));
+await check(OpenAI.APIError, async (m) => { for await (const _ of await c.responses.create({ model: m, input: "Say hello.", stream: true })); });

@@ -36,7 +36,9 @@ ZR_BASE=http://127.0.0.1:20129 ZR_KEY=0r-… ZR_MODEL=anthropic/claude-sonnet-4-
 | Codex CLI | `codex.sh` (`codex exec`, throwaway `CODEX_HOME`) | openai responses |
 | headroom chain | `headroom.sh` → `py/headroom_chain.py` | anthropic and openai SDKs → `headroom proxy` → 0router |
 
-Each sends one whole and one streamed request and expects the text "Hello" (Claude Code
+Each sends one whole and one streamed request and expects the text "Hello". With
+`ZR_MODEL_FAIL` set (the test sets `broken/m1`, whose every attempt gets a 401), each SDK
+also expects its own API error, not a parse error, with the record id in the message (Claude Code
 and Codex send what they send). A missing tool is skipped with a message; `run.sh` fails
 on any failure, or if fewer than two harnesses ran (SC-001).
 

@@ -27,7 +27,11 @@ pub const TCP_KEEPALIVE: Duration = Duration::from_secs(60);
 /// 9router `envMs`: a positive integer from the environment (leading digits, like
 /// `parseInt`), else `default`.
 pub fn env_ms(name: &str, default: u64) -> u64 {
-    let Ok(raw) = std::env::var(name) else { return default };
+    std::env::var(name).map_or(default, |raw| parse_ms(&raw, default))
+}
+
+/// `envMs`'s parse: the leading digits of `raw` when they make a number > 0, else `default`.
+pub fn parse_ms(raw: &str, default: u64) -> u64 {
     let digits: String = raw.trim_start().chars().take_while(char::is_ascii_digit).collect();
     digits.parse().ok().filter(|n| *n > 0).unwrap_or(default)
 }

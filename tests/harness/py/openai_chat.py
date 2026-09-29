@@ -1,7 +1,8 @@
 """openai SDK, Chat Completions: one whole and one streamed request."""
 import os
 
-from openai import OpenAI
+from openai import APIStatusError, OpenAI
+from failed import check
 
 c = OpenAI(base_url=os.environ["ZR_BASE"] + "/v1", api_key=os.environ["ZR_KEY"], max_retries=0)
 model = os.environ["ZR_MODEL"]
@@ -17,3 +18,6 @@ for ch in chunks:
     usage = ch.usage or usage
 assert text == "Hello", text
 assert usage is not None and usage.completion_tokens == 2, usage
+
+check(APIStatusError, lambda m: c.chat.completions.create(model=m, messages=messages))
+check(APIStatusError, lambda m: list(c.chat.completions.create(model=m, messages=messages, stream=True)))

@@ -463,7 +463,7 @@ informational error in its own style.
 
 - [X] T061 [US2] Add the classification oracle to `generate.mjs`. Run `checkFallbackError` over the `tests/unit/account-fallback-4xx.test.js` cases plus a generated grid (statuses 400–599 × the ERROR_RULES texts × JSON and plain bodies), and write `tests/fixtures/9router/classify/cases.json`.
 - [X] T062 [P] [US2] Write classification parity in `crates/zerorouter-engine/tests/classify.rs` against `tests/fixtures/9router/classify/cases.json`: the verdict, the cooldown, and the backoff level progression (2000·2^(level−1), capped at 300 000, max level 15).
-- [ ] T063 [P] [US2] Write `crates/zerorouter-engine/tests/retry.rs` for every row of the [R7](research.md#r7-retry-order-and-budgets) budget table:
+- [X] T063 [P] [US2] Write `crates/zerorouter-engine/tests/retry.rs` for every row of the [R7](research.md#r7-retry-order-and-budgets) budget table:
   - 502, network error and connect timeout: 3 retries at 3 s;
   - 503: 3 × 2 s;
   - 504: 2 × 3 s;
@@ -473,23 +473,23 @@ informational error in its own style.
   - 401–404: no retry;
   - a plugin `retry` override.
 
-  Use tokio paused time.
-- [ ] T064 [P] [US2] Write `crates/zerorouter-engine/tests/fallback.rs`.
+  Use tokio paused time. *(Done without it: paused time auto-advances while the engine waits on the loopback socket and fires header timeouts that never happened. The table is checked through `classify::budget`, and the loop with plugin overrides at short delays.)*
+- [X] T064 [P] [US2] Write `crates/zerorouter-engine/tests/fallback.rs`.
   - For a unified model with two accounts and two members, cover every failure kind: the order is same account → other account → other member (SC-002).
   - A direct `<provider>/<model>` target stops after its accounts (US2-4).
   - A non-fallback 4xx is returned at once with its status and the upstream message first (US2-5).
   - A member with no account or not installed is a `skipped` attempt with a reason.
   - A `CannotCarry` target is skipped.
-- [ ] T065 [P] [US2] Write `crates/zerorouter-engine/tests/stay_warm.rs`.
+- [X] T065 [P] [US2] Write `crates/zerorouter-engine/tests/stay_warm.rs`.
   - After a move to the backup account, the agent's next request goes to backup. Once backup fails over and main recovers, the next request goes to main (SC-003).
   - A warm account in cooldown is skipped until the cooldown ends.
   - With two concurrent requests from one agent, the last success wins.
   - A stream that breaks isn't counted as warm.
-- [ ] T066 [P] [US2] Write `crates/zerorouter-engine/tests/timeouts.rs`.
+- [X] T066 [P] [US2] Write `crates/zerorouter-engine/tests/timeouts.rs`.
   - No response headers within `timeout_ms` counts as a 502 and is retried.
   - No byte for `stall_timeout_ms` is a break, including on a `force_stream` body collected for a non-stream client.
   - `envMs` parsing: an integer > 0, else the default.
-- [ ] T067 [P] [US2] Write `crates/zerorouter-server/tests/errors.rs`.
+- [X] T067 [P] [US2] Write `crates/zerorouter-server/tests/errors.rs`.
   - For each style, when all attempts fail: status 503, `retry-after` equal to the seconds until the earliest cooldown ends, and a body per [contracts/client-surface.md § Informational error body](contracts/client-surface.md#informational-error-body). The message lists every attempt and the record id, the `zerorouter` field has the same attempts, and the header id equals the body id (US2-6).
   - While the engine retries, the stream sends keepalives and holds the preamble: no `message_start` is sent twice.
   - A client disconnect during a backoff sleep cancels it, and no further upstream request starts.
@@ -504,27 +504,27 @@ informational error in its own style.
   - Keyed by "`(provider id, account name, model id) → { until: Instant, backoff_level: u8 (≤ 15) }`".
   - A success clears the model's cooldown and, when no other cooldown is active, resets the level (9router `auth.js:326-333`).
   - Provide `earliest_end()` for `retry-after`.
-- [ ] T070 [US2] Extend `crates/zerorouter-engine/src/plan.rs` with the full candidate order and the `WarmMap`.
+- [X] T070 [US2] Extend `crates/zerorouter-engine/src/plan.rs` with the full candidate order and the `WarmMap`.
   - Order: the warm account first (if not cooling), then that provider's remaining accounts in operator order, then the other members (unified targets only), each with their accounts.
   - The `WarmMap` is keyed by "`(AgentId, Target) → (provider id, account name)`". It is "updated on successful completion only" (stream end).
-- [ ] T071 [US2] Extend `crates/zerorouter-engine/src/attempt.rs` into the full attempt loop.
+- [X] T071 [US2] Extend `crates/zerorouter-engine/src/attempt.rs` into the full attempt loop.
   - Same-account budgets per R7, with plugin overrides.
   - Parse `retry-after` (seconds or HTTP date) and the reset headers.
   - Record attempts with kind `initial | same_account_retry | next_account | next_member | skipped`.
   - Backoff sleeps sit inside `tokio::select!` with the cancellation token.
   - Apply the connect timeout and the stall watchdog to every streamed and chunked body ([R10](research.md#r10-timeouts)).
   - A break before any content event is an ordinary transient failure.
-- [ ] T072 [US2] Add the preamble hold and keepalive in `crates/zerorouter-wire/src/stream/writer.rs` and `crates/zerorouter-server/src/relay.rs`.
+- [X] T072 [US2] Add the preamble hold and keepalive in `crates/zerorouter-wire/src/stream/writer.rs` and `crates/zerorouter-server/src/relay.rs`.
   - Header events are held until the first content event or the end of the attempt, and dropped if the attempt is replaced.
   - Between attempts, send the style's `[errors] keepalive` (Messages `event: ping`, an SSE comment for the others).
-- [ ] T073 [US2] Implement informational error bodies in `crates/zerorouter-wire/src/error_body.rs` ([R11](research.md#r11-informational-errors)) and use them in the server's error path.
+- [X] T073 [US2] Implement informational error bodies in `crates/zerorouter-wire/src/error_body.rs` ([R11](research.md#r11-informational-errors)) and use them in the server's error path.
   - The message is a one-line summary with the record id, then one line per attempt: `provider/account model: reason`.
   - A non-fallback upstream error keeps its upstream message verbatim first.
   - The `zerorouter` details are `{ record_id, attempts: [{provider, account, model, status, class, reason, retries}] }`.
   - The type comes from the style's `type_map`.
   - Every string passes through the redactor.
-- [ ] T074 [US2] Add the SDK error checks to `tests/harness/`. For each style's SDK (Python and Node), an all-attempts-failed request must raise the SDK's normal API error type, not a parse error, with the record id readable from the message (SC-009).
-- [ ] T075 [US2] Run `cargo test -p zerorouter-engine -p zerorouter-server` and the harness, then fix until green.
+- [X] T074 [US2] Add the SDK error checks to `tests/harness/`. For each style's SDK (Python and Node), an all-attempts-failed request must raise the SDK's normal API error type, not a parse error, with the record id readable from the message (SC-009).
+- [X] T075 [US2] Run `cargo test -p zerorouter-engine -p zerorouter-server` and the harness, then fix until green.
 
 **Checkpoint**: US1 and US2 together satisfy the slice's first two fail conditions.
 
