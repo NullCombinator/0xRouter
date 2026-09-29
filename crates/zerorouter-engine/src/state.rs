@@ -77,6 +77,8 @@ pub struct Engine {
     pub cooldowns: Cooldowns,
     /// The account each agent was last served by, per target (research R8).
     pub warm: WarmMap,
+    /// Video jobs by their `vj_` id.
+    pub jobs: crate::jobs::JobMap,
     generation: AtomicU64,
     reload: Mutex<()>,
 }
@@ -121,6 +123,7 @@ impl Engine {
             records: RecordStore::default(),
             cooldowns: Cooldowns::default(),
             warm: WarmMap::default(),
+            jobs: crate::jobs::JobMap::default(),
             generation: AtomicU64::new(1),
             reload: Mutex::new(()),
         };

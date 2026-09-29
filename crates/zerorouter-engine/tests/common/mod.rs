@@ -91,6 +91,7 @@ pub fn request(s: &Setup, client: &str, target: &str, body: Value, agent: &str, 
         target: target.into(),
         stream,
         cancel,
+        media: None,
     }
 }
 

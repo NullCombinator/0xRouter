@@ -4,6 +4,7 @@
 
 pub mod auth;
 pub mod count;
+pub mod media;
 pub mod models;
 pub mod operator;
 pub mod relay;

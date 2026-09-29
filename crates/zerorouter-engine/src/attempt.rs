@@ -25,27 +25,32 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
 use tokio_util::sync::CancellationToken;
-use zerorouter_registry::schema::{Framing, InputSemantics, ModelType, RouteOp};
+use zerorouter_registry::schema::{BodyEncoding, Endpoint, Framing, InputSemantics, ModelType, RouteOp};
+use zerorouter_registry::template::{FieldPath, Template};
+use zerorouter_registry::Resolution;
 use zerorouter_wire::codec::request::{self, Edits};
 use zerorouter_wire::codec::response::{self, ForClient};
+use zerorouter_wire::codec::types::{self, JobStatus, TypeCodec, TypeValue};
 use zerorouter_wire::codec::{Dropped, Style};
 use zerorouter_wire::error_body::{self, Tried};
 use zerorouter_wire::ir::{self, ErrorEvent, Event};
-use zerorouter_wire::primitives::session;
+use zerorouter_wire::primitives::{body as encodings, session};
+use zerorouter_wire::template::Bindings;
 use zerorouter_wire::stream::{Frame, Framer, StreamReader, StreamWriter, usage_unasked};
 
 use crate::accounts;
 use crate::classify::{self, Verdict};
+use crate::jobs::Job;
 use crate::keys::AgentId;
 use crate::plan::{self, Candidate, Step, Warm};
-use crate::records::{Attempt, AttemptKind, AttemptOutcome, BreakHandling, ErrorClass, Outcome, ServedBy, Usage};
+use crate::records::{Attempt, AttemptKind, AttemptOutcome, BreakHandling, ErrorClass, JobRef, Outcome, ServedBy, Usage};
 use crate::state::{Engine, EngineState};
 use crate::upstream::{self, RequestParts};
 
 /// Events buffered between the upstream reader and the client relay.
 pub const CHANNEL: usize = 64;
 
-/// One text generation request, decoded.
+/// One generation request, decoded: text, or a non-text type when `media` is set.
 pub struct TextRequest {
     /// The record the server inserted for this request.
     pub id: String,
@@ -60,6 +65,33 @@ pub struct TextRequest {
     /// Whether the client asked for a stream.
     pub stream: bool,
     pub cancel: CancellationToken,
+    /// A non-text request (research R16); `ir` is then unused.
+    pub media: Option<Media>,
+}
+
+/// A non-text request, decoded by the client style's codec.
+pub struct Media {
+    pub ty: ModelType,
+    /// The client style's codec for the type, with the route's variant applied.
+    pub codec: TypeCodec,
+    /// The route's variant, if any: a variant body is never forwarded as it came.
+    pub variant: Option<String>,
+    pub input: TypeValue,
+    /// The voice a TTS target named as its last segment (`provider/model/voice`).
+    pub voice: Option<String>,
+    /// A job submit (video).
+    pub job: bool,
+}
+
+/// A non-text answer.
+pub enum MediaAnswer {
+    /// Decoded; the server encodes it in the client's style.
+    Value(TypeValue),
+    /// The provider's bytes as they arrive, for a client whose style answers with the raw
+    /// body too. An `Err` ends the body early.
+    Bytes { content_type: String, rx: mpsc::Receiver<Result<Bytes, String>> },
+    /// A submitted job under its `vj_` id.
+    Job { id: String, status: JobStatus, bindings: Bindings },
 }
 
 /// What the provider answered.
@@ -69,6 +101,7 @@ pub enum Answer {
     /// A streamed answer. `forced`: the endpoint streams but the client didn't ask to;
     /// collect it with [`collect`].
     Events { rx: mpsc::Receiver<Piece>, forced: bool },
+    Media(MediaAnswer),
 }
 
 /// One piece of a streamed answer.
@@ -136,6 +169,77 @@ fn body_for(req: &TextRequest, c: &Candidate<'_>, wire: &Style, upstream_stream:
     ir.stream = upstream_stream;
     let enc = request::encode(&ir, wire, &req.client.id).map_err(carry)?;
     Ok((request::forward(&enc.body, wire, &usage_switch).map_err(carry)?, enc.dropped))
+}
+
+/// What goes upstream for one candidate.
+struct Outbound {
+    body: Bytes,
+    content_type: String,
+    voice: Option<String>,
+    dropped: Vec<Dropped>,
+}
+
+/// An inline endpoint's response mapping (IR field → path); empty = a binary answer.
+fn mapping(e: &Endpoint) -> Result<Vec<(String, FieldPath)>, String> {
+    let Some(toml::Value::Table(t)) = &e.response else { return Ok(Vec::new()) };
+    t.iter()
+        .map(|(k, v)| {
+            let path = v.as_str().ok_or_else(|| format!("0router: response field {k} isn't a path"))?;
+            Ok((k.clone(), FieldPath::parse(path).map_err(|e| format!("0router: response field {k}: {e}"))?))
+        })
+        .collect()
+}
+
+/// The upstream body for a non-text candidate: the client's own body with the model
+/// replaced when the endpoint speaks the client's style, else encoded from the IR by the
+/// wire's codec or the endpoint's inline template.
+fn media_body(req: &TextRequest, m: &Media, c: &Candidate<'_>, wire: Option<&Style>) -> Result<Outbound, String> {
+    let carry = |e: &dyn std::fmt::Display| format!("0router: {} can't take this request: {e}", c.provider.id);
+    let voice = m.input.str("input.voice").or_else(|| m.voice.clone()).or_else(|| c.endpoint.voices.first().cloned());
+    let mut input = m.input.clone();
+    input.scalars.set("model", c.upstream_id.clone());
+    input.scalars.set("model.upstream_id", c.upstream_id.clone());
+    if let Some(v) = &voice {
+        input.scalars.set("input.voice", v.clone());
+    }
+    // Forwarding keeps the client's own fields, unless a voice has to be added to them.
+    let forward = m.variant.is_none() && (voice.is_none() || m.input.str("input.voice").is_some());
+    let (value, encoding) = match wire {
+        Some(w) if w.id == req.client.id && forward => {
+            let mut body = req.body.clone();
+            if let Some(o) = body.as_object_mut()
+                && o.contains_key("model")
+            {
+                o.insert("model".into(), Value::String(c.upstream_id.clone()));
+            }
+            (body, m.codec.encoding)
+        }
+        Some(w) => {
+            let codec = w.type_codec(m.ty).map_err(|e| carry(&e))?;
+            (codec.encode_request(&input, &Bindings::new()), codec.encoding)
+        }
+        None => {
+            let decl = c.endpoint.body.as_ref().ok_or_else(|| carry(&"the endpoint declares no body"))?;
+            let t = Template::parse(decl).map_err(|e| carry(&e))?;
+            (types::encode(&t, &input, &Bindings::new()), c.endpoint.encoding.unwrap_or(BodyEncoding::Json))
+        }
+    };
+    let (body, content_type) = encodings::encode(encoding, &value);
+    Ok(Outbound { body: body.into(), content_type, voice, dropped: Vec::new() })
+}
+
+/// Usage a non-text answer reported.
+fn media_usage(v: &TypeValue) -> Option<Usage> {
+    let (input, output) = (v.usage("input").or_else(|| v.usage("total")), v.usage("output"));
+    (input.is_some() || output.is_some()).then_some(Usage {
+        input,
+        output,
+        cache_read: None,
+        cache_write: None,
+        reasoning: None,
+        input_semantics: InputSemantics::ExcludesCache,
+        estimated: false,
+    })
 }
 
 /// The provider's error message: the usual JSON places, else the start of the text.
@@ -230,14 +334,35 @@ impl Run {
 
     async fn walk(&mut self, st: &EngineState) -> Result<(), Failure> {
         let req = &self.req;
+        let ty = req.media.as_ref().map_or(ModelType::Text, |m| m.ty);
+        let op = if req.media.as_ref().is_some_and(|m| m.job) { RouteOp::JobSubmit } else { RouteOp::Generate };
         self.engine.records.update(&req.id, |r| {
-            r.op = Some(RouteOp::Generate);
-            r.model_type = Some(ModelType::Text);
+            r.op = Some(op);
+            r.model_type = Some(ty);
             r.target = Some(req.target.clone());
         });
         let warm = self.engine.warm.get(&req.agent, &req.target);
-        let (target, client_style) = (req.target.clone(), req.client.id.clone());
-        let plan = match plan::plan(&st.registry, &st.accounts, &target, ModelType::Text, &client_style, warm.as_ref()) {
+        let (mut target, client_style) = (req.target.clone(), req.client.id.clone());
+        // 9router's `provider/model/voice` form for a TTS target: the prefix names a model
+        // declared as TTS and the whole target doesn't (an undeclared id would pass through).
+        let declared = |t: &str| match st.registry.resolve(t) {
+            Ok(Resolution::Direct { provider, requested, .. }) => st.registry.model(&provider.id, requested).is_ok_and(|m| m.kind.is_some()),
+            Ok(Resolution::Unified(_)) => true,
+            Err(_) => false,
+        };
+        if ty == ModelType::Tts
+            && !declared(&target)
+            && let Some((model, voice)) = target.rsplit_once('/')
+            && model.contains('/')
+            && declared(model)
+        {
+            let (model, voice) = (model.to_owned(), voice.to_owned());
+            if let Some(m) = self.req.media.as_mut() {
+                m.voice = Some(voice);
+            }
+            target = model;
+        }
+        let plan = match plan::plan(&st.registry, &st.accounts, &target, ty, &client_style, warm.as_ref()) {
             Ok(p) => p,
             Err(e) => {
                 self.end_request(Outcome::Failed, None);
@@ -289,24 +414,39 @@ impl Run {
             run.skip(&c.provider.id, account.clone(), &c.upstream_id, &reason, tried);
             Ok(false)
         };
-        let Some(wire) = c.endpoint.wire.as_deref().and_then(|w| st.style(w)).cloned() else {
-            return skip(self, format!("0router: provider {} names a wire that isn't loaded", c.provider.id), tried);
+        let wire = match c.endpoint.wire.as_deref() {
+            None => None,
+            Some(w) => match st.style(w) {
+                Some(s) => Some(s.clone()),
+                None => return skip(self, format!("0router: provider {} names a wire that isn't loaded", c.provider.id), tried),
+            },
         };
-        let upstream_stream = self.req.stream || c.endpoint.force_stream;
-        let (body, dropped) = match body_for(&self.req, c, &wire, upstream_stream) {
-            Ok(b) => b,
-            Err(f) => return skip(self, f.message, tried),
+        let outbound = match (&self.req.media, &wire) {
+            (Some(m), wire) => match media_body(&self.req, m, c, wire.as_deref()) {
+                Ok(o) => o,
+                Err(reason) => return skip(self, reason, tried),
+            },
+            (None, None) => return skip(self, format!("0router: provider {} has a text endpoint with no wire", c.provider.id), tried),
+            (None, Some(wire)) => {
+                let upstream_stream = self.req.stream || c.endpoint.force_stream;
+                match body_for(&self.req, c, wire, upstream_stream) {
+                    Ok((body, dropped)) => {
+                        Outbound { body: Bytes::from(body.to_string()), content_type: "application/json".into(), voice: None, dropped }
+                    }
+                    Err(f) => return skip(self, f.message, tried),
+                }
+            }
         };
         let mut kind = kind;
         let mut retries = 0;
         let mut budget = None;
         loop {
-            let out = match self.outgoing(st, c, &body) {
+            let out = match self.outgoing(st, c, &outbound) {
                 Ok(o) => o,
                 Err(reason) => return skip(self, reason, tried),
             };
-            self.start_attempt(c, kind, dropped.clone());
-            let f = match self.once(st, c, &wire, out).await {
+            self.start_attempt(c, kind, outbound.dropped.clone());
+            let f = match self.once(st, c, wire.as_ref(), out).await {
                 Ended::Ok(usage) => {
                     self.succeed(c, usage);
                     return Ok(true);
@@ -376,7 +516,7 @@ impl Run {
     }
 
     /// The request for `c`, secret and session header included; `Err` is a skip reason.
-    fn outgoing(&self, st: &EngineState, c: &Candidate<'_>, body: &Value) -> Result<upstream::Outgoing, String> {
+    fn outgoing(&self, st: &EngineState, c: &Candidate<'_>, ob: &Outbound) -> Result<upstream::Outgoing, String> {
         let secret = c.account.map(|a| accounts::release(a, c.provider)).transpose().map_err(|w| format!("0router: {w}"))?;
         let parts = RequestParts {
             provider: c.provider,
@@ -387,9 +527,9 @@ impl Run {
             client_style: &self.req.client.id,
             client_headers: &self.req.headers,
             model: &c.upstream_id,
-            voice: None,
-            content_type: Some("application/json"),
-            body: Bytes::from(body.to_string()),
+            voice: ob.voice.as_deref(),
+            content_type: Some(&ob.content_type),
+            body: ob.body.clone(),
         };
         let mut out = upstream::build_request(parts).map_err(|e| format!("0router: {e}"))?;
         if let Some(s) = &c.provider.session
@@ -404,7 +544,7 @@ impl Run {
     }
 
     /// One upstream request and its answer.
-    async fn once(&mut self, st: &EngineState, c: &Candidate<'_>, wire: &Arc<Style>, out: upstream::Outgoing) -> Ended {
+    async fn once(&mut self, st: &EngineState, c: &Candidate<'_>, wire: Option<&Arc<Style>>, out: upstream::Outgoing) -> Ended {
         let timeout = out.header_timeout;
         let send = time::timeout(timeout, out.into_request(&st.http).send());
         let resp = match self.wait(send).await {
@@ -425,17 +565,27 @@ impl Run {
         let stall = upstream::stall_timeout(c.endpoint);
         let ok = (200..300).contains(&status);
 
-        if !ok || !is_stream {
+        if !ok {
             let indicated = classify::indicated_wait(resp.headers(), SystemTime::now());
             let raw = match self.read_all(resp, stall, st).await {
                 Ok(b) => b,
                 Err(e) => return e,
             };
-            if !ok {
-                let message = st.redactor.redact(&error_message(&raw)).into_owned();
-                let verdict = classify::upstream(status, &String::from_utf8_lossy(&raw));
-                return Ended::Failed(Fail { status: Some(status), verdict, reason: message.clone(), message, indicated, after_output: false, told: false });
-            }
+            let message = st.redactor.redact(&error_message(&raw)).into_owned();
+            let verdict = classify::upstream(status, &String::from_utf8_lossy(&raw));
+            return Ended::Failed(Fail { status: Some(status), verdict, reason: message.clone(), message, indicated, after_output: false, told: false });
+        }
+        if self.req.media.is_some() {
+            return self.media_once(st, c, wire, resp, content_type, stall).await;
+        }
+        let Some(wire) = wire else {
+            return Ended::Failed(Fail::transport(ErrorClass::InBand, "0router: a text endpoint with no wire".into(), false));
+        };
+        if !is_stream {
+            let raw = match self.read_all(resp, stall, st).await {
+                Ok(b) => b,
+                Err(e) => return e,
+            };
             let in_band = |reason: String| Ended::Failed(Fail::transport(ErrorClass::InBand, reason, false));
             let value: Value = match serde_json::from_slice(&raw) {
                 Ok(v) => v,
@@ -483,6 +633,117 @@ impl Run {
             self.tx = None;
         }
         end
+    }
+
+    /// A non-text answer with a 2xx status: a job, the provider's bytes relayed as they
+    /// arrive, or a decoded value.
+    async fn media_once(
+        &mut self,
+        st: &EngineState,
+        c: &Candidate<'_>,
+        wire: Option<&Arc<Style>>,
+        resp: reqwest::Response,
+        content_type: Option<String>,
+        stall: Duration,
+    ) -> Ended {
+        let in_band = |reason: String| Ended::Failed(Fail::transport(ErrorClass::InBand, reason, false));
+        let Some(m) = &self.req.media else { return in_band("0router: not a non-text request".into()) };
+        let (ty, job, client_binary) = (m.ty, m.job, m.codec.binary_response().is_some());
+        let wire_codec = match wire.map(|w| w.type_codec(ty)) {
+            None => None,
+            Some(Ok(codec)) => Some(codec.clone()),
+            Some(Err(e)) => return in_band(format!("0router: {e}")),
+        };
+        let map = match mapping(c.endpoint) {
+            Ok(m) => m,
+            Err(e) => return in_band(e),
+        };
+        let upstream_binary = wire_codec.as_ref().map_or(map.is_empty(), |w| w.binary_response().is_some());
+        let json = content_type.as_deref().is_some_and(|c| c.contains("json"));
+
+        if job {
+            let raw = match self.read_all(resp, stall, st).await {
+                Ok(b) => b,
+                Err(e) => return e,
+            };
+            let (Some(codec), Some(wire)) = (&wire_codec, wire) else { return in_band("0router: an endpoint without a wire can't run jobs".into()) };
+            let Ok(v) = serde_json::from_slice::<Value>(&raw) else { return in_band("the job answer isn't JSON".into()) };
+            let Some((bindings, status)) = codec.decode_job(&v) else { return in_band("the job answer doesn't have the wire's shape".into()) };
+            let Some(upstream_id) = bindings.str("job.id").map(str::to_owned) else { return in_band("the job answer has no id".into()) };
+            let url = upstream::endpoint_url(&c.endpoint.url, &c.upstream_id, None).map_or_else(|_| c.endpoint.url.clone(), |u| u.to_string());
+            let zerorouter_job_id = self.engine.jobs.insert(Job {
+                record: self.req.id.clone(),
+                provider: c.provider.id.clone(),
+                account: c.account.map(|a| a.name.clone()),
+                url,
+                wire: wire.id.clone(),
+                model: c.upstream_id.clone(),
+                upstream_id: upstream_id.clone(),
+                target: self.req.target.clone(),
+                agent: self.req.agent.key.clone(),
+            });
+            let job = JobRef { zerorouter_job_id: zerorouter_job_id.clone(), upstream_id };
+            self.engine.records.update(&self.req.id, |r| r.job = Some(job));
+            let id = zerorouter_job_id;
+            self.ttft();
+            if let Some(first) = self.first.take() {
+                let _ = first.send(Ok(Answer::Media(MediaAnswer::Job { id, status, bindings })));
+            }
+            return Ended::Ok(None);
+        }
+
+        if client_binary && upstream_binary && !json {
+            let (tx, rx) = mpsc::channel(CHANNEL);
+            let content_type = content_type.unwrap_or_else(|| "application/octet-stream".into());
+            self.ttft();
+            if let Some(first) = self.first.take() {
+                let _ = first.send(Ok(Answer::Media(MediaAnswer::Bytes { content_type, rx })));
+            }
+            // Committed: a break from here on reaches the client as a cut body.
+            let mut resp = resp;
+            loop {
+                let chunk = tokio::select! {
+                    _ = self.req.cancel.cancelled() => return Ended::Cancelled,
+                    c = time::timeout(stall, resp.chunk()) => c,
+                };
+                let reason = match chunk {
+                    Ok(Ok(Some(b))) => {
+                        let sent = tokio::select! {
+                            _ = self.req.cancel.cancelled() => return Ended::Cancelled,
+                            r = tx.send(Ok(b)) => r.is_ok(),
+                        };
+                        if !sent {
+                            return Ended::Cancelled;
+                        }
+                        continue;
+                    }
+                    Ok(Ok(None)) => return Ended::Ok(None),
+                    Err(_) => (ErrorClass::Stall, format!("no byte for {} ms", stall.as_millis())),
+                    Ok(Err(e)) => (ErrorClass::Network, format!("stream read failed: {}", st.redactor.redact(&e.to_string()))),
+                };
+                let _ = tx.send(Err(reason.1.clone())).await;
+                return Ended::Failed(Fail::transport(reason.0, reason.1, true));
+            }
+        }
+
+        let raw = match self.read_all(resp, stall, st).await {
+            Ok(b) => b,
+            Err(e) => return e,
+        };
+        let value = match &wire_codec {
+            Some(codec) => codec.decode_response(&raw, content_type.as_deref()),
+            None => types::decode_mapped(&map, &raw, content_type.as_deref()),
+        };
+        let value = match value {
+            Ok(v) => v,
+            Err(e) => return in_band(format!("0router: {e}")),
+        };
+        let usage = media_usage(&value);
+        self.ttft();
+        if let Some(first) = self.first.take() {
+            let _ = first.send(Ok(Answer::Media(MediaAnswer::Value(value))));
+        }
+        Ended::Ok(usage)
     }
 
     /// A whole body, with the stall watchdog on every chunk.
@@ -722,7 +983,12 @@ impl Run {
         let account = c.account.map(|a| a.name.clone());
         let served = ServedBy { provider: c.provider.id.clone(), account: account.clone(), model: c.upstream_id.clone() };
         self.engine.records.update(self.id(), |r| r.served_by = Some(served));
-        self.end_request(Outcome::Succeeded, usage);
+        if self.req.media.as_ref().is_some_and(|m| m.job) {
+            // In progress until the job fails or its content is delivered.
+            self.engine.records.update(self.id(), |r| r.usage = usage);
+        } else {
+            self.end_request(Outcome::Succeeded, usage);
+        }
         let (p, a, m) = cooldown_key(c);
         self.engine.cooldowns.succeed(p, a, m);
         self.engine.warm.set(&self.req.agent, &self.req.target, Warm { provider: c.provider.id.clone(), account });

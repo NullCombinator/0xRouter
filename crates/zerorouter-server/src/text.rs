@@ -105,6 +105,7 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
         target,
         stream: wants_stream,
         cancel: cancel.clone(),
+        media: None,
     };
     // Until the body is handed to the client, dropping this handler cancels the request.
     let guard = cancel.clone().drop_guard();
@@ -134,6 +135,7 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
             guard.disarm();
             relay::stream(200, content_type(framing), body, cancel, &id)
         }
+        Answer::Media(_) => fail(500, "0router: a text request got a non-text answer"),
     }
 }
 

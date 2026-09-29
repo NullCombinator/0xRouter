@@ -62,6 +62,9 @@ pub enum PlanError {
     NoEndpoint { provider: String, ty: ModelType, model: String },
     #[error("no enabled account for provider {provider}; add one with `zerorouter accounts add {provider} <name>`")]
     NoAccount { provider: String },
+    /// FR-012: the route's type isn't the model's declared kind.
+    #[error("{target} is a {model} model, and this route takes {route} models")]
+    TypeMismatch { target: String, model: ModelType, route: ModelType },
 }
 
 impl PlanError {
@@ -70,6 +73,7 @@ impl PlanError {
         match self {
             Self::NotFound(_) | Self::NoEndpoint { .. } => 404,
             Self::NoAccount { .. } => 503,
+            Self::TypeMismatch { .. } => 400,
         }
     }
 }
@@ -166,7 +170,18 @@ pub fn plan<'s>(
     client_style: &str,
     warm: Option<&Warm>,
 ) -> Result<RequestPlan<'s>, PlanError> {
-    match registry.resolve(target)? {
+    let resolution = registry.resolve(target)?;
+    let declared = match &resolution {
+        Resolution::Direct { provider, requested, .. } => registry.model(&provider.id, requested).ok().and_then(|m| m.kind),
+        Resolution::Unified(u) => u.kind,
+    };
+    // An undeclared kind passes: the endpoint list decides.
+    if let Some(model) = declared.and_then(ModelType::from_capability)
+        && model != ty
+    {
+        return Err(PlanError::TypeMismatch { target: target.to_owned(), model, route: ty });
+    }
+    match resolution {
         Resolution::Direct { provider, requested, upstream_id, .. } => {
             let steps = member(registry, accounts, provider, requested, upstream_id, ty, client_style, warm)?;
             Ok(RequestPlan { steps, unified: None })

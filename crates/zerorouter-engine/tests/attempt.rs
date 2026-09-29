@@ -80,6 +80,7 @@ fn request(s: &Setup, client: &str, target: &str, body: Value, cancel: Cancellat
         target: target.into(),
         stream,
         cancel,
+        media: None,
     }
 }
 

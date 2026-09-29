@@ -539,7 +539,7 @@ retry, fallback, errors and records as text.
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T076 [P] [US3] Write `crates/zerorouter-server/tests/types.rs` with the mock upstream.
+- [X] T076 [P] [US3] Write `crates/zerorouter-server/tests/types.rs` with the mock upstream.
   - One test per type through the OpenAI routes:
     - openrouter embeddings;
     - openrouter image (`b64_json`);
@@ -549,8 +549,8 @@ retry, fallback, errors and records as text.
     - openrouter video (submit 202 → poll → content through a `vj_` id).
   - Also through the Gemini routes: `embedContent`, `batchEmbedContents`, image and TTS via response modality, and `predictLongRunning` + `operations/{id}`.
   - Each record carries its type and usage (US3-1 to US3-3).
-- [ ] T077 [P] [US3] Write the non-text fallback test in `crates/zerorouter-engine/tests/fallback_types.rs`: a unified embeddings model and a unified TTS model, each with two members, fall back exactly like text when the first member fails (US3-4, SC-007).
-- [ ] T078 [P] [US3] Write the type-mismatch test in `crates/zerorouter-server/tests/type_mismatch.rs`: an embeddings model on `/v1/chat/completions` and a TTS request to an embeddings model each return 400 in the style's shape, naming both types. The mock received nothing (US3-5, FR-012).
+- [X] T077 [P] [US3] Write the non-text fallback test in `crates/zerorouter-engine/tests/fallback_types.rs`: a unified embeddings model and a unified TTS model, each with two members, fall back exactly like text when the first member fails (US3-4, SC-007).
+- [X] T078 [P] [US3] Write the type-mismatch test in `crates/zerorouter-server/tests/type_mismatch.rs`: an embeddings model on `/v1/chat/completions` and a TTS request to an embeddings model each return 400 in the style's shape, naming both types. The mock received nothing (US3-5, FR-012).
 
 ### Implementation for User Story 3
 
@@ -578,18 +578,18 @@ retry, fallback, errors and records as text.
   - New STT section: `POST /v1/speech-to-text`, multipart, `body = { file = "{input.audio}", model_id = "{model.upstream_id}", language_code = "{input.language?}" }`, `response = { text = "text", language = "language_code" }`, and `models = ["scribe_v2"]`.
   - Never set `webhook`.
   - Add `[[deviation]]` rows for the parity fields that differ.
-- [ ] T084 [US3] Generalise the engine over model types in `crates/zerorouter-engine/src/attempt.rs`.
+- [X] T084 [US3] Generalise the engine over model types in `crates/zerorouter-engine/src/attempt.rs`.
   - The candidate's endpoint is chosen by `ModelType`.
   - Inline `body`/`response` endpoints are rendered with the wire templates.
   - Voice resolution: the request's `voice` field (OpenAI), the speech config (Gemini), or 9router's `model/voice` string for parity.
   - Check the route's type against the target model's type before any upstream call (FR-012).
-- [ ] T085 [US3] Implement video jobs in `crates/zerorouter-engine/src/jobs.rs`.
+- [X] T085 [US3] Implement video jobs in `crates/zerorouter-engine/src/jobs.rs`.
   - The `JobMap` maps "`zerorouter job id → (provider, account, upstream job id, record id)`", with ids `vj_…`.
   - Retry and fallback apply at submission only. Each client poll makes one upstream poll on the owning account (60 s bound, R7 retries on that account).
   - The record stays `in_progress` until the final content is delivered or the job fails.
-- [ ] T086 [US3] Relay binary and job responses in `crates/zerorouter-server/src/relay.rs`: `Body::from_stream` for audio, with `content-type` from the upstream, and the job submit, poll and content routes.
+- [X] T086 [US3] Relay binary and job responses in `crates/zerorouter-server/src/relay.rs`: `Body::from_stream` for audio, with `content-type` from the upstream, and the job submit, poll and content routes.
 - [ ] T087 [US3] *operator-run* Live types check. Ask the user to run `! ZR_LIVE=1 cargo test -p zerorouter-engine --test live -- types`. It covers one request per type and provider, whether openrouter's speech endpoint works (T082 choice), and whether `scribe_v1` is accepted. Update the plugins from the result.
-- [ ] T088 [US3] Run `cargo test -p zerorouter-server --test types --test type_mismatch` and `-p zerorouter-engine --test fallback_types`, then fix until green.
+- [X] T088 [US3] Run `cargo test -p zerorouter-server --test types --test type_mismatch` and `-p zerorouter-engine --test fallback_types`, then fix until green.
 
 **Checkpoint**: All three P1 stories work. The slice is usable end to end for every model
 type.

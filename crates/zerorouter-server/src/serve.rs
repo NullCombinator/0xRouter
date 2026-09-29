@@ -17,12 +17,12 @@ use zerorouter_engine::records::{self, Outcome, RequestRecord};
 use zerorouter_engine::state::{Engine, EngineState};
 use zerorouter_registry::schema::{ModelType, RouteOp};
 use zerorouter_wire::error_body;
-use zerorouter_wire::primitives::session;
+use zerorouter_wire::primitives::{body, session};
 
 use crate::auth;
 use crate::relay;
 use crate::router::{Matched, RouteTable, pick};
-use crate::text;
+use crate::{media, text};
 
 pub struct App {
     pub engine: Arc<Engine>,
@@ -116,8 +116,18 @@ async fn dispatch(State(app): State<Arc<App>>, req: Request) -> Response {
             return style_error(first, 413, &format!("0router: the request body is over {} MiB", MAX_BODY >> 20), &id);
         }
     };
+    let ctype = parts.headers.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or_default();
     let json: Value = if bytes.is_empty() {
         Value::Null
+    } else if ctype.starts_with("multipart/form-data") {
+        match body::boundary(ctype).ok_or_else(|| "no boundary".to_owned()).and_then(|b| body::parse_multipart(&bytes, b)) {
+            Ok(v) => v,
+            Err(e) => {
+                record.outcome = Outcome::Failed;
+                app.engine.records.insert(record);
+                return style_error(first, 400, &format!("0router: the multipart body doesn't parse: {e}"), &id);
+            }
+        }
     } else {
         match serde_json::from_slice(&bytes) {
             Ok(v) => v,
@@ -147,6 +157,16 @@ async fn dispatch(State(app): State<Arc<App>>, req: Request) -> Response {
             app.engine.records.insert(record);
             let inc = text::Incoming { id, arrived: started, path, headers: parts.headers.clone(), body: json, agent };
             text::generate(&app.engine, st, m, inc).await
+        }
+        (RouteOp::Generate, _) | (RouteOp::JobSubmit, _) => {
+            app.engine.records.insert(record);
+            let inc = text::Incoming { id, arrived: started, path, headers: parts.headers.clone(), body: json, agent };
+            media::generate(&app.engine, st, m, inc, route.op == RouteOp::JobSubmit).await
+        }
+        (RouteOp::JobGet, _) | (RouteOp::JobContent, _) => {
+            // A poll or content fetch belongs to the submit's record.
+            let inc = text::Incoming { id, arrived: started, path, headers: parts.headers.clone(), body: json, agent };
+            if route.op == RouteOp::JobGet { media::job_get(&app.engine, st, m, inc).await } else { media::job_content(&app.engine, st, m, inc).await }
         }
         _ => {
             record.outcome = Outcome::Failed;
