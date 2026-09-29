@@ -1,5 +1,4 @@
 # OpenRouter (hand-maintained, schema 2; seed tools/gen-bundled/seeds/openrouter.json).
-# Text only for now; the non-text endpoints come with their model types.
 schema = 2
 id = "openrouter"
 category = "freeTier"
@@ -23,8 +22,120 @@ url = "https://openrouter.ai/api/v1/messages"
 wire = "anthropic-messages"
 vision = true
 
+# Non-text endpoints use the openai-chat style's per-type codecs (R16).
+[endpoints.embeddings]
+url = "https://openrouter.ai/api/v1/embeddings"
+wire = "openai-chat"
+
+[endpoints.image]
+url = "https://openrouter.ai/api/v1/images"
+wire = "openai-chat"
+
+# The speech endpoint answers with audio bytes (pending the T087 live check).
+[endpoints.tts]
+url = "https://openrouter.ai/api/v1/audio/speech"
+wire = "openai-chat"
+voices = ["alloy", "ash", "ballad", "cedar", "coral", "echo", "fable", "marin", "nova", "onyx", "sage", "shimmer", "verse"]
+
+# A job: submit here, then poll `{url}/{id}` and fetch `{url}/{id}/content`.
+[endpoints.video]
+url = "https://openrouter.ai/api/v1/videos"
+wire = "openai-chat"
+
 [forwarding.to_client]
 headers = ["retry-after", "x-ratelimit-*"]
+
+[[models]]
+id = "openai/text-embedding-3-large"
+name = "OpenAI Text Embedding 3 Large"
+kind = "embedding"
+
+[[models]]
+id = "openai/text-embedding-3-small"
+name = "OpenAI Text Embedding 3 Small"
+kind = "embedding"
+
+[[models]]
+id = "openai/text-embedding-ada-002"
+name = "OpenAI Text Embedding Ada 002"
+kind = "embedding"
+
+[[models]]
+id = "qwen/qwen3-embedding-8b"
+name = "Qwen3 Embedding 8B"
+kind = "embedding"
+
+[[models]]
+id = "perplexity/pplx-embed-v1-4b"
+name = "Perplexity Embed V1 4B"
+kind = "embedding"
+
+[[models]]
+id = "perplexity/pplx-embed-v1-0.6b"
+name = "Perplexity Embed V1 0.6B"
+kind = "embedding"
+
+[[models]]
+id = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
+name = "NVIDIA Nemotron Embed VL 1B V2 (Free)"
+kind = "embedding"
+
+[[models]]
+id = "openai/gpt-4o-mini-tts"
+name = "GPT-4o Mini TTS"
+kind = "tts"
+
+[[models]]
+id = "openai/tts-1-hd"
+name = "TTS-1 HD"
+kind = "tts"
+
+[[models]]
+id = "openai/tts-1"
+name = "TTS-1"
+kind = "tts"
+
+[[models]]
+id = "openai/dall-e-3"
+name = "DALL-E 3 (via OpenRouter)"
+kind = "image"
+params = ["size", "quality", "style", "response_format"]
+
+[[models]]
+id = "openai/gpt-image-1"
+name = "GPT Image 1 (via OpenRouter)"
+kind = "image"
+params = ["n", "size", "quality", "response_format"]
+
+[[models]]
+id = "google/imagen-3.0-generate-002"
+name = "Imagen 3 (via OpenRouter)"
+kind = "image"
+params = ["n", "size"]
+
+[[models]]
+id = "black-forest-labs/FLUX.1-schnell"
+name = "FLUX.1 Schnell (via OpenRouter)"
+kind = "image"
+params = ["n", "size"]
+
+[[models]]
+id = "google/veo-3.1"
+name = "Veo 3.1 (via OpenRouter)"
+kind = "video"
+params = ["duration", "aspect_ratio", "resolution"]
+
+[[models]]
+id = "openai/sora-2-pro"
+name = "Sora 2 Pro (via OpenRouter)"
+kind = "video"
+params = ["duration", "aspect_ratio", "resolution"]
+
+[[models]]
+id = "bytedance/seedance-2.0"
+name = "Seedance 2.0 (via OpenRouter)"
+kind = "video"
+params = ["duration", "aspect_ratio", "resolution"]
 
 [display]
 name = "OpenRouter"

@@ -17,6 +17,7 @@ use crate::ir::Role;
 pub struct Style {
     pub id: String,
     pub text: Option<TextStyle>,
+    pub types: BTreeMap<ModelType, super::types::TypeCodec>,
     pub error_body: Template,
     pub error_types: BTreeMap<u16, String>,
     pub error_event: EventTpl,
@@ -125,6 +126,12 @@ fn path(s: &str) -> Result<FieldPath, CodecError> {
 impl Style {
     pub fn compile(f: &StyleFile) -> Result<Self, CodecError> {
         let text = f.text.as_ref().map(|t| TextStyle::compile(f, t)).transpose()?;
+        let mut types = BTreeMap::new();
+        for t in [ModelType::Embeddings, ModelType::Image, ModelType::Tts, ModelType::Stt, ModelType::Video] {
+            if let Some(d) = f.type_codec(t) {
+                types.insert(t, super::types::TypeCodec::compile(t, d)?);
+            }
+        }
         let error_types = f.errors.type_map.iter().filter_map(|(k, v)| Some((k.parse().ok()?, v.clone()))).collect();
         let event = |e: &zerorouter_registry::schema::StreamTemplate, at: &str| -> Result<EventTpl, CodecError> {
             let data = tpl(&e.data, at)?;
@@ -133,6 +140,7 @@ impl Style {
         Ok(Self {
             id: f.id.clone(),
             text,
+            types,
             error_body: tpl(&f.errors.body, "errors.body")?,
             error_types,
             error_event: event(&f.errors.stream_event, "errors.stream_event")?,
@@ -142,6 +150,11 @@ impl Style {
 
     pub fn text(&self) -> Result<&TextStyle, CodecError> {
         self.text.as_ref().ok_or_else(|| CodecError::Missing { style: self.id.clone(), what: "text codec" })
+    }
+
+    /// The non-text codec for `t`.
+    pub fn type_codec(&self, t: ModelType) -> Result<&super::types::TypeCodec, CodecError> {
+        self.types.get(&t).ok_or_else(|| CodecError::Missing { style: self.id.clone(), what: "codec for this model type" })
     }
 
     /// The style's error type for an HTTP status: exact, else the class's `x00`, else 500's.

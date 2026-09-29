@@ -105,6 +105,9 @@ pub struct Route {
     pub model: Option<Locator>,
     pub stream: Option<StreamLocator>,
     pub discriminator: Option<MatchRule>,
+    /// A named variant of the type's codec, for a route whose body differs (Gemini's
+    /// `:embedContent` next to `:batchEmbedContents`).
+    pub variant: Option<String>,
 }
 
 /// Where a route reads a value: a body field or a path parameter. Exactly one.
@@ -345,6 +348,16 @@ pub struct TypeCodec {
     /// Video only.
     pub job: Option<JobDecl>,
     pub usage: Option<UsageDecl>,
+    /// Alternative request/response shapes that routes select by name.
+    #[serde(default)]
+    pub variants: BTreeMap<String, CodecVariant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CodecVariant {
+    pub request: toml::Value,
+    pub response: toml::Value,
 }
 
 fn json() -> BodyEncoding {
@@ -355,7 +368,9 @@ fn json() -> BodyEncoding {
 #[serde(deny_unknown_fields)]
 pub struct JobDecl {
     pub mode: AsyncJob,
-    /// Job status body. Placeholders: `{job.id}`, `{job.status}`, `{job.error?}`, `{job.created}`.
+    /// Job status body. Placeholders: `{job.id}`, `{job.status}`, `{job.error?}`, `{job.created}`,
+    /// `{job.model}`, `{job.done}` (a boolean) and `{job.content_url?}`. Empty objects are
+    /// pruned after rendering.
     pub status: toml::Value,
     /// IR job status (`queued`, `in_progress`, `completed`, `failed`) → style status.
     pub status_map: BTreeMap<String, String>,

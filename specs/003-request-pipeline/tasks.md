@@ -554,26 +554,26 @@ retry, fallback, errors and records as text.
 
 ### Implementation for User Story 3
 
-- [ ] T079 [P] [US3] Add the non-text primitives in `crates/zerorouter-wire/src/primitives/`:
+- [X] T079 [P] [US3] Add the non-text primitives in `crates/zerorouter-wire/src/primitives/`:
   - `media.rs`: `data_url`, `anthropic_source`, `gemini_inline_data`, `url`;
   - `embeddings.rs`: `float`, `base64_f32le`;
   - `body.rs`: `json`, `multipart` (file parts from `{input.audio}`), `binary`;
   - `audio.rs`: `chat_audio_delta_collect`, which collects `delta.audio.data` from a chat stream into audio bytes (9router parity).
 
   Include unit tests.
-- [ ] T080 [US3] Add the non-text sections to `styles/bundled/openai-chat.toml` ([R16](research.md#r16-non-text-model-types)).
+- [X] T080 [US3] Add the non-text sections to `styles/bundled/openai-chat.toml` ([R16](research.md#r16-non-text-model-types)).
   - Routes and codecs: `/v1/embeddings`, `/v1/images/generations`, `/v1/audio/speech` (binary response), `/v1/audio/transcriptions` (multipart request), and `POST /v1/videos`, `GET /v1/videos/{id}`, `GET /v1/videos/{id}/content`.
-- [ ] T081 [US3] Add the Gemini non-text sections to `styles/bundled/gemini.toml`.
+- [X] T081 [US3] Add the Gemini non-text sections to `styles/bundled/gemini.toml`.
   - `:embedContent` and `:batchEmbedContents`.
   - Image and TTS: the `:generateContent` route selects the type by `generationConfig.responseModalities`.
   - `:predictLongRunning` and `GET /v1beta/operations/{id}`.
-- [ ] T082 [US3] Add the openrouter non-text endpoints to `plugins/bundled/openrouter.toml`.
+- [X] T082 [US3] Add the openrouter non-text endpoints to `plugins/bundled/openrouter.toml`.
   - Embeddings: `POST /api/v1/embeddings`.
   - Image: `POST /api/v1/images`.
   - Video: `POST /api/v1/videos`, then poll `GET /api/v1/videos/{id}`.
   - TTS: its speech endpoint, pending the T087 live check. Otherwise use the chat audio modality with `chat_audio_delta_collect`.
   - Models per type come from the seed.
-- [ ] T083 [US3] Rewrite `plugins/bundled/elevenlabs.toml` as schema 2 (FR-013).
+- [X] T083 [US3] Rewrite `plugins/bundled/elevenlabs.toml` as schema 2 (FR-013).
   - TTS: `POST /v1/text-to-speech/{voice}` and `/stream`, `xi-api-key`, binary audio, the `output_format` query, and voices from the seed.
   - New STT section: `POST /v1/speech-to-text`, multipart, `body = { file = "{input.audio}", model_id = "{model.upstream_id}", language_code = "{input.language?}" }`, `response = { text = "text", language = "language_code" }`, and `models = ["scribe_v2"]`.
   - Never set `webhook`.

@@ -33,6 +33,59 @@ type = "text"
 model = { path = "model" }
 stream = { path_suffix = ":streamGenerateContent" }
 
+# Image and speech share `:generateContent`; the first response modality picks the type
+# (research R16). A request listing TEXT first stays text.
+[[routes]]
+method = "POST"
+path = "/v1beta/models/{model*}:generateContent"
+op = "generate"
+type = "image"
+model = { path = "model" }
+discriminator = { path_equals = ["generationConfig.responseModalities[0]", "IMAGE"] }
+
+[[routes]]
+method = "POST"
+path = "/v1beta/models/{model*}:generateContent"
+op = "generate"
+type = "tts"
+model = { path = "model" }
+discriminator = { path_equals = ["generationConfig.responseModalities[0]", "AUDIO"] }
+
+[[routes]]
+method = "POST"
+path = "/v1beta/models/{model*}:embedContent"
+op = "generate"
+type = "embeddings"
+model = { path = "model" }
+variant = "single"
+
+[[routes]]
+method = "POST"
+path = "/v1beta/models/{model*}:batchEmbedContents"
+op = "generate"
+type = "embeddings"
+model = { path = "model" }
+
+[[routes]]
+method = "POST"
+path = "/v1beta/models/{model*}:predictLongRunning"
+op = "job_submit"
+type = "video"
+model = { path = "model" }
+
+[[routes]]
+method = "GET"
+path = "/v1beta/operations/{id}"
+op = "job_get"
+type = "video"
+
+# Where a finished operation's video `uri` points.
+[[routes]]
+method = "GET"
+path = "/v1beta/files/{id}:download"
+op = "job_content"
+type = "video"
+
 [text.layout]
 system = "system_instruction"
 messages = "contents"
@@ -146,6 +199,34 @@ match = { candidates = [{ finishReason = "{finish}" }] }
 on = "usage"
 data = { usageMetadata = { promptTokenCount = "{usage.input}", candidatesTokenCount = "{usage.output}", cachedContentTokenCount = "{usage.cache_read?}", thoughtsTokenCount = "{usage.reasoning?}", totalTokenCount = "{usage.total?}" }, modelVersion = "{response.model}", responseId = "{response.id}" }
 match = { usageMetadata = { promptTokenCount = "{usage.input}" } }
+
+[embeddings]
+vector = "float"
+request = { requests = [{ model = "{model?}", content = { parts = [{ text = "{input.text}" }] }, taskType = "{params.task_type?}", outputDimensionality = "{params.dimensions?}" }] }
+response = { embeddings = [{ values = "{output.embedding}" }] }
+
+[embeddings.variants.single]
+request = { content = { parts = [{ text = "{input.text}" }] }, taskType = "{params.task_type?}", outputDimensionality = "{params.dimensions?}" }
+response = { embedding = { values = "{output.embedding}" } }
+
+[image]
+request = { contents = [{ parts = [{ text = "{input.prompt}" }] }], generationConfig = { responseModalities = ["IMAGE"], candidateCount = "{params.n?}", imageConfig = { aspectRatio = "{params.aspect_ratio?}" } } }
+response = { candidates = [{ content = { role = "model", parts = [{ inlineData = { mimeType = "{output.mime_type?}", data = "{output.b64_json}" } }] }, finishReason = "STOP" }], usageMetadata = { promptTokenCount = "{usage.input?}", candidatesTokenCount = "{usage.output?}" } }
+
+[tts]
+request = { contents = [{ parts = [{ text = "{input.text}" }] }], generationConfig = { responseModalities = ["AUDIO"], speechConfig = { voiceConfig = { prebuiltVoiceConfig = { voiceName = "{input.voice?}" } } } } }
+response = { candidates = [{ content = { role = "model", parts = [{ inlineData = { mimeType = "{output.mime_type?}", data = "{output.audio}" } }] }, finishReason = "STOP" }], usageMetadata = { promptTokenCount = "{usage.input?}", candidatesTokenCount = "{usage.output?}" } }
+
+[video]
+request = { instances = [{ prompt = "{input.prompt}" }], parameters = { aspectRatio = "{params.aspect_ratio?}", durationSeconds = "{params.duration?}", resolution = "{params.resolution?}", negativePrompt = "{params.negative_prompt?}" } }
+response = "{output.video}"
+
+# A long-running operation; empty objects are pruned, so a pending one has no `error` or
+# `response`.
+[video.job]
+mode = "poll_on_client_request"
+status = { name = "operations/{job.id}", done = "{job.done}", error = "{job.error?}", response = { generateVideoResponse = { generatedSamples = [{ video = { uri = "{job.content_url?}" } }] } } }
+status_map = { queued = "queued", in_progress = "in_progress", completed = "completed", failed = "failed" }
 
 [errors]
 body = { error = { code = "{error.code}", message = "{error.message}", status = "{error.type}", zerorouter = "{error.details}" } }

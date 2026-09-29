@@ -1,33 +1,55 @@
-# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
-schema = 1
+# ElevenLabs (hand-maintained, schema 2; seed tools/gen-bundled/seeds/elevenlabs.json).
+schema = 2
 id = "elevenlabs"
 category = "apikey"
 alias = "el"
 
-[[capabilities.tts.models]]
-id = "eleven_flash_v2_5"
-name = "Flash v2.5 (Fastest)"
-
-[[capabilities.tts.models]]
-id = "eleven_turbo_v2_5"
-name = "Turbo v2.5 (Fast)"
-
-[[capabilities.tts.models]]
-id = "eleven_multilingual_v2"
-name = "Multilingual v2 (Quality)"
-
-[[capabilities.tts.models]]
-id = "eleven_monolingual_v1"
-name = "Monolingual v1 (English)"
-
-[capabilities.tts.endpoint]
-base_url = "https://api.elevenlabs.io/v1/text-to-speech"
-auth_type = "apikey"
-auth_header = "xi-api-key"
-format = "elevenlabs"
-
 [auth]
 kind = "apikey"
+header = "xi-api-key"
+scheme = "raw"
+
+# The streaming path answers with the same audio as the plain one, relayed as it arrives.
+# `voices[0]` is the default when the request names none; 9router's `model/voice` form
+# also works. `output_format` stays the ElevenLabs default (mp3).
+[endpoints.tts]
+url = "https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream"
+body = { text = "{input.text}", model_id = "{model.upstream_id}", voice_settings = { stability = 0.5, similarity_boost = 0.75 } }
+response = {}
+voices = ["21m00Tcm4TlvDq8ikWAM"]
+
+# Never sets `webhook`: the transcript comes back on the same request.
+[endpoints.stt]
+url = "https://api.elevenlabs.io/v1/speech-to-text"
+encoding = "multipart"
+body = { file = "{input.audio}", model_id = "{model.upstream_id}", language_code = "{input.language?}" }
+response = { text = "text", language = "language_code" }
+models = ["scribe_v2"]
+
+[[models]]
+id = "eleven_flash_v2_5"
+name = "Flash v2.5 (Fastest)"
+kind = "tts"
+
+[[models]]
+id = "eleven_turbo_v2_5"
+name = "Turbo v2.5 (Fast)"
+kind = "tts"
+
+[[models]]
+id = "eleven_multilingual_v2"
+name = "Multilingual v2 (Quality)"
+kind = "tts"
+
+[[models]]
+id = "eleven_monolingual_v1"
+name = "Monolingual v1 (English)"
+kind = "tts"
+
+[[models]]
+id = "scribe_v2"
+name = "Scribe v2"
+kind = "stt"
 
 [display]
 name = "ElevenLabs"

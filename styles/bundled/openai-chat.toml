@@ -26,6 +26,55 @@ path = "/v1/models"
 op = "list_models"
 type = "text"
 
+# Non-text routes (research R16). They live here because OpenAI SDK clients of either
+# OpenAI style call them with the same key.
+[[routes]]
+method = "POST"
+path = "/v1/embeddings"
+op = "generate"
+type = "embeddings"
+model = { body = "model" }
+
+[[routes]]
+method = "POST"
+path = "/v1/images/generations"
+op = "generate"
+type = "image"
+model = { body = "model" }
+
+[[routes]]
+method = "POST"
+path = "/v1/audio/speech"
+op = "generate"
+type = "tts"
+model = { body = "model" }
+
+[[routes]]
+method = "POST"
+path = "/v1/audio/transcriptions"
+op = "generate"
+type = "stt"
+model = { body = "model" }
+
+[[routes]]
+method = "POST"
+path = "/v1/videos"
+op = "job_submit"
+type = "video"
+model = { body = "model" }
+
+[[routes]]
+method = "GET"
+path = "/v1/videos/{id}"
+op = "job_get"
+type = "video"
+
+[[routes]]
+method = "GET"
+path = "/v1/videos/{id}/content"
+op = "job_content"
+type = "video"
+
 [text.layout]
 system = "first_message"
 messages = "messages"
@@ -133,6 +182,36 @@ on = "usage"
 when_request = "stream_options.include_usage"
 data = { id = "{response.id}", object = "chat.completion.chunk", created = "{response.created}", model = "{response.model}", choices = [], usage = { prompt_tokens = "{usage.input}", completion_tokens = "{usage.output}", total_tokens = "{usage.total?}", prompt_tokens_details = { cached_tokens = "{usage.cache_read?}" }, completion_tokens_details = { reasoning_tokens = "{usage.reasoning?}" } } }
 match = { usage = { prompt_tokens = "{usage.input}" } }
+
+# `encoding_format` passes through, so the vector comes back in the form the client asked.
+[embeddings]
+request = { model = "{model}", input = "{input.text}", dimensions = "{params.dimensions?}", encoding_format = "{params.encoding_format?}", user = "{params.user?}" }
+response = { object = "list", data = [{ object = "embedding", index = "{output.index}", embedding = "{output.embedding}" }], model = "{response.model}", usage = { prompt_tokens = "{usage.input?}", total_tokens = "{usage.total?}" } }
+
+[image]
+request = { model = "{model}", prompt = "{input.prompt}", n = "{params.n?}", size = "{params.size?}", quality = "{params.quality?}", style = "{params.style?}", response_format = "{params.response_format?}", background = "{params.background?}", output_format = "{params.output_format?}", user = "{params.user?}" }
+response = { created = "{response.created}", data = [{ b64_json = "{output.b64_json?}", url = "{output.url?}", revised_prompt = "{output.revised_prompt?}" }], usage = { input_tokens = "{usage.input?}", output_tokens = "{usage.output?}" } }
+
+# The answer is the audio itself.
+[tts]
+request = { model = "{model}", input = "{input.text}", voice = "{input.voice?}", response_format = "{params.response_format?}", speed = "{params.speed?}", instructions = "{params.instructions?}" }
+response = "{output.audio}"
+
+[stt]
+encoding = "multipart"
+request = { file = "{input.audio}", model = "{model}", language = "{input.language?}", prompt = "{input.prompt?}", response_format = "{params.response_format?}", temperature = "{params.temperature?}" }
+response = { text = "{output.text}", language = "{output.language?}", duration = "{output.duration?}" }
+
+# OpenAI's video API; openrouter's (`duration`, `aspect_ratio`, `resolution`) shares the
+# route. The job body decodes both: openrouter's `error` is a string.
+[video]
+request = { model = "{model}", prompt = "{input.prompt}", seconds = "{params.seconds?}", size = "{params.size?}", duration = "{params.duration?}", aspect_ratio = "{params.aspect_ratio?}", resolution = "{params.resolution?}" }
+response = "{output.video}"
+
+[video.job]
+mode = "poll_on_client_request"
+status = { id = "{job.id}", object = "video", model = "{job.model?}", status = "{job.status}", created_at = "{job.created?}", error = "{job.error?}" }
+status_map = { queued = "queued", in_progress = "in_progress", completed = "completed", failed = "failed" }
 
 [errors]
 body = { error = { message = "{error.message}", type = "{error.type}", code = "{error.code}", zerorouter = "{error.details}" } }

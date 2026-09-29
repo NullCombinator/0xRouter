@@ -3,6 +3,7 @@
 pub mod request;
 pub mod response;
 pub(crate) mod style;
+pub mod types;
 
 pub use style::{EventTpl, PartTpl, Style, TextStyle};
 

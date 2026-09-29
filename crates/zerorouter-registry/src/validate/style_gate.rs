@@ -85,7 +85,7 @@ pub mod placeholders {
     /// Inline provider endpoint bodies (contracts/provider-schema-v2.md).
     pub const PROVIDER_BODY: PlaceholderSet =
         PlaceholderSet(&["model.upstream_id", "input.*", "params.*", "output.*"]);
-    pub const JOB: PlaceholderSet = PlaceholderSet(&["job.id", "job.status", "job.error", "job.created", "job.model"]);
+    pub const JOB: PlaceholderSet = PlaceholderSet(&["job.id", "job.status", "job.error", "job.created", "job.model", "job.done", "job.content_url"]);
 }
 
 /// IR request parameters a style may locate.
@@ -219,6 +219,11 @@ fn semantic_errors(s: &StyleFile) -> Found {
         let base = FieldPath::of(t.as_str());
         check_template(&c.request, placeholders::TYPE_CODEC, &base.key("request"), &mut err);
         check_template(&c.response, placeholders::TYPE_CODEC, &base.key("response"), &mut err);
+        for (name, v) in &c.variants {
+            let at = base.key("variants").key(name.as_str());
+            check_template(&v.request, placeholders::TYPE_CODEC, &at.key("request"), &mut err);
+            check_template(&v.response, placeholders::TYPE_CODEC, &at.key("response"), &mut err);
+        }
         if c.vector.is_some() && t != ModelType::Embeddings {
             err(base.key("vector"), "only the embeddings codec has a vector encoding".into());
         }
@@ -315,6 +320,11 @@ fn check_route(s: &StyleFile, r: &Route, base: &FieldPath, err: &mut impl FnMut(
     let needs_codec = !matches!(r.op, RouteOp::ListModels | RouteOp::GetModel);
     if needs_codec && !s.has_codec(r.model_type) {
         err(base.key("type"), format!("route type {} has no [{}] codec section", r.model_type, r.model_type));
+    }
+    if let Some(v) = &r.variant {
+        if s.type_codec(r.model_type).is_none_or(|c| !c.variants.contains_key(v)) {
+            err(base.key("variant"), format!("{v:?} is not a variant of [{}]", r.model_type));
+        }
     }
     if r.op == RouteOp::CountTokens && s.text.as_ref().is_none_or(|t| t.count_tokens.is_none()) {
         err(base.key("op"), "count_tokens route needs [text.count_tokens]".into());

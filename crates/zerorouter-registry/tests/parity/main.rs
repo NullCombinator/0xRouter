@@ -19,10 +19,6 @@ mod transport;
 pub(crate) const NOT_CARRIED: &[(&str, &str, &str)] = &[
     ("opencode-zen", "systemone", "systemone sections are unsupported (fit check)"),
     ("openrouter", "systemone", "systemone sections are unsupported (fit check)"),
-    ("openrouter", "embedding", "non-text endpoints come with T082"),
-    ("openrouter", "image", "non-text endpoints come with T082"),
-    ("openrouter", "tts", "non-text endpoints come with T082"),
-    ("openrouter", "video", "non-text endpoints come with T082"),
 ];
 
 pub(crate) fn not_carried(provider: &str, ty: &str) -> bool {
