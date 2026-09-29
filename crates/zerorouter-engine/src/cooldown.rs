@@ -71,6 +71,20 @@ impl Cooldowns {
         self.lock().level.get(&(provider.to_owned(), account.to_owned())).copied().unwrap_or(0)
     }
 
+    /// Every active rest: `(provider, account, model, time left)`, sorted.
+    pub fn active(&self) -> Vec<(String, String, String, Duration)> {
+        let now = Instant::now();
+        let mut out: Vec<_> = self
+            .lock()
+            .until
+            .iter()
+            .filter(|(_, u)| **u > now)
+            .map(|((p, a, m), u)| (p.clone(), a.clone(), m.clone(), *u - now))
+            .collect();
+        out.sort();
+        out
+    }
+
     /// The earliest end among the active rests of `keys` (provider, account, model).
     pub fn earliest_end<'a>(&self, keys: impl IntoIterator<Item = (&'a str, &'a str, &'a str)>) -> Option<Instant> {
         let now = Instant::now();

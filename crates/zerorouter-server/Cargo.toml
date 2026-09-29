@@ -20,6 +20,7 @@ zerorouter-engine.workspace = true
 zerorouter-wire.workspace = true
 zerorouter-registry.workspace = true
 url.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 toml.workspace = true

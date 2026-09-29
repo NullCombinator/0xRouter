@@ -5,9 +5,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Subcommand;
-use serde_json::json;
+use serde_json::{Value, json};
 use zerorouter_engine::accounts::{self, Account, Accounts, SecretSource};
 use zerorouter_registry::{OperatorHome, SecretString};
+use zerorouter_server::operator;
 
 #[derive(Subcommand)]
 pub(crate) enum Command {
@@ -21,10 +22,21 @@ pub(crate) enum Command {
         order: Option<i64>,
     },
     /// List accounts, optionally for one provider.
-    List { provider: Option<String> },
-    Remove { provider: String, name: String },
-    Disable { provider: String, name: String },
-    Enable { provider: String, name: String },
+    List {
+        provider: Option<String>,
+    },
+    Remove {
+        provider: String,
+        name: String,
+    },
+    Disable {
+        provider: String,
+        name: String,
+    },
+    Enable {
+        provider: String,
+        name: String,
+    },
 }
 
 fn fail(e: impl std::fmt::Display) -> ExitCode {
@@ -54,7 +66,7 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
     let mut list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
     let (provider, name) = match cmd {
-        Command::List { provider } => return Ok(print_list(&list, provider.as_deref(), as_json)),
+        Command::List { provider } => return Ok(print_list(&home, &list, provider.as_deref(), as_json)),
         Command::Add { provider, name, env, order } => {
             if !accounts::valid_name(&name) {
                 return Err(fail(accounts::AccountError::BadName(name)));
@@ -76,8 +88,17 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
                 None => (SecretSource::Literal, Some(SecretString::new(secret_from_stdin()?))),
             };
             // Without `--order`, a new account goes after the provider's others.
-            let order = order.unwrap_or_else(|| list.iter().filter(|a| a.provider == provider).map(|a| a.order).max().unwrap_or(0));
-            let account = Account { provider: provider.clone(), name: name.clone(), source, secret, order, disabled: false, hosts };
+            let order = order
+                .unwrap_or_else(|| list.iter().filter(|a| a.provider == provider).map(|a| a.order).max().unwrap_or(0));
+            let account = Account {
+                provider: provider.clone(),
+                name: name.clone(),
+                source,
+                secret,
+                order,
+                disabled: false,
+                hosts,
+            };
             list.add(account).map_err(fail)?;
             (provider, name)
         }
@@ -95,16 +116,40 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
         }
     };
     list.save().map_err(fail)?;
-    // The running server picks the file up over the operator socket (T104, T107).
+    let status = super::apply(&home).map_err(fail)?;
     if as_json {
-        println!("{}", json!({"provider": provider, "name": name, "status": "saved"}));
+        println!("{}", json!({"provider": provider, "name": name, "status": status}));
     } else {
-        println!("{provider}/{name}: saved; applies at next start");
+        println!("{provider}/{name}: {status}");
     }
     Ok(ExitCode::SUCCESS)
 }
 
-fn print_list(list: &Accounts, provider: Option<&str>, as_json: bool) -> ExitCode {
+/// `active`, `disabled`, or the running server's rests: `cooling <model> 12 s, …`.
+fn state(a: &Account, live: &Value) -> String {
+    if a.disabled {
+        return "disabled".into();
+    }
+    let rests: Vec<String> = live["accounts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|s| s["provider"] == a.provider.as_str() && s["name"] == a.name.as_str())
+        .flat_map(|s| s["cooling"].as_array().cloned().unwrap_or_default())
+        .map(|c| {
+            format!(
+                "{} {} s",
+                c["model"].as_str().unwrap_or("?"),
+                c["remaining_ms"].as_u64().unwrap_or(0).div_ceil(1000)
+            )
+        })
+        .collect();
+    if rests.is_empty() { "active".into() } else { format!("cooling {}", rests.join(", ")) }
+}
+
+fn print_list(home: &OperatorHome, list: &Accounts, provider: Option<&str>, as_json: bool) -> ExitCode {
+    // Cooldowns live in the running server; without one, every account is at rest.
+    let live = operator::call(home, &json!({"op": "accounts.state"})).unwrap_or(Value::Null);
     let rows: Vec<_> = list
         .iter()
         .filter(|a| provider.is_none_or(|p| a.provider == p))
@@ -114,7 +159,7 @@ fn print_list(list: &Accounts, provider: Option<&str>, as_json: bool) -> ExitCod
                 "name": a.name,
                 "order": a.order,
                 "secret": a.shown_secret(),
-                "state": if a.disabled { "disabled" } else { "active" },
+                "state": state(a, &live),
             })
         })
         .collect();

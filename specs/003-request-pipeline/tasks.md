@@ -644,20 +644,20 @@ queryable from the CLI, account and key management with hot apply, and no secret
 
 ### Tests for User Story 5 ⚠️
 
-- [ ] T098 [US5] Add the usage oracle to `generate.mjs`. Run 9router's usage extraction (`extractUsage*`, `concerns/usage.js`) over the cases in `tests/unit/cached-token-usage.test.js`, `extract-usage-cache-shapes.test.js`, `openai-responses-usage-completed.test.js`, `usage-concern.test.js` and `opencode-go-usage.test.js`, and write `tests/fixtures/9router/usage/*.json`.
-- [ ] T099 [P] [US5] Write `crates/zerorouter-wire/tests/usage.rs`, covering:
+- [X] T098 [US5] Add the usage oracle to `generate.mjs`. Run 9router's usage extraction (`extractUsage*`, `concerns/usage.js`) over the cases in `tests/unit/cached-token-usage.test.js`, `extract-usage-cache-shapes.test.js`, `openai-responses-usage-completed.test.js`, `usage-concern.test.js` and `opencode-go-usage.test.js`, and write `tests/fixtures/9router/usage/*.json`.
+- [X] T099 [P] [US5] Write `crates/zerorouter-wire/tests/usage.rs`, covering:
   - parity with `tests/fixtures/9router/usage/`;
   - Responses nested `input_tokens_details.cached_tokens` → `cache_read` (US5-2);
   - openrouter `prompt_tokens_details.cache_write_tokens` → `cache_write`;
   - Gemini `cachedContentTokenCount` and `thoughtsTokenCount`;
   - an absent field → `None` ("not reported"), never 0 and never an estimate;
   - the Messages→Chat semantics conversion.
-- [ ] T100 [P] [US5] Write `crates/zerorouter-engine/tests/usage_records.rs`. For every chosen text provider × client style, the recorded input, output, cache-read and cache-write equal the mock's reported numbers, and so does the client-visible usage (SC-004).
-- [ ] T101 [P] [US5] Write `crates/zerorouter-server/tests/timing.rs`. A mock with a scripted delay before the first content and before the end must give recorded `ttft_ms` and `total_ms` within 10 ms of what the test client measures (SC-005). A streamed record is never missing TTFT.
-- [ ] T102 [P] [US5] Write `crates/zerorouter-server/tests/secrets.rs`.
+- [X] T100 [P] [US5] Write `crates/zerorouter-engine/tests/usage_records.rs`. For every chosen text provider × client style, the recorded input, output, cache-read and cache-write equal the mock's reported numbers, and so does the client-visible usage (SC-004).
+- [X] T101 [P] [US5] Write `crates/zerorouter-server/tests/timing.rs`. A mock with a scripted delay before the first content and before the end must give recorded `ttft_ms` and `total_ms` within 10 ms of what the test client measures (SC-005). A streamed record is never missing TTFT.
+- [X] T102 [P] [US5] Write `crates/zerorouter-server/tests/secrets.rs`.
   - Configure sentinel secrets (`SENTINEL-PROVIDER-…`, and an agent key) and have the mock echo the provider secret in an error body and a header.
   - Scan the captured logs, every record, every client response (bodies and headers), CLI output, the headers the mock received beyond the auth header, and the plugin-visible `Registry` debug output. There must be zero occurrences (SC-006, US5-5, FR-033).
-- [ ] T103 [P] [US5] Write `crates/zerorouter-cli/tests/operator.rs` against a running test server.
+- [X] T103 [P] [US5] Write `crates/zerorouter-cli/tests/operator.rs` against a running test server.
   - `records list --provider`, `--model` and `records show` return exactly the matching records (US5-3).
   - `accounts add`, `list`, `remove`, `disable` and `enable`, and `keys issue`, `list` and `revoke`, apply to the next request without a restart (US5-4).
   - A revoked key is rejected at once.
@@ -666,18 +666,18 @@ queryable from the CLI, account and key management with hot apply, and no secret
 
 ### Implementation for User Story 5
 
-- [ ] T104 [US5] Implement the operator socket in `crates/zerorouter-server/src/operator.rs` ([contracts/operator-cli.md § Operator socket protocol](contracts/operator-cli.md#operator-socket-protocol)).
+- [X] T104 [US5] Implement the operator socket in `crates/zerorouter-server/src/operator.rs` ([contracts/operator-cli.md § Operator socket protocol](contracts/operator-cli.md#operator-socket-protocol)).
   - A Unix socket at `$ZEROROUTER_HOME/run/operator.sock`, mode 0600, carrying NDJSON: `reload`, `records.list`, `records.get` and `accounts.state`.
   - A failed reload keeps the previous snapshot and returns the error.
   - Remove a stale socket at start.
-- [ ] T105 [US5] Complete record filling in `crates/zerorouter-engine/src/attempt.rs` and `src/records.rs`.
+- [X] T105 [US5] Complete record filling in `crates/zerorouter-engine/src/attempt.rs` and `src/records.rs`.
   - Usage is merged per field (last value wins) and summed across segments.
   - `ttft_ms` is taken at the first content event written to the client, and `total_ms` at the last byte written. Both are measured from request arrival at the server's socket write, so the server reports write times back to the engine.
   - Carry `break_handling`, `served_by`, `job` and `model_type`.
   - Every string field passes through the redactor.
-- [ ] T106 [US5] Implement `records list [--provider P] [--model UNIFIED] [--limit N] [--json]` and `records show <rq_id> [--json]` in `crates/zerorouter-cli/src/cmd/records.rs`. The text layout follows [contracts/operator-cli.md § records show](contracts/operator-cli.md#records-show-output-text), with `not reported` for `None` usage fields. Each attempt lists its `dropped` paths and reasons (T150).
-- [ ] T107 [US5] Complete `accounts list|remove|disable|enable` in `crates/zerorouter-cli/src/cmd/accounts.rs` and `keys list|revoke` in `crates/zerorouter-cli/src/cmd/keys.rs`. Each mutating command writes atomically and then sends `reload` over the socket, printing `applied` or `saved; applies at next start`.
-- [ ] T108 [US5] Run `cargo test -p zerorouter-wire --test usage`, `-p zerorouter-engine --test usage_records`, `-p zerorouter-server --test timing --test secrets` and `-p zerorouter-cli --test operator`, then fix until green.
+- [X] T106 [US5] Implement `records list [--provider P] [--model UNIFIED] [--limit N] [--json]` and `records show <rq_id> [--json]` in `crates/zerorouter-cli/src/cmd/records.rs`. The text layout follows [contracts/operator-cli.md § records show](contracts/operator-cli.md#records-show-output-text), with `not reported` for `None` usage fields. Each attempt lists its `dropped` paths and reasons (T150).
+- [X] T107 [US5] Complete `accounts list|remove|disable|enable` in `crates/zerorouter-cli/src/cmd/accounts.rs` and `keys list|revoke` in `crates/zerorouter-cli/src/cmd/keys.rs`. Each mutating command writes atomically and then sends `reload` over the socket, printing `applied` or `saved; applies at next start`.
+- [X] T108 [US5] Run `cargo test -p zerorouter-wire --test usage`, `-p zerorouter-engine --test usage_records`, `-p zerorouter-server --test timing --test secrets` and `-p zerorouter-cli --test operator`, then fix until green.
 
 **Checkpoint**: Every request is traceable from its error message to its full record.
 

@@ -128,7 +128,8 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
         Answer::Events { rx, forced: false } => {
             let framing = client.text().map_or(Framing::SseData, |t| t.framing);
             let (tx, out) = mpsc::channel::<Result<Bytes, Infallible>>(attempt::CHANNEL);
-            tokio::spawn(write_stream(client, framing, inc.body, id.clone(), rx, tx));
+            let written = Written { engine: engine.clone(), id: id.clone(), arrived: inc.arrived };
+            tokio::spawn(write_stream(client, framing, inc.body, written, rx, tx));
             let mut out = out;
             let body = futures_util::stream::poll_fn(move |cx| out.poll_recv(cx));
             // The streamed body now owns the cancellation.
@@ -139,41 +140,62 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
     }
 }
 
+/// Where a stream writer reports its write times: the record's TTFT is the first content
+/// handed to the client's socket, its total the last byte (T105).
+struct Written {
+    engine: Arc<Engine>,
+    id: String,
+    arrived: Instant,
+}
+
+impl Written {
+    fn ms(&self) -> f64 {
+        self.arrived.elapsed().as_secs_f64() * 1000.0
+    }
+}
+
 /// Writes the answer as the client's stream bytes until it ends or the client goes. The
 /// writer closes the stream only if it wrote it: relayed frames carry their own ending.
 async fn write_stream(
     client: Arc<Style>,
     framing: Framing,
     body: Value,
-    id: String,
+    written: Written,
     mut rx: mpsc::Receiver<Piece>,
     tx: mpsc::Sender<Result<Bytes, Infallible>>,
 ) {
-    let Ok(mut w) = StreamWriter::new(&client, &body, &id, "", unix_now()) else { return };
-    let mut relayed = false;
+    let Ok(mut w) = StreamWriter::new(&client, &body, &written.id, "", unix_now()) else { return };
+    let (mut relayed, mut first) = (false, true);
     while let Some(piece) = rx.recv().await {
-        let out = match piece {
+        let (out, content) = match piece {
             Piece::Event(ev) => {
                 // Written content after relayed frames (a resumed answer): the writer ends it.
                 relayed &= !ev.is_output();
-                w.write(&ev)
+                (w.write(&ev), ev.is_output())
             }
             Piece::Frame(f, events) => {
                 w.observe(&events);
                 relayed = true;
-                f.to_bytes(framing).unwrap_or_default()
+                (f.to_bytes(framing).unwrap_or_default(), events.iter().any(|e| e.is_output()))
             }
             Piece::Restart => {
                 relayed = false;
-                w.restart()
+                (w.restart(), true)
             }
         };
         if !out.is_empty() && tx.send(Ok(Bytes::from(out))).await.is_err() {
             return;
         }
+        if content && first {
+            first = false;
+            let at = written.ms();
+            written.engine.records.update(&written.id, |r| r.ttft_ms = Some(at));
+        }
     }
     let out = if relayed { String::new() } else { w.end() };
-    if !out.is_empty() {
-        let _ = tx.send(Ok(Bytes::from(out))).await;
+    if !out.is_empty() && tx.send(Ok(Bytes::from(out))).await.is_err() {
+        return;
     }
+    let at = written.ms();
+    written.engine.records.update(&written.id, |r| r.total_ms = Some(at));
 }

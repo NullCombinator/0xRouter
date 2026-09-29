@@ -18,9 +18,14 @@ pub(crate) enum Command {
     },
     List,
     /// Revoke a key by name or id.
-    Revoke { key: String },
+    Revoke {
+        key: String,
+    },
     /// Per-key break behaviour: `restart`, `error_event`, or `default`.
-    SetBreak { key: String, behaviour: String },
+    SetBreak {
+        key: String,
+        behaviour: String,
+    },
 }
 
 fn fail(e: impl std::fmt::Display) -> ExitCode {
@@ -29,7 +34,8 @@ fn fail(e: impl std::fmt::Display) -> ExitCode {
 }
 
 fn behaviour(s: &str) -> Result<BreakBehaviour, ExitCode> {
-    BreakBehaviour::parse(s).ok_or_else(|| fail(format!("unknown break behaviour {s:?}; allowed: restart, error_event")))
+    BreakBehaviour::parse(s)
+        .ok_or_else(|| fail(format!("unknown break behaviour {s:?}; allowed: restart, error_event")))
 }
 
 pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
@@ -42,11 +48,12 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
             let (key, rec) = list.issue(&name, b).map_err(fail)?;
             let (id, name) = (rec.id.clone(), rec.name.clone());
             list.save().map_err(fail)?;
+            let status = super::apply(&home).map_err(fail)?;
             // The only time the key is shown: stdout carries just the key, for scripts.
             if as_json {
-                println!("{}", json!({"id": id, "name": name, "key": key}));
+                println!("{}", json!({"id": id, "name": name, "key": key, "status": status}));
             } else {
-                eprintln!("issued {id} ({name}); it is shown once, only its digest is stored:");
+                eprintln!("issued {id} ({name}), {status}; it is shown once, only its digest is stored:");
                 println!("{key}");
             }
             return Ok(ExitCode::SUCCESS);
@@ -62,11 +69,11 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
         }
     };
     list.save().map_err(fail)?;
-    // The running server picks the file up over the operator socket (T104, T107).
+    let status = super::apply(&home).map_err(fail)?;
     if as_json {
-        println!("{}", json!({"key": done, "status": "saved"}));
+        println!("{}", json!({"key": done, "status": status}));
     } else {
-        println!("{done}: saved; applies at next start");
+        println!("{done}: {status}");
     }
     Ok(ExitCode::SUCCESS)
 }

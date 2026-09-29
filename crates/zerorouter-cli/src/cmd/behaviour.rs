@@ -38,8 +38,8 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command) -> Result<ExitCode, ExitC
     std::fs::write(&tmp, &text)
         .and_then(|()| std::fs::rename(&tmp, &path))
         .map_err(|e| fail(format!("{}: {e}", path.display())))?;
-    // The running server picks the file up over the operator socket (T104).
-    println!("break_behaviour = {}: saved; applies at next start", b.as_str());
+    let status = crate::cmd::apply(&home).map_err(fail)?;
+    println!("break_behaviour = {}: {status}", b.as_str());
     Ok(ExitCode::SUCCESS)
 }
 

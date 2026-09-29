@@ -789,6 +789,64 @@ const backoff = Array.from({ length: 17 }, (_, level) => ({ level, cooldown_ms: 
 mkdirSync(join(fixDir, "classify"), { recursive: true });
 writeFixture(join("classify", "cases.json"), { cases: classifyCases, backoff });
 
+// ── Usage oracle (T098) ─────────────────────────────────────────────────────
+//
+// 9router's canonical usage (canonicalizeUsage: prompt includes cache, cached_tokens and
+// cache_creation_input_tokens are subsets) for whole bodies (extractUsageFromResponse) and
+// streams (extractUsage per event, mergeUsage across them), over the shapes in
+// cached-token-usage, extract-usage-cache-shapes, openai-responses-usage-completed and
+// usage-concern. opencode-go-usage covers the quota endpoint, not token counts, and adds none.
+const { canonicalizeUsage, extractUsage: extractUsageEv, mergeUsage: mergeUsageEv } = await imp("open-sse/utils/usageTracking.js");
+const { extractUsageFromResponse } = await imp("open-sse/handlers/chatCore/requestDetail.js");
+const usageCases = [];
+const wholeUsage = (name, style, body) => usageCases.push({ name, style, kind: "whole", input: body, canonical: canonicalizeUsage(extractUsageFromResponse(body)) });
+const streamUsage = (name, style, events) => {
+  let u = null;
+  for (const ev of events) {
+    const x = extractUsageEv(ev);
+    if (x) u = mergeUsageEv(u, x);
+  }
+  usageCases.push({ name, style, kind: "stream", input: events, canonical: canonicalizeUsage(u) });
+};
+const msg = (usage) => ({ id: "msg_1", type: "message", role: "assistant", model: "m", content: [{ type: "text", text: "hi" }], stop_reason: "end_turn", usage });
+wholeUsage("claude-cache-fold", "claude", msg({ input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 200, cache_creation_input_tokens: 30 }));
+wholeUsage("claude-first-write", "claude", msg({ input_tokens: 100, output_tokens: 20, cache_creation_input_tokens: 10 }));
+wholeUsage("claude-no-cache", "claude", msg({ input_tokens: 50, output_tokens: 5 }));
+const chat = (usage) => ({ id: "c1", object: "chat.completion", model: "m", choices: [{ index: 0, message: { role: "assistant", content: "hi" }, finish_reason: "stop" }], usage });
+wholeUsage("openai-nested-cache", "openai", chat({ prompt_tokens: 300, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 240 } }));
+wholeUsage("openai-reasoning", "openai", chat({ prompt_tokens: 884, completion_tokens: 37, total_tokens: 921, prompt_tokens_details: { cached_tokens: 256 }, completion_tokens_details: { reasoning_tokens: 12 } }));
+wholeUsage("openai-no-cache", "openai", chat({ prompt_tokens: 7, completion_tokens: 4 }));
+const resp = (usage) => ({ id: "resp_1", object: "response", created_at: 1, status: "completed", model: "m", output: [{ type: "message", id: "m1", role: "assistant", content: [{ type: "output_text", text: "hi" }] }], usage });
+wholeUsage("responses-cache-inclusive", "openai-responses", resp({ input_tokens: 25421, output_tokens: 5, total_tokens: 25426, input_tokens_details: { cached_tokens: 24320 } }));
+const gem = (usageMetadata) => ({ candidates: [{ content: { role: "model", parts: [{ text: "hi" }] }, finishReason: "STOP", index: 0 }], usageMetadata, modelVersion: "m", responseId: "r1" });
+wholeUsage("gemini-cached-thoughts", "gemini", gem({ promptTokenCount: 500, candidatesTokenCount: 80, thoughtsTokenCount: 40, totalTokenCount: 620, cachedContentTokenCount: 120 }));
+wholeUsage("gemini-plain", "gemini", gem({ promptTokenCount: 100, candidatesTokenCount: 40, totalTokenCount: 140 }));
+streamUsage("claude-split-start-delta", "claude", [
+  { type: "message_start", message: { id: "msg_1", type: "message", role: "assistant", model: "m", content: [], usage: { input_tokens: 100, output_tokens: 1, cache_read_input_tokens: 200, cache_creation_input_tokens: 30 } } },
+  { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+  { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "hi" } },
+  { type: "content_block_stop", index: 0 },
+  { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 50 } },
+  { type: "message_stop" },
+]);
+const chunk = (delta, finish, extra = {}) => ({ id: "c1", object: "chat.completion.chunk", model: "m", choices: [{ index: 0, delta, finish_reason: finish }], ...extra });
+streamUsage("openai-usage-trailer", "openai", [
+  chunk({ role: "assistant", content: "hi" }, null),
+  chunk({}, "stop"),
+  { id: "c1", object: "chat.completion.chunk", model: "m", choices: [], usage: { prompt_tokens: 884, completion_tokens: 37, total_tokens: 921, prompt_tokens_details: { cached_tokens: 256 } } },
+]);
+streamUsage("responses-completed", "openai-responses", [
+  { type: "response.created", sequence_number: 0, response: { id: "resp_1", object: "response", status: "in_progress", model: "m", output: [] } },
+  { type: "response.output_text.delta", sequence_number: 1, item_id: "m1", output_index: 0, content_index: 0, delta: "hi" },
+  { type: "response.completed", sequence_number: 2, response: { id: "resp_1", object: "response", status: "completed", model: "m", output: [], usage: { input_tokens: 884, output_tokens: 37, total_tokens: 921, input_tokens_details: { cached_tokens: 256 }, output_tokens_details: { reasoning_tokens: 12 } } } },
+]);
+streamUsage("gemini-stream", "gemini", [
+  { candidates: [{ content: { role: "model", parts: [{ text: "hi" }] } }], usageMetadata: { promptTokenCount: 500, totalTokenCount: 500 } },
+  { candidates: [{ content: { role: "model", parts: [{ text: "!" }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 500, candidatesTokenCount: 80, thoughtsTokenCount: 40, totalTokenCount: 620, cachedContentTokenCount: 120 } },
+]);
+mkdirSync(join(fixDir, "usage"), { recursive: true });
+writeFixture(join("usage", "cases.json"), { cases: usageCases });
+
 console.log(`ref/9router@${SHA}`);
 console.log(`  ${plugins.length} plugins, ${credentials.length} credentials (${credentials.map((c) => c.provider_id).join(", ")})`);
 console.log(`  ${oauthParamKeys.size} oauth params, ${sectionFormats.size} section formats, ${lookupRows.length} lookup rows`);

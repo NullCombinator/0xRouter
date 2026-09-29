@@ -131,6 +131,7 @@ tool_calls = "tool_calls"
 input = "usage.prompt_tokens"
 output = "usage.completion_tokens"
 cache_read = "usage.prompt_tokens_details.cached_tokens"
+cache_write = "usage.prompt_tokens_details.cache_write_tokens"
 reasoning = "usage.completion_tokens_details.reasoning_tokens"
 input_semantics = "includes_cache"
 

@@ -19,6 +19,7 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+reqwest.workspace = true
 zerorouter-engine = { workspace = true, features = ["testkit"] }
 
 [[bin]]
