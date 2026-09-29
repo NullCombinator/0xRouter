@@ -13,7 +13,8 @@
 //! streams in the wire's own style, the provider's frames go out unchanged (R5, FR-041),
 //! and each is still read for usage, errors and time to first token. Every await also
 //! watches the request's `CancellationToken`, so a client that goes away stops the
-//! upstream work, including a backoff sleep.
+//! upstream work, including a backoff sleep. A break after content is resumed by the
+//! next attempt as [`breaks`](crate::breaks) decides.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -25,9 +26,11 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
 use tokio_util::sync::CancellationToken;
-use zerorouter_registry::schema::{BodyEncoding, Endpoint, Framing, InputSemantics, ModelType, RouteOp};
-use zerorouter_registry::template::{FieldPath, Template};
 use zerorouter_registry::Resolution;
+use zerorouter_registry::schema::{
+    BodyEncoding, BreakBehaviour, Endpoint, Framing, InputSemantics, ModelType, RouteOp,
+};
+use zerorouter_registry::template::{FieldPath, Template};
 use zerorouter_wire::codec::request::{self, Edits};
 use zerorouter_wire::codec::response::{self, ForClient};
 use zerorouter_wire::codec::types::{self, JobStatus, TypeCodec, TypeValue};
@@ -35,15 +38,18 @@ use zerorouter_wire::codec::{Dropped, Style};
 use zerorouter_wire::error_body::{self, Tried};
 use zerorouter_wire::ir::{self, ErrorEvent, Event};
 use zerorouter_wire::primitives::{body as encodings, session};
-use zerorouter_wire::template::Bindings;
 use zerorouter_wire::stream::{Frame, Framer, StreamReader, StreamWriter, usage_unasked};
+use zerorouter_wire::template::Bindings;
 
 use crate::accounts;
+use crate::breaks::{self, Broken, Resume, Seen};
 use crate::classify::{self, Verdict};
 use crate::jobs::Job;
 use crate::keys::AgentId;
 use crate::plan::{self, Candidate, Step, Warm};
-use crate::records::{Attempt, AttemptKind, AttemptOutcome, BreakHandling, ErrorClass, JobRef, Outcome, ServedBy, Usage};
+use crate::records::{
+    Attempt, AttemptKind, AttemptOutcome, BreakHandling, ErrorClass, JobRef, Outcome, ServedBy, Usage,
+};
 use crate::state::{Engine, EngineState};
 use crate::upstream::{self, RequestParts};
 
@@ -97,10 +103,18 @@ pub enum MediaAnswer {
 /// What the provider answered.
 pub enum Answer {
     /// A non-stream answer: the provider's bytes, and what the client gets from them.
-    Whole { status: u16, content_type: Option<String>, raw: Bytes, answer: Box<ForClient> },
+    Whole {
+        status: u16,
+        content_type: Option<String>,
+        raw: Bytes,
+        answer: Box<ForClient>,
+    },
     /// A streamed answer. `forced`: the endpoint streams but the client didn't ask to;
     /// collect it with [`collect`].
-    Events { rx: mpsc::Receiver<Piece>, forced: bool },
+    Events {
+        rx: mpsc::Receiver<Piece>,
+        forced: bool,
+    },
     Media(MediaAnswer),
 }
 
@@ -110,8 +124,12 @@ pub enum Piece {
     /// An IR event, for the client's stream writer.
     Event(Event),
     /// A provider frame for a client streaming in the wire's own style: relayed with its
-    /// event name and data unchanged, and no writer involved.
-    Frame(Frame),
+    /// event name and data unchanged. The writer only observes its events, so the counters
+    /// hold if a later segment is written after a break.
+    Frame(Frame, Vec<Event>),
+    /// The answer restarts after a break (research R9): the writer closes the open block
+    /// and writes the note; a collector starts over.
+    Restart,
 }
 
 /// How the stream task hands the provider's stream on.
@@ -157,11 +175,22 @@ fn session_input(agent: &AgentId) -> String {
 }
 
 /// The upstream body for `c` and the client keys it couldn't carry.
-fn body_for(req: &TextRequest, c: &Candidate<'_>, wire: &Style, upstream_stream: bool) -> Result<(Value, Vec<Dropped>), Failure> {
+fn body_for(
+    req: &TextRequest,
+    c: &Candidate<'_>,
+    wire: &Style,
+    upstream_stream: bool,
+) -> Result<(Value, Vec<Dropped>), Failure> {
     let usage_switch = Edits { include_usage: upstream_stream, ..Edits::default() };
-    let carry = |e: zerorouter_wire::codec::CodecError| Failure::new(400, format!("0router: {} can't take this request: {e}", c.provider.id));
+    let carry = |e: zerorouter_wire::codec::CodecError| {
+        Failure::new(400, format!("0router: {} can't take this request: {e}", c.provider.id))
+    };
     if c.same_style(&req.client.id) {
-        let edits = Edits { model: Some(&c.upstream_id), stream: c.endpoint.force_stream.then_some(true), include_usage: upstream_stream };
+        let edits = Edits {
+            model: Some(&c.upstream_id),
+            stream: c.endpoint.force_stream.then_some(true),
+            include_usage: upstream_stream,
+        };
         return Ok((request::forward(&req.body, wire, &edits).map_err(carry)?, Vec::new()));
     }
     let mut ir = req.ir.clone();
@@ -247,10 +276,16 @@ fn error_message(raw: &[u8]) -> String {
     let text = String::from_utf8_lossy(raw);
     let v: Option<Value> = serde_json::from_str(&text).ok();
     let found = v.as_ref().and_then(|v| {
-        [v.pointer("/error/message"), v.pointer("/message"), v.pointer("/error"), v.pointer("/detail/message"), v.pointer("/detail")]
-            .into_iter()
-            .flatten()
-            .find_map(|m| m.as_str().map(str::to_owned))
+        [
+            v.pointer("/error/message"),
+            v.pointer("/message"),
+            v.pointer("/error"),
+            v.pointer("/detail/message"),
+            v.pointer("/detail"),
+        ]
+        .into_iter()
+        .flatten()
+        .find_map(|m| m.as_str().map(str::to_owned))
     });
     found.unwrap_or_else(|| text.chars().take(500).collect())
 }
@@ -269,13 +304,21 @@ struct Fail {
     indicated: Option<Duration>,
     /// The client had received content when it failed.
     after_output: bool,
-    /// The client already got the provider's error event.
-    told: bool,
+    /// What the cut answer reported, for the record.
+    usage: Option<Usage>,
 }
 
 impl Fail {
     fn transport(class: ErrorClass, reason: String, after_output: bool) -> Self {
-        Fail { status: None, verdict: classify::transport(class), message: reason.clone(), reason, indicated: None, after_output, told: false }
+        Fail {
+            status: None,
+            verdict: classify::transport(class),
+            message: reason.clone(),
+            reason,
+            indicated: None,
+            after_output,
+            usage: None,
+        }
     }
 }
 
@@ -293,6 +336,14 @@ struct Run {
     /// The client stream, once a provider started one.
     tx: Option<mpsc::Sender<Piece>>,
     n: u32,
+    /// What the client has seen of the current answer.
+    seen: Seen,
+    /// A break after output that the next attempt resumes.
+    broken: Option<Broken>,
+    /// A break happened: later segments are written as events, never relayed as frames.
+    segmented: bool,
+    /// Usage of the segments cut by breaks, added to the answer's.
+    carried: Option<Usage>,
 }
 
 fn cooldown_key<'c>(c: &'c Candidate<'_>) -> (&'c str, &'c str, &'c str) {
@@ -307,7 +358,17 @@ impl Engine {
     /// Runs one text generation request against `st`.
     pub async fn text(self: &Arc<Self>, st: Arc<EngineState>, req: TextRequest) -> Result<Answer, Failure> {
         let (first, answer) = oneshot::channel();
-        let run = Run { engine: self.clone(), req, first: Some(first), tx: None, n: 0 };
+        let run = Run {
+            engine: self.clone(),
+            req,
+            first: Some(first),
+            tx: None,
+            n: 0,
+            seen: Seen::default(),
+            broken: None,
+            segmented: false,
+            carried: None,
+        };
         tokio::spawn(run.run(st));
         answer.await.unwrap_or_else(|_| Err(Failure::new(500, "0router: the request ended without an answer")))
     }
@@ -327,7 +388,16 @@ impl Run {
         if let Some(first) = self.first.take() {
             let _ = first.send(Err(f));
         } else if let Some(tx) = self.tx.take() {
+            if let Some(b) = self.broken.take() {
+                self.engine.records.update(self.id(), |r| {
+                    if r.break_handling == BreakHandling::None {
+                        r.break_handling = BreakHandling::ErrorEvent { reason: b.reason };
+                    }
+                });
+            }
             let ev = Event::Error(ErrorEvent { status: Some(f.status), kind: None, message: f.message, raw: None });
+            // The open block closes before the error event.
+            let _ = tx.send(Piece::Event(Event::BlockStop)).await;
             let _ = tx.send(Piece::Event(ev)).await;
         }
     }
@@ -346,7 +416,9 @@ impl Run {
         // 9router's `provider/model/voice` form for a TTS target: the prefix names a model
         // declared as TTS and the whole target doesn't (an undeclared id would pass through).
         let declared = |t: &str| match st.registry.resolve(t) {
-            Ok(Resolution::Direct { provider, requested, .. }) => st.registry.model(&provider.id, requested).is_ok_and(|m| m.kind.is_some()),
+            Ok(Resolution::Direct { provider, requested, .. }) => {
+                st.registry.model(&provider.id, requested).is_ok_and(|m| m.kind.is_some())
+            }
             Ok(Resolution::Unified(_)) => true,
             Err(_) => false,
         };
@@ -386,7 +458,13 @@ impl Run {
             if let Some(until) = self.engine.cooldowns.cooling(key.0, key.1, key.2) {
                 rested.push(key);
                 let secs = until.saturating_duration_since(time::Instant::now()).as_secs_f64().ceil();
-                self.skip(&c.provider.id, c.account.map(|a| a.name.clone()), &c.upstream_id, &format!("cooling down for {secs} s"), &mut tried);
+                self.skip(
+                    &c.provider.id,
+                    c.account.map(|a| a.name.clone()),
+                    &c.upstream_id,
+                    &format!("cooling down for {secs} s"),
+                    &mut tried,
+                );
                 continue;
             }
             let kind = match prev {
@@ -402,13 +480,23 @@ impl Run {
         }
         self.end_request(Outcome::Failed, None);
         let summary = format!("0router: no provider could serve {}", self.req.target);
-        let retry_after = self.engine.cooldowns.earliest_end(rested).map(|u| u.saturating_duration_since(time::Instant::now()).as_secs_f64().ceil().max(1.0) as u64);
+        let retry_after = self
+            .engine
+            .cooldowns
+            .earliest_end(rested)
+            .map(|u| u.saturating_duration_since(time::Instant::now()).as_secs_f64().ceil().max(1.0) as u64);
         let message = error_body::message(&summary, self.id(), &tried);
         Err(Failure { status: 503, message, retry_after, tried })
     }
 
     /// Tries `c` with its same-account retries. `Ok(true)`: answered.
-    async fn candidate(&mut self, st: &EngineState, c: &Candidate<'_>, kind: AttemptKind, tried: &mut Vec<Tried>) -> Result<bool, Failure> {
+    async fn candidate(
+        &mut self,
+        st: &EngineState,
+        c: &Candidate<'_>,
+        kind: AttemptKind,
+        tried: &mut Vec<Tried>,
+    ) -> Result<bool, Failure> {
         let account = c.account.map(|a| a.name.clone());
         let skip = |run: &mut Self, reason: String, tried: &mut Vec<Tried>| {
             run.skip(&c.provider.id, account.clone(), &c.upstream_id, &reason, tried);
@@ -418,7 +506,13 @@ impl Run {
             None => None,
             Some(w) => match st.style(w) {
                 Some(s) => Some(s.clone()),
-                None => return skip(self, format!("0router: provider {} names a wire that isn't loaded", c.provider.id), tried),
+                None => {
+                    return skip(
+                        self,
+                        format!("0router: provider {} names a wire that isn't loaded", c.provider.id),
+                        tried,
+                    );
+                }
             },
         };
         let outbound = match (&self.req.media, &wire) {
@@ -426,13 +520,22 @@ impl Run {
                 Ok(o) => o,
                 Err(reason) => return skip(self, reason, tried),
             },
-            (None, None) => return skip(self, format!("0router: provider {} has a text endpoint with no wire", c.provider.id), tried),
+            (None, None) => {
+                return skip(
+                    self,
+                    format!("0router: provider {} has a text endpoint with no wire", c.provider.id),
+                    tried,
+                );
+            }
             (None, Some(wire)) => {
                 let upstream_stream = self.req.stream || c.endpoint.force_stream;
                 match body_for(&self.req, c, wire, upstream_stream) {
-                    Ok((body, dropped)) => {
-                        Outbound { body: Bytes::from(body.to_string()), content_type: "application/json".into(), voice: None, dropped }
-                    }
+                    Ok((body, dropped)) => Outbound {
+                        body: Bytes::from(body.to_string()),
+                        content_type: "application/json".into(),
+                        voice: None,
+                        dropped,
+                    },
                     Err(f) => return skip(self, f.message, tried),
                 }
             }
@@ -441,11 +544,34 @@ impl Run {
         let mut retries = 0;
         let mut budget = None;
         loop {
-            let out = match self.outgoing(st, c, &outbound) {
+            let prefilled;
+            let ob = match self.broken.as_ref().map(|b| b.reason.clone()) {
+                None => &outbound,
+                Some(reason) => match wire.as_deref().map(|w| breaks::continuation(&self.req, c, w, &self.seen)) {
+                    Some(Ok((body, dropped))) => {
+                        kind = AttemptKind::Continuation;
+                        self.resume_with(Resume::Continue);
+                        prefilled = Outbound {
+                            body: Bytes::from(body.to_string()),
+                            content_type: "application/json".into(),
+                            voice: None,
+                            dropped,
+                        };
+                        &prefilled
+                    }
+                    _ if st.break_behaviour(&self.req.agent.key) == BreakBehaviour::Restart => {
+                        kind = AttemptKind::Restart;
+                        self.resume_with(Resume::Restart);
+                        &outbound
+                    }
+                    _ => return Err(self.broke_off(c, reason, tried)),
+                },
+            };
+            let out = match self.outgoing(st, c, ob) {
                 Ok(o) => o,
                 Err(reason) => return skip(self, reason, tried),
             };
-            self.start_attempt(c, kind, outbound.dropped.clone());
+            self.start_attempt(c, kind, ob.dropped.clone());
             let f = match self.once(st, c, wire.as_ref(), out).await {
                 Ended::Ok(usage) => {
                     self.succeed(c, usage);
@@ -459,7 +585,11 @@ impl Run {
                 Ended::Failed(f) => f,
             };
             let (p, a, m) = cooldown_key(c);
-            self.end_attempt(AttemptOutcome::Failed { status: f.status, class: f.verdict.class, reason: f.reason.clone() }, None);
+            self.end_attempt(
+                AttemptOutcome::Failed { status: f.status, class: f.verdict.class, reason: f.reason.clone() },
+                f.usage,
+            );
+            self.carry(f.usage);
             let line = |reason: String, retries| Tried {
                 provider: c.provider.id.clone(),
                 account: account.clone(),
@@ -469,29 +599,36 @@ impl Run {
                 reason,
                 retries,
             };
-            if f.after_output {
-                // Restart and continuation come with US4; until then the client is told.
-                self.engine.cooldowns.fail(p, a, m, &f.verdict);
-                tried.push(line(f.reason.clone(), retries));
-                let why = f.reason.clone();
-                self.engine.records.update(self.id(), |r| r.break_handling = BreakHandling::ErrorEvent { reason: why });
-                self.end_request(Outcome::Failed, None);
-                if f.told {
-                    self.tx = None;
+            if f.after_output && !self.req.stream {
+                // A collected answer: the client saw nothing, so the collector starts over.
+                if !self.send(Piece::Restart).await {
+                    self.end_request(Outcome::Cancelled, None);
+                    return Err(Failure::new(499, "0router: the client went away"));
                 }
-                let summary = format!("0router: the answer from {} broke off", c.provider.id);
-                return Err(Failure { status: 502, message: error_body::message(&summary, self.id(), tried), retry_after: None, tried: tried.clone() });
+                self.seen = Seen::default();
+            } else if f.after_output {
+                self.segmented = true;
+                if self.seen.open == breaks::Open::ToolCall {
+                    self.engine.cooldowns.fail(p, a, m, &f.verdict);
+                    tried.push(line(f.reason.clone(), retries));
+                    let reason = format!("the stream broke while a tool call was being sent: {}", f.reason);
+                    return Err(self.broke_off(c, reason, tried));
+                }
+                self.broken.get_or_insert_with(|| Broken { reason: f.reason.clone(), resume: None });
             }
             if !f.verdict.fallback {
                 tried.push(line(f.reason.clone(), retries));
                 self.end_request(Outcome::Failed, None);
-                if f.told {
-                    self.tx = None;
-                }
                 let message = error_body::message(&f.message, self.id(), tried);
-                return Err(Failure { status: f.status.unwrap_or(502), message, retry_after: None, tried: tried.clone() });
+                return Err(Failure {
+                    status: f.status.unwrap_or(502),
+                    message,
+                    retry_after: None,
+                    tried: tried.clone(),
+                });
             }
-            let b = *budget.get_or_insert_with(|| classify::budget(f.status, &f.verdict, f.indicated, &c.endpoint.retry));
+            let b =
+                *budget.get_or_insert_with(|| classify::budget(f.status, &f.verdict, f.indicated, &c.endpoint.retry));
             if retries < b.retries {
                 retries += 1;
                 kind = AttemptKind::SameAccountRetry;
@@ -517,7 +654,8 @@ impl Run {
 
     /// The request for `c`, secret and session header included; `Err` is a skip reason.
     fn outgoing(&self, st: &EngineState, c: &Candidate<'_>, ob: &Outbound) -> Result<upstream::Outgoing, String> {
-        let secret = c.account.map(|a| accounts::release(a, c.provider)).transpose().map_err(|w| format!("0router: {w}"))?;
+        let secret =
+            c.account.map(|a| accounts::release(a, c.provider)).transpose().map_err(|w| format!("0router: {w}"))?;
         let parts = RequestParts {
             provider: c.provider,
             endpoint: c.endpoint,
@@ -544,7 +682,13 @@ impl Run {
     }
 
     /// One upstream request and its answer.
-    async fn once(&mut self, st: &EngineState, c: &Candidate<'_>, wire: Option<&Arc<Style>>, out: upstream::Outgoing) -> Ended {
+    async fn once(
+        &mut self,
+        st: &EngineState,
+        c: &Candidate<'_>,
+        wire: Option<&Arc<Style>>,
+        out: upstream::Outgoing,
+    ) -> Ended {
         let timeout = out.header_timeout;
         let send = time::timeout(timeout, out.into_request(&st.http).send());
         let resp = match self.wait(send).await {
@@ -560,8 +704,10 @@ impl Run {
             Some(Ok(Ok(r))) => r,
         };
         let status = resp.status().as_u16();
-        let content_type = resp.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_owned);
-        let is_stream = content_type.as_deref().is_some_and(|c| c.starts_with("text/event-stream") || c.contains("ndjson"));
+        let content_type =
+            resp.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_owned);
+        let is_stream =
+            content_type.as_deref().is_some_and(|c| c.starts_with("text/event-stream") || c.contains("ndjson"));
         let stall = upstream::stall_timeout(c.endpoint);
         let ok = (200..300).contains(&status);
 
@@ -573,13 +719,25 @@ impl Run {
             };
             let message = st.redactor.redact(&error_message(&raw)).into_owned();
             let verdict = classify::upstream(status, &String::from_utf8_lossy(&raw));
-            return Ended::Failed(Fail { status: Some(status), verdict, reason: message.clone(), message, indicated, after_output: false, told: false });
+            return Ended::Failed(Fail {
+                status: Some(status),
+                verdict,
+                reason: message.clone(),
+                message,
+                indicated,
+                after_output: false,
+                usage: None,
+            });
         }
         if self.req.media.is_some() {
             return self.media_once(st, c, wire, resp, content_type, stall).await;
         }
         let Some(wire) = wire else {
-            return Ended::Failed(Fail::transport(ErrorClass::InBand, "0router: a text endpoint with no wire".into(), false));
+            return Ended::Failed(Fail::transport(
+                ErrorClass::InBand,
+                "0router: a text endpoint with no wire".into(),
+                false,
+            ));
         };
         if !is_stream {
             let raw = match self.read_all(resp, stall, st).await {
@@ -625,7 +783,10 @@ impl Run {
             return Ended::Ok(usage);
         }
 
-        let frames = self.req.stream && c.same_style(&self.req.client.id) && wire.text().is_ok_and(|t| t.framing != Framing::JsonArray);
+        let frames = !self.segmented
+            && self.req.stream
+            && c.same_style(&self.req.client.id)
+            && wire.text().is_ok_and(|t| t.framing != Framing::JsonArray);
         let relay = Relay { frames, drop_usage: frames && usage_unasked(&self.req.client, &self.req.body) };
         self.commit();
         let end = self.pump(resp, wire, relay, stall, st).await;
@@ -666,11 +827,20 @@ impl Run {
                 Ok(b) => b,
                 Err(e) => return e,
             };
-            let (Some(codec), Some(wire)) = (&wire_codec, wire) else { return in_band("0router: an endpoint without a wire can't run jobs".into()) };
-            let Ok(v) = serde_json::from_slice::<Value>(&raw) else { return in_band("the job answer isn't JSON".into()) };
-            let Some((bindings, status)) = codec.decode_job(&v) else { return in_band("the job answer doesn't have the wire's shape".into()) };
-            let Some(upstream_id) = bindings.str("job.id").map(str::to_owned) else { return in_band("the job answer has no id".into()) };
-            let url = upstream::endpoint_url(&c.endpoint.url, &c.upstream_id, None).map_or_else(|_| c.endpoint.url.clone(), |u| u.to_string());
+            let (Some(codec), Some(wire)) = (&wire_codec, wire) else {
+                return in_band("0router: an endpoint without a wire can't run jobs".into());
+            };
+            let Ok(v) = serde_json::from_slice::<Value>(&raw) else {
+                return in_band("the job answer isn't JSON".into());
+            };
+            let Some((bindings, status)) = codec.decode_job(&v) else {
+                return in_band("the job answer doesn't have the wire's shape".into());
+            };
+            let Some(upstream_id) = bindings.str("job.id").map(str::to_owned) else {
+                return in_band("the job answer has no id".into());
+            };
+            let url = upstream::endpoint_url(&c.endpoint.url, &c.upstream_id, None)
+                .map_or_else(|_| c.endpoint.url.clone(), |u| u.to_string());
             let zerorouter_job_id = self.engine.jobs.insert(Job {
                 record: self.req.id.clone(),
                 provider: c.provider.id.clone(),
@@ -719,7 +889,9 @@ impl Run {
                     }
                     Ok(Ok(None)) => return Ended::Ok(None),
                     Err(_) => (ErrorClass::Stall, format!("no byte for {} ms", stall.as_millis())),
-                    Ok(Err(e)) => (ErrorClass::Network, format!("stream read failed: {}", st.redactor.redact(&e.to_string()))),
+                    Ok(Err(e)) => {
+                        (ErrorClass::Network, format!("stream read failed: {}", st.redactor.redact(&e.to_string())))
+                    }
                 };
                 let _ = tx.send(Err(reason.1.clone())).await;
                 return Ended::Failed(Fail::transport(reason.0, reason.1, true));
@@ -768,16 +940,37 @@ impl Run {
 
     /// Reads a streamed answer until it ends, breaks or the client goes. Header events are
     /// held until the first content event, so a failure before content can be replaced.
-    async fn pump(&mut self, mut resp: reqwest::Response, wire: &Arc<Style>, relay: Relay, stall: Duration, st: &EngineState) -> Ended {
-        let Ok(t) = wire.text() else { return Ended::Failed(Fail::transport(ErrorClass::InBand, "0router: the wire has no text section".into(), false)) };
+    async fn pump(
+        &mut self,
+        mut resp: reqwest::Response,
+        wire: &Arc<Style>,
+        relay: Relay,
+        stall: Duration,
+        st: &EngineState,
+    ) -> Ended {
+        let Ok(t) = wire.text() else {
+            return Ended::Failed(Fail::transport(
+                ErrorClass::InBand,
+                "0router: the wire has no text section".into(),
+                false,
+            ));
+        };
         let mut framer = Framer::new(t.framing);
         let Ok(mut reader) = StreamReader::new(wire) else {
-            return Ended::Failed(Fail::transport(ErrorClass::InBand, "0router: the wire's stream can't be read".into(), false));
+            return Ended::Failed(Fail::transport(
+                ErrorClass::InBand,
+                "0router: the wire's stream can't be read".into(),
+                false,
+            ));
         };
         let mut usage = ir::Usage::default();
         let mut failed: Option<ErrorEvent> = None;
-        let mut held: Vec<Piece> = Vec::new();
+        let mut held: Vec<(Piece, Vec<Event>)> = Vec::new();
         let mut output = false;
+        // A continuation's first text block merges into the one the client has open.
+        let mut merge = self.broken.as_ref().is_some_and(|b| b.resume == Some(Resume::Continue))
+            && self.seen.open == breaks::Open::Text;
+        let cut = |u: &ir::Usage| (!u.is_empty()).then(|| Usage::reported(u, t.usage.semantics));
         loop {
             let chunk = tokio::select! {
                 _ = self.req.cancel.cancelled() => return Ended::Cancelled,
@@ -786,11 +979,17 @@ impl Run {
             let (frames, eof) = match chunk {
                 Err(_) => {
                     let reason = format!("no byte for {} ms", stall.as_millis());
-                    return Ended::Failed(Fail::transport(ErrorClass::Stall, reason, output));
+                    return Ended::Failed(Fail {
+                        usage: cut(&usage),
+                        ..Fail::transport(ErrorClass::Stall, reason, output)
+                    });
                 }
                 Ok(Err(e)) => {
                     let reason = format!("stream read failed: {}", st.redactor.redact(&e.to_string()));
-                    return Ended::Failed(Fail::transport(ErrorClass::Network, reason, output));
+                    return Ended::Failed(Fail {
+                        usage: cut(&usage),
+                        ..Fail::transport(ErrorClass::Network, reason, output)
+                    });
                 }
                 Ok(Ok(Some(b))) => (framer.feed(&b), false),
                 Ok(Ok(None)) => (framer.finish(), true),
@@ -803,7 +1002,7 @@ impl Run {
                 let events = reader.read(&f).unwrap_or_default();
                 if relay.frames {
                     let only_usage = !events.is_empty() && events.iter().all(|e| matches!(e, Event::Usage(_)));
-                    let piece = (!(relay.drop_usage && only_usage)).then_some(Piece::Frame(f));
+                    let piece = (!(relay.drop_usage && only_usage)).then(|| Piece::Frame(f, events.clone()));
                     items.push((piece, events));
                 } else {
                     items.extend(events.into_iter().map(|e| (Some(Piece::Event(e.clone())), vec![e])));
@@ -818,6 +1017,12 @@ impl Run {
                 }
             }
             for (piece, events) in items {
+                if merge && let Some(first) = events.first().filter(|e| e.is_output()) {
+                    merge = false;
+                    if matches!(first, Event::BlockStart(ir::BlockKind::Text)) {
+                        continue;
+                    }
+                }
                 let mut content = false;
                 for ev in &events {
                     match ev {
@@ -831,36 +1036,50 @@ impl Run {
                     let raw = e.raw.as_ref().map_or_else(|| e.message.clone(), Value::to_string);
                     let verdict = classify::upstream(status.unwrap_or(502), &raw);
                     let message = st.redactor.redact(&e.message).into_owned();
-                    return Ended::Failed(Fail { status, verdict, reason: message.clone(), message, indicated: None, after_output: false, told: false });
+                    return Ended::Failed(Fail {
+                        status,
+                        verdict,
+                        reason: message.clone(),
+                        message,
+                        indicated: None,
+                        after_output: false,
+                        usage: None,
+                    });
                 }
-                let Some(piece) = piece else { continue };
+                // After content, the provider's error is a break the next attempt resumes.
+                let Some(piece) = piece.filter(|_| failed.is_none()) else { continue };
                 if !output && !content {
-                    held.push(piece);
+                    held.push((piece, events));
                     continue;
                 }
                 if !output {
                     output = true;
                     self.ttft();
-                    for p in std::mem::take(&mut held) {
-                        if !self.send(p).await {
+                    if !self.resume().await {
+                        return Ended::Cancelled;
+                    }
+                    for (p, evs) in std::mem::take(&mut held) {
+                        if !self.relay(p, &evs).await {
                             return Ended::Cancelled;
                         }
                     }
                 }
-                if !self.send(piece).await {
+                if !self.relay(piece, &events).await {
                     return Ended::Cancelled;
                 }
             }
             if eof || reader.saw_done() {
                 if let Some(e) = failed.take() {
                     let reason = st.redactor.redact(&e.message).into_owned();
-                    let mut f = Fail::transport(ErrorClass::InBand, reason, true);
-                    f.status = e.status;
-                    f.told = true;
+                    let f = Fail {
+                        status: e.status,
+                        usage: cut(&usage),
+                        ..Fail::transport(ErrorClass::InBand, reason, true)
+                    };
                     return Ended::Failed(f);
                 }
-                for p in std::mem::take(&mut held) {
-                    if !self.send(p).await {
+                for (p, evs) in std::mem::take(&mut held) {
+                    if !self.relay(p, &evs).await {
                         return Ended::Cancelled;
                     }
                 }
@@ -878,6 +1097,64 @@ impl Run {
         self.tx = Some(tx);
         if let Some(first) = self.first.take() {
             let _ = first.send(Ok(Answer::Events { rx, forced: !self.req.stream }));
+        }
+    }
+
+    /// Sends one piece of the answer and notes what the client saw.
+    async fn relay(&mut self, piece: Piece, events: &[Event]) -> bool {
+        if !self.send(piece).await {
+            return false;
+        }
+        for e in events {
+            self.seen.see(e);
+        }
+        true
+    }
+
+    /// Applies the pending break's resumption at the new segment's first content: a
+    /// restart sends the note and starts a new answer; a continuation just goes on.
+    async fn resume(&mut self) -> bool {
+        let Some(b) = self.broken.take() else { return true };
+        let handling = match b.resume {
+            Some(Resume::Restart) => {
+                if !self.send(Piece::Restart).await {
+                    return false;
+                }
+                self.seen = Seen::default();
+                BreakHandling::Restarted
+            }
+            Some(Resume::Continue) => BreakHandling::Continued,
+            None => return true,
+        };
+        self.engine.records.update(self.id(), |r| r.break_handling = handling);
+        true
+    }
+
+    fn resume_with(&mut self, how: Resume) {
+        if let Some(b) = &mut self.broken {
+            b.resume = Some(how);
+        }
+    }
+
+    /// Ends a broken answer with the error event (sent by [`Run::run`]).
+    fn broke_off(&mut self, c: &Candidate<'_>, reason: String, tried: &[Tried]) -> Failure {
+        self.broken = None;
+        self.engine.records.update(self.id(), |r| r.break_handling = BreakHandling::ErrorEvent { reason });
+        self.end_request(Outcome::Failed, self.carried);
+        let summary = format!("0router: the answer from {} broke off", c.provider.id);
+        Failure {
+            status: 502,
+            message: error_body::message(&summary, self.id(), tried),
+            retry_after: None,
+            tried: tried.to_vec(),
+        }
+    }
+
+    fn carry(&mut self, u: Option<Usage>) {
+        match (&mut self.carried, u) {
+            (Some(c), Some(u)) => c.add(&u),
+            (c @ None, u) => *c = u,
+            (Some(_), None) => {}
         }
     }
 
@@ -974,14 +1251,31 @@ impl Run {
             dropped: Vec::new(),
         };
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
-        tried.push(Tried { provider: provider.to_owned(), account, model: model.to_owned(), status: None, class: None, reason: reason.to_owned(), retries: 0 });
+        tried.push(Tried {
+            provider: provider.to_owned(),
+            account,
+            model: model.to_owned(),
+            status: None,
+            class: None,
+            reason: reason.to_owned(),
+            retries: 0,
+        });
     }
 
     /// The answer completed: the record, the cooldown and the warm account.
     fn succeed(&self, c: &Candidate<'_>, usage: Option<Usage>) {
         self.end_attempt(AttemptOutcome::Ok, usage);
+        // A resumed answer: the cut segments count too.
+        let usage = match (self.carried, usage) {
+            (Some(mut total), Some(u)) => {
+                total.add(&u);
+                Some(total)
+            }
+            (carried, u) => u.or(carried),
+        };
         let account = c.account.map(|a| a.name.clone());
-        let served = ServedBy { provider: c.provider.id.clone(), account: account.clone(), model: c.upstream_id.clone() };
+        let served =
+            ServedBy { provider: c.provider.id.clone(), account: account.clone(), model: c.upstream_id.clone() };
         self.engine.records.update(self.id(), |r| r.served_by = Some(served));
         if self.req.media.as_ref().is_some_and(|m| m.job) {
             // In progress until the job fails or its content is delivered.
@@ -1011,7 +1305,8 @@ pub async fn collect(client: &Style, body: &Value, mut rx: mpsc::Receiver<Piece>
             Piece::Event(ev) => {
                 w.write(&ev);
             }
-            Piece::Frame(_) => {}
+            Piece::Restart => w = StreamWriter::new(client, body, "", "", 0).expect("compiled above"),
+            Piece::Frame(..) => {}
         }
     }
     Ok(w.response())

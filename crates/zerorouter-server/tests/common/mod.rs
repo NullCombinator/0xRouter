@@ -27,6 +27,13 @@ pub struct Server {
     stop: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
+impl Server {
+    /// The operator home the server runs from.
+    pub fn home(&self) -> &std::path::Path {
+        self._dir.path()
+    }
+}
+
 impl Drop for Server {
     fn drop(&mut self) {
         if let Some(s) = self.stop.take() {

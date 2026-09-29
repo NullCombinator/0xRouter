@@ -21,9 +21,9 @@ use zerorouter_engine::keys::AgentId;
 use zerorouter_engine::state::{Engine, EngineState};
 use zerorouter_registry::schema::Framing;
 use zerorouter_registry::template::FieldPath;
+use zerorouter_wire::codec::Style;
 use zerorouter_wire::codec::request;
 use zerorouter_wire::codec::response::{self, ForClient};
-use zerorouter_wire::codec::Style;
 use zerorouter_wire::stream::StreamWriter;
 use zerorouter_wire::template::select_one;
 
@@ -153,10 +153,19 @@ async fn write_stream(
     let mut relayed = false;
     while let Some(piece) = rx.recv().await {
         let out = match piece {
-            Piece::Event(ev) => w.write(&ev),
-            Piece::Frame(f) => {
+            Piece::Event(ev) => {
+                // Written content after relayed frames (a resumed answer): the writer ends it.
+                relayed &= !ev.is_output();
+                w.write(&ev)
+            }
+            Piece::Frame(f, events) => {
+                w.observe(&events);
                 relayed = true;
                 f.to_bytes(framing).unwrap_or_default()
+            }
+            Piece::Restart => {
+                relayed = false;
+                w.restart()
             }
         };
         if !out.is_empty() && tx.send(Ok(Bytes::from(out))).await.is_err() {

@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 clap.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 zerorouter-registry.workspace = true
 zerorouter-engine.workspace = true
 zerorouter-server.workspace = true

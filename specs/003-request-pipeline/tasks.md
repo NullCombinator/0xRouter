@@ -606,29 +606,29 @@ or an error event.
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T089 [P] [US4] Write `crates/zerorouter-engine/tests/breaks.rs`, run in each client style.
+- [X] T089 [P] [US4] Write `crates/zerorouter-engine/tests/breaks.rs`, run in each client style.
   - **Continuation**: a cut after 20 text deltas with a continuation-capable next target gives one uninterrupted answer. There is no repeated or missing delta, the partial answer was sent as the trailing assistant turn (trailing whitespace trimmed), the record has two segments with usage added, and `break_handling = continued` (SC-008, US4-1).
   - **Restart**, the default: the open block closes. A new text block holds exactly `— connection lost, answer restarted —` (in Chat and Gemini, a text delta with blank lines around it). The new answer follows with shifted block indexes, output indexes and sequence numbers (US4-2).
   - **Error event**, via a key override: the style's stream error event with the record id, then a clean end (US4-3).
   - **Cut while tool-call arguments are streaming**: always an error event, and the record gives the reason.
   - **Cut before any content**: an ordinary retry with no note (US4-4).
   - **A continuation target excluded** by `unless = thinking_enabled`, by `except_models`, or by an untranslatable partial falls through to the operator's choice.
-- [ ] T090 [P] [US4] Write the stream-parser replay test in `tests/harness/`. The restart and error-event streams from T089 for Messages, Chat, Responses and Gemini are fed to each SDK's stream parser (Python and Node), which must finish without an error. Run Claude Code (if present) against a mock that cuts once, and check that it completes the turn. Also check that Claude Code's next turn succeeds after a cut thinking block ([R9](research.md#r9-mid-stream-breaks-continuation-restart-error-event)).
+- [X] T090 [P] [US4] Write the stream-parser replay test in `tests/harness/`. The restart and error-event streams from T089 for Messages, Chat, Responses and Gemini are fed to each SDK's stream parser (Python and Node), which must finish without an error. Run Claude Code (if present) against a mock that cuts once, and check that it completes the turn. Also check that Claude Code's next turn succeeds after a cut thinking block ([R9](research.md#r9-mid-stream-breaks-continuation-restart-error-event)). *Not covered yet: the mock gives Claude Code no thinking block, so only the cut-once turn is checked (`claude code, cut once` in `run.sh`).*
 
 ### Implementation for User Story 4
 
-- [ ] T091 [US4] Implement break handling in `crates/zerorouter-engine/src/breaks.rs` per the [data-model break transitions](data-model.md#clientstreamstate).
+- [X] T091 [US4] Implement break handling in `crates/zerorouter-engine/src/breaks.rs` per the [data-model break transitions](data-model.md#clientstreamstate).
   - `open_block = ToolCall{args_started}` → error event.
   - A continuation target is available → continue: the original request plus `partial_text` as the trailing assistant turn, the continuation's preamble suppressed, its first text block merged into the open block, and its usage added.
   - Otherwise, when the behaviour is `restart`: close the block, add the note block, re-send the original request to the next target, and shift the indexes.
   - Otherwise: close the block and send the error event.
   - Eligibility: the endpoint declares `[continuation]`, the model is in `models` (or not in `except_models`), no `unless` condition holds, and the partial answer encodes into the target wire (no `CannotCarry`).
-- [ ] T092 [US4] Add the restart note and the index shifting to `crates/zerorouter-wire/src/stream/writer.rs`. The exact note text is `— connection lost, answer restarted —`. Styles with explicit blocks get a new block; implicit styles get a delta surrounded by `\n\n`. Keep the counters across segments.
-- [ ] T093 [US4] Resolve the break behaviour in `crates/zerorouter-engine/src/state.rs`: the agent key's `break_behaviour` if set, else `[pipeline] break_behaviour`, else `restart`.
-- [ ] T094 [US4] Implement `behaviour set-break restart|error_event` in `crates/zerorouter-cli/src/cmd/behaviour.rs` (writes `config.toml`) and `keys set-break <name|id> restart|error_event|default` in `crates/zerorouter-cli/src/cmd/keys.rs` (FR-031). Both hot-apply through T104 when a server runs.
-- [ ] T095 [US4] Declare continuation in `plugins/bundled/anthropic.toml`: `method = "assistant_prefill"`, `trim_trailing_whitespace = true`, `unless = ["thinking_enabled", "tool_call_in_progress"]`, and `models = ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-5-sonnet-20241022"]`. These stay subject to T096. Declare nothing for openrouter or opencode until T096 confirms a model family.
+- [X] T092 [US4] Add the restart note and the index shifting to `crates/zerorouter-wire/src/stream/writer.rs`. The exact note text is `— connection lost, answer restarted —`. Styles with explicit blocks get a new block; implicit styles get a delta surrounded by `\n\n`. Keep the counters across segments.
+- [X] T093 [US4] Resolve the break behaviour in `crates/zerorouter-engine/src/state.rs`: the agent key's `break_behaviour` if set, else `[pipeline] break_behaviour`, else `restart`.
+- [X] T094 [US4] Implement `behaviour set-break restart|error_event` in `crates/zerorouter-cli/src/cmd/behaviour.rs` (writes `config.toml`) and `keys set-break <name|id> restart|error_event|default` in `crates/zerorouter-cli/src/cmd/keys.rs` (FR-031). Both hot-apply through T104 when a server runs.
+- [X] T095 [US4] Declare continuation in `plugins/bundled/anthropic.toml`: `method = "assistant_prefill"`, `trim_trailing_whitespace = true`, `unless = ["thinking_enabled", "tool_call_in_progress"]`, and `models = ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-5-sonnet-20241022"]`. These stay subject to T096. Declare nothing for openrouter or opencode until T096 confirms a model family.
 - [ ] T096 [US4] *operator-run* Live continuation check. Ask the user to run `! ZR_LIVE=1 cargo test -p zerorouter-engine --test live -- continuation`. It confirms that prefill continues on each T095 model, that Claude 4.6+ returns 400 for prefill, and whether openrouter or opencode families accept prefill. Remove any declaration the check doesn't confirm.
-- [ ] T097 [US4] Run `cargo test -p zerorouter-engine --test breaks` and the replay harness, then fix until green.
+- [X] T097 [US4] Run `cargo test -p zerorouter-engine --test breaks` and the replay harness, then fix until green.
 
 **Checkpoint**: Stream breaks never waste a finished part silently, and every outcome is
 visible in the record.

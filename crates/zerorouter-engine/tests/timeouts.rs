@@ -64,7 +64,8 @@ async fn a_quiet_stream_before_output_is_an_ordinary_retry() {
 
 #[tokio::test]
 async fn a_quiet_stream_after_output_is_a_break() {
-    let s = setup(|m| vec![("alpha", chat_plugin(m, "alpha", "stall_timeout_ms = 200"))], &[("alpha", "main")], "").await;
+    let config = "[pipeline]\nbreak_behaviour = \"error_event\"\n";
+    let s = setup(|m| vec![("alpha", chat_plugin(m, "alpha", "stall_timeout_ms = 200"))], &[("alpha", "main")], config).await;
     s.mock.push([Step::StallAfter { frames: vec![frame("Hel")], hold: Duration::from_secs(5) }]);
     let req = request(&s, "openai-chat", "alpha/m1", chat_body("alpha/m1", true), "ak_test", CancellationToken::new());
     let id = req.id.clone();

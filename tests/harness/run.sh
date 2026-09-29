@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Runs every available harness against a running `zerorouter serve` (see README.md).
 # Needs ZR_BASE (http://host:port), ZR_KEY (an agent key) and ZR_MODEL; ZR_MODEL_MESSAGES
-# (a messages-wire model) adds the headroom chain (headroom.sh). Each harness
+# (a messages-wire model) adds the headroom chain (headroom.sh); ZR_MODEL_CUT (a model
+# whose first stream for a body is cut) with ZR_KEY_STRICT (an error_event key) adds the
+# break replay (py/breaks.py, node/breaks.mjs). Each harness
 # sends one whole and one streamed request and expects the text "Hello". ZR_MODEL_FAIL
 # (a model whose every attempt fails) makes each SDK also expect its own API error with
 # the record id.
@@ -33,6 +35,13 @@ if command -v node >/dev/null && [ -d "$here/node_modules" ]; then
   for s in $styles; do run "node $s" node "$here/node/$s.mjs"; done
 else
   echo "skip node: node or tests/harness/node_modules missing (see README.md)"
+fi
+# Mid-stream breaks (US4): restart and error-event streams through every SDK parser, and
+# Claude Code against a model whose first stream is cut.
+if [ -n "${ZR_MODEL_CUT:-}" ]; then
+  [ -x "$here/.venv/bin/python" ] && run "python breaks" "$here/.venv/bin/python" "$here/py/breaks.py"
+  command -v node >/dev/null && [ -d "$here/node_modules" ] && run "node breaks" node "$here/node/breaks.mjs"
+  command -v claude >/dev/null && run "claude code, cut once" env ZR_MODEL="$ZR_MODEL_CUT" bash "$here/claude.sh"
 fi
 if command -v claude >/dev/null; then run "claude code" bash "$here/claude.sh"; else echo "skip claude code: claude not on PATH"; fi
 if command -v codex >/dev/null; then run "codex" bash "$here/codex.sh"; else echo "skip codex: codex not on PATH"; fi

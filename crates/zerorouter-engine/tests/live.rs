@@ -5,6 +5,10 @@
 //!
 //! `ZR_LIVE_MODELS` (comma-separated `provider/model`) replaces the default text targets.
 //!
+//! `-- continuation` (T096) sends a prefilled assistant turn to each model `anthropic`
+//! declares `[continuation]` for, which must continue it, and to the probes in
+//! `PREFILL_PROBES` (or `ZR_LIVE_PREFILL`), whose answers are printed for the operator.
+//!
 //! `-- types` (T087) sends one non-text request per type and provider. Video is submitted
 //! and polled once only with `ZR_LIVE_VIDEO=1`, since it is billed per clip.
 
@@ -20,9 +24,9 @@ use zerorouter_engine::records::{Outcome, RequestRecord};
 use zerorouter_engine::state::Engine;
 use zerorouter_registry::OperatorHome;
 use zerorouter_registry::schema::ModelType;
+use zerorouter_wire::codec::response::ForClient;
 use zerorouter_wire::codec::types::TypeValue;
 use zerorouter_wire::codec::{request, response};
-use zerorouter_wire::codec::response::ForClient;
 
 /// One cheap target per text provider and wire. opencode's Messages wire takes `x-api-key`
 /// and neither opencode wire gets fingerprint tools (R4): these requests carry no tools.
@@ -81,7 +85,10 @@ async fn send(engine: &Arc<Engine>, client: &str, target: &str, body: Value) -> 
         Ok(Answer::Whole { status, raw, answer, .. }) => {
             assert_eq!(status, 200, "{target}: {}", String::from_utf8_lossy(&raw));
             match *answer {
-                ForClient::AsReceived { read } => read.or_else(|| response::decode(&style, &serde_json::from_slice(&raw).ok()?).ok()).map(|r| r.text()).unwrap_or_default(),
+                ForClient::AsReceived { read } => read
+                    .or_else(|| response::decode(&style, &serde_json::from_slice(&raw).ok()?).ok())
+                    .map(|r| r.text())
+                    .unwrap_or_default(),
                 ForClient::Rebuilt { read, .. } => read.text(),
             }
         }
@@ -132,6 +139,114 @@ async fn text() {
             assert!(!text.trim().is_empty(), "{target} stream={stream}: an empty answer");
             assert!(input.is_some() && output.is_some(), "{target} stream={stream}: usage not recorded: {rec:#?}");
         }
+        ran += 1;
+    }
+    assert!(ran > 0, "no provider had an account under {}", engine.home().path().display());
+}
+
+/// Models whose prefill support is unknown: Claude 4.6+ should refuse it (400); the
+/// openrouter and opencode families decide whether they get a `[continuation]`.
+const PREFILL_PROBES: &[&str] = &[
+    "anthropic/claude-sonnet-4-6",
+    "opencode-zen/claude-sonnet-4",
+    "opencode-zen/claude-sonnet-4-6",
+    "opencode-zen/claude-haiku-4-5",
+    "openrouter/anthropic/claude-sonnet-4",
+    "openrouter/openai/gpt-4o-mini",
+];
+
+/// A Messages request ending in the prefill "1 2 3 4": a model that continues it goes on
+/// from 5 instead of starting over.
+fn prefilled(target: &str) -> Value {
+    json!({
+        "model": target,
+        "max_tokens": 64,
+        "stream": true,
+        "messages": [
+            { "role": "user", "content": "Count from 1 to 10, separated by spaces. Nothing else." },
+            { "role": "assistant", "content": "1 2 3 4" },
+        ],
+    })
+}
+
+/// Sends a prefilled request; the answer's text, or the failure.
+async fn try_prefill(engine: &Arc<Engine>, target: &str) -> Result<String, String> {
+    let st = engine.snapshot();
+    let style = st.style("anthropic-messages").unwrap().clone();
+    let body = prefilled(target);
+    let ir = request::decode(&style, &body).unwrap();
+    let id = zerorouter_engine::records::new_id();
+    engine.records.insert(RequestRecord::new(id.clone(), "live".into(), style.id.clone()));
+    let req = TextRequest {
+        id,
+        arrived: Instant::now(),
+        client: style.clone(),
+        body: body.clone(),
+        ir,
+        headers: HeaderMap::new(),
+        agent: AgentId::new("ak_live", Some("live-1")),
+        target: target.into(),
+        stream: true,
+        cancel: CancellationToken::new(),
+        media: None,
+    };
+    match engine.text(st, req).await {
+        Ok(Answer::Events { rx, .. }) => {
+            attempt::collect(&style, &body, rx).await.map(|r| r.text()).map_err(|e| format!("{e:?}"))
+        }
+        Ok(_) => Err("not a stream".into()),
+        Err(f) => Err(format!("{} {}", f.status, f.message)),
+    }
+}
+
+/// Whether `text` continues "1 2 3 4" rather than starting over.
+fn continues(text: &str) -> bool {
+    let t = text.trim_start();
+    t.starts_with('5') && !t.contains("1 2 3")
+}
+
+#[tokio::test]
+async fn continuation() {
+    if !live() {
+        eprintln!("skipped: set ZR_LIVE=1 to run the live checks");
+        return;
+    }
+    let (engine, report) = Engine::open(OperatorHome::resolve()).unwrap();
+    assert!(report.registry.diagnostics.is_empty(), "{:#?}", report.registry.diagnostics);
+    let engine = Arc::new(engine);
+    let st = engine.snapshot();
+    let has_account = |target: &str| st.accounts.for_provider(target.split('/').next().unwrap()).any(|a| !a.disabled);
+    let declared: Vec<String> = st
+        .registry
+        .provider("anthropic")
+        .ok()
+        .and_then(|p| p.endpoints.get(&ModelType::Text)?.0.first())
+        .and_then(|e| e.continuation.as_ref())
+        .map(|c| c.models.iter().map(|m| format!("anthropic/{m}")).collect())
+        .unwrap_or_default();
+    let mut ran = 0;
+    for target in &declared {
+        if !has_account(target) {
+            eprintln!("{target}: skipped, no enabled account");
+            continue;
+        }
+        let got = try_prefill(&engine, target).await;
+        eprintln!("declared {target}: {got:?}");
+        let text = got.unwrap_or_else(|e| panic!("{target} is declared to continue a prefill but failed: {e}"));
+        assert!(continues(&text), "{target} is declared to continue a prefill but started over: {text:?}");
+        ran += 1;
+    }
+    let probes: Vec<String> = match std::env::var("ZR_LIVE_PREFILL") {
+        Ok(v) if !v.trim().is_empty() => v.split(',').map(|s| s.trim().to_owned()).collect(),
+        _ => PREFILL_PROBES.iter().map(|s| (*s).to_owned()).collect(),
+    };
+    for target in probes.iter().filter(|t| has_account(t)) {
+        let verdict = match try_prefill(&engine, target).await {
+            Ok(text) if continues(&text) => format!("continues: {:?}", text.trim()),
+            Ok(text) => format!("starts over: {:?}", text.trim()),
+            Err(e) => format!("refused: {e}"),
+        };
+        eprintln!("probe {target}: {verdict}");
         ran += 1;
     }
     assert!(ran > 0, "no provider had an account under {}", engine.home().path().display());
@@ -202,42 +317,84 @@ async fn types() {
     };
     let mut ran = 0;
     if has("openrouter") {
-        let (got, rec) = send_media(&engine, ModelType::Embeddings, "openrouter/openai/text-embedding-3-small", json!({"model": "x", "input": "pong"})).await;
+        let (got, rec) = send_media(
+            &engine,
+            ModelType::Embeddings,
+            "openrouter/openai/text-embedding-3-small",
+            json!({"model": "x", "input": "pong"}),
+        )
+        .await;
         let Got::Value(v) = got else { panic!("embeddings: not a value") };
-        let dims = v.items.first().and_then(|i| i.get("output.embedding")).and_then(Value::as_array).map_or(0, Vec::len);
+        let dims =
+            v.items.first().and_then(|i| i.get("output.embedding")).and_then(Value::as_array).map_or(0, Vec::len);
         eprintln!("openrouter embeddings: {dims} dimensions, usage {:?}", rec.usage);
         assert!(dims > 0 && rec.outcome == Outcome::Succeeded, "{rec:#?}");
 
-        let (got, rec) = send_media(&engine, ModelType::Image, "openrouter/openai/gpt-image-1", json!({"model": "x", "prompt": "a small red square", "size": "1024x1024"})).await;
+        let (got, rec) = send_media(
+            &engine,
+            ModelType::Image,
+            "openrouter/openai/gpt-image-1",
+            json!({"model": "x", "prompt": "a small red square", "size": "1024x1024"}),
+        )
+        .await;
         let Got::Value(v) = got else { panic!("image: not a value") };
         let item = v.items.first().expect("image: no data");
-        eprintln!("openrouter image: b64 {} chars, url {:?}", item.str("output.b64_json").map_or(0, |s| s.len()), item.str("output.url"));
+        eprintln!(
+            "openrouter image: b64 {} chars, url {:?}",
+            item.str("output.b64_json").map_or(0, |s| s.len()),
+            item.str("output.url")
+        );
         assert_eq!(rec.outcome, Outcome::Succeeded, "{rec:#?}");
 
-        let (got, rec) = send_media(&engine, ModelType::Tts, "openrouter/openai/gpt-4o-mini-tts", json!({"model": "x", "input": "pong"})).await;
+        let (got, rec) = send_media(
+            &engine,
+            ModelType::Tts,
+            "openrouter/openai/gpt-4o-mini-tts",
+            json!({"model": "x", "input": "pong"}),
+        )
+        .await;
         let Got::Bytes(ctype, bytes) = got else { panic!("openrouter speech: not audio bytes") };
         eprintln!("openrouter speech: {} bytes of {ctype}", bytes.len());
         assert!(!bytes.is_empty() && rec.outcome == Outcome::Succeeded, "{rec:#?}");
 
         if std::env::var("ZR_LIVE_VIDEO").is_ok_and(|v| v == "1") {
-            let (got, rec) = send_media(&engine, ModelType::Video, "openrouter/google/veo-3.1", json!({"model": "x", "prompt": "a red ball rolling", "duration": 4})).await;
+            let (got, rec) = send_media(
+                &engine,
+                ModelType::Video,
+                "openrouter/google/veo-3.1",
+                json!({"model": "x", "prompt": "a red ball rolling", "duration": 4}),
+            )
+            .await;
             let Got::Job(vj) = got else { panic!("video: not a job") };
-            let (_, bindings, status) = engine.job_get(&st, &vj, "ak_live", "openai-chat").await.unwrap_or_else(|f| panic!("video poll: {} {}", f.status, f.message));
+            let (_, bindings, status) = engine
+                .job_get(&st, &vj, "ak_live", "openai-chat")
+                .await
+                .unwrap_or_else(|f| panic!("video poll: {} {}", f.status, f.message));
             eprintln!("openrouter video: {vj} is {status:?} ({bindings:?}), record {}", rec.id);
         }
         ran += 1;
     }
     if has("elevenlabs") {
-        let (got, rec) = send_media(&engine, ModelType::Tts, "elevenlabs/eleven_flash_v2_5", json!({"model": "x", "input": "Hello from zero router."})).await;
+        let (got, rec) = send_media(
+            &engine,
+            ModelType::Tts,
+            "elevenlabs/eleven_flash_v2_5",
+            json!({"model": "x", "input": "Hello from zero router."}),
+        )
+        .await;
         let Got::Bytes(ctype, audio) = got else { panic!("elevenlabs speech: not audio bytes") };
         eprintln!("elevenlabs speech: {} bytes of {ctype}", audio.len());
         assert!(!audio.is_empty() && rec.outcome == Outcome::Succeeded, "{rec:#?}");
 
         let file = zerorouter_wire::primitives::body::file(&audio, Some("speech.mp3"), Some(&ctype));
-        let (got, rec) = send_media(&engine, ModelType::Stt, "elevenlabs/scribe_v2", json!({"model": "x", "file": file})).await;
+        let (got, rec) =
+            send_media(&engine, ModelType::Stt, "elevenlabs/scribe_v2", json!({"model": "x", "file": file})).await;
         let Got::Value(v) = got else { panic!("elevenlabs transcription: not a value") };
         eprintln!("elevenlabs transcription: {:?}", v.str("output.text"));
-        assert!(v.str("output.text").is_some_and(|t| !t.trim().is_empty()) && rec.outcome == Outcome::Succeeded, "{rec:#?}");
+        assert!(
+            v.str("output.text").is_some_and(|t| !t.trim().is_empty()) && rec.outcome == Outcome::Succeeded,
+            "{rec:#?}"
+        );
         ran += 1;
     }
     assert!(ran > 0, "no non-text provider had an account under {}", engine.home().path().display());

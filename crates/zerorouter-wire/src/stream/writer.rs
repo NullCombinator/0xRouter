@@ -3,9 +3,14 @@
 //! Finish and usage are held until `Done`, so a style that reports them together
 //! (Anthropic `message_delta`) sees the final usage whatever order the provider used.
 //! Under `tool_arguments = whole` a tool call is written once, when its block closes.
+//!
+//! After a break (research R9) the writer carries on from what the client has seen: a
+//! restart closes the open block and writes the note, and every later block, output item
+//! and sequence number continues past the ones already sent. Frames relayed unchanged are
+//! [`observe`](StreamWriter::observe)d, so the counters also hold for a native pair.
 
 use serde_json::{Map, Value};
-use zerorouter_registry::schema::{FinishReason, Framing, StreamOn, ToolArgumentsMode};
+use zerorouter_registry::schema::{BlockModel, FinishReason, Framing, StreamOn, ToolArgumentsMode};
 use zerorouter_registry::template::FieldPath;
 
 use crate::codec::response::{client_parts, encode as encode_response, prefixed_id};
@@ -14,13 +19,24 @@ use crate::ir::{BlockKind, ErrorEvent, Event, Part, Response, Usage};
 use crate::template::{Bindings, Chain, render, select_one};
 use crate::usage;
 
+/// The text a restarted answer starts with (research R9).
+pub const RESTART_NOTE: &str = "— connection lost, answer restarted —";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OpenBlock {
     #[default]
     None,
-    Text { index: u64 },
-    Thinking { index: u64, signed: bool },
-    ToolCall { index: u64, args_started: bool },
+    Text {
+        index: u64,
+    },
+    Thinking {
+        index: u64,
+        signed: bool,
+    },
+    ToolCall {
+        index: u64,
+        args_started: bool,
+    },
 }
 
 /// What the client has been sent so far. The counters carry across segments when a
@@ -147,6 +163,38 @@ impl<'s> StreamWriter<'s> {
         out
     }
 
+    /// Takes in the events of a provider frame relayed to the client unchanged: the state
+    /// moves as if the writer had written it, one frame and one sequence number.
+    pub fn observe(&mut self, events: &[Event]) {
+        let seq = self.state.sequence_number;
+        for ev in events {
+            self.write(ev);
+        }
+        self.state.sequence_number = seq + 1;
+    }
+
+    /// A restart after a break: the open block closes and the note follows, as its own
+    /// text block in styles with explicit blocks, else as a text delta with blank lines
+    /// around it. The next answer's blocks continue the indexes.
+    pub fn restart(&mut self) -> String {
+        let mut out = String::new();
+        if self.ended {
+            return out;
+        }
+        self.preamble(&mut out);
+        self.stop(&mut out);
+        let note = match self.t.blocks {
+            BlockModel::Explicit => RESTART_NOTE.to_owned(),
+            BlockModel::Implicit => format!("\n\n{RESTART_NOTE}\n\n"),
+        };
+        out.push_str(&self.write(&Event::TextDelta(note)));
+        if self.t.blocks == BlockModel::Explicit {
+            self.stop(&mut out);
+        }
+        self.state.partial_text.clear();
+        out
+    }
+
     /// Ends the client stream if `Done` never came.
     pub fn end(&mut self) -> String {
         let mut out = String::new();
@@ -185,7 +233,8 @@ impl<'s> StreamWriter<'s> {
         }
         let index = self.state.next_block_index;
         self.state.next_block_index += 1;
-        self.block = Block { output_index: self.state.next_output_index, ordinal: self.tools_started, ..Block::default() };
+        self.block =
+            Block { output_index: self.state.next_output_index, ordinal: self.tools_started, ..Block::default() };
         self.state.next_output_index += 1;
         let on = match kind {
             BlockKind::Text => {
@@ -279,6 +328,7 @@ impl<'s> StreamWriter<'s> {
             .with("error.type", kind)
             .with("error.message", e.message.as_str())
             .with("error.status", status)
+            .with("error.code", status)
             .with("error.details", Value::Object(Map::new()));
         let body = render(&self.style.error_body, &b);
         b.set("error.body", body);

@@ -229,7 +229,7 @@ async fn cancelling_stops_the_upstream_stream_and_the_record_says_so() {
     let id = req.id.clone();
     let Answer::Events { mut rx, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("events") };
     let first = rx.recv().await.unwrap();
-    assert!(matches!(first, Piece::Frame(_)), "a native stream relays frames: {first:?}");
+    assert!(matches!(first, Piece::Frame(..)), "a native stream relays frames: {first:?}");
     cancel.cancel();
     let r = settled(&s, &id).await;
     assert_eq!(r.outcome, Outcome::Cancelled);
@@ -251,9 +251,10 @@ async fn a_native_stream_relays_the_providers_frames_unchanged() {
         pieces
             .into_iter()
             .map(|p| match p {
-                Piece::Frame(f) if f.is_done() => json!("[DONE]"),
-                Piece::Frame(f) => serde_json::from_str(&f.data).unwrap(),
+                Piece::Frame(f, _) if f.is_done() => json!("[DONE]"),
+                Piece::Frame(f, _) => serde_json::from_str(&f.data).unwrap(),
                 Piece::Event(e) => panic!("a native stream sent an IR event: {e:?}"),
+                Piece::Restart => panic!("a restart without a break"),
             })
             .collect()
     };

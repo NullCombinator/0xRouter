@@ -13,7 +13,7 @@ use zerorouter_wire::codec::Style;
 use crate::accounts::{self, Accounts};
 use crate::cooldown::Cooldowns;
 use crate::files::FileError;
-use crate::keys::{self, Keys};
+use crate::keys::{self, BreakBehaviour, Keys};
 use crate::plan::WarmMap;
 use crate::records::RecordStore;
 use crate::redact::Redactor;
@@ -39,6 +39,12 @@ impl EngineState {
 
     pub fn style(&self, id: &str) -> Option<&Arc<Style>> {
         self.styles.get(id)
+    }
+
+    /// What a stream that breaks after output does for the agent key `key_id`: the key's
+    /// own setting, else `[pipeline] break_behaviour` (itself `restart` when unset).
+    pub fn break_behaviour(&self, key_id: &str) -> BreakBehaviour {
+        self.keys.iter().find(|k| k.id == key_id).and_then(|k| k.break_behaviour).unwrap_or(self.settings().pipeline.break_behaviour)
     }
 }
 

@@ -6,4 +6,4 @@ pub mod writer;
 
 pub use framing::{Frame, Framer};
 pub use reader::StreamReader;
-pub use writer::{ClientStreamState, OpenBlock, StreamWriter, usage_unasked};
+pub use writer::{ClientStreamState, OpenBlock, RESTART_NOTE, StreamWriter, usage_unasked};
