@@ -80,6 +80,7 @@ async fn send(engine: &Arc<Engine>, client: &str, target: &str, body: Value) -> 
         stream,
         cancel: CancellationToken::new(),
         media: None,
+        count: false,
     };
     let text = match engine.text(st.clone(), req).await {
         Ok(Answer::Whole { status, raw, answer, .. }) => {
@@ -96,7 +97,7 @@ async fn send(engine: &Arc<Engine>, client: &str, target: &str, body: Value) -> 
             Ok(r) => r.text(),
             Err(e) => panic!("{target}: the stream ended in an error: {e:?}"),
         },
-        Ok(Answer::Media(_)) => panic!("{target}: a non-text answer to a text request"),
+        Ok(Answer::Media(_) | Answer::Count { .. }) => panic!("{target}: a non-text answer to a text request"),
         Err(f) => panic!("{target}: {} {}", f.status, f.message),
     };
     (text, settled(engine, &id).await)
@@ -189,6 +190,7 @@ async fn try_prefill(engine: &Arc<Engine>, target: &str) -> Result<String, Strin
         stream: true,
         cancel: CancellationToken::new(),
         media: None,
+        count: false,
     };
     match engine.text(st, req).await {
         Ok(Answer::Events { rx, .. }) => {
@@ -280,6 +282,7 @@ async fn send_media(engine: &Arc<Engine>, ty: ModelType, target: &str, body: Val
         stream: false,
         cancel: CancellationToken::new(),
         media: Some(Media { ty, codec, variant: None, input, voice: None, job }),
+        count: false,
     };
     let got = match engine.text(st, req).await {
         Ok(Answer::Media(MediaAnswer::Value(v))) => Got::Value(v),

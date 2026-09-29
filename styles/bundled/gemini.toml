@@ -86,6 +86,26 @@ path = "/v1beta/files/{id}:download"
 op = "job_content"
 type = "video"
 
+[[routes]]
+method = "POST"
+path = "/v1beta/models/{model*}:countTokens"
+op = "count_tokens"
+type = "text"
+model = { path = "model" }
+
+[[routes]]
+method = "GET"
+path = "/v1beta/models"
+op = "list_models"
+type = "text"
+
+[[routes]]
+method = "GET"
+path = "/v1beta/models/{model*}"
+op = "get_model"
+type = "text"
+model = { path = "model" }
+
 [text.layout]
 system = "system_instruction"
 messages = "contents"
@@ -165,6 +185,9 @@ input_semantics = "includes_cache"
 body = { candidates = [{ content = { role = "model", parts = "{response.content}" }, finishReason = "{response.finish}", index = 0 }], usageMetadata = { promptTokenCount = "{usage.input?}", candidatesTokenCount = "{usage.output?}", cachedContentTokenCount = "{usage.cache_read?}", thoughtsTokenCount = "{usage.reasoning?}", totalTokenCount = "{usage.total?}" }, modelVersion = "{response.model}", responseId = "{response.id}" }
 
 # Every chunk is a whole response. A function call arrives whole in one part.
+[text.count_tokens]
+response = { totalTokens = "{count.input}" }
+
 [text.stream]
 framing = "sse_data"
 blocks = "implicit"

@@ -92,6 +92,7 @@ pub fn request(s: &Setup, client: &str, target: &str, body: Value, agent: &str, 
         stream,
         cancel,
         media: None,
+        count: false,
     }
 }
 

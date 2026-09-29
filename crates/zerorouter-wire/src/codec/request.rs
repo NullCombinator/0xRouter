@@ -23,7 +23,7 @@ use crate::ir::{
     Media, MediaSource, Message, Opaque, Part, Request, ResultContent, Role, Tool, ToolChoice,
 };
 use crate::primitives::{forms, media, repairs};
-use crate::template::{Bindings, match_value, render, select_one, set_path, unmatched_keys};
+use crate::template::{Bindings, match_value, render, select_one, set_path, take_path, unmatched_keys};
 
 /// The field that carries tool calls in the `message_field` layout.
 const TOOL_CALLS_FIELD: &str = "tool_calls";
@@ -618,6 +618,20 @@ pub fn encode(req: &Request, wire: &Style, client_style: &str) -> Result<Encoded
     e.tools(&req, &mut out)?;
     e.params(&req, &mut out)?;
     Ok(Encoded { body: out, dropped })
+}
+
+/// A token-count body for `wire`: `req` encoded without its generation parameters and
+/// stream flag, which a count request doesn't take (research R14).
+pub fn encode_count(req: &Request, wire: &Style, client_style: &str) -> Result<Encoded, CodecError> {
+    let t = wire.text()?;
+    let mut req = req.clone();
+    req.params = Default::default();
+    req.stream = false;
+    let mut enc = encode(&req, wire, client_style)?;
+    for p in t.params.iter().map(|p| &p.path).chain(&t.stream_path) {
+        take_path(&mut enc.body, p);
+    }
+    Ok(enc)
 }
 
 fn call_names(messages: &[Message]) -> BTreeMap<String, String> {

@@ -692,24 +692,24 @@ Responses and Gemini count routes, using the provider's count or 9router's estim
 
 ### Tests for User Story 6 ⚠️
 
-- [ ] T109 [US6] Add the estimator oracle to `generate.mjs`. Run `estimateAnthropicInputTokens` over the 3 cases of `tests/unit/count-tokens.test.js` plus generated requests (system, tools, images, multi-turn), and write `tests/fixtures/9router/count/*.json`.
-- [ ] T110 [P] [US6] Write `crates/zerorouter-server/tests/models.rs`.
+- [X] T109 [US6] Add the estimator oracle to `generate.mjs`. Run `estimateAnthropicInputTokens` over the 3 cases of `tests/unit/count-tokens.test.js` plus generated requests (system, tools, images, multi-turn), and write `tests/fixtures/9router/count/*.json`.
+- [X] T110 [P] [US6] Write `crates/zerorouter-server/tests/models.rs`.
   - OpenAI, Anthropic (with `anthropic-version`) and Gemini lists have the right shape.
   - They include every unified model and every direct model of every type, with the type in `zerorouter.type` or the Gemini `supportedGenerationMethods`.
   - A provider with no account is absent (US6-1, US6-2).
   - `get_model` works for a model containing `/`.
-- [ ] T111 [P] [US6] Write `crates/zerorouter-server/tests/count.rs`.
+- [X] T111 [P] [US6] Write `crates/zerorouter-server/tests/count.rs`.
   - An anthropic target: the count comes from the mock's `count_tokens` endpoint (US6-3).
   - An openrouter target: the estimate equals the oracle, the response has the `x-0router-estimate: true` header, and the record is `estimated` (US6-4).
   - Run in all three count styles, including the same retry order on a transient failure.
 
 ### Implementation for User Story 6
 
-- [ ] T112 [P] [US6] Port the estimator in `crates/zerorouter-wire/src/estimate.rs`: ceil(chars/4) over system, tools and message parts of the request translated into the Messages shape, with exact parity to `tests/fixtures/9router/count/`.
-- [ ] T113 [US6] Implement token counting in `crates/zerorouter-server/src/count.rs` and the engine. Route `op = count_tokens` resolves the target like generation. If the text endpoint declares `[token_count]`, translate to that wire and call it with the same retry order; otherwise estimate. Response shapes follow [contracts/client-surface.md § Token counting](contracts/client-surface.md#token-counting).
-- [ ] T114 [US6] Implement model lists in `crates/zerorouter-server/src/models.rs`: `list_models` and `get_model` for the OpenAI shape (default), the Anthropic shape (discriminated by `anthropic-version`) and the Gemini shape, over unified models plus direct models on providers with at least one enabled account.
-- [ ] T115 [US6] Add the Gemini routes `:countTokens`, `GET /v1beta/models` and `GET /v1beta/models/{model*}` to `styles/bundled/gemini.toml`. Make sure the count and list routes declared in T049 and T051 have their codecs.
-- [ ] T116 [US6] Run `cargo test -p zerorouter-server --test models --test count`, then fix until green.
+- [X] T112 [P] [US6] Port the estimator in `crates/zerorouter-wire/src/estimate.rs`: ceil(chars/4) over system, tools and message parts of the request translated into the Messages shape, with exact parity to `tests/fixtures/9router/count/`.
+- [X] T113 [US6] Implement token counting in `crates/zerorouter-server/src/count.rs` and the engine. Route `op = count_tokens` resolves the target like generation. If the text endpoint declares `[token_count]`, translate to that wire and call it with the same retry order; otherwise estimate. Response shapes follow [contracts/client-surface.md § Token counting](contracts/client-surface.md#token-counting).
+- [X] T114 [US6] Implement model lists in `crates/zerorouter-server/src/models.rs`: `list_models` and `get_model` for the OpenAI shape (default), the Anthropic shape (discriminated by `anthropic-version`) and the Gemini shape, over unified models plus direct models on providers with at least one enabled account.
+- [X] T115 [US6] Add the Gemini routes `:countTokens`, `GET /v1beta/models` and `GET /v1beta/models/{model*}` to `styles/bundled/gemini.toml`. Make sure the count and list routes declared in T049 and T051 have their codecs.
+- [X] T116 [US6] Run `cargo test -p zerorouter-server --test models --test count`, then fix until green.
 
 **Checkpoint**: Claude Code, Codex CLI and Gemini CLI can discover models and count tokens.
 

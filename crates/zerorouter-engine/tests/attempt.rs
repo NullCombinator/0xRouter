@@ -81,6 +81,7 @@ fn request(s: &Setup, client: &str, target: &str, body: Value, cancel: Cancellat
         stream,
         cancel,
         media: None,
+        count: false,
     }
 }
 

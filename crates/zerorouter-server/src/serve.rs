@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use axum::extract::{Request, State};
-use axum::http::StatusCode;
 use axum::response::Response;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
@@ -22,7 +21,7 @@ use zerorouter_wire::primitives::{body, session};
 use crate::auth;
 use crate::relay;
 use crate::router::{Matched, RouteTable, pick};
-use crate::{media, text};
+use crate::{count, media, models, text};
 
 pub struct App {
     pub engine: Arc<Engine>,
@@ -168,10 +167,18 @@ async fn dispatch(State(app): State<Arc<App>>, req: Request) -> Response {
             let inc = text::Incoming { id, arrived: started, path, headers: parts.headers.clone(), body: json, agent };
             if route.op == RouteOp::JobGet { media::job_get(&app.engine, st, m, inc).await } else { media::job_content(&app.engine, st, m, inc).await }
         }
-        _ => {
-            record.outcome = Outcome::Failed;
+        (RouteOp::CountTokens, _) => {
             app.engine.records.insert(record);
-            style_error(m, StatusCode::NOT_IMPLEMENTED.as_u16(), "0router: this route isn't served yet", &id)
+            let inc = text::Incoming { id, arrived: started, path, headers: parts.headers.clone(), body: json, agent };
+            count::count(&app.engine, st, m, inc).await
+        }
+        (RouteOp::ListModels | RouteOp::GetModel, _) => {
+            record.outcome = Outcome::Succeeded;
+            app.engine.records.insert(record);
+            match route.op {
+                RouteOp::ListModels => models::list(&st, m, &id),
+                _ => models::get(&st, m, m.capture("model").unwrap_or_default(), &id),
+            }
         }
     }
 }

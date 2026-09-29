@@ -847,6 +847,50 @@ streamUsage("gemini-stream", "gemini", [
 mkdirSync(join(fixDir, "usage"), { recursive: true });
 writeFixture(join("usage", "cases.json"), { cases: usageCases });
 
+// ── Estimator oracle (T109) ─────────────────────────────────────────────────
+//
+// estimateAnthropicInputTokens (the Messages count_tokens route): ceil(chars / 4) over the
+// system prompt, the tool definitions and each message's content blocks. The 3 cases of
+// tests/unit/count-tokens.test.js plus system, tools, images, multi-turn and non-ASCII text.
+const { estimateAnthropicInputTokens } = await imp("src/app/api/v1/messages/count_tokens/route.js");
+const countCases = [];
+const count = (name, body) => countCases.push({ name, input: body, input_tokens: estimateAnthropicInputTokens(body) });
+count("plain-text", { messages: [{ role: "user", content: "hello world" }] });
+count("tool-and-thinking-blocks", {
+  messages: [
+    { role: "assistant", content: [{ type: "tool_use", id: "toolu_01", name: "Read", input: { file_path: "/tmp/example.txt" } }, { type: "thinking", thinking: "Need to inspect the file before answering." }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_01", content: "line1 line2 line3 some file content here" }] },
+  ],
+});
+count("system-and-tools", {
+  system: "You are a coding assistant.",
+  tools: [{ name: "Read", description: "Read a file", input_schema: { type: "object", properties: { file_path: { type: "string" } } } }],
+  messages: [],
+});
+count("system-blocks", { system: [{ type: "text", text: "Be terse.", cache_control: { type: "ephemeral" } }], messages: [{ role: "user", content: "hi" }] });
+count("image-block", {
+  messages: [{ role: "user", content: [{ type: "text", text: "What is this?" }, { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" } }] }],
+});
+count("multi-turn", {
+  system: "You are helpful.",
+  messages: [
+    { role: "user", content: "What is 2 + 2?" },
+    { role: "assistant", content: [{ type: "text", text: "4" }] },
+    { role: "user", content: [{ type: "text", text: "And times 3?" }] },
+  ],
+});
+count("tool-result-blocks-and-numbers", {
+  tools: [{ name: "calc", description: "Add", input_schema: { type: "object", properties: { a: { type: "number", minimum: 0 }, b: { type: "integer" } }, required: ["a", "b"], additionalProperties: false } }],
+  messages: [
+    { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "calc", input: { a: 1.5, b: 20, exact: true, note: null } }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: [{ type: "text", text: "21.5" }] }] },
+  ],
+});
+count("non-ascii", { messages: [{ role: "user", content: "héllo 世界 👋🏽" }] });
+count("empty", {});
+mkdirSync(join(fixDir, "count"), { recursive: true });
+writeFixture(join("count", "cases.json"), { cases: countCases });
+
 console.log(`ref/9router@${SHA}`);
 console.log(`  ${plugins.length} plugins, ${credentials.length} credentials (${credentials.map((c) => c.provider_id).join(", ")})`);
 console.log(`  ${oauthParamKeys.size} oauth params, ${sectionFormats.size} section formats, ${lookupRows.length} lookup rows`);

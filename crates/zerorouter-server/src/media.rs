@@ -123,6 +123,7 @@ pub async fn generate(
             voice: None,
             job,
         }),
+        count: false,
     };
     let guard = cancel.clone().drop_guard();
     let answer = match engine.text(st, req).await {

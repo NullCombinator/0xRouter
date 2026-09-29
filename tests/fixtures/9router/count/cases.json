@@ -1,0 +1,232 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "cases": [
+      {
+        "name": "plain-text",
+        "input": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "hello world"
+            }
+          ]
+        },
+        "input_tokens": 3
+      },
+      {
+        "name": "tool-and-thinking-blocks",
+        "input": {
+          "messages": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "toolu_01",
+                  "name": "Read",
+                  "input": {
+                    "file_path": "/tmp/example.txt"
+                  }
+                },
+                {
+                  "type": "thinking",
+                  "thinking": "Need to inspect the file before answering."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "toolu_01",
+                  "content": "line1 line2 line3 some file content here"
+                }
+              ]
+            }
+          ]
+        },
+        "input_tokens": 28
+      },
+      {
+        "name": "system-and-tools",
+        "input": {
+          "system": "You are a coding assistant.",
+          "tools": [
+            {
+              "name": "Read",
+              "description": "Read a file",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "file_path": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ],
+          "messages": []
+        },
+        "input_tokens": 27
+      },
+      {
+        "name": "system-blocks",
+        "input": {
+          "system": [
+            {
+              "type": "text",
+              "text": "Be terse.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ]
+        },
+        "input_tokens": 13
+      },
+      {
+        "name": "image-block",
+        "input": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "What is this?"
+                },
+                {
+                  "type": "image",
+                  "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "input_tokens": 40
+      },
+      {
+        "name": "multi-turn",
+        "input": {
+          "system": "You are helpful.",
+          "messages": [
+            {
+              "role": "user",
+              "content": "What is 2 + 2?"
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "4"
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "And times 3?"
+                }
+              ]
+            }
+          ]
+        },
+        "input_tokens": 11
+      },
+      {
+        "name": "tool-result-blocks-and-numbers",
+        "input": {
+          "tools": [
+            {
+              "name": "calc",
+              "description": "Add",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "b": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "a",
+                  "b"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "messages": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "t1",
+                  "name": "calc",
+                  "input": {
+                    "a": 1.5,
+                    "b": 20,
+                    "exact": true,
+                    "note": null
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "t1",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "21.5"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "input_tokens": 40
+      },
+      {
+        "name": "non-ascii",
+        "input": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "héllo 世界 👋🏽"
+            }
+          ]
+        },
+        "input_tokens": 4
+      },
+      {
+        "name": "empty",
+        "input": {},
+        "input_tokens": 0
+      }
+    ]
+  }
+}

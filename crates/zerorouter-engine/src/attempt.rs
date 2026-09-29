@@ -36,6 +36,7 @@ use zerorouter_wire::codec::response::{self, ForClient};
 use zerorouter_wire::codec::types::{self, JobStatus, TypeCodec, TypeValue};
 use zerorouter_wire::codec::{Dropped, Style};
 use zerorouter_wire::error_body::{self, Tried};
+use zerorouter_wire::estimate;
 use zerorouter_wire::ir::{self, ErrorEvent, Event};
 use zerorouter_wire::primitives::{body as encodings, session};
 use zerorouter_wire::stream::{Frame, Framer, StreamReader, StreamWriter, usage_unasked};
@@ -73,6 +74,8 @@ pub struct TextRequest {
     pub cancel: CancellationToken,
     /// A non-text request (research R16); `ir` is then unused.
     pub media: Option<Media>,
+    /// A token count rather than a generation (research R14).
+    pub count: bool,
 }
 
 /// A non-text request, decoded by the client style's codec.
@@ -116,6 +119,8 @@ pub enum Answer {
         forced: bool,
     },
     Media(MediaAnswer),
+    /// A token count: from the provider, or 0router's estimate.
+    Count { input_tokens: u64, estimated: bool },
 }
 
 /// One piece of a streamed answer.
@@ -200,6 +205,22 @@ fn body_for(
     Ok((request::forward(&enc.body, wire, &usage_switch).map_err(carry)?, enc.dropped))
 }
 
+/// The count body for `c`: the client's own, with the model replaced, when the endpoint
+/// speaks the client's style; else encoded without generation parameters.
+fn count_body(req: &TextRequest, c: &Candidate<'_>, wire: &Style) -> Result<(Value, Vec<Dropped>), Failure> {
+    let carry = |e: zerorouter_wire::codec::CodecError| {
+        Failure::new(400, format!("0router: {} can't take this request: {e}", c.provider.id))
+    };
+    if c.same_style(&req.client.id) {
+        let edits = Edits { model: Some(&c.upstream_id), ..Edits::default() };
+        return Ok((request::forward(&req.body, wire, &edits).map_err(carry)?, Vec::new()));
+    }
+    let mut ir = req.ir.clone();
+    ir.model.clone_from(&c.upstream_id);
+    let enc = request::encode_count(&ir, wire, &req.client.id).map_err(carry)?;
+    Ok((enc.body, enc.dropped))
+}
+
 /// What goes upstream for one candidate.
 struct Outbound {
     body: Bytes,
@@ -255,6 +276,19 @@ fn media_body(req: &TextRequest, m: &Media, c: &Candidate<'_>, wire: Option<&Sty
     };
     let (body, content_type) = encodings::encode(encoding, &value);
     Ok(Outbound { body: body.into(), content_type, voice, dropped: Vec::new() })
+}
+
+/// A count as the record's usage.
+fn count_usage(n: u64, estimated: bool) -> Usage {
+    Usage {
+        input: Some(n),
+        output: None,
+        cache_read: None,
+        cache_write: None,
+        reasoning: None,
+        input_semantics: InputSemantics::IncludesCache,
+        estimated,
+    }
 }
 
 /// Usage a non-text answer reported.
@@ -405,7 +439,11 @@ impl Run {
     async fn walk(&mut self, st: &EngineState) -> Result<(), Failure> {
         let req = &self.req;
         let ty = req.media.as_ref().map_or(ModelType::Text, |m| m.ty);
-        let op = if req.media.as_ref().is_some_and(|m| m.job) { RouteOp::JobSubmit } else { RouteOp::Generate };
+        let op = match (&req.media, req.count) {
+            (_, true) => RouteOp::CountTokens,
+            (Some(m), _) if m.job => RouteOp::JobSubmit,
+            _ => RouteOp::Generate,
+        };
         self.engine.records.update(&req.id, |r| {
             r.op = Some(op);
             r.model_type = Some(ty);
@@ -515,6 +553,18 @@ impl Run {
                 }
             },
         };
+        // A count goes to the endpoint's `[token_count]` URL, or is estimated without one.
+        let (count_endpoint, counted);
+        let c = match (self.req.count, &c.endpoint.token_count) {
+            (false, _) => c,
+            (true, None) if self.estimate(st, c, kind) => return Ok(true),
+            (true, None) => return skip(self, "0router: the request can't be put in the Messages shape to estimate".into(), tried),
+            (true, Some(tc)) => {
+                count_endpoint = Endpoint { url: tc.url.clone(), force_stream: false, ..c.endpoint.clone() };
+                counted = Candidate { endpoint: &count_endpoint, ..c.clone() };
+                &counted
+            }
+        };
         let outbound = match (&self.req.media, &wire) {
             (Some(m), wire) => match media_body(&self.req, m, c, wire.as_deref()) {
                 Ok(o) => o,
@@ -527,6 +577,15 @@ impl Run {
                     tried,
                 );
             }
+            (None, Some(wire)) if self.req.count => match count_body(&self.req, c, wire) {
+                Ok((body, dropped)) => Outbound {
+                    body: Bytes::from(body.to_string()),
+                    content_type: "application/json".into(),
+                    voice: None,
+                    dropped,
+                },
+                Err(f) => return skip(self, f.message, tried),
+            },
             (None, Some(wire)) => {
                 let upstream_stream = self.req.stream || c.endpoint.force_stream;
                 match body_for(&self.req, c, wire, upstream_stream) {
@@ -732,6 +791,9 @@ impl Run {
         if self.req.media.is_some() {
             return self.media_once(st, c, wire, resp, content_type, stall).await;
         }
+        if self.req.count {
+            return self.count_once(wire, resp, stall, st).await;
+        }
         let Some(wire) = wire else {
             return Ended::Failed(Fail::transport(
                 ErrorClass::InBand,
@@ -916,6 +978,46 @@ impl Run {
             let _ = first.send(Ok(Answer::Media(MediaAnswer::Value(value))));
         }
         Ended::Ok(usage)
+    }
+
+    /// A count answer with a 2xx status, read with the wire's `[text.count_tokens]`.
+    async fn count_once(&mut self, wire: Option<&Arc<Style>>, resp: reqwest::Response, stall: Duration, st: &EngineState) -> Ended {
+        let in_band = |reason: String| Ended::Failed(Fail::transport(ErrorClass::InBand, reason, false));
+        let raw = match self.read_all(resp, stall, st).await {
+            Ok(b) => b,
+            Err(e) => return e,
+        };
+        let Some(t) = wire.and_then(|w| w.text().ok()).and_then(|t| t.count_response.as_ref()) else {
+            return in_band("0router: the wire has no count_tokens response".into());
+        };
+        let n = serde_json::from_slice::<Value>(&raw)
+            .ok()
+            .and_then(|v| zerorouter_wire::template::match_value(t, &v))
+            .and_then(|b| b.u64("count.input"));
+        let Some(n) = n else { return in_band("the count answer doesn't have the wire's shape".into()) };
+        self.ttft();
+        if let Some(first) = self.first.take() {
+            let _ = first.send(Ok(Answer::Count { input_tokens: n, estimated: false }));
+        }
+        Ended::Ok(Some(count_usage(n, false)))
+    }
+
+    /// Answers a count with 9router's estimate, on the request in the Messages shape, for
+    /// `c`, whose endpoint declares no counting. `false`: the request can't be estimated.
+    fn estimate(&mut self, st: &EngineState, c: &Candidate<'_>, kind: AttemptKind) -> bool {
+        const MESSAGES: &str = "anthropic-messages";
+        let n = if self.req.client.id == MESSAGES {
+            Some(estimate::messages_body(&self.req.body))
+        } else {
+            st.style(MESSAGES).and_then(|m| estimate::estimate(&self.req.ir, m, &self.req.client.id).ok())
+        };
+        let Some(n) = n else { return false };
+        self.start_attempt(c, kind, Vec::new());
+        self.succeed(c, Some(count_usage(n, true)));
+        if let Some(first) = self.first.take() {
+            let _ = first.send(Ok(Answer::Count { input_tokens: n, estimated: true }));
+        }
+        true
     }
 
     /// A whole body, with the stall watchdog on every chunk.

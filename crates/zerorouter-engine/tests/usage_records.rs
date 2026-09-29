@@ -204,7 +204,7 @@ async fn client_usage(s: &Setup, style: &str, body: &Value, answer: Answer) -> U
             }
             u
         }
-        Answer::Media(_) => panic!("a text request got media"),
+        Answer::Media(_) | Answer::Count { .. } => panic!("a text request got a non-text answer"),
     }
 }
 

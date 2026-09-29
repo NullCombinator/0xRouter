@@ -26,6 +26,13 @@ path = "/v1/models"
 op = "list_models"
 type = "text"
 
+[[routes]]
+method = "GET"
+path = "/v1/models/{model*}"
+op = "get_model"
+type = "text"
+model = { path = "model" }
+
 # Non-text routes (research R16). They live here because OpenAI SDK clients of either
 # OpenAI style call them with the same key.
 [[routes]]
