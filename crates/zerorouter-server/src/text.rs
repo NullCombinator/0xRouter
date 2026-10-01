@@ -110,11 +110,11 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
     };
     // Until the body is handed to the client, dropping this handler cancels the request.
     let guard = cancel.clone().drop_guard();
-    let answer = match engine.text(st, req).await {
-        Ok(a) => a,
+    let (answer, forwarded) = match engine.reply(st, req).await {
+        Ok(r) => (r.answer, r.headers),
         Err(f) => return crate::serve::style_failure(m, &f, &id),
     };
-    match answer {
+    let resp = match answer {
         Answer::Whole { status, content_type, raw, answer } => match *answer {
             ForClient::AsReceived { .. } => relay::as_received(status, content_type.as_deref(), raw, &id),
             ForClient::Rebuilt { body, .. } => relay::json(status, &body, &id),
@@ -138,7 +138,8 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
             relay::stream(200, content_type(framing), body, cancel, &id)
         }
         Answer::Media(_) | Answer::Count { .. } => fail(500, "0router: a text request got a non-text answer"),
-    }
+    };
+    relay::forward(resp, forwarded)
 }
 
 /// Where a stream writer reports its write times: the record's TTFT is the first content

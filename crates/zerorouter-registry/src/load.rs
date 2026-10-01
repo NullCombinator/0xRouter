@@ -176,6 +176,17 @@ pub fn validate_user_plugin(src: &str, path: &Path) -> Result<ProviderEntity, Ve
     Ok(entity)
 }
 
+/// The gate context the loader builds over the bundled styles: what `validate_with` needs
+/// to check a schema-2 plugin. `strict` is the bundled plugins' mode.
+pub fn bundled_gate_ctx(strict: bool, allow_private: bool) -> Result<GateCtx, Vec<ValidationError>> {
+    Ok(GateCtx { strict, ..gate_ctx(&styles()?, allow_private) })
+}
+
+/// The embedded bundled styles as `(file name, source)`.
+pub fn bundled_style_sources() -> &'static [(&'static str, &'static str)] {
+    BUNDLED_STYLES
+}
+
 /// Every embedded plugin through the gate. Any error is fatal.
 #[cfg(test)]
 pub(crate) fn load_bundled() -> Result<Vec<ProviderEntity>, Vec<ValidationError>> {

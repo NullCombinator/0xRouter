@@ -80,6 +80,21 @@ impl Step {
         }
     }
 
+    /// The same reply with one more response header.
+    pub fn with_header(self, name: &str, value: &str) -> Self {
+        match self {
+            Self::Reply { status, mut headers, body } => {
+                headers.push((name.into(), value.into()));
+                Self::Reply { status, headers, body }
+            }
+            Self::Stream { status, mut headers, frames, every, cut } => {
+                headers.push((name.into(), value.into()));
+                Self::Stream { status, headers, frames, every, cut }
+            }
+            other => other,
+        }
+    }
+
     /// The same stream, dropped after its first `n` frames.
     pub fn cut_after(self, n: usize) -> Self {
         match self {

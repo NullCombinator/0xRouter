@@ -1,10 +1,13 @@
-//! Which client headers reach the upstream (research R18, R27).
+//! Which client headers reach the upstream, and which provider headers reach the client
+//! (research R18, R27).
 //!
 //! A same-style attempt passes every client header; a cross-style one passes only the
 //! names the provider declares in `forwarding.to_upstream`. Either way the security floor
 //! applies first, then values with CR/LF or a secret in them are left out. A declared rule
 //! whose `from_styles` admits the client's style still sets how a header merges with the
-//! endpoint's static value.
+//! endpoint's static value. Downstream, only the names the provider declares in
+//! `forwarding.to_client` pass, then the same floor and value checks; the server's own
+//! headers are set after them.
 
 use std::borrow::Cow;
 
@@ -59,6 +62,20 @@ pub fn client_headers(
     }
 }
 
+/// The provider response headers the client gets: the `allow` list, then the floor.
+pub fn provider_headers(
+    allow: &[String],
+    headers: &HeaderMap,
+    floor: &Floor,
+    redactor: &Redactor,
+) -> Vec<(HeaderName, HeaderValue)> {
+    headers
+        .iter()
+        .filter(|(n, v)| allow.iter().any(|p| name_matches(p, n.as_str())) && passes_floor(n, v, floor, redactor))
+        .map(|(n, v)| (n.clone(), v.clone()))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,5 +121,31 @@ mod tests {
         assert_eq!(cross.len(), 1, "cross-style keeps the declared list only");
         assert_eq!(cross[0].0, "anthropic-beta");
         assert!(client_headers(&rules, false, "openai-chat", &h, &floor, &redactor).is_empty(), "from_styles limits the rule");
+    }
+
+    #[test]
+    fn the_client_gets_declared_provider_headers_past_the_floor() {
+        let secret = SecretString::new("sk-acme-SECRET-1");
+        let redactor = Redactor::new([&secret]);
+        let floor = Floor::default();
+        let mut h = HeaderMap::new();
+        for (k, v) in [
+            ("request-id", "req_1"),
+            ("anthropic-ratelimit-requests-remaining", "99"),
+            ("set-cookie", "session=1"),
+            ("x-internal", "1"),
+            ("retry-after", "has sk-acme-SECRET-1"),
+        ] {
+            h.insert(k, HeaderValue::from_static(v));
+        }
+        let allow = [
+            "request-id".to_owned(),
+            "retry-after".to_owned(),
+            "anthropic-ratelimit-*".to_owned(),
+            "set-cookie".to_owned(),
+        ];
+        let got: Vec<_> =
+            provider_headers(&allow, &h, &floor, &redactor).into_iter().map(|(n, _)| n.to_string()).collect();
+        assert_eq!(got, ["request-id", "anthropic-ratelimit-requests-remaining"]);
     }
 }

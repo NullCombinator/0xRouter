@@ -14,6 +14,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Number, Value};
+use zerorouter_registry::schema::MatchRule;
 use zerorouter_registry::template::{FieldPath, PathSeg, Piece, Template};
 
 /// Where rendering reads placeholder values.
@@ -343,6 +344,17 @@ pub fn take_path(target: &mut Value, path: &FieldPath) -> Option<Value> {
         PathSeg::Key(k) => cur.as_object_mut()?.remove(k),
         _ => None,
     }
+}
+
+/// Whether `rule`'s body conditions hold for `body`. A rule with none holds.
+pub fn body_rule_holds(rule: &MatchRule, body: &Value) -> bool {
+    let at = |p: &str| FieldPath::parse(p).ok().and_then(|fp| select_one(&fp, body).cloned());
+    let present = rule.path_present.as_deref().is_none_or(|p| at(p).is_some_and(|v| !v.is_null()));
+    let equals = rule.path_equals.as_deref().is_none_or(|pe| match pe {
+        [p, want] => at(p).is_some_and(|v| v.as_str().map_or_else(|| &v.to_string() == want, |s| s == want)),
+        _ => false,
+    });
+    present && equals
 }
 
 #[cfg(test)]

@@ -48,6 +48,18 @@ pub fn stamp(resp: &mut Response, request_id: &str) {
     }
 }
 
+/// Adds the provider headers the serving plugin forwards (`forwarding.to_client`, already
+/// past the floor). The core's own headers win.
+pub fn forward(mut resp: Response, headers: Vec<(HeaderName, HeaderValue)>) -> Response {
+    let core: Vec<HeaderName> = resp.headers().keys().cloned().collect();
+    for (name, value) in headers {
+        if !core.contains(&name) {
+            resp.headers_mut().append(name, value);
+        }
+    }
+    resp
+}
+
 pub fn json(status: u16, body: &Value, request_id: &str) -> Response {
     let mut resp = Response::new(Body::from(body.to_string()));
     *resp.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);

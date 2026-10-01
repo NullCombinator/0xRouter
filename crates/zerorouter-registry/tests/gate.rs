@@ -3,9 +3,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use zerorouter_registry::validate::validate;
+use zerorouter_registry::validate::{
+    GateCtx, ValidationError, check_route_collisions, validate, validate_style, validate_with,
+};
 use zerorouter_registry::{
-    CapabilityKind, OperatorHome, PluginSource, RegistryHandle, bundled_sources, validate_user_plugin,
+    CapabilityKind, OperatorHome, PluginSource, RegistryHandle, bundled_gate_ctx, bundled_sources,
+    bundled_style_sources, validate_user_plugin,
 };
 
 /// Rules whose error must list the allowed values.
@@ -22,7 +25,7 @@ const ENUM_RULES: &[&str] = &[
 
 fn corpus(dir: &str) -> Vec<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/gate").join(dir);
-    let mut files: Vec<_> = fs::read_dir(dir).unwrap().map(|e| e.unwrap().path()).collect();
+    let mut files: Vec<_> = fs::read_dir(dir).unwrap().map(|e| e.unwrap().path()).filter(|p| p.is_file()).collect();
     files.sort();
     files
 }
@@ -120,5 +123,109 @@ fn every_bundled_plugin_passes_the_gate() {
     // With the bundled styles loaded, as the loader gates them: schema 2 names wires.
     for (file, src) in bundled_sources() {
         validate_user_plugin(src, Path::new(file)).unwrap_or_else(|e| panic!("{file}: {e:?}"));
+    }
+}
+
+/// The plugins kept by hand rather than generated from 9router.
+const HAND_MAINTAINED: [&str; 5] =
+    ["anthropic.toml", "elevenlabs.toml", "opencode-go.toml", "opencode-zen.toml", "openrouter.toml"];
+
+/// The `# expect:` first line of a corpus file.
+fn expect(src: &str) -> &str {
+    src.lines().next().and_then(|l| l.strip_prefix("# expect: ")).expect("# expect: line")
+}
+
+/// Exactly one positioned error, naming `file` and containing the expected text.
+fn one_error(rule: &str, file: &str, want: &str, errors: &[ValidationError]) {
+    assert_eq!(errors.len(), 1, "{rule}: {errors:#?}");
+    let text = errors[0].to_string();
+    assert!(errors[0].line > 0 && errors[0].col > 0, "{rule}: unpositioned: {text}");
+    assert!(text.starts_with(file), "{rule}: {text}");
+    assert!(text.contains(want), "{rule}: {text:?} lacks {want:?}");
+}
+
+fn ctx(strict: bool, allow_private: bool) -> GateCtx {
+    bundled_gate_ctx(strict, allow_private).expect("bundled styles load")
+}
+
+/// US7, T117: each style case fails with its one expected error; the two collision files
+/// pass alone, and together get one collision error each.
+#[test]
+fn style_corpus_is_rejected_with_one_positioned_error() {
+    let files = corpus("invalid/styles");
+    assert_eq!(files.len(), 13);
+    let mut pair = Vec::new();
+    for path in &files {
+        let src = fs::read_to_string(path).unwrap();
+        let rule = path.file_stem().unwrap().to_str().unwrap();
+        let file = path.display().to_string();
+        if rule.starts_with("route-collision") {
+            let style = validate_style(&src, &file).unwrap_or_else(|e| panic!("{rule}: {e:#?}"));
+            pair.push((file, src, style));
+            continue;
+        }
+        one_error(rule, &file, expect(&src), &validate_style(&src, &file).expect_err(rule));
+    }
+    let pair: Vec<_> = pair.iter().map(|(f, s, st)| (f.as_str(), s.as_str(), st)).collect();
+    let errors = check_route_collisions(&pair);
+    // One error per file, each at that file's route.
+    assert_eq!(errors.len(), 2, "{errors:#?}");
+    for ((file, src, _), e) in pair.iter().zip(&errors) {
+        one_error("route-collision", file, expect(src), std::slice::from_ref(e));
+    }
+}
+
+/// US7, T118: each schema-2 case fails with its one expected error, gated as a user plugin
+/// is against the bundled styles.
+#[test]
+fn provider_corpus_is_rejected_with_one_positioned_error() {
+    let files = corpus("invalid/providers");
+    assert_eq!(files.len(), 16);
+    for path in &files {
+        let src = fs::read_to_string(path).unwrap();
+        let rule = path.file_stem().unwrap().to_str().unwrap();
+        let file = path.display().to_string();
+        let errors =
+            validate_with(&src, PluginSource::User(path.clone()), &file, &ctx(false, false)).err().unwrap_or_default();
+        one_error(rule, &file, expect(&src), &errors);
+    }
+}
+
+#[test]
+fn a_private_endpoint_passes_when_the_operator_allows_it() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/gate/invalid/providers/url-localhost.toml");
+    let src = fs::read_to_string(&path).unwrap();
+    let g = validate_with(&src, PluginSource::User(path.clone()), "url-localhost.toml", &ctx(false, true)).unwrap();
+    assert!(g.diagnostics.is_empty(), "{:?}", g.diagnostics);
+}
+
+/// A floor name in a forwarding list is stripped with a diagnostic, and is an error in
+/// strict mode (the bundled plugins' mode).
+#[test]
+fn a_floor_name_is_stripped_or_refused_in_strict_mode() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/gate/strict/forwarding-authorization.toml");
+    let src = fs::read_to_string(&path).unwrap();
+    let g = validate_with(&src, PluginSource::User(path.clone()), "f.toml", &ctx(false, false)).unwrap();
+    let up = &g.entity.forwarding.as_ref().unwrap().to_upstream.headers;
+    assert!(up.iter().all(|h| h.name != "authorization"), "{up:?}");
+    assert_eq!(g.diagnostics.len(), 1, "{:?}", g.diagnostics);
+    assert!(g.diagnostics[0].to_string().contains("entry stripped"), "{:?}", g.diagnostics);
+    let errors = validate_with(&src, PluginSource::User(path.clone()), "f.toml", &ctx(true, false)).unwrap_err();
+    one_error("forwarding-authorization", "f.toml", expect(&src), &errors);
+}
+
+/// US7-4: the shipped styles and the hand-maintained plugins pass in strict mode.
+#[test]
+fn shipped_styles_and_hand_maintained_plugins_pass_strict() {
+    let styles = bundled_style_sources();
+    assert_eq!(styles.len(), 4);
+    for (file, src) in styles {
+        validate_style(src, file).unwrap_or_else(|e| panic!("{file}: {e:#?}"));
+    }
+    let strict = ctx(true, false);
+    for name in HAND_MAINTAINED {
+        let (_, src) = bundled_sources().iter().find(|(f, _)| *f == name).unwrap();
+        let g = validate_with(src, PluginSource::Bundled, name, &strict).unwrap_or_else(|e| panic!("{name}: {e:#?}"));
+        assert!(g.diagnostics.is_empty(), "{name}: {:?}", g.diagnostics);
     }
 }

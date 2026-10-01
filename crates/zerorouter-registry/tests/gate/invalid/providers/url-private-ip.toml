@@ -1,0 +1,31 @@
+# expect: host 192.168.1.10
+schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-acme-key"
+
+[endpoints.text]
+url = "https://192.168.1.10/v1/messages"
+wire = "anthropic-messages"
+
+[endpoints.text.token_count]
+url = "https://api.acme.example/v1/messages/count_tokens"
+
+[endpoints.stt]
+url = "https://api.acme.example/v1/speech-to-text"
+encoding = "multipart"
+body = { file = "{input.audio}", model_id = "{model.upstream_id}" }
+response = { text = "text" }
+
+[forwarding.to_upstream]
+headers = [{ name = "anthropic-beta", merge = "append_csv", from_styles = ["anthropic-messages"] }]
+
+[forwarding.to_client]
+headers = ["request-id", "anthropic-ratelimit-*"]
+
+[[models]]
+id = "m1"
+kind = "llm"

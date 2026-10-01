@@ -40,6 +40,14 @@ vision = true
 header = "x-opencode-session"
 derive = "ses_time_base62"
 
+# 9router passes the client's opencode identity through (opencode-zen.js buildHeaders).
+# Its UA spoof and the `desktop` default are not carried over.
+[forwarding.to_upstream]
+headers = [
+  { name = "user-agent", merge = "replace" },
+  { name = "x-opencode-client", merge = "replace" },
+]
+
 [[models]]
 id = "claude-fable-5"
 name = "Claude Fable 5"

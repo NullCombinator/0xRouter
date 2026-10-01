@@ -725,32 +725,32 @@ and plugins with actionable messages.
 
 ### Tests for User Story 7 ⚠️
 
-- [ ] T117 [P] [US7] Add the style gate corpus in `crates/zerorouter-registry/tests/gate/invalid/styles/`, one file per case with an `.expected` diagnostic: `unknown-key`, `unknown-placeholder` (`{request.api_key}`), `bad-path-template`, `route-collision` (two files), `missing-codec`, `ambiguous-stream-rules`, `finish-map-incomplete`, `error-template-missing-message`, `bad-carrier-scheme`, `unknown-session-extractor`, `unknown-framing` and `expression-in-template` (`{a+b}`).
-- [ ] T118 [P] [US7] Add the schema-2 provider corpus in `crates/zerorouter-registry/tests/gate/invalid/providers/`: `endpoint-unknown-type`, `url-private-ip`, `url-localhost`, `placeholder-in-host`, `wire-and-body`, `unknown-body-placeholder`, `body-secret-key`, `forwarding-wildcard-bare`, `forwarding-bad-merge`, `forwarding-body-secret-path`, `continuation-unknown-method`, `token-count-without-count-style`, `error-rule-bad-status`, `schema2-with-transport`, `model-type-without-endpoint` and `endpoint-auth-bad-scheme`. Add `crates/zerorouter-registry/tests/gate/strict/forwarding-authorization.toml`, which loads with a diagnostic and the entry stripped in normal mode and is an error in strict mode.
-- [ ] T119 [US7] Extend `crates/zerorouter-registry/tests/gate.rs`.
+- [X] T117 [P] [US7] Add the style gate corpus in `crates/zerorouter-registry/tests/gate/invalid/styles/`, one file per case with an `.expected` diagnostic: `unknown-key`, `unknown-placeholder` (`{request.api_key}`), `bad-path-template`, `route-collision` (two files), `missing-codec`, `ambiguous-stream-rules`, `finish-map-incomplete`, `error-template-missing-message`, `bad-carrier-scheme`, `unknown-session-extractor`, `unknown-framing` and `expression-in-template` (`{a+b}`).
+- [X] T118 [P] [US7] Add the schema-2 provider corpus in `crates/zerorouter-registry/tests/gate/invalid/providers/`: `endpoint-unknown-type`, `url-private-ip`, `url-localhost`, `placeholder-in-host`, `wire-and-body`, `unknown-body-placeholder`, `body-secret-key`, `forwarding-wildcard-bare`, `forwarding-bad-merge`, `forwarding-body-secret-path`, `continuation-unknown-method`, `token-count-without-count-style`, `error-rule-bad-status`, `schema2-with-transport`, `model-type-without-endpoint` and `endpoint-auth-bad-scheme`. Add `crates/zerorouter-registry/tests/gate/strict/forwarding-authorization.toml`, which loads with a diagnostic and the entry stripped in normal mode and is an error in strict mode.
+- [X] T119 [US7] Extend `crates/zerorouter-registry/tests/gate.rs`.
   - Every corpus file gets exactly its expected diagnostic.
   - The four shipped styles and the five bundled plugins pass in strict mode (US7-4).
   - `url-localhost` passes when `allow_private_endpoints = true`.
-- [ ] T120 [P] [US7] Write `crates/zerorouter-engine/tests/forwarding.rs`.
+- [X] T120 [P] [US7] Write `crates/zerorouter-engine/tests/forwarding.rs`.
   - From a cross-style client, a declared `anthropic-beta` reaches the anthropic mock and is appended to any static value, and an undeclared client header doesn't reach it (US7-1). From a same-style client, the undeclared header does reach it (FR-039).
   - The mock's `request-id` and `anthropic-ratelimit-requests-remaining` reach the client (US7-2).
   - A client's `x-api-key`, `authorization` and `cookie` never reach any mock, and a mock `set-cookie` never reaches the client (US7-3).
   - A declared header whose value contains a configured secret is dropped. A value with CR/LF is rejected.
-- [ ] T121 [P] [US7] Write `crates/zerorouter-engine/tests/inband.rs`. A test plugin declares `errors.body` for an error inside a 200 body and `errors.stream` for a stream error event with a `status_map`. Both are classified with the declared status and trigger fallback (US7-5, FR-024).
+- [X] T121 [P] [US7] Write `crates/zerorouter-engine/tests/inband.rs`. A test plugin declares `errors.body` for an error inside a 200 body and `errors.stream` for a stream error event with a `status_map`. Both are classified with the declared status and trigger fallback (US7-5, FR-024).
 
 ### Implementation for User Story 7
 
-- [ ] T122 [US7] Implement forwarding in `crates/zerorouter-engine/src/forwarding.rs`.
+- [X] T122 [US7] Implement forwarding in `crates/zerorouter-engine/src/forwarding.rs`.
   - Upstream, cross-style attempts: client headers from the declaring `from_styles` only, with `merge = replace | append_csv`, then the floor, the secret-value check and the CR/LF check. Same-style attempts use T151's rule.
   - Downstream: provider headers through the `to_client.headers` allowlist (with `-*` suffix wildcards), then the floor, then the core headers.
   - `to_client.body` paths are copied verbatim, in native pairs only.
   - Use it from `upstream.rs::build_request` and the relay.
-- [ ] T123 [US7] Declare the anthropic forwarding in `plugins/bundled/anthropic.toml`.
+- [X] T123 [US7] Declare the anthropic forwarding in `plugins/bundled/anthropic.toml`.
   - Upstream: `anthropic-beta` (`append_csv`) and `anthropic-version` (`replace`), both `from_styles = ["anthropic-messages"]`.
   - To the client: `request-id`, `retry-after` and `anthropic-ratelimit-*`.
   - Add the equivalent declarations for openrouter and opencode from their seeds, where 9router forwards anything.
-- [ ] T124 [US7] Implement in-band error detection in `crates/zerorouter-engine/src/attempt.rs`. Endpoint `errors.body` rules are checked on 200 bodies, and `errors.stream` rules on stream frames. A match becomes a classified failure with the declared or mapped status and class `in_band`.
-- [ ] T125 [US7] Run `cargo test -p zerorouter-registry --test gate` and `-p zerorouter-engine --test forwarding --test inband`, then fix until green.
+- [X] T124 [US7] Implement in-band error detection in `crates/zerorouter-engine/src/attempt.rs`. Endpoint `errors.body` rules are checked on 200 bodies, and `errors.stream` rules on stream frames. A match becomes a classified failure with the declared or mapped status and class `in_band`.
+- [X] T125 [US7] Run `cargo test -p zerorouter-registry --test gate` and `-p zerorouter-engine --test forwarding --test inband`, then fix until green.
 
 **Checkpoint**: The core stays generic. Every provider- and style-specific fact is data that
 passes the gate.

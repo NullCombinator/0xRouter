@@ -12,9 +12,8 @@ use std::sync::Arc;
 use axum::http::{HeaderMap, Method};
 use serde_json::Value;
 use zerorouter_registry::schema::{MatchRule, Route, StyleFile};
-use zerorouter_registry::template::FieldPath;
 use zerorouter_wire::codec::Style;
-use zerorouter_wire::template::select_one;
+use zerorouter_wire::template::body_rule_holds;
 
 /// A loaded style: the file (carriers, routes) and its compiled codec.
 #[derive(Debug)]
@@ -152,17 +151,6 @@ fn header_holds(rule: &MatchRule, headers: &HeaderMap) -> bool {
 
 fn has_body_rule(rule: &MatchRule) -> bool {
     rule.path_present.is_some() || rule.path_equals.is_some()
-}
-
-/// Whether `rule`'s body conditions hold for `body`. A rule with none holds.
-pub fn body_rule_holds(rule: &MatchRule, body: &Value) -> bool {
-    let at = |p: &str| FieldPath::parse(p).ok().and_then(|fp| select_one(&fp, body).cloned());
-    let present = rule.path_present.as_deref().is_none_or(|p| at(p).is_some_and(|v| !v.is_null()));
-    let equals = rule.path_equals.as_deref().is_none_or(|pe| match pe {
-        [p, want] => at(p).is_some_and(|v| v.as_str().map_or_else(|| &v.to_string() == want, |s| s == want)),
-        _ => false,
-    });
-    present && equals
 }
 
 impl RouteTable {

@@ -26,7 +26,7 @@ mod views;
 pub use credentials::{ResolvedCredential, SecretString};
 pub use load::{
     DroppedUnifiedModel, LoadReport, OperatorHome, PluginConflict, ReloadError, SkippedPlugin, StartupError,
-    WithheldCredential, validate_user_plugin,
+    WithheldCredential, bundled_gate_ctx, bundled_style_sources, validate_user_plugin,
 };
 pub use lookup::{derive_model_name, normalise_version_sep, split_suffix};
 pub use registry::{CatalogEntry, ModelInfo, Registry, RuntimeSettings, UnifiedMember, UnifiedModel};

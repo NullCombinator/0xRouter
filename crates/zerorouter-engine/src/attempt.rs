@@ -28,7 +28,7 @@ use tokio::time;
 use tokio_util::sync::CancellationToken;
 use zerorouter_registry::Resolution;
 use zerorouter_registry::schema::{
-    BodyEncoding, BreakBehaviour, Endpoint, Framing, InputSemantics, ModelType, RouteOp,
+    BodyEncoding, BreakBehaviour, Endpoint, ErrorRule, Framing, InputSemantics, ModelType, RouteOp,
 };
 use zerorouter_registry::template::{FieldPath, Template};
 use zerorouter_wire::codec::request::{self, Edits};
@@ -45,6 +45,8 @@ use zerorouter_wire::template::Bindings;
 use crate::accounts;
 use crate::breaks::{self, Broken, Resume, Seen};
 use crate::classify::{self, Verdict};
+use crate::forwarding;
+use crate::inband;
 use crate::jobs::Job;
 use crate::keys::AgentId;
 use crate::plan::{self, Candidate, Step, Warm};
@@ -121,6 +123,13 @@ pub enum Answer {
     Media(MediaAnswer),
     /// A token count: from the provider, or 0router's estimate.
     Count { input_tokens: u64, estimated: bool },
+}
+
+/// An answer, with the provider headers the serving plugin forwards to the client
+/// (`forwarding.to_client`, after the floor).
+pub struct Reply {
+    pub answer: Answer,
+    pub headers: Vec<(HeaderName, HeaderValue)>,
 }
 
 /// One piece of a streamed answer.
@@ -366,7 +375,9 @@ enum Ended {
 struct Run {
     engine: Arc<Engine>,
     req: TextRequest,
-    first: Option<oneshot::Sender<Result<Answer, Failure>>>,
+    first: Option<oneshot::Sender<Result<Reply, Failure>>>,
+    /// The provider headers the client gets with the answer.
+    forward: Vec<(HeaderName, HeaderValue)>,
     /// The client stream, once a provider started one.
     tx: Option<mpsc::Sender<Piece>>,
     n: u32,
@@ -384,6 +395,23 @@ fn cooldown_key<'c>(c: &'c Candidate<'_>) -> (&'c str, &'c str, &'c str) {
     (&c.provider.id, c.account.map_or("", |a| a.name.as_str()), &c.upstream_id)
 }
 
+/// A failure an endpoint's `errors` rule read from a 2xx answer: classified by its status,
+/// with class `in_band`.
+fn inband_fail(ib: inband::InBand, raw: &str, after_output: bool, st: &EngineState) -> Fail {
+    let mut verdict = classify::upstream(ib.status, raw);
+    verdict.class = ErrorClass::InBand;
+    let message = st.redactor.redact(&ib.message).into_owned();
+    Fail {
+        status: Some(ib.status),
+        verdict,
+        reason: message.clone(),
+        message,
+        indicated: None,
+        after_output,
+        usage: None,
+    }
+}
+
 fn class_name(class: ErrorClass) -> Option<String> {
     serde_json::to_value(class).ok().and_then(|v| v.as_str().map(str::to_owned))
 }
@@ -391,11 +419,17 @@ fn class_name(class: ErrorClass) -> Option<String> {
 impl Engine {
     /// Runs one text generation request against `st`.
     pub async fn text(self: &Arc<Self>, st: Arc<EngineState>, req: TextRequest) -> Result<Answer, Failure> {
+        self.reply(st, req).await.map(|r| r.answer)
+    }
+
+    /// [`Engine::text`], with the provider headers forwarded to the client.
+    pub async fn reply(self: &Arc<Self>, st: Arc<EngineState>, req: TextRequest) -> Result<Reply, Failure> {
         let (first, answer) = oneshot::channel();
         let run = Run {
             engine: self.clone(),
             req,
             first: Some(first),
+            forward: Vec::new(),
             tx: None,
             n: 0,
             seen: Seen::default(),
@@ -769,6 +803,10 @@ impl Run {
             content_type.as_deref().is_some_and(|c| c.starts_with("text/event-stream") || c.contains("ndjson"));
         let stall = upstream::stall_timeout(c.endpoint);
         let ok = (200..300).contains(&status);
+        if ok {
+            let allow = c.provider.forwarding.as_ref().map_or(&[][..], |f| &f.to_client.headers[..]);
+            self.forward = forwarding::provider_headers(allow, resp.headers(), st.registry.floor(), &st.redactor);
+        }
 
         if !ok {
             let indicated = classify::indicated_wait(resp.headers(), SystemTime::now());
@@ -792,7 +830,7 @@ impl Run {
             return self.media_once(st, c, wire, resp, content_type, stall).await;
         }
         if self.req.count {
-            return self.count_once(wire, resp, stall, st).await;
+            return self.count_once(wire, &c.endpoint.errors.body, resp, stall, st).await;
         }
         let Some(wire) = wire else {
             return Ended::Failed(Fail::transport(
@@ -811,6 +849,9 @@ impl Run {
                 Ok(v) => v,
                 Err(e) => return in_band(format!("answered non-JSON: {e}")),
             };
+            if let Some(ib) = inband::body(&c.endpoint.errors.body, &value) {
+                return Ended::Failed(inband_fail(ib, &String::from_utf8_lossy(&raw), false, st));
+            }
             let semantics = wire.text().map_or(InputSemantics::ExcludesCache, |t| t.usage.semantics);
             if self.req.stream || self.tx.is_some() {
                 // A client already streaming (or asking to) gets the whole answer as events.
@@ -839,9 +880,7 @@ impl Run {
             };
             let usage = read.and_then(|r| r.usage).map(|u| Usage::reported(&u, semantics));
             self.ttft();
-            if let Some(first) = self.first.take() {
-                let _ = first.send(Ok(Answer::Whole { status, content_type, raw, answer: Box::new(answer) }));
-            }
+            self.answer(Answer::Whole { status, content_type, raw, answer: Box::new(answer) });
             return Ended::Ok(usage);
         }
 
@@ -851,7 +890,7 @@ impl Run {
             && wire.text().is_ok_and(|t| t.framing != Framing::JsonArray);
         let relay = Relay { frames, drop_usage: frames && usage_unasked(&self.req.client, &self.req.body) };
         self.commit();
-        let end = self.pump(resp, wire, relay, stall, st).await;
+        let end = self.pump(resp, wire, &c.endpoint.errors.stream, relay, stall, st).await;
         if matches!(end, Ended::Ok(_)) {
             self.tx = None;
         }
@@ -895,6 +934,9 @@ impl Run {
             let Ok(v) = serde_json::from_slice::<Value>(&raw) else {
                 return in_band("the job answer isn't JSON".into());
             };
+            if let Some(ib) = inband::body(&c.endpoint.errors.body, &v) {
+                return Ended::Failed(inband_fail(ib, &String::from_utf8_lossy(&raw), false, st));
+            }
             let Some((bindings, status)) = codec.decode_job(&v) else {
                 return in_band("the job answer doesn't have the wire's shape".into());
             };
@@ -918,9 +960,7 @@ impl Run {
             self.engine.records.update(&self.req.id, |r| r.job = Some(job));
             let id = zerorouter_job_id;
             self.ttft();
-            if let Some(first) = self.first.take() {
-                let _ = first.send(Ok(Answer::Media(MediaAnswer::Job { id, status, bindings })));
-            }
+            self.answer(Answer::Media(MediaAnswer::Job { id, status, bindings }));
             return Ended::Ok(None);
         }
 
@@ -928,9 +968,7 @@ impl Run {
             let (tx, rx) = mpsc::channel(CHANNEL);
             let content_type = content_type.unwrap_or_else(|| "application/octet-stream".into());
             self.ttft();
-            if let Some(first) = self.first.take() {
-                let _ = first.send(Ok(Answer::Media(MediaAnswer::Bytes { content_type, rx })));
-            }
+            self.answer(Answer::Media(MediaAnswer::Bytes { content_type, rx }));
             // Committed: a break from here on reaches the client as a cut body.
             let mut resp = resp;
             loop {
@@ -964,6 +1002,12 @@ impl Run {
             Ok(b) => b,
             Err(e) => return e,
         };
+        if json
+            && let Ok(v) = serde_json::from_slice::<Value>(&raw)
+            && let Some(ib) = inband::body(&c.endpoint.errors.body, &v)
+        {
+            return Ended::Failed(inband_fail(ib, &String::from_utf8_lossy(&raw), false, st));
+        }
         let value = match &wire_codec {
             Some(codec) => codec.decode_response(&raw, content_type.as_deref()),
             None => types::decode_mapped(&map, &raw, content_type.as_deref()),
@@ -974,14 +1018,19 @@ impl Run {
         };
         let usage = media_usage(&value);
         self.ttft();
-        if let Some(first) = self.first.take() {
-            let _ = first.send(Ok(Answer::Media(MediaAnswer::Value(value))));
-        }
+        self.answer(Answer::Media(MediaAnswer::Value(value)));
         Ended::Ok(usage)
     }
 
     /// A count answer with a 2xx status, read with the wire's `[text.count_tokens]`.
-    async fn count_once(&mut self, wire: Option<&Arc<Style>>, resp: reqwest::Response, stall: Duration, st: &EngineState) -> Ended {
+    async fn count_once(
+        &mut self,
+        wire: Option<&Arc<Style>>,
+        errors: &[ErrorRule],
+        resp: reqwest::Response,
+        stall: Duration,
+        st: &EngineState,
+    ) -> Ended {
         let in_band = |reason: String| Ended::Failed(Fail::transport(ErrorClass::InBand, reason, false));
         let raw = match self.read_all(resp, stall, st).await {
             Ok(b) => b,
@@ -990,15 +1039,15 @@ impl Run {
         let Some(t) = wire.and_then(|w| w.text().ok()).and_then(|t| t.count_response.as_ref()) else {
             return in_band("0router: the wire has no count_tokens response".into());
         };
-        let n = serde_json::from_slice::<Value>(&raw)
-            .ok()
-            .and_then(|v| zerorouter_wire::template::match_value(t, &v))
-            .and_then(|b| b.u64("count.input"));
+        let v = serde_json::from_slice::<Value>(&raw).ok();
+        if let Some(ib) = v.as_ref().and_then(|v| inband::body(errors, v)) {
+            return Ended::Failed(inband_fail(ib, &String::from_utf8_lossy(&raw), false, st));
+        }
+        let n =
+            v.as_ref().and_then(|v| zerorouter_wire::template::match_value(t, v)).and_then(|b| b.u64("count.input"));
         let Some(n) = n else { return in_band("the count answer doesn't have the wire's shape".into()) };
         self.ttft();
-        if let Some(first) = self.first.take() {
-            let _ = first.send(Ok(Answer::Count { input_tokens: n, estimated: false }));
-        }
+        self.answer(Answer::Count { input_tokens: n, estimated: false });
         Ended::Ok(Some(count_usage(n, false)))
     }
 
@@ -1014,9 +1063,7 @@ impl Run {
         let Some(n) = n else { return false };
         self.start_attempt(c, kind, Vec::new());
         self.succeed(c, Some(count_usage(n, true)));
-        if let Some(first) = self.first.take() {
-            let _ = first.send(Ok(Answer::Count { input_tokens: n, estimated: true }));
-        }
+        self.answer(Answer::Count { input_tokens: n, estimated: true });
         true
     }
 
@@ -1046,6 +1093,7 @@ impl Run {
         &mut self,
         mut resp: reqwest::Response,
         wire: &Arc<Style>,
+        errors: &[ErrorRule],
         relay: Relay,
         stall: Duration,
         st: &EngineState,
@@ -1099,6 +1147,14 @@ impl Run {
             // Each piece with the events it carries.
             let mut items: Vec<(Option<Piece>, Vec<Event>)> = Vec::new();
             for f in frames {
+                // A frame the endpoint declares an error is never relayed (FR-024).
+                if let Some(ib) = inband::frame(errors, f.event.as_deref(), &f.data) {
+                    if !output {
+                        return Ended::Failed(inband_fail(ib, &f.data, false, st));
+                    }
+                    failed = Some(ErrorEvent { status: Some(ib.status), kind: None, message: ib.message, raw: None });
+                    continue;
+                }
                 // A frame the wire's templates can't read carries no events; relayed
                 // unchanged, it still reaches a native client.
                 let events = reader.read(&f).unwrap_or_default();
@@ -1190,6 +1246,13 @@ impl Run {
         }
     }
 
+    /// Hands the client its answer, once.
+    fn answer(&mut self, answer: Answer) {
+        if let Some(first) = self.first.take() {
+            let _ = first.send(Ok(Reply { answer, headers: std::mem::take(&mut self.forward) }));
+        }
+    }
+
     /// Hands the client a stream, once.
     fn commit(&mut self) {
         if self.tx.is_some() {
@@ -1197,9 +1260,7 @@ impl Run {
         }
         let (tx, rx) = mpsc::channel(CHANNEL);
         self.tx = Some(tx);
-        if let Some(first) = self.first.take() {
-            let _ = first.send(Ok(Answer::Events { rx, forced: !self.req.stream }));
-        }
+        self.answer(Answer::Events { rx, forced: !self.req.stream });
     }
 
     /// Sends one piece of the answer and notes what the client saw.

@@ -279,11 +279,12 @@ fn check_route(s: &StyleFile, r: &Route, base: &FieldPath, err: &mut impl FnMut(
     if !METHODS.contains(&r.method.as_str()) {
         err(base.key("method"), format!("{:?} is not one of {}", r.method, METHODS.join(", ")));
     }
+    // `None` when the path is malformed: that error alone is reported, not its knock-on.
     let params = match path_params(&r.path) {
-        Ok(p) => p,
+        Ok(p) => Some(p),
         Err(e) => {
             err(base.key("path"), e);
-            Vec::new()
+            None
         }
     };
     if let Some(m) = &r.model {
@@ -293,7 +294,7 @@ fn check_route(s: &StyleFile, r: &Route, base: &FieldPath, err: &mut impl FnMut(
                     err(base.key("model").key("body"), e);
                 }
             }
-            (None, Some(p)) if !params.contains(p) => {
+            (None, Some(p)) if params.as_ref().is_some_and(|ps| !ps.contains(p)) => {
                 err(base.key("model").key("path"), format!("{p:?} is not a parameter of the route path"));
             }
             (None, Some(_)) => {}

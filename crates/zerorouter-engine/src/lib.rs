@@ -12,6 +12,7 @@ pub mod breaks;
 pub mod classify;
 pub mod cooldown;
 pub mod forwarding;
+pub mod inband;
 pub mod jobs;
 pub mod keys;
 pub mod plan;

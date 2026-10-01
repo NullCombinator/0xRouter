@@ -13,7 +13,7 @@ use axum::http::HeaderMap;
 use axum::response::Response;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use zerorouter_engine::attempt::{Answer, Media, MediaAnswer, TextRequest};
+use zerorouter_engine::attempt::{Answer, Media, MediaAnswer, Reply, TextRequest};
 use zerorouter_engine::records::Outcome;
 use zerorouter_engine::state::{Engine, EngineState};
 use zerorouter_registry::schema::RouteOp;
@@ -126,12 +126,12 @@ pub async fn generate(
         count: false,
     };
     let guard = cancel.clone().drop_guard();
-    let answer = match engine.text(st, req).await {
-        Ok(Answer::Media(a)) => a,
+    let (answer, forwarded) = match engine.reply(st, req).await {
+        Ok(Reply { answer: Answer::Media(a), headers }) => (a, headers),
         Ok(_) => return fail(500, "0router: a non-text request got a text answer"),
         Err(f) => return style_failure(m, &f, &id),
     };
-    match answer {
+    let resp = match answer {
         MediaAnswer::Value(v) => {
             let ctx = Bindings::new().with("response.model", target.as_str()).with("response.created", unix_now());
             let (bytes, ctype) = codec.encode_response(&v, &ctx);
@@ -142,7 +142,8 @@ pub async fn generate(
             relay::stream(200, &content_type, body_of(rx), cancel, &id)
         }
         MediaAnswer::Job { id: vj, status, bindings } => job_body(m, &headers, &vj, bindings, status, &target, &id),
-    }
+    };
+    relay::forward(resp, forwarded)
 }
 
 /// A job poll: one upstream request, the status in the client's style. The response
