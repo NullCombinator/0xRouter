@@ -17,7 +17,13 @@ url.workspace = true
 regex-lite.workspace = true
 indexmap.workspace = true
 
+[features]
+# `parity_set()`: bundled + community with the fit check off, for slice 002's parity tests.
+parity = []
+
 [dev-dependencies]
+# The parity tests need `parity_set()`.
+zerorouter-registry = { path = ".", features = ["parity"] }
 serde_json.workspace = true
 criterion.workspace = true
 tempfile.workspace = true

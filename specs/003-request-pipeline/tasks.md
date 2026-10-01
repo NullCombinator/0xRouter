@@ -766,12 +766,12 @@ set that installs whole or is refused whole with a message naming every unsuppor
 
 ### Tests for User Story 8 ⚠️
 
-- [ ] T126 [P] [US8] Add the fit corpus in `crates/zerorouter-registry/tests/gate/unsupported/`, each case with a golden `.expected` message in the [contract format](contracts/provider-schema-v2.md#fit-check): `oauth-auth`, `cookie-category`, `kiro-format`, `quirk`, `hook`, `executor-requires`, `web-search-section`, `systemone-section`, `schema-3`, `unknown-wire-style` and `mixed` (several parts, all listed).
-- [ ] T127 [P] [US8] Write `crates/zerorouter-registry/tests/community.rs`.
+- [X] T126 [P] [US8] Add the fit corpus in `crates/zerorouter-registry/tests/gate/unsupported/`, each case with a golden `.expected` message in the [contract format](contracts/provider-schema-v2.md#fit-check): `oauth-auth`, `cookie-category`, `kiro-format`, `quirk`, `hook`, `executor-requires`, `web-search-section`, `systemone-section`, `schema-3`, `unknown-wire-style` and `mixed` (several parts, all listed).
+- [X] T127 [P] [US8] Write `crates/zerorouter-registry/tests/community.rs`.
   - A sweep over all 116 community plugins: each either fits and loads, or is refused with every unsupported part listed, file:line:col for each. No panic (SC-012).
   - A refused plugin contributes nothing to the snapshot: no models, no aliases, no unified-model members (US8-3).
   - The goldens from T126 match.
-- [ ] T128 [P] [US8] Write `crates/zerorouter-cli/tests/plugins.rs`.
+- [X] T128 [P] [US8] Write `crates/zerorouter-cli/tests/plugins.rs`.
   - `plugins list --community` shows 116 entries with their fit status.
   - `plugins install qoder` exits 3 with the refusal message.
   - `plugins install deepseek` installs, appears in `zerorouter providers`, and serves a request against the mock once an account is added (US8-1).
@@ -779,23 +779,23 @@ set that installs whole or is refused whole with a message naming every unsuppor
 
 ### Implementation for User Story 8
 
-- [ ] T129 [US8] Change `tools/gen-bundled/generate.mjs` to write the 116 non-chosen providers to `plugins/community/*.toml` (schema 1), to delete them from `plugins/bundled/`, and to stop emitting web search and web fetch sections.
+- [X] T129 [US8] Change `tools/gen-bundled/generate.mjs` to write the 116 non-chosen providers to `plugins/community/*.toml` (schema 1), to delete them from `plugins/bundled/`, and to stop emitting web search and web fetch sections.
   - Emit `requires = ["9router-executor:<id>"]` for providers that have a specialised 9router executor (`open-sse/executors/*` other than the default), and add the `requires` key to the schema-1 structs in `crates/zerorouter-registry/src/schema/plugin.rs`.
   - Commit the output on its own, naming the ref SHA.
-- [ ] T130 [US8] Implement the schema 1 → 2 conversion in `crates/zerorouter-registry/src/convert.rs` per [contracts/provider-schema-v2.md § Schema 1 → 2 conversion](contracts/provider-schema-v2.md#schema-1--2-conversion-community-plugins).
+- [X] T130 [US8] Implement the schema 1 → 2 conversion in `crates/zerorouter-registry/src/convert.rs` per [contracts/provider-schema-v2.md § Schema 1 → 2 conversion](contracts/provider-schema-v2.md#schema-1--2-conversion-community-plugins).
   - `[transport]` → `[endpoints.text]`, and each capability endpoint → `[endpoints.<type>]`.
   - The format maps to a wire: `openai` → `openai-chat`, `claude` → `anthropic-messages`, `openai-responses`, `gemini`.
   - `image_to_text` → `vision = true`.
   - Keep the source spans for fit messages.
-- [ ] T131 [US8] Implement the fit check in `crates/zerorouter-registry/src/fit.rs` ([R19](research.md#r19-fit-or-refuse-and-the-community-set)).
+- [X] T131 [US8] Implement the fit check in `crates/zerorouter-registry/src/fit.rs` ([R19](research.md#r19-fit-or-refuse-and-the-community-set)).
   - `FitVerdict::Fits | Unsupported { parts: [UnsupportedPart { span, path, value, reason }] }`.
   - Unsupported: OAuth or cookie/web-cookie auth (even alongside an API key), wires other than the four, web search, web fetch and systemone sections, quirks, hooks, `executor_params`, credential fallback, regions, media formats not implemented, any `requires` entry, and a schema other than 1 or 2.
   - The message format follows the contract exactly, ending "No part of this plugin was loaded."
-- [ ] T132 [US8] Implement the community set in `crates/zerorouter-registry/src/community.rs` and `build.rs`: embed `plugins/community/*.toml`, precompute each `FitVerdict`, and provide `install(id, home)` (gate + fit, then copy to `$ZEROROUTER_HOME/plugins/`) and `uninstall(id, home)`.
-- [ ] T133 [US8] Apply fit-or-refuse at load in `crates/zerorouter-registry/src/load.rs`. Every user plugin is fit-checked on every load, and an `Unsupported` one is skipped whole and reported in `LoadReport`. Add a test-only `parity_set()` (feature `parity`) that loads bundled + community with the fit check off.
-- [ ] T134 [US8] Move slice 002's parity tests to `parity_set()` in `crates/zerorouter-registry/tests/parity/main.rs`, so they still see 121 providers (FR-036, US8-4), and make sure every chosen-five difference has a `[[deviation]]` row.
-- [ ] T135 [US8] Implement `plugins list [--community]`, `plugins install <id>` (exit 3 on Unsupported) and `plugins uninstall <id>` in `crates/zerorouter-cli/src/cmd/plugins.rs`, followed by a socket `reload`.
-- [ ] T136 [US8] Run `cargo test -p zerorouter-registry` (all targets) and `-p zerorouter-cli --test plugins`, then fix until green.
+- [X] T132 [US8] Implement the community set in `crates/zerorouter-registry/src/community.rs` and `build.rs`: embed `plugins/community/*.toml`, precompute each `FitVerdict`, and provide `install(id, home)` (gate + fit, then copy to `$ZEROROUTER_HOME/plugins/`) and `uninstall(id, home)`.
+- [X] T133 [US8] Apply fit-or-refuse at load in `crates/zerorouter-registry/src/load.rs`. Every user plugin is fit-checked on every load, and an `Unsupported` one is skipped whole and reported in `LoadReport`. Add a test-only `parity_set()` (feature `parity`) that loads bundled + community with the fit check off.
+- [X] T134 [US8] Move slice 002's parity tests to `parity_set()` in `crates/zerorouter-registry/tests/parity/main.rs`, so they still see 121 providers (FR-036, US8-4), and make sure every chosen-five difference has a `[[deviation]]` row.
+- [X] T135 [US8] Implement `plugins list [--community]`, `plugins install <id>` (exit 3 on Unsupported) and `plugins uninstall <id>` in `crates/zerorouter-cli/src/cmd/plugins.rs`, followed by a socket `reload`.
+- [X] T136 [US8] Run `cargo test -p zerorouter-registry` (all targets) and `-p zerorouter-cli --test plugins`, then fix until green.
 
 **Checkpoint**: All eight user stories work independently.
 

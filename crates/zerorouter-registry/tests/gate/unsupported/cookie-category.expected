@@ -1,0 +1,4 @@
+unsupported/cookie-category.toml: not supported by this core (0router 0.1.0, plugin schema 1-2)
+  - unsupported/cookie-category.toml:3:1 category = "webCookie": cookie sign-in is not supported
+  - unsupported/cookie-category.toml:7:1 auth.kind = "cookie": cookie sign-in is not supported
+No part of this plugin was loaded.

@@ -8,7 +8,7 @@ use zerorouter_registry::validate::{
 };
 use zerorouter_registry::{
     CapabilityKind, OperatorHome, PluginSource, RegistryHandle, bundled_gate_ctx, bundled_sources,
-    bundled_style_sources, validate_user_plugin,
+    bundled_style_sources, community, validate_user_plugin,
 };
 
 /// Rules whose error must list the allowed values.
@@ -101,7 +101,8 @@ fn bare_models_get_ids_and_derived_names() {
     fs::create_dir(home.path().join("plugins")).unwrap();
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/gate/valid/bare-models.toml");
     fs::copy(src, home.path().join("plugins/bare.toml")).unwrap();
-    let reg = RegistryHandle::open(OperatorHome::new(home.path())).unwrap().snapshot();
+    // A catalog-only plugin: slice 002's set, with the fit check off.
+    let reg = RegistryHandle::open_parity(OperatorHome::new(home.path())).unwrap().snapshot();
     let info = reg.model("bare", "m-a").unwrap();
     assert!(info.declared);
     assert_eq!(info.name, zerorouter_registry::derive_model_name("m-a"));
@@ -111,18 +112,21 @@ fn bare_models_get_ids_and_derived_names() {
 #[test]
 fn catalog_unknown_is_not_catalog_empty() {
     assert!(valid("minimal.toml").models.is_none());
-    let (_, zed) = bundled_sources().iter().find(|(f, _)| *f == "zed.toml").unwrap();
+    let (_, zed) = community::COMMUNITY.iter().find(|(f, _)| *f == "zed.toml").unwrap();
     assert!(zed.lines().any(|l| l.trim() == "models = []"), "zed.toml no longer declares an empty catalog");
     let zed = validate(zed, PluginSource::Bundled, "zed.toml").unwrap();
     assert_eq!(zed.models.as_deref(), Some(&[][..]));
 }
 
 #[test]
-fn every_bundled_plugin_passes_the_gate() {
-    assert_eq!(bundled_sources().len(), 121);
-    // With the bundled styles loaded, as the loader gates them: schema 2 names wires.
-    for (file, src) in bundled_sources() {
-        validate_user_plugin(src, Path::new(file)).unwrap_or_else(|e| panic!("{file}: {e:?}"));
+fn every_bundled_and_community_plugin_passes_the_gate() {
+    assert_eq!(bundled_sources().len(), 5);
+    assert_eq!(community::COMMUNITY.len(), 116);
+    // With the bundled styles loaded, in the bundled set's strict mode. (A community plugin's
+    // `credential_fallback` may name another community plugin: that is the fit check's.)
+    let strict = ctx(true, false);
+    for (file, src) in bundled_sources().iter().chain(community::COMMUNITY) {
+        validate_with(src, PluginSource::Bundled, file, &strict).unwrap_or_else(|e| panic!("{file}: {e:?}"));
     }
 }
 

@@ -12,7 +12,10 @@ use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwap;
 
+pub mod community;
+mod convert;
 mod credentials;
+pub mod fit;
 pub mod floor;
 mod load;
 mod lookup;
@@ -26,7 +29,8 @@ mod views;
 pub use credentials::{ResolvedCredential, SecretString};
 pub use load::{
     DroppedUnifiedModel, LoadReport, OperatorHome, PluginConflict, ReloadError, SkippedPlugin, StartupError,
-    WithheldCredential, bundled_gate_ctx, bundled_style_sources, validate_user_plugin,
+    UnsupportedPlugin, WithheldCredential, bundled_gate_ctx, bundled_style_sources, check_user_plugin,
+    validate_user_plugin,
 };
 pub use lookup::{derive_model_name, normalise_version_sep, split_suffix};
 pub use registry::{CatalogEntry, ModelInfo, Registry, RuntimeSettings, UnifiedMember, UnifiedModel};
@@ -50,6 +54,7 @@ struct Inner {
     active: ArcSwap<Registry>,
     reload: Mutex<()>,
     home: OperatorHome,
+    parity: bool,
 }
 
 impl RegistryHandle {
@@ -58,8 +63,20 @@ impl RegistryHandle {
     /// Fatal: an invalid bundled plugin or an invalid `config.toml`. Invalid user plugins
     /// are skipped and listed in [`Registry::report`].
     pub fn open(home: OperatorHome) -> Result<Self, StartupError> {
-        let registry = load::build(&home, load::Mode::Startup).map_err(|errors| StartupError { errors })?;
-        Ok(Self { inner: Arc::new(Inner { active: ArcSwap::from_pointee(registry), reload: Mutex::new(()), home }) })
+        Self::open_set(home, false)
+    }
+
+    /// [`open`](Self::open) with the community plugins loaded as bundled and the fit check
+    /// off, as 9router ships them: for slice 002's tests, which need its 121 providers.
+    #[cfg(feature = "parity")]
+    pub fn open_parity(home: OperatorHome) -> Result<Self, StartupError> {
+        Self::open_set(home, true)
+    }
+
+    fn open_set(home: OperatorHome, parity: bool) -> Result<Self, StartupError> {
+        let registry = load::build(&home, load::Mode::Startup, parity).map_err(|errors| StartupError { errors })?;
+        let inner = Inner { active: ArcSwap::from_pointee(registry), reload: Mutex::new(()), home, parity };
+        Ok(Self { inner: Arc::new(inner) })
     }
 
     /// A consistent snapshot. Hold it for the whole request (FR-025).
@@ -77,7 +94,8 @@ impl RegistryHandle {
     /// This does blocking file I/O: async callers should use `spawn_blocking`.
     pub fn reload(&self) -> Result<LoadReport, ReloadError> {
         let _guard = self.inner.reload.lock().unwrap_or_else(|e| e.into_inner());
-        let candidate = load::build(&self.inner.home, load::Mode::Reload).map_err(|errors| ReloadError { errors })?;
+        let candidate = load::build(&self.inner.home, load::Mode::Reload, self.inner.parity)
+            .map_err(|errors| ReloadError { errors })?;
         let report = candidate.report().clone();
         self.inner.active.store(Arc::new(candidate));
         Ok(report)

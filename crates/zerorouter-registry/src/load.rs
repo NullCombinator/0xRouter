@@ -14,10 +14,13 @@ use std::{env, fs, io};
 use url::Url;
 
 use crate::registry::{Registry, RuntimeSettings, UnifiedMember, UnifiedModel, token_clashes, token_path};
-use crate::schema::{Decision, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings, StyleFile};
+use crate::convert;
+use crate::fit::{self, FitVerdict};
+use crate::registry::{Registry, RuntimeSettings, UnifiedMember, UnifiedModel, token_clashes, token_path};
+use crate::schema::{Decision, ModelType, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings, StyleFile};
 use crate::validate::gate::{parse, positioned};
 use crate::validate::{
-    FieldPath, GateCtx, ValidationError, check_route_collisions, validate_style, validate_with,
+    FieldPath, GateCtx, Gated, ValidationError, check_route_collisions, validate_style, validate_with,
 };
 
 include!(concat!(env!("OUT_DIR"), "/bundled_plugins.rs"));
@@ -65,10 +68,21 @@ pub struct LoadReport {
     pub withheld_credentials: Vec<WithheldCredential>,
     /// User plugins skipped at startup, with their errors.
     pub skipped: Vec<SkippedPlugin>,
-    /// Unified models dropped at startup because a member's plugin was skipped.
+    /// Unified models dropped at startup because a member's plugin was skipped or unsupported.
     pub dropped_unified_models: Vec<DroppedUnifiedModel>,
     /// Gate warnings and stripped forwarding entries from loaded plugins.
     pub diagnostics: Vec<ValidationError>,
+    /// User plugins this core can't support, skipped whole (R19).
+    pub unsupported: Vec<UnsupportedPlugin>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsupportedPlugin {
+    pub path: PathBuf,
+    /// The declared id if the file got through the gate, else the file stem.
+    pub id: String,
+    /// The refusal, listing every unsupported part.
+    pub message: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,7 +181,7 @@ pub fn validate_user_plugin(src: &str, path: &Path) -> Result<ProviderEntity, Ve
     let ctx = gate_ctx(&styles, false);
     let entity = validate_with(src, PluginSource::User(path.to_owned()), &file, &ctx)?.entity;
     if let Some(x) = entity.auth.as_ref().and_then(|a| a.credential_fallback.as_deref()) {
-        let bundled = bundled(&ctx, &mut Vec::new())?;
+        let bundled = bundled(&ctx, &mut Vec::new(), false)?;
         if !entity.tokens().any(|t| t == x) && !bundled.iter().any(|l| l.entity.tokens().any(|t| t == x)) {
             let path = FieldPath::of("auth.credential_fallback");
             return Err(vec![positioned(src, &file, path, format!("unknown provider {x:?}"))]);
@@ -191,7 +205,7 @@ pub fn bundled_style_sources() -> &'static [(&'static str, &'static str)] {
 #[cfg(test)]
 pub(crate) fn load_bundled() -> Result<Vec<ProviderEntity>, Vec<ValidationError>> {
     let ctx = gate_ctx(&styles()?, false);
-    bundled(&ctx, &mut Vec::new()).map(|v| v.into_iter().map(|l| l.entity).collect())
+    bundled(&ctx, &mut Vec::new(), false).map(|v| v.into_iter().map(|l| l.entity).collect())
 }
 
 /// Every embedded style through the style gate, then the cross-style route check. Any
@@ -227,6 +241,10 @@ fn gate_ctx(styles: &[StyleFile], allow_private: bool) -> GateCtx {
     GateCtx {
         style_ids: styles.iter().map(|s| s.id.clone()).collect(),
         style_ops: styles.iter().map(|s| (s.id.clone(), s.routes.iter().map(|r| r.op).collect())).collect(),
+        style_types: styles
+            .iter()
+            .map(|s| (s.id.clone(), ModelType::ALL.iter().copied().filter(|t| s.has_codec(*t)).collect()))
+            .collect(),
         style_carriers: style_carriers(styles).map(str::to_owned).collect(),
         strict: false,
         allow_private,
@@ -237,13 +255,21 @@ pub(crate) fn style_carriers(styles: &[StyleFile]) -> impl Iterator<Item = &str>
     styles.iter().flat_map(|s| s.access_key.carriers.iter().filter_map(|c| c.header.as_deref()))
 }
 
-/// Bundled plugins load under `strict`: forwarding a floor name is an error.
-fn bundled(ctx: &GateCtx, diagnostics: &mut Vec<ValidationError>) -> Result<Vec<Loaded>, Vec<ValidationError>> {
+/// Bundled plugins load under `strict`: forwarding a floor name is an error. The parity set
+/// adds the community plugins as bundled, with the fit check off.
+fn bundled(
+    ctx: &GateCtx,
+    diagnostics: &mut Vec<ValidationError>,
+    parity: bool,
+) -> Result<Vec<Loaded>, Vec<ValidationError>> {
     let ctx = GateCtx { strict: true, ..ctx.clone() };
     let mut out = Vec::with_capacity(BUNDLED.len());
     let mut errors = Vec::new();
-    for (name, src) in BUNDLED {
-        let file = format!("plugins/bundled/{name}");
+    let community: &[(&str, &str)] = if parity { crate::community::COMMUNITY } else { &[] };
+    let sources =
+        BUNDLED.iter().map(|(n, s)| ("bundled", n, s)).chain(community.iter().map(|(n, s)| ("community", n, s)));
+    for (dir, name, src) in sources {
+        let file = format!("plugins/{dir}/{name}");
         match validate_with(src, PluginSource::Bundled, &file, &ctx) {
             Ok(g) => {
                 diagnostics.extend(g.diagnostics);
@@ -256,7 +282,7 @@ fn bundled(ctx: &GateCtx, diagnostics: &mut Vec<ValidationError>) -> Result<Vec<
 }
 
 /// Builds a full snapshot from `home`.
-pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<ValidationError>> {
+pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Registry, Vec<ValidationError>> {
     let styles = styles()?;
     let config_file = home.config_file();
     let config_name = config_file.display().to_string();
@@ -269,7 +295,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<Val
 
     let mut report = LoadReport::default();
     let ctx = gate_ctx(&styles, config.allow_private_endpoints);
-    let bundled = bundled(&ctx, &mut report.diagnostics)?;
+    let bundled = bundled(&ctx, &mut report.diagnostics, parity)?;
     let mut errors = Vec::new();
     let skip = |report: &mut LoadReport, errors: &mut Vec<ValidationError>, l: &Loaded, e: Vec<ValidationError>| match (
         mode,
@@ -282,7 +308,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<Val
     };
 
     // User plugins, then duplicate user ids (both skipped / rejected).
-    let mut user = discover(home, mode, &ctx, &mut report, &mut errors);
+    let mut user = discover(home, mode, &ctx, parity, &mut report, &mut errors);
     let mut by_id: HashMap<&str, Vec<usize>> = HashMap::new();
     for (i, u) in user.iter().enumerate() {
         by_id.entry(&u.entity.id).or_default().push(i);
@@ -361,7 +387,8 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode) -> Result<Registry, Vec<Val
 
     report.user = active.iter().filter(|l| l.user_path().is_some()).count();
     report.bundled = active.len() - report.user;
-    let skipped_ids: BTreeSet<String> = report.skipped.iter().map(|s| s.id.clone()).collect();
+    let skipped_ids: BTreeSet<String> =
+        report.skipped.iter().map(|s| s.id.clone()).chain(report.unsupported.iter().map(|u| u.id.clone())).collect();
 
     let mut registry = Registry::new(active.into_iter().map(|l| l.entity).collect());
     registry.set_styles(styles);
@@ -387,6 +414,7 @@ fn discover(
     home: &OperatorHome,
     mode: Mode,
     ctx: &GateCtx,
+    parity: bool,
     report: &mut LoadReport,
     errors: &mut Vec<ValidationError>,
 ) -> Vec<Loaded> {
@@ -411,20 +439,76 @@ fn discover(
         let file = path.display().to_string();
         let result = fs::read_to_string(&path)
             .map_err(|e| vec![io_error(&path, &e)])
-            .and_then(|src| validate_with(&src, PluginSource::User(path.clone()), &file, ctx).map(|g| (g, src)));
+            .and_then(|src| gate_and_fit(&src, &path, &file, ctx, parity).map(|g| (g, src)));
         match result {
-            Ok((g, src)) => {
+            // Unsupported: skipped whole, at startup and on reload alike (R19).
+            Ok(((g, FitVerdict::Unsupported { parts }), _)) => {
+                let id = g.map_or_else(|| stem(&path), |g| g.entity.id);
+                let message = FitVerdict::Unsupported { parts }.message(&file).unwrap_or_default();
+                report.unsupported.push(UnsupportedPlugin { path, id, message });
+            }
+            Ok(((Some(mut g), FitVerdict::Fits), src)) => {
+                convert::to_schema2(&mut g.entity);
                 report.diagnostics.extend(g.diagnostics);
                 out.push(Loaded { entity: g.entity, src: Cow::Owned(src), file });
             }
+            Ok(((None, FitVerdict::Fits), _)) => unreachable!("a plugin with no entity is unsupported"),
             Err(e) if mode == Mode::Startup => {
-                let id = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                let id = stem(&path);
                 report.skipped.push(SkippedPlugin { path, id, errors: e });
             }
             Err(e) => errors.extend(e),
         }
     }
     out
+}
+
+fn stem(path: &Path) -> String {
+    path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// The gate, then the fit check. The entity is `None` for a schema newer than this core.
+/// `parity` turns the fit check off.
+fn gate_and_fit(
+    src: &str,
+    path: &Path,
+    file: &str,
+    ctx: &GateCtx,
+    parity: bool,
+) -> Result<(Option<Gated>, FitVerdict), Vec<ValidationError>> {
+    if let Some(v) = fit::newer_schema(src, file).filter(|_| !parity) {
+        return Ok((None, v));
+    }
+    let g = validate_with(src, PluginSource::User(path.to_owned()), file, ctx)?;
+    let verdict = if parity { FitVerdict::Fits } else { fit::check(&g.entity, src, file, ctx) };
+    Ok((Some(g), verdict))
+}
+
+/// A user plugin through the gate and the fit check, as a load would see it: invalid,
+/// unsupported, or fitting.
+pub fn check_user_plugin(src: &str, path: &Path, allow_private: bool) -> Result<FitVerdict, Vec<ValidationError>> {
+    let ctx = gate_ctx(&styles()?, allow_private);
+    gate_and_fit(src, path, &path.display().to_string(), &ctx, false).map(|(_, v)| v)
+}
+
+/// The operator's `allow_private_endpoints`, from `config.toml`.
+pub(crate) fn allow_private(home: &OperatorHome) -> Result<bool, Vec<ValidationError>> {
+    let file = home.config_file();
+    match read_optional(&file).map_err(|e| vec![io_error(&file, &e)])? {
+        Some(src) => Ok(parse::<OperatorConfig>(&src, &file.display().to_string())?.allow_private_endpoints),
+        None => Ok(false),
+    }
+}
+
+/// Bundled and community plugins as 9router ships them, with the fit check off: what slice
+/// 002's parity tests compare (FR-036).
+#[cfg(feature = "parity")]
+pub fn parity_set() -> Registry {
+    let styles = styles().expect("bundled styles load");
+    let loaded = bundled(&gate_ctx(&styles, false), &mut Vec::new(), true).unwrap_or_else(|e| panic!("{e:#?}"));
+    let mut registry = Registry::new(loaded.into_iter().map(|l| l.entity).collect());
+    registry.set_styles(styles);
+    registry
 }
 
 fn read_optional(path: &Path) -> io::Result<Option<String>> {
@@ -616,7 +700,7 @@ headers = ["request-id", "set-cookie"]
 "#,
         )
         .unwrap();
-        let reg = build(&OperatorHome::new(dir.path()), Mode::Startup).unwrap();
+        let reg = build(&OperatorHome::new(dir.path()), Mode::Startup, false).unwrap();
         assert!(reg.report().skipped.is_empty(), "{:#?}", reg.report().skipped);
         assert_eq!(reg.endpoints("acme", ModelType::Embeddings).len(), 1);
         assert!(reg.endpoints("acme", ModelType::Text).is_empty());
@@ -654,7 +738,7 @@ wire = "openai-chat"
 "#,
         )
         .unwrap();
-        let reg = build(&OperatorHome::new(dir.path()), Mode::Startup).unwrap();
+        let reg = build(&OperatorHome::new(dir.path()), Mode::Startup, false).unwrap();
         let got = serde_json::to_value(reg.composed_transport("acme").unwrap()).unwrap();
         assert_eq!(
             got,
@@ -676,7 +760,7 @@ wire = "openai-chat"
     #[test]
     fn missing_home_is_empty() {
         let dir = tempfile::tempdir().unwrap();
-        let reg = build(&OperatorHome::new(dir.path().join("absent")), Mode::Startup).unwrap();
+        let reg = build(&OperatorHome::new(dir.path().join("absent")), Mode::Startup, false).unwrap();
         assert_eq!(reg.report().user, 0);
         assert_eq!(reg.unified_models().count(), 0);
     }

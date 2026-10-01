@@ -22,8 +22,9 @@ fn fixture_secrets() -> Vec<(String, String)> {
 fn no_plugin_file_carries_a_secret() {
     let secrets = fixture_secrets();
     assert_eq!(secrets.len(), 4);
-    assert_eq!(bundled_sources().len(), 121);
-    for (file, src) in bundled_sources() {
+    let all: Vec<_> = bundled_sources().iter().chain(zerorouter_registry::community::COMMUNITY).collect();
+    assert_eq!(all.len(), 121);
+    for (file, src) in all {
         assert!(!src.contains("client_secret"), "{file} declares client_secret");
         for (id, secret) in &secrets {
             assert!(!src.contains(secret.as_str()), "{file} contains {id}'s client secret");
@@ -34,7 +35,7 @@ fn no_plugin_file_carries_a_secret() {
 #[test]
 fn bundled_secrets_are_released_and_opaque() {
     let home = tempfile::tempdir().unwrap();
-    let reg = RegistryHandle::open(OperatorHome::new(home.path())).unwrap().snapshot();
+    let reg = RegistryHandle::open_parity(OperatorHome::new(home.path())).unwrap().snapshot();
     for (id, secret) in fixture_secrets() {
         let held = reg.composed_transport(&id).unwrap().client_secret.unwrap_or_else(|| panic!("{id}: withheld"));
         assert!(held.matches(&secret), "{id}");

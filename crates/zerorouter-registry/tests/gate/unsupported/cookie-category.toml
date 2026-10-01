@@ -1,0 +1,10 @@
+schema = 1
+id = "fitco"
+category = "webCookie"
+transport = { base_url = "https://api.fitco.example/v1/chat/completions" }
+
+[auth]
+kind = "cookie"
+
+[[models]]
+id = "m1"

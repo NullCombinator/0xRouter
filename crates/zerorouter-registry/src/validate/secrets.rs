@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn no_bundled_header_is_rejected() {
         let mut names = std::collections::BTreeSet::new();
-        for (_, src) in crate::load::BUNDLED {
+        for (_, src) in crate::load::BUNDLED.iter().chain(crate::community::COMMUNITY) {
             let file: crate::schema::PluginFile = toml::from_str(src).unwrap();
             let sections = file.capabilities.values().filter_map(|s| s.endpoint.as_ref());
             for t in file.transport.iter().chain(&file.transports) {

@@ -1,0 +1,11 @@
+schema = 1
+id = "fitco"
+category = "apikey"
+transport = { base_url = "https://api.fitco.example/v1/chat/completions" }
+
+[auth]
+kind = "apikey"
+hooks = ["cline_headers"]
+
+[[models]]
+id = "m1"

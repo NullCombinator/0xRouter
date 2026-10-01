@@ -33,7 +33,7 @@ fn readers_never_see_a_mix() {
     let home = tempfile::tempdir().unwrap();
     let config = home.path().join("config.toml");
     fs::write(&config, ONE).unwrap();
-    let handle = RegistryHandle::open(OperatorHome::new(home.path())).unwrap();
+    let handle = RegistryHandle::open_parity(OperatorHome::new(home.path())).unwrap();
     let done = AtomicBool::new(false);
 
     thread::scope(|s| {
@@ -69,7 +69,7 @@ fn invalid_reload_keeps_the_old_snapshot() {
     let home = tempfile::tempdir().unwrap();
     let config = home.path().join("config.toml");
     fs::write(&config, ONE).unwrap();
-    let handle = RegistryHandle::open(OperatorHome::new(home.path())).unwrap();
+    let handle = RegistryHandle::open_parity(OperatorHome::new(home.path())).unwrap();
 
     fs::write(
         &config,
@@ -92,7 +92,7 @@ members = [{ provider = "xx", model = "m" }]
 fn no_change_reload_is_idempotent() {
     let home = tempfile::tempdir().unwrap();
     fs::write(home.path().join("config.toml"), TWO).unwrap();
-    let handle = RegistryHandle::open(OperatorHome::new(home.path())).unwrap();
+    let handle = RegistryHandle::open_parity(OperatorHome::new(home.path())).unwrap();
     let before = handle.snapshot();
     let report = handle.reload().unwrap();
     let after = handle.snapshot();
@@ -110,7 +110,7 @@ fn held_snapshot_is_unaffected_by_reload() {
     let home = tempfile::tempdir().unwrap();
     let config = home.path().join("config.toml");
     fs::write(&config, ONE).unwrap();
-    let handle = RegistryHandle::open(OperatorHome::new(home.path())).unwrap();
+    let handle = RegistryHandle::open_parity(OperatorHome::new(home.path())).unwrap();
     let held = handle.snapshot();
     fs::write(&config, TWO).unwrap();
     handle.reload().unwrap();

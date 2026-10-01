@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde_json::Value;
-use zerorouter_registry::{OperatorHome, Registry, RegistryHandle};
+use zerorouter_registry::Registry;
 
 mod alias;
 mod deviations;
@@ -34,8 +34,7 @@ pub(crate) fn fixture(name: &str) -> Value {
     doc["data"].take()
 }
 
-/// A registry with bundled plugins only.
+/// The bundled and community plugins, as 9router ships them (FR-036, US8-4).
 pub(crate) fn bundled() -> Arc<Registry> {
-    let home = tempfile::tempdir().unwrap();
-    RegistryHandle::open(OperatorHome::new(home.path())).unwrap().snapshot()
+    Arc::new(zerorouter_registry::parity_set())
 }

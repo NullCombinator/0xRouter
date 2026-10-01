@@ -1,4 +1,4 @@
-//! Embeds `plugins/bundled/*.toml` and `styles/bundled/*.toml` as static
+//! Embeds `plugins/bundled/*.toml`, `plugins/community/*.toml` and `styles/bundled/*.toml` as static
 //! `(file name, source)` tables.
 
 use std::path::Path;
@@ -9,6 +9,7 @@ fn main() {
     let root = Path::new(&manifest).join("../..");
     embed(&root.join("plugins/bundled"), "BUNDLED", "bundled_plugins.rs");
     embed(&root.join("styles/bundled"), "BUNDLED_STYLES", "bundled_styles.rs");
+    embed(&root.join("plugins/community"), "COMMUNITY", "community_plugins.rs");
 }
 
 /// A missing directory embeds an empty table.

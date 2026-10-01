@@ -1,0 +1,6 @@
+unsupported/mixed.toml: not supported by this core (0router 0.1.0, plugin schema 1-2)
+  - unsupported/mixed.toml:8:1 auth.kind = "oauth": account sign-in is not supported
+  - unsupported/mixed.toml:4:13 requires[0] = "9router-executor:fitco": needs a provider-specific executor
+  - unsupported/mixed.toml:5:75 transport.format = "kiro": wire format "kiro" is not supported
+  - unsupported/mixed.toml:13:15 capabilities.web_search: web search is not part of this core
+No part of this plugin was loaded.

@@ -24,6 +24,8 @@ pub struct GateCtx {
     pub style_ids: BTreeSet<String>,
     /// Route ops each loaded style serves.
     pub style_ops: BTreeMap<String, BTreeSet<RouteOp>>,
+    /// Model types each loaded style has a codec for.
+    pub style_types: BTreeMap<String, BTreeSet<ModelType>>,
     /// Every loaded style's access-key carrier headers (security floor).
     pub style_carriers: Vec<String>,
     /// Bundled plugins and CI: forwarding a floor name is an error, not a diagnostic.

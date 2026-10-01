@@ -1,0 +1,11 @@
+schema = 1
+id = "fitco"
+category = "apikey"
+requires = ["9router-executor:fitco"]
+transport = { base_url = "https://api.fitco.example/v1/chat/completions" }
+
+[auth]
+kind = "apikey"
+
+[[models]]
+id = "m1"

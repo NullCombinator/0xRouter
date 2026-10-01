@@ -1,0 +1,13 @@
+schema = 2
+id = "fitco"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+
+[endpoints.text]
+url = "https://api.fitco.example/v1/chat"
+wire = "cohere-chat"
+
+[[models]]
+id = "m1"

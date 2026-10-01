@@ -32,17 +32,17 @@ fn mode(p: &Path) -> u32 {
 #[test]
 fn accounts_take_the_secret_from_stdin_and_stay_private() {
     let dir = tempfile::tempdir().unwrap();
-    let out = zr(dir.path(), &["accounts", "add", "openai", "main"], &format!("{SECRET}\n"));
+    let out = zr(dir.path(), &["accounts", "add", "anthropic", "main"], &format!("{SECRET}\n"));
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let file = dir.path().join(accounts::FILE);
     assert_eq!(mode(&file), 0o600);
     let list = Accounts::load(&file).unwrap();
-    let a = list.get("openai", "main").unwrap();
+    let a = list.get("anthropic", "main").unwrap();
     assert_eq!(a.source, SecretSource::Literal);
     assert!(a.secret.as_ref().unwrap().with_exposed(|s| s == SECRET), "the trailing newline is not part of the secret");
-    assert!(a.hosts.contains("api.openai.com"), "bound to the provider's hosts: {:?}", a.hosts);
+    assert!(a.hosts.contains("api.anthropic.com"), "bound to the provider's hosts: {:?}", a.hosts);
 
-    let out = zr(dir.path(), &["accounts", "add", "openai", "spare", "--env", "ZR_TEST_UNSET_VAR"], "");
+    let out = zr(dir.path(), &["accounts", "add", "anthropic", "spare", "--env", "ZR_TEST_UNSET_VAR"], "");
     assert!(out.status.success());
     let out = zr(dir.path(), &["--json", "accounts", "list"], "");
     let text = String::from_utf8(out.stdout).unwrap();
@@ -51,19 +51,19 @@ fn accounts_take_the_secret_from_stdin_and_stay_private() {
     assert_eq!(rows[0]["secret"], "…0003");
     assert_eq!(rows[1]["secret"], "env:ZR_TEST_UNSET_VAR");
 
-    assert!(zr(dir.path(), &["accounts", "disable", "openai", "main"], "").status.success());
-    assert!(Accounts::load(&file).unwrap().get("openai", "main").unwrap().disabled);
-    assert!(zr(dir.path(), &["accounts", "remove", "openai", "spare"], "").status.success());
-    assert!(Accounts::load(&file).unwrap().get("openai", "spare").is_none());
+    assert!(zr(dir.path(), &["accounts", "disable", "anthropic", "main"], "").status.success());
+    assert!(Accounts::load(&file).unwrap().get("anthropic", "main").unwrap().disabled);
+    assert!(zr(dir.path(), &["accounts", "remove", "anthropic", "spare"], "").status.success());
+    assert!(Accounts::load(&file).unwrap().get("anthropic", "spare").is_none());
 }
 
 #[test]
 fn accounts_refuse_bad_input() {
     let dir = tempfile::tempdir().unwrap();
-    assert_eq!(zr(dir.path(), &["accounts", "add", "openai", "main"], "\n").status.code(), Some(1), "empty secret");
+    assert_eq!(zr(dir.path(), &["accounts", "add", "anthropic", "main"], "\n").status.code(), Some(1), "empty secret");
     assert_eq!(zr(dir.path(), &["accounts", "add", "no-such-provider", "main"], SECRET).status.code(), Some(1));
-    assert_eq!(zr(dir.path(), &["accounts", "add", "openai", "Bad Name"], SECRET).status.code(), Some(1));
-    assert_eq!(zr(dir.path(), &["accounts", "remove", "openai", "main"], "").status.code(), Some(1));
+    assert_eq!(zr(dir.path(), &["accounts", "add", "anthropic", "Bad Name"], SECRET).status.code(), Some(1));
+    assert_eq!(zr(dir.path(), &["accounts", "remove", "anthropic", "main"], "").status.code(), Some(1));
     assert!(!dir.path().join(accounts::FILE).exists());
 }
 

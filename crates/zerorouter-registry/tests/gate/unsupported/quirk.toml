@@ -1,0 +1,10 @@
+schema = 1
+id = "fitco"
+category = "apikey"
+transport = { base_url = "https://api.fitco.example/v1/chat/completions", quirks = ["preserve_cache_control"] }
+
+[auth]
+kind = "apikey"
+
+[[models]]
+id = "m1"

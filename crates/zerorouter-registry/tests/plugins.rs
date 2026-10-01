@@ -31,12 +31,14 @@ impl Home {
     }
 
     fn open(&self) -> Result<RegistryHandle, StartupError> {
-        RegistryHandle::open(OperatorHome::new(self.0.path()))
+        RegistryHandle::open_parity(OperatorHome::new(self.0.path()))
     }
 }
 
+/// A plugin of the parity set: bundled, or community (loaded as bundled there).
 fn bundled(file: &str) -> &'static str {
-    zerorouter_registry::bundled_sources().iter().find(|(f, _)| *f == file).unwrap().1
+    let mut all = zerorouter_registry::bundled_sources().iter().chain(zerorouter_registry::community::COMMUNITY);
+    all.find(|(f, _)| *f == file).unwrap().1
 }
 
 const EXTRA: &str = "id = \"extra\"\ncategory = \"apikey\"\nmodels = [\"e-1\"]\n";

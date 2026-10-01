@@ -18,6 +18,9 @@ macro_rules! closed_enum {
             /// Every accepted spelling, in declaration order.
             pub const ALLOWED: &[&str] = &[$($text),+];
 
+            /// Every value, in declaration order.
+            pub const ALL: &[Self] = &[$(Self::$variant),+];
+
             pub fn as_str(self) -> &'static str {
                 match self {
                     $(Self::$variant => $text),+
@@ -91,6 +94,17 @@ closed_enum!(
 );
 
 impl WireFormat {
+    /// The schema 2 wire style id for this format, for the four bundled styles.
+    pub fn wire(self) -> Option<&'static str> {
+        match self {
+            Self::Openai => Some("openai-chat"),
+            Self::Claude => Some("anthropic-messages"),
+            Self::OpenaiResponses => Some("openai-responses"),
+            Self::Gemini => Some("gemini"),
+            _ => None,
+        }
+    }
+
     /// The slice 002 format for a schema 2 wire style id, for the four bundled styles.
     pub fn from_wire(wire: &str) -> Option<Self> {
         match wire {

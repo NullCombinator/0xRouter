@@ -1,0 +1,13 @@
+schema = 1
+id = "fitco"
+category = "apikey"
+transport = { base_url = "https://api.fitco.example/v1/chat/completions" }
+
+[auth]
+kind = "apikey"
+
+[[models]]
+id = "m1"
+
+[capabilities.systemone.endpoint]
+base_url = "https://api.fitco.example/v1/systemone"

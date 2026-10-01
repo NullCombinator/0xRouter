@@ -117,13 +117,54 @@ acme.toml:9:13 transport.headers.Authorization: credential-bearing header not al
 - **Bad values**:
   - an unknown category, format, quirk, hook, capability or executor param;
   - an `id` outside `[a-z0-9][a-z0-9-]*`;
-  - `schema` other than 1.
+  - `schema` 0 or negative (a newer schema is *unsupported*, see below).
 - **Structure**:
   - a capability section with no reachable endpoint;
   - a duplicate model id;
   - `[[transports]]` without `[transport]`;
   - a `default_region` that is not a key of `regions`;
   - `auth.credential_fallback` naming an unknown provider.
+
+## Community plugins and the fit check
+
+0router bundles five providers: anthropic, openrouter, opencode-zen, opencode-go and
+elevenlabs. The other providers 9router knows ship inside the binary as the **community
+set**, generated from 9router, and are installed on request:
+
+```bash
+zerorouter plugins list --community   # every community plugin: fits, unsupported, installed
+zerorouter plugins install groq       # gate + fit check, then copy to plugins/groq.toml
+zerorouter plugins uninstall groq
+```
+
+After the gate, every user plugin goes through the **fit check**, on every load. A plugin
+is *invalid* when it is malformed or unsafe (the gate), and *unsupported* when it is well
+formed but needs something this core lacks. An unsupported plugin is refused whole: none of
+its models, aliases or unified-model members load, and `plugins install` exits 3. The
+message lists every unsupported part:
+
+```text
+plugins/qoder.toml: not supported by this core (0router 0.1.0, plugin schema 1-2)
+  - plugins/qoder.toml:4:1 category = "oauth": account sign-in is not supported
+  - plugins/qoder.toml:5:13 requires[0] = "9router-executor:qoder": needs a provider-specific executor
+No part of this plugin was loaded.
+```
+
+Unsupported today:
+
+- OAuth or cookie sign-in, even next to an API key;
+- wire formats other than `openai`, `claude`, `openai-responses` and `gemini`;
+- web search, web fetch and systemone sections;
+- quirks, auth hooks, `executor_params`, `credential_fallback`, regions, reasoning
+  injection, a provider-specific reasoning format, and URLs filled from account data;
+- media formats other than the OpenAI-compatible one;
+- any `requires` entry (the generator writes one for each provider 9router serves with its
+  own executor or media handler);
+- a `schema` newer than 2.
+
+A schema 1 plugin that fits is converted on load: `[transport]` becomes
+`[endpoints.text]` (`format` names its wire), each capability endpoint becomes
+`[endpoints.<type>]`, and `image_to_text` becomes `vision = true`.
 
 ## Replacing a bundled provider
 

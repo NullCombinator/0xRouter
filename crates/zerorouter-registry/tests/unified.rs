@@ -8,7 +8,7 @@ use zerorouter_registry::{NotFound, OperatorHome, Registry, RegistryHandle, Reso
 fn open(config: &str) -> (TempDir, Result<Arc<Registry>, StartupError>) {
     let home = tempfile::tempdir().unwrap();
     std::fs::write(home.path().join("config.toml"), config).unwrap();
-    let reg = RegistryHandle::open(OperatorHome::new(home.path())).map(|h| h.snapshot());
+    let reg = RegistryHandle::open_parity(OperatorHome::new(home.path())).map(|h| h.snapshot());
     (home, reg)
 }
 
@@ -251,7 +251,7 @@ fn target_shapes() {
 #[test]
 fn missing_config_means_no_unified_models() {
     let home = tempfile::tempdir().unwrap();
-    let reg = RegistryHandle::open(OperatorHome::new(home.path())).unwrap().snapshot();
+    let reg = RegistryHandle::open_parity(OperatorHome::new(home.path())).unwrap().snapshot();
     assert_eq!(reg.unified_models().count(), 0);
     assert!(reg.settings("openai").allow_uncatalogued_models);
 }
