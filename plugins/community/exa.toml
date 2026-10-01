@@ -1,0 +1,16 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "exa"
+category = "apikey"
+alias = "exa"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Exa"
+icon = "manage_search"
+color = "#2563EB"
+text_icon = "EX"
+website = "https://exa.ai"
+notice = { api_key_url = "https://dashboard.exa.ai/api-keys" }

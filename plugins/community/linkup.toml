@@ -1,0 +1,16 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "linkup"
+category = "apikey"
+alias = "linkup"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Linkup"
+icon = "link"
+color = "#0EA5E9"
+text_icon = "LK"
+website = "https://linkup.so"
+notice = { api_key_url = "https://app.linkup.so/api-keys" }

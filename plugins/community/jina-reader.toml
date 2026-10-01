@@ -1,0 +1,16 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "jina-reader"
+category = "apikey"
+alias = "jina-reader"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Jina Reader"
+icon = "menu_book"
+color = "#000000"
+text_icon = "JR"
+website = "https://jina.ai/reader"
+notice = { api_key_url = "https://jina.ai/?sui=apikey" }

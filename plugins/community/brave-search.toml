@@ -1,0 +1,16 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "brave-search"
+category = "apikey"
+alias = "brave"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Brave Search"
+icon = "travel_explore"
+color = "#FB542B"
+text_icon = "BR"
+website = "https://brave.com/search/api"
+notice = { api_key_url = "https://api-dashboard.search.brave.com/app/keys" }

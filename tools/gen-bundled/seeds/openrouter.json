@@ -265,6 +265,9 @@
         }
       }
     },
+    "requires": [
+      "9router-tts:openrouter"
+    ],
     "auth": {
       "kind": "apikey",
       "modes": [

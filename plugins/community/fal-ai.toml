@@ -1,0 +1,66 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "fal-ai"
+category = "apikey"
+alias = "fal-ai"
+aliases = ["fal"]
+ui_alias = "fal"
+requires = ["9router-image:fal-ai"]
+
+[[models]]
+id = "fal-ai/flux/schnell"
+name = "FLUX Schnell"
+params = ["n", "size"]
+kind = "image"
+
+[[models]]
+id = "fal-ai/flux/dev"
+name = "FLUX Dev"
+params = ["n", "size"]
+kind = "image"
+
+[[models]]
+id = "fal-ai/flux-pro/v1.1"
+name = "FLUX Pro v1.1"
+params = ["n", "size"]
+kind = "image"
+
+[[models]]
+id = "fal-ai/flux-pro/v1.1-ultra"
+name = "FLUX Pro v1.1 Ultra"
+params = ["n", "size"]
+kind = "image"
+
+[[models]]
+id = "fal-ai/recraft-v3"
+name = "Recraft V3"
+params = ["n", "size", "style"]
+kind = "image"
+
+[[models]]
+id = "fal-ai/ideogram/v2"
+name = "Ideogram V2"
+params = ["n", "size", "style"]
+kind = "image"
+
+[[models]]
+id = "fal-ai/stable-diffusion-v35-large"
+name = "SD 3.5 Large"
+params = ["n", "size"]
+kind = "image"
+
+[capabilities.image.endpoint]
+base_url = "https://queue.fal.run"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "Fal.ai"
+icon = "image"
+color = "#2563EB"
+text_icon = "FL"
+website = "https://fal.ai"
+notice = { api_key_url = "https://fal.ai/dashboard/keys" }
+priority = 90
+has_free = true

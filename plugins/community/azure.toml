@@ -1,0 +1,23 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "azure"
+category = "apikey"
+requires = ["9router-executor:azure"]
+alias = "azure"
+
+[transport]
+base_url = ""
+headers = {}
+
+[capabilities]
+llm = {}
+
+[display]
+name = "Azure OpenAI"
+icon = "cloud"
+color = "#0078D4"
+text_icon = "AZ"
+website = "https://azure.microsoft.com/en-us/products/ai-services/openai-service"
+notice = { api_key_url = "https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/OpenAI" }
+priority = 40
+has_provider_specific_data = true

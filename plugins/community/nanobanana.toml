@@ -1,0 +1,35 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "nanobanana"
+category = "apikey"
+alias = "nanobanana"
+aliases = ["nb"]
+ui_alias = "nb"
+transport = { base_url = "https://api.nanobananaapi.ai/v1/chat/completions", validate_url = "https://api.nanobananaapi.ai/v1/models" }
+requires = ["9router-image:nanobanana"]
+
+[[models]]
+id = "nanobanana-flash"
+name = "NanoBanana Flash"
+params = ["n", "size"]
+kind = "image"
+
+[[models]]
+id = "nanobanana-pro"
+name = "NanoBanana Pro"
+params = ["n", "size"]
+kind = "image"
+
+[capabilities.image.endpoint]
+base_url = "https://api.nanobananaapi.ai/api/v1/nanobanana/generate"
+poll_url = "https://api.nanobananaapi.ai/api/v1/nanobanana/record-info"
+
+[display]
+name = "NanoBanana API"
+icon = "extension"
+color = "#FFD700"
+text_icon = "🍌"
+website = "https://nanobananaapi.ai"
+notice = { text = "3rd-party proxy for Google Nano Banana (Gemini 2.5/3 Flash Image). For official, use Gemini provider.", api_key_url = "https://nanobananaapi.ai/dashboard" }
+priority = 80
+has_free = true

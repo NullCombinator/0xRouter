@@ -4,6 +4,9 @@
     "schema": 1,
     "id": "opencode-go",
     "category": "apikey",
+    "requires": [
+      "9router-executor:opencode-go"
+    ],
     "alias": "opencode-go",
     "aliases": [
       "ocg"

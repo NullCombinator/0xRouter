@@ -1,0 +1,79 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "grok-web"
+category = "webCookie"
+requires = ["9router-executor:grok-web"]
+alias = "grok-web"
+aliases = ["gw"]
+ui_alias = "gw"
+passthrough_models = true
+
+[transport]
+base_url = "https://grok.com/rest/app-chat/conversations/new"
+format = "grok-web"
+
+[transport.executor_params]
+auth_type = "cookie"
+
+[[models]]
+id = "grok-3"
+name = "Grok 3"
+
+[[models]]
+id = "grok-3-mini"
+name = "Grok 3 Mini (Thinking)"
+
+[[models]]
+id = "grok-3-thinking"
+name = "Grok 3 Thinking"
+
+[[models]]
+id = "grok-4"
+name = "Grok 4"
+
+[[models]]
+id = "grok-4-mini"
+name = "Grok 4 Mini (Thinking)"
+
+[[models]]
+id = "grok-4-thinking"
+name = "Grok 4 Thinking"
+
+[[models]]
+id = "grok-4-heavy"
+name = "Grok 4 Heavy (SuperGrok)"
+
+[[models]]
+id = "grok-4.1-mini"
+name = "Grok 4.1 Mini (Thinking)"
+
+[[models]]
+id = "grok-4.1-fast"
+name = "Grok 4.1 Fast"
+
+[[models]]
+id = "grok-4.1-expert"
+name = "Grok 4.1 Expert"
+
+[[models]]
+id = "grok-4.1-thinking"
+name = "Grok 4.1 Thinking"
+
+[[models]]
+id = "grok-4.2"
+name = "Grok 4.2 (4.20 Beta)"
+
+[capabilities]
+llm = {}
+
+[auth]
+kind = "cookie"
+
+[display]
+name = "Grok Web (Subscription)"
+icon = "auto_awesome"
+color = "#1DA1F2"
+text_icon = "GW"
+website = "https://grok.com"
+priority = 150
+auth_hint = "Paste your sso= cookie value from grok.com"

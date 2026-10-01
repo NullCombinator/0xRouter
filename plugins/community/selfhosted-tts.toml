@@ -1,0 +1,30 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "selfhosted-tts"
+category = "apikey"
+alias = "selfhosted-tts"
+requires = ["9router-tts:selfhosted-tts"]
+
+[[models]]
+id = "kokoro"
+name = "Kokoro (self-hosted)"
+params = ["voice", "response_format", "speed"]
+kind = "tts"
+
+[capabilities.tts.endpoint]
+base_url = "http://localhost:8880"
+default_model = "kokoro"
+auth_type = "apikey"
+format = "openai-speech"
+
+[auth]
+api_key_hint = "Set providerSpecificData.baseUrl to the server root, e.g. http://host:8080 — /v1/audio/speech is appended. The API key is not checked by local servers; any value works."
+
+[display]
+name = "Self-hosted TTS"
+icon = "cloud"
+color = "#ffffffff"
+text_icon = "TT"
+website = "https://github.com/remsky/Kokoro-FastAPI"
+priority = 50
+has_free = true

@@ -1,0 +1,93 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "iflow"
+category = "oauth"
+requires = ["9router-executor:iflow"]
+alias = "if"
+
+[transport]
+base_url = "https://apis.iflow.cn/v1/chat/completions"
+thinking_format = "openai"
+headers = { User-Agent = "iFlow-Cli" }
+
+[oauth]
+client_id = "10009311001"
+authorize_url = "https://iflow.cn/oauth"
+token_url = "https://iflow.cn/oauth/token"
+user_info_url = "https://iflow.cn/api/oauth/getUserInfo"
+refresh_lead_ms = 86400000
+
+[oauth.params]
+extra_params = { loginMethod = "phone", type = "phone" }
+
+[[models]]
+id = "qwen3-coder-plus"
+name = "Qwen3 Coder Plus"
+
+[[models]]
+id = "qwen3-max"
+name = "Qwen3 Max"
+
+[[models]]
+id = "qwen3-vl-plus"
+name = "Qwen3 VL Plus"
+
+[[models]]
+id = "qwen3-max-preview"
+name = "Qwen3 Max Preview"
+
+[[models]]
+id = "qwen3-235b"
+name = "Qwen3 235B A22B"
+
+[[models]]
+id = "qwen3-235b-a22b-instruct"
+name = "Qwen3 235B A22B Instruct"
+
+[[models]]
+id = "qwen3-235b-a22b-thinking-2507"
+name = "Qwen3 235B A22B Thinking"
+
+[[models]]
+id = "qwen3-32b"
+name = "Qwen3 32B"
+
+[[models]]
+id = "kimi-k2"
+name = "Kimi K2"
+
+[[models]]
+id = "deepseek-v3.2"
+name = "DeepSeek V3.2 Exp"
+
+[[models]]
+id = "deepseek-v3.1"
+name = "DeepSeek V3.1 Terminus"
+
+[[models]]
+id = "deepseek-v3"
+name = "DeepSeek V3 671B"
+
+[[models]]
+id = "deepseek-r1"
+name = "DeepSeek R1"
+
+[[models]]
+id = "glm-4.7"
+name = "GLM 4.7"
+
+[[models]]
+id = "iflow-rome-30ba3b"
+name = "iFlow ROME"
+
+[capabilities]
+llm = {}
+
+[display]
+name = "iFlow AI"
+icon = "water_drop"
+color = "#6366F1"
+website = "https://iflow.cn"
+notice = { signup_url = "https://iflow.cn" }
+priority = 110
+hidden = true

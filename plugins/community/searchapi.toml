@@ -1,0 +1,16 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "searchapi"
+category = "apikey"
+alias = "searchapi"
+
+[auth]
+kind = "apikey"
+
+[display]
+name = "SearchAPI"
+icon = "search"
+color = "#0EA5A4"
+text_icon = "SA"
+website = "https://www.searchapi.io"
+notice = { api_key_url = "https://www.searchapi.io/dashboard" }

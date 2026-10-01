@@ -1,0 +1,19 @@
+# Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.
+schema = 1
+id = "ollama-local"
+category = "apikey"
+requires = ["9router-executor:ollama-local"]
+alias = "ollama-local"
+transport = { base_url = "http://localhost:11434/api/chat", format = "ollama" }
+
+[capabilities]
+llm = {}
+
+[display]
+name = "Ollama Local"
+icon = "cloud"
+color = "#ffffffff"
+text_icon = "OL"
+website = "https://ollama.com"
+priority = 50
+has_free = true

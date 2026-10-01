@@ -5,7 +5,8 @@
 //   node tools/gen-bundled/generate.mjs
 //
 // Outputs (all committed; this script is their only writer):
-//   plugins/bundled/<id>.toml, except the chosen five (hand-maintained schema 2)
+//   plugins/community/<id>.toml for every provider except the chosen five, whose schema 2
+//     files in plugins/bundled/ are hand-maintained
 //   tools/gen-bundled/seeds/<id>.json for the chosen five: their evaluated 9router entry
 //   crates/zerorouter-registry/src/schema/oauth_params.rs
 //   crates/zerorouter-registry/src/schema/section_formats.rs
@@ -33,6 +34,31 @@ const { OAUTH_ENDPOINTS } = await imp("open-sse/config/appConstants.js");
 const { resolveProviderAlias } = await imp("open-sse/services/model.js");
 const PM = await imp("open-sse/config/providerModels.js");
 const { CODEX_REVIEW_SUFFIX, isMuseSparkModel } = await imp("open-sse/providers/models/helpers.js");
+// The executor table is read as text: importing it pulls executor dependencies (uuid, …)
+// that the generator doesn't install.
+const EXECUTOR_IDS = (() => {
+  const src = readFileSync(join(REF, "open-sse/executors/index.js"), "utf8");
+  const table = src.match(/const executors = \{([\s\S]*?)\n\};/);
+  if (!table) throw new Error("open-sse/executors/index.js: executors table not found");
+  return new Set([...table[1].matchAll(/^\s*(?:"([^"]+)"|([A-Za-z0-9_]+)):\s*new /gm)].map((m) => m[1] ?? m[2]));
+})();
+const hasSpecializedExecutor = (id) => EXECUTOR_IDS.has(id);
+
+// 9router serves media per provider id. These provider ids get a handler of their own, not
+// the OpenAI-compatible one the core implements; read as text for the same reason.
+const objectKeys = (src, name) => {
+  const body = src.match(new RegExp(`const ${name} = \\{([\\s\\S]*?)\\n\\};`));
+  if (!body) throw new Error(`${name} table not found`);
+  return [...body[1].matchAll(/^\s*(?:"([^"]+)"|([A-Za-z0-9_]+))\s*(?::\s*([^\n]*?))?,?\s*(?:\/\/.*)?$/gm)]
+    .filter((m) => !m[0].trim().startsWith("..."))
+    .map((m) => ({ key: m[1] ?? m[2], value: (m[3] ?? "").trim() }));
+};
+const handlerSrc = (f) => readFileSync(join(REF, "open-sse/handlers", f), "utf8");
+const MEDIA_SPECIFIC = {
+  image: new Set(objectKeys(handlerSrc("imageProviders/index.js"), "ADAPTERS").filter((e) => !e.value.startsWith("createOpenAIAdapter")).map((e) => e.key)),
+  embedding: new Set(objectKeys(handlerSrc("embeddingProviders/index.js"), "ADAPTERS").map((e) => e.key)),
+  tts: new Set(objectKeys(handlerSrc("ttsProviders/index.js"), "SPECIAL_ADAPTERS").map((e) => e.key).filter((k) => k !== "openai")),
+};
 
 const SHA = execFileSync("git", ["-C", REF, "rev-parse", "--short", "HEAD"]).toString().trim();
 const HEADER = `Generated from ref/9router@${SHA} by tools/gen-bundled/generate.mjs — do not edit.`;
@@ -116,6 +142,8 @@ const SECTION_LIMITS = {
   defaultMaxResults: "default_max_results", cacheTTLMs: "cache_ttl_ms", creditsPerResult: "credits_per_result",
   maxCharacters: "max_characters",
 };
+
+const NOT_EMITTED = new Set(["web_search", "web_fetch"]);
 
 const DISPLAY = {
   name: "name", icon: "icon", color: "color", textIcon: "text_icon", website: "website",
@@ -263,6 +291,9 @@ const ttsEntry = (m, where) => {
 function mapEntry(e) {
   const id = e.id;
   const p = { schema: 1, id, category: e.category };
+  // A provider 9router serves with its own executor class needs code this core lacks: the
+  // fit check refuses it by this name (research R19).
+  if (hasSpecializedExecutor(id)) p.requires = [`9router-executor:${id}`];
   const auth = {};
   const display = {};
   const kinds = new Set();
@@ -370,13 +401,19 @@ function mapEntry(e) {
   }
   const caps = {};
   const omitted = [];
-  for (const kind of [...kinds].sort()) {
+  // Web search and web fetch are outside the core (slice 003): their sections aren't emitted.
+  const dropped = [...kinds].filter((k) => NOT_EMITTED.has(k));
+  if (dropped.length) notes.push(`${id}: dropped ${dropped.join(", ")} section(s), outside the core`);
+  for (const kind of [...kinds].filter((k) => !NOT_EMITTED.has(k)).sort()) {
     const sec = sections[kind] ?? {};
     if (!sec.endpoint && !p.transport) { omitted.push(kind); continue; }
     caps[kind] = sec;
   }
   if (omitted.length) notes.push(`${id}: omitted unreachable capability section(s) ${omitted.join(", ")}`);
   if (Object.keys(caps).length) p.capabilities = caps;
+  for (const [kind, ids] of Object.entries(MEDIA_SPECIFIC)) {
+    if (caps[kind] && ids.has(id)) (p.requires ??= []).push(`9router-${kind}:${id}`);
+  }
 
   if (Object.keys(auth).length) p.auth = auth;
   if (Object.keys(display).length) p.display = display;
@@ -569,6 +606,9 @@ mkdirSync(bundledDir, { recursive: true });
 for (const f of readdirSync(bundledDir)) {
   if (f.endsWith(".toml") && !CHOSEN.includes(f.slice(0, -".toml".length))) rmSync(join(bundledDir, f));
 }
+const communityDir = join(ROOT, "plugins", "community");
+rmSync(communityDir, { recursive: true, force: true });
+mkdirSync(communityDir, { recursive: true });
 const seedDir = join(ROOT, "tools", "gen-bundled", "seeds");
 rmSync(seedDir, { recursive: true, force: true });
 mkdirSync(seedDir, { recursive: true });
@@ -587,7 +627,7 @@ for (const p of plugins) {
     console.error(`generate.mjs: secret leaked into ${p.id}.toml`);
     process.exit(1);
   }
-  writeFileSync(join(bundledDir, `${p.id}.toml`), toml);
+  writeFileSync(join(communityDir, `${p.id}.toml`), toml);
 }
 for (const id of CHOSEN) {
   if (!plugins.some((p) => p.id === id)) {
