@@ -1,0 +1,16 @@
+# expect: in the forwarding floor
+schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-acme-key"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/chat/completions"
+wire = "openai-chat"
+
+[session]
+header = "x-api-key"
+derive = "ses_sha256_hex32"

@@ -620,11 +620,11 @@ be revised in planning without asking the user, as long as nothing the user sees
 
 - The retry budget, backoff, timeouts and cooldowns follow 9router's defaults (Constitution VI).
   "Retry the same account first" is a deliberate 0router addition on top of them.
-- Until slice 005's routing decision, accounts and member providers are tried in the order the
+- Until slice 006's routing decision, accounts and member providers are tried in the order the
   operator configured and declared them. The only routing intelligence in this slice is "stay
   warm first". *(technical decision)*
 - Provider accounts and agent keys persist in the operator's local configuration across
-  restarts. Request records don't persist: they are in memory only, until slice 005.
+  restarts. Request records don't persist: they are in memory only, until slice 006.
   *(technical decision)*
 - In-memory records are capped at a bounded number of recent records, and the oldest are
   evicted first. *(technical decision)*
@@ -633,16 +633,21 @@ be revised in planning without asking the user, as long as nothing the user sees
   The community set stays generated (brief, P notes).
 - openrouter is used with the operator's API key, although slice 002 categorizes it as
   free-tier.
-- xai and grok-cli are in the community set during this slice. Slice 004 brings them back as
+- xai and grok-cli are in the community set during this slice. Slice 005 brings them back as
   chosen providers with account sign-in.
 - The 10 ms figures in SC-005 and SC-013 and the 1 s figure in SC-010 are starting targets.
   *(technical decision)*
 
 ## Out of Scope
 
-- Account sign-in (OAuth), and the xai and grok-cli providers: slice 004.
+Slice numbers follow the user's 2026-09-28 renumbering: 004 client side (harness
+adapters), 005 account sign-in, 006 routing decision and persistent history. The input
+description above keeps the original numbers.
+
+
+- Account sign-in (OAuth), and the xai and grok-cli providers: slice 005.
 - The routing decision (cache-aware routing, per-agent isolation, windowed amortization) and
-  persistent request history: slice 005.
+  persistent request history: slice 006.
 - Combos, model tests, the dashboard, and plugin-declared OAuth for any provider: later.
   Fallback in this slice stays inside one unified model.
 - Web search: never (outside 0router's scope).

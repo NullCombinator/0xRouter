@@ -9,7 +9,8 @@ the [contracts](contracts/); this guide says what to run and what to expect.
 cd ~/Desktop/0router
 export CARGO_HOME=$PWD/.cargo-home
 cargo build --workspace
-export ZEROROUTER_HOME=$(mktemp -d)       # clean operator home
+export ZEROROUTER_HOME=$(mktemp -d)       # clean operator home; keep the path short:
+                                          # run/operator.sock must fit in 108 bytes
 alias zr=./target/debug/zerorouter
 ```
 
@@ -144,7 +145,11 @@ zr records show rq_…                # format: contracts/operator-cli.md
 
 ## 7. Model lists and token counts (US6)
 
+The estimate still needs an account for the target provider (any secret will do; no
+request is sent):
+
 ```bash
+printf 'sk-or-placeholder' | zr accounts add openrouter main    # prints "applied"
 curl -s localhost:20129/v1/models -H "authorization: Bearer $ZR_KEY"
 curl -s localhost:20129/v1/models -H "x-api-key: $ZR_KEY" -H 'anthropic-version: 2023-06-01'
 curl -s localhost:20129/v1beta/models -H "x-goog-api-key: $ZR_KEY"
@@ -172,9 +177,9 @@ Expected:
 ## 9. Community plugins (US8, SC-012)
 
 ```bash
-zr plugins list --community       # 116 entries, each "fits" or "not supported"
+zr plugins list --community       # 5 bundled ("loaded") + 116 community, each "fits" or "unsupported"
 zr plugins install qoder          # exit 3, message per contracts/provider-schema-v2.md#fit-check
-zr plugins install deepseek       # fits; installed; appears in zr providers
+zr plugins install groq           # fits; installed; appears in zr providers
 ```
 
 `cargo test -p zerorouter-registry --test community` sweeps all 116 plugins:

@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use axum::extract::{Request, State};
 use axum::response::Response;
+use axum::serve::ListenerExt;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use zerorouter_engine::attempt::Failure;
@@ -119,7 +120,10 @@ async fn dispatch(State(app): State<Arc<App>>, req: Request) -> Response {
     let json: Value = if bytes.is_empty() {
         Value::Null
     } else if ctype.starts_with("multipart/form-data") {
-        match body::boundary(ctype).ok_or_else(|| "no boundary".to_owned()).and_then(|b| body::parse_multipart(&bytes, b)) {
+        match body::boundary(ctype)
+            .ok_or_else(|| "no boundary".to_owned())
+            .and_then(|b| body::parse_multipart(&bytes, b))
+        {
             Ok(v) => v,
             Err(e) => {
                 record.outcome = Outcome::Failed;
@@ -165,7 +169,11 @@ async fn dispatch(State(app): State<Arc<App>>, req: Request) -> Response {
         (RouteOp::JobGet, _) | (RouteOp::JobContent, _) => {
             // A poll or content fetch belongs to the submit's record.
             let inc = text::Incoming { id, arrived: started, path, headers: parts.headers.clone(), body: json, agent };
-            if route.op == RouteOp::JobGet { media::job_get(&app.engine, st, m, inc).await } else { media::job_content(&app.engine, st, m, inc).await }
+            if route.op == RouteOp::JobGet {
+                media::job_get(&app.engine, st, m, inc).await
+            } else {
+                media::job_content(&app.engine, st, m, inc).await
+            }
         }
         (RouteOp::CountTokens, _) => {
             app.engine.records.insert(record);
@@ -184,7 +192,18 @@ async fn dispatch(State(app): State<Arc<App>>, req: Request) -> Response {
 }
 
 /// Serves `app` on `listener` until `shutdown` resolves, then lets open requests finish.
-pub async fn run(app: Arc<App>, listener: TcpListener, shutdown: impl Future<Output = ()> + Send + 'static) -> std::io::Result<()> {
+pub async fn run(
+    app: Arc<App>,
+    listener: TcpListener,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
+    // Stream frames are small: without TCP_NODELAY, Nagle holds the first one for the
+    // client's delayed ACK (~40 ms on Linux).
+    let listener = listener.tap_io(|tcp| {
+        if let Err(e) = tcp.set_nodelay(true) {
+            tracing::warn!("TCP_NODELAY not set: {e}");
+        }
+    });
     axum::serve(listener, router(app)).with_graceful_shutdown(shutdown).await
 }
 

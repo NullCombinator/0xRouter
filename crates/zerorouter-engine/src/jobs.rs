@@ -142,6 +142,8 @@ impl Engine {
             body: Bytes::new(),
         };
         let out = upstream::build_request(parts).map_err(|e| failure(502, format!("0router: {e}")))?;
+        upstream::check_ip_host(&out.url, st.registry.runtime().allow_private_endpoints)
+            .map_err(|e| failure(502, format!("0router: {e}")))?;
         let resp = time::timeout(POLL_TIMEOUT, out.into_request(&st.http).send())
             .await
             .map_err(|_| {

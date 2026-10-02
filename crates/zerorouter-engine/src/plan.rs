@@ -105,10 +105,18 @@ impl WarmMap {
 
 /// `p`'s endpoints for `ty` that serve `upstream_id`, in try order for a client speaking
 /// `client_style`. `wires` is the model's declared list, if any.
-pub fn endpoints<'p>(p: &'p ProviderEntity, ty: ModelType, upstream_id: &str, wires: Option<&[String]>, client_style: &str) -> Vec<&'p Endpoint> {
-    let all: Vec<&Endpoint> = p.endpoints.get(&ty).map_or(&[][..], |e| &e.0[..]).iter().filter(|e| e.serves(upstream_id)).collect();
+pub fn endpoints<'p>(
+    p: &'p ProviderEntity,
+    ty: ModelType,
+    upstream_id: &str,
+    wires: Option<&[String]>,
+    client_style: &str,
+) -> Vec<&'p Endpoint> {
+    let all: Vec<&Endpoint> =
+        p.endpoints.get(&ty).map_or(&[][..], |e| &e.0[..]).iter().filter(|e| e.serves(upstream_id)).collect();
     let allowed = |e: &&Endpoint| wires.is_none_or(|w| e.wire.as_ref().is_some_and(|x| w.contains(x)));
-    let mut out: Vec<&Endpoint> = all.iter().copied().filter(|e| e.wire.as_deref() == Some(client_style)).filter(allowed).collect();
+    let mut out: Vec<&Endpoint> =
+        all.iter().copied().filter(|e| e.wire.as_deref() == Some(client_style)).filter(allowed).collect();
     for w in wires.into_iter().flatten() {
         out.extend(all.iter().copied().filter(|e| e.wire.as_ref() == Some(w)));
     }
@@ -124,6 +132,14 @@ pub fn endpoints<'p>(p: &'p ProviderEntity, ty: ModelType, upstream_id: &str, wi
     out
 }
 
+/// What every member of one request is planned for.
+#[derive(Clone, Copy)]
+struct Ask<'a> {
+    ty: ModelType,
+    client_style: &'a str,
+    warm: Option<&'a Warm>,
+}
+
 /// One member's steps: its accounts in operator order, the warm one first, or one skip.
 fn member<'s>(
     registry: &'s Registry,
@@ -131,16 +147,24 @@ fn member<'s>(
     provider: &'s ProviderEntity,
     requested: &str,
     upstream_id: String,
-    ty: ModelType,
-    client_style: &str,
-    warm: Option<&Warm>,
+    ask: &Ask,
 ) -> Result<Vec<Step<'s>>, PlanError> {
+    let Ask { ty, client_style, warm } = *ask;
     let model = registry.model(&provider.id, requested).ok().and_then(|m| m.model);
     let wires = model.and_then(|m| m.wires.as_deref());
-    let endpoint = endpoints(provider, ty, &upstream_id, wires, client_style).into_iter().next().ok_or_else(|| {
-        PlanError::NoEndpoint { provider: provider.id.clone(), ty, model: requested.to_owned() }
-    })?;
-    let candidate = |account| Step::Try(Candidate { provider, endpoint, account, requested: requested.to_owned(), upstream_id: upstream_id.clone() });
+    let endpoint = endpoints(provider, ty, &upstream_id, wires, client_style)
+        .into_iter()
+        .next()
+        .ok_or_else(|| PlanError::NoEndpoint { provider: provider.id.clone(), ty, model: requested.to_owned() })?;
+    let candidate = |account| {
+        Step::Try(Candidate {
+            provider,
+            endpoint,
+            account,
+            requested: requested.to_owned(),
+            upstream_id: upstream_id.clone(),
+        })
+    };
     if provider.auth.as_ref().is_some_and(|a| a.no_auth) {
         return Ok(vec![candidate(None)]);
     }
@@ -172,7 +196,9 @@ pub fn plan<'s>(
 ) -> Result<RequestPlan<'s>, PlanError> {
     let resolution = registry.resolve(target)?;
     let declared = match &resolution {
-        Resolution::Direct { provider, requested, .. } => registry.model(&provider.id, requested).ok().and_then(|m| m.kind),
+        Resolution::Direct { provider, requested, .. } => {
+            registry.model(&provider.id, requested).ok().and_then(|m| m.kind)
+        }
         Resolution::Unified(u) => u.kind,
     };
     // An undeclared kind passes: the endpoint list decides.
@@ -181,9 +207,10 @@ pub fn plan<'s>(
     {
         return Err(PlanError::TypeMismatch { target: target.to_owned(), model, route: ty });
     }
+    let ask = Ask { ty, client_style, warm };
     match resolution {
         Resolution::Direct { provider, requested, upstream_id, .. } => {
-            let steps = member(registry, accounts, provider, requested, upstream_id, ty, client_style, warm)?;
+            let steps = member(registry, accounts, provider, requested, upstream_id, &ask)?;
             Ok(RequestPlan { steps, unified: None })
         }
         Resolution::Unified(u) => {
@@ -194,12 +221,19 @@ pub fn plan<'s>(
             }
             let mut steps = Vec::new();
             for m in members {
-                let skip = |reason: String| Step::Skip(Skip { provider: m.provider.clone(), account: None, model: m.upstream_id.clone(), reason });
+                let skip = |reason: String| {
+                    Step::Skip(Skip {
+                        provider: m.provider.clone(),
+                        account: None,
+                        model: m.upstream_id.clone(),
+                        reason,
+                    })
+                };
                 let Ok(provider) = registry.provider(&m.provider) else {
                     steps.push(skip(format!("provider {} isn't installed", m.provider)));
                     continue;
                 };
-                match member(registry, accounts, provider, &m.requested, m.upstream_id.clone(), ty, client_style, warm) {
+                match member(registry, accounts, provider, &m.requested, m.upstream_id.clone(), &ask) {
                     Ok(s) => steps.extend(s),
                     Err(e) => steps.push(skip(e.to_string())),
                 }
@@ -214,7 +248,8 @@ mod tests {
     use super::*;
 
     fn provider(src: &str) -> ProviderEntity {
-        zerorouter_registry::validate_user_plugin(src, std::path::Path::new("acme.toml")).unwrap_or_else(|e| panic!("{e:#?}"))
+        zerorouter_registry::validate_user_plugin(src, std::path::Path::new("acme.toml"))
+            .unwrap_or_else(|e| panic!("{e:#?}"))
     }
 
     const ACME: &str = r#"
@@ -243,11 +278,21 @@ models = ["only-this"]
         let t = ModelType::Text;
         assert_eq!(wires(&endpoints(&p, t, "m", None, "anthropic-messages")), ["anthropic-messages", "openai-chat"]);
         assert_eq!(wires(&endpoints(&p, t, "m", None, "gemini")), ["openai-chat", "anthropic-messages"]);
-        assert_eq!(wires(&endpoints(&p, t, "only-this", None, "openai-responses")), ["openai-responses", "openai-chat", "anthropic-messages"]);
+        assert_eq!(
+            wires(&endpoints(&p, t, "only-this", None, "openai-responses")),
+            ["openai-responses", "openai-chat", "anthropic-messages"]
+        );
         let w = ["anthropic-messages".to_owned()];
-        assert_eq!(wires(&endpoints(&p, t, "m", Some(&w), "openai-chat")), ["anthropic-messages"], "wires restrict the endpoints");
+        assert_eq!(
+            wires(&endpoints(&p, t, "m", Some(&w), "openai-chat")),
+            ["anthropic-messages"],
+            "wires restrict the endpoints"
+        );
         let w = ["openai-chat".to_owned(), "anthropic-messages".to_owned()];
-        assert_eq!(wires(&endpoints(&p, t, "m", Some(&w), "anthropic-messages")), ["anthropic-messages", "openai-chat"]);
+        assert_eq!(
+            wires(&endpoints(&p, t, "m", Some(&w), "anthropic-messages")),
+            ["anthropic-messages", "openai-chat"]
+        );
         assert_eq!(wires(&endpoints(&p, t, "m", Some(&w), "gemini")), ["openai-chat", "anthropic-messages"]);
         assert!(endpoints(&p, ModelType::Tts, "m", None, "openai-chat").is_empty());
     }

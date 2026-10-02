@@ -18,7 +18,8 @@ pub struct CommunityPlugin {
     /// The file stem: the provider id the generator wrote.
     pub id: &'static str,
     pub src: &'static str,
-    /// The gate's errors, or the fit verdict, with private endpoints refused.
+    /// The gate's errors, or the fit verdict, with private endpoints allowed: whether the
+    /// core can run it. `install` checks again under the operator's setting.
     pub verdict: Result<FitVerdict, Vec<ValidationError>>,
 }
 
@@ -37,7 +38,7 @@ pub fn community() -> &'static [CommunityPlugin] {
             .map(|(name, src)| {
                 let id = name.strip_suffix(".toml").unwrap_or(name);
                 let file = format!("plugins/community/{name}");
-                let verdict = load::check_user_plugin(src, Path::new(&file), false);
+                let verdict = load::check_user_plugin(src, Path::new(&file), true);
                 CommunityPlugin { id, src, verdict }
             })
             .collect()

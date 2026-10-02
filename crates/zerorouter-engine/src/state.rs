@@ -44,7 +44,11 @@ impl EngineState {
     /// What a stream that breaks after output does for the agent key `key_id`: the key's
     /// own setting, else `[pipeline] break_behaviour` (itself `restart` when unset).
     pub fn break_behaviour(&self, key_id: &str) -> BreakBehaviour {
-        self.keys.iter().find(|k| k.id == key_id).and_then(|k| k.break_behaviour).unwrap_or(self.settings().pipeline.break_behaviour)
+        self.keys
+            .iter()
+            .find(|k| k.id == key_id)
+            .and_then(|k| k.break_behaviour)
+            .unwrap_or(self.settings().pipeline.break_behaviour)
     }
 }
 
@@ -95,8 +99,17 @@ fn operator_files(home: &OperatorHome) -> Result<(Accounts, Keys), FileError> {
     Ok((accounts, keys))
 }
 
-fn assemble(registry: Arc<Registry>, mut accounts: Accounts, keys: Keys, generation: u64) -> (EngineState, StateReport) {
-    accounts.bind_unbound(&registry);
+fn assemble(
+    registry: Arc<Registry>,
+    mut accounts: Accounts,
+    keys: Keys,
+    generation: u64,
+) -> (EngineState, StateReport) {
+    if accounts.bind_unbound(&registry)
+        && let Err(e) = accounts.save()
+    {
+        tracing::warn!("account hosts bound but not saved: {e}");
+    }
     let unused_accounts = accounts.unused(&registry).map(|a| format!("{}/{}", a.provider, a.name)).collect();
     let redactor = Arc::new(Redactor::new(accounts.iter().filter_map(|a| a.secret.as_ref())));
     let report = StateReport { generation, registry: registry.report().clone(), unused_accounts };
@@ -166,7 +179,9 @@ impl Engine {
     /// [`reload_blocking`](Self::reload_blocking) on the blocking pool.
     pub async fn reload(self: &Arc<Self>) -> Result<StateReport, StateError> {
         let this = self.clone();
-        tokio::task::spawn_blocking(move || this.reload_blocking()).await.map_err(|e| StateError::Join(e.to_string()))?
+        tokio::task::spawn_blocking(move || this.reload_blocking())
+            .await
+            .map_err(|e| StateError::Join(e.to_string()))?
     }
 }
 

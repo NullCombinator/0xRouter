@@ -25,6 +25,10 @@ this brief. Don't accept it.
 
 ## Slice plan
 
+> **Renumbered 2026-09-28 by user decision:** 004 client side (harness adapters), 005
+> account sign-in (OAuth, xai, grok-cli), 006 routing decision and persistent history.
+> The list below is the plan as confirmed on 2026-09-27.
+
 - **003 (this):** request pipeline with API-key providers.
 - **004:** account sign-in (OAuth) for the chosen few, plus xai and grok-cli.
 - **005:** routing decision (cache-aware, per-agent isolation, amortization), plus

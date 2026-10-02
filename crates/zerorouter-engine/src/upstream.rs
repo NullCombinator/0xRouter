@@ -2,7 +2,7 @@
 //! never followed, every resolved address re-checked against the SSRF rules, and the only
 //! place an account secret is written into a request.
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -54,11 +54,28 @@ impl Resolve for CheckedResolver {
             let host = name.as_str().to_owned();
             let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0)).await?.collect();
             if !allow_private && let Some(bad) = addrs.iter().find(|a| is_private_ip(a.ip())) {
-                return Err(format!("{host} resolves to {}, a private address; set allow_private_endpoints = true to allow it", bad.ip()).into());
+                return Err(format!(
+                    "{host} resolves to {}, a private address; set allow_private_endpoints = true to allow it",
+                    bad.ip()
+                )
+                .into());
             }
             Ok(Box::new(addrs.into_iter()) as Addrs)
         })
     }
+}
+
+/// The resolver is never asked about an address-literal host, so its private-address
+/// check runs here, before the request is sent.
+pub fn check_ip_host(url: &Url, allow_private: bool) -> Result<(), BuildError> {
+    // The parser has already written any address form as a canonical address.
+    let host = url.host_str().unwrap_or_default().trim_start_matches('[').trim_end_matches(']');
+    let Ok(ip) = host.parse::<IpAddr>() else { return Ok(()) };
+    if allow_private || !is_private_ip(ip) {
+        return Ok(());
+    }
+    let reason = format!("{ip} is a private address; set allow_private_endpoints = true to allow it");
+    Err(BuildError::BadUrl { url: url.to_string(), reason })
 }
 
 /// The process-wide client. Build once; clone freely (the pool is shared).
@@ -146,21 +163,27 @@ pub fn endpoint_url(template: &str, model: &str, voice: Option<&str>) -> Result<
 
 /// The header the core writes the secret into, and its value: the endpoint's placement,
 /// else the provider's `[auth]`.
-fn auth_header(p: &ProviderEntity, e: &Endpoint, secret: &SecretString) -> Result<(HeaderName, HeaderValue), BuildError> {
+fn auth_header(
+    p: &ProviderEntity,
+    e: &Endpoint,
+    secret: &SecretString,
+) -> Result<(HeaderName, HeaderValue), BuildError> {
     let auth = p.auth.as_ref();
     let header = e.auth.as_ref().map(|a| a.header.as_str()).or_else(|| auth.and_then(|a| a.header.as_deref()));
     let name = header.map_or(AUTHORIZATION, |h| HeaderName::from_bytes(h.as_bytes()).unwrap_or(AUTHORIZATION));
-    let scheme = e.auth.as_ref().map(|a| a.scheme).or_else(|| auth.and_then(|a| a.scheme)).unwrap_or(if name == AUTHORIZATION {
-        AuthScheme::Bearer
-    } else {
-        AuthScheme::Raw
-    });
-    let mut value = secret.with_exposed(|s| match scheme {
-        AuthScheme::Bearer => Ok(HeaderValue::from_str(&format!("Bearer {s}"))),
-        AuthScheme::Raw => Ok(HeaderValue::from_str(s)),
-        other => Err(BuildError::UnsupportedAuth(other.to_string())),
-    })?
-    .map_err(|_| BuildError::BadHeader(name.to_string()))?;
+    let scheme = e
+        .auth
+        .as_ref()
+        .map(|a| a.scheme)
+        .or_else(|| auth.and_then(|a| a.scheme))
+        .unwrap_or(if name == AUTHORIZATION { AuthScheme::Bearer } else { AuthScheme::Raw });
+    let mut value = secret
+        .with_exposed(|s| match scheme {
+            AuthScheme::Bearer => Ok(HeaderValue::from_str(&format!("Bearer {s}"))),
+            AuthScheme::Raw => Ok(HeaderValue::from_str(s)),
+            other => Err(BuildError::UnsupportedAuth(other.to_string())),
+        })?
+        .map_err(|_| BuildError::BadHeader(name.to_string()))?;
     value.set_sensitive(true);
     Ok((name, value))
 }
@@ -201,7 +224,10 @@ pub fn build_request(parts: RequestParts) -> Result<Outgoing, BuildError> {
         headers.insert(name, HeaderValue::from_str(&value).map_err(|_| BuildError::BadHeader(k.clone()))?);
     }
     if let Some(ct) = parts.content_type {
-        headers.insert(reqwest::header::CONTENT_TYPE, HeaderValue::from_str(ct).map_err(|_| BuildError::BadHeader("content-type".into()))?);
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            HeaderValue::from_str(ct).map_err(|_| BuildError::BadHeader("content-type".into()))?,
+        );
     }
     let no_auth = parts.provider.auth.as_ref().is_some_and(|a| a.no_auth);
     if !no_auth {
@@ -209,7 +235,8 @@ pub fn build_request(parts: RequestParts) -> Result<Outgoing, BuildError> {
         let (name, value) = auth_header(parts.provider, e, secret)?;
         headers.insert(name, value);
     }
-    let header_timeout = Duration::from_millis(e.timeout_ms.unwrap_or_else(|| env_ms("FETCH_CONNECT_TIMEOUT_MS", DEFAULT_TIMEOUT_MS)));
+    let header_timeout =
+        Duration::from_millis(e.timeout_ms.unwrap_or_else(|| env_ms("FETCH_CONNECT_TIMEOUT_MS", DEFAULT_TIMEOUT_MS)));
     Ok(Outgoing { method, url, headers, body: parts.body, header_timeout })
 }
 
@@ -219,7 +246,19 @@ mod tests {
     use zerorouter_registry::schema::AuthDecl;
 
     fn provider(src: &str) -> ProviderEntity {
-        zerorouter_registry::validate_user_plugin(src, std::path::Path::new("acme.toml")).unwrap_or_else(|e| panic!("{e:#?}"))
+        zerorouter_registry::validate_user_plugin(src, std::path::Path::new("acme.toml"))
+            .unwrap_or_else(|e| panic!("{e:#?}"))
+    }
+
+    #[test]
+    fn address_literal_hosts_are_checked_here() {
+        let check = |u: &str, allow| check_ip_host(&Url::parse(u).unwrap(), allow);
+        assert!(check("http://169.254.169.254/latest", false).is_err());
+        assert!(check("http://0x7f.1/x", false).is_err());
+        assert!(check("http://[::1]:8080/x", false).is_err());
+        assert!(check("http://127.0.0.1/x", true).is_ok());
+        assert!(check("https://8.8.8.8/x", false).is_ok());
+        assert!(check("https://api.example.com/x", false).is_ok(), "names are the resolver's");
     }
 
     #[test]
@@ -296,7 +335,11 @@ headers = { "anthropic-beta" = "base-1", "anthropic-version" = "2023-06-01" }
         assert!(other.headers.get("x-other").is_none(), "a cross-style attempt passes the declared list only");
 
         p.auth = Some(AuthDecl { header: None, scheme: None, ..AuthDecl::default() });
-        let base = RequestParts { provider: &p, client_style: "openai-chat", ..other_parts(&endpoint, &floor, &redactor, &secret, &client) };
+        let base = RequestParts {
+            provider: &p,
+            client_style: "openai-chat",
+            ..other_parts(&endpoint, &floor, &redactor, &secret, &client)
+        };
         let bearer = build_request(base.clone()).unwrap();
         assert_eq!(bearer.headers[AUTHORIZATION], "Bearer sk-acme-SECRET-1");
         let none = RequestParts { secret: None, ..base };
@@ -326,7 +369,9 @@ auth = { header = "x-api-key", scheme = "raw" }
         let (secret, floor, client) = (SecretString::new("sk-gw-1"), Floor::default(), HeaderMap::new());
         let redactor = Redactor::new([&secret]);
         let eps = &p.endpoints.values().next().unwrap().0;
-        let send = |e| build_request(RequestParts { provider: &p, ..other_parts(e, &floor, &redactor, &secret, &client) }).unwrap();
+        let send = |e| {
+            build_request(RequestParts { provider: &p, ..other_parts(e, &floor, &redactor, &secret, &client) }).unwrap()
+        };
         let chat = send(&eps[0]);
         assert_eq!(chat.headers[AUTHORIZATION], "Bearer sk-gw-1");
         assert!(chat.headers.get("x-api-key").is_none());
@@ -343,7 +388,9 @@ auth = { header = "x-api-key", scheme = "raw" }
         client: &'a HeaderMap,
     ) -> RequestParts<'a> {
         static EMPTY: std::sync::LazyLock<ProviderEntity> = std::sync::LazyLock::new(|| {
-            provider("schema = 2\nid = \"empty\"\ncategory = \"apikey\"\n[[endpoints.text]]\nurl = \"https://e.example/v1\"\nwire = \"openai-chat\"\n")
+            provider(
+                "schema = 2\nid = \"empty\"\ncategory = \"apikey\"\n[[endpoints.text]]\nurl = \"https://e.example/v1\"\nwire = \"openai-chat\"\n",
+            )
         });
         RequestParts {
             provider: &EMPTY,
@@ -378,7 +425,9 @@ auth = { header = "x-api-key", scheme = "raw" }
             let (mut s, _) = listener.accept().await.unwrap();
             let mut buf = [0u8; 1024];
             let _ = s.read(&mut buf).await;
-            s.write_all(b"HTTP/1.1 302 Found\r\nlocation: http://169.254.169.254/\r\ncontent-length: 0\r\n\r\n").await.unwrap();
+            s.write_all(b"HTTP/1.1 302 Found\r\nlocation: http://169.254.169.254/\r\ncontent-length: 0\r\n\r\n")
+                .await
+                .unwrap();
         });
         let resp = client(true).get(format!("http://{addr}/")).send().await.unwrap();
         assert_eq!(resp.status(), 302);

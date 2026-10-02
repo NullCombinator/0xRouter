@@ -375,7 +375,7 @@ Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-p
   - Same-style: a body with unknown keys at the top level, on a message, on a part and on a tool, plus a block type no template knows, comes out JSON-equal to the input except the model path, the forced stream path and `stream_options.include_usage`.
   - Cross-style: the same body encodes without the unknown keys, and the returned drop list holds each one's path and a reason, with no values. An unknown block type is still `CannotCarry`.
   - Same-style non-stream response: unknown response fields survive, and usage is still read from it.
-- [ ] T147 [P] [US1] Extend `crates/zerorouter-server/tests/passthrough.rs` (T048) with the route-level cases.
+- [X] T147 [P] [US1] Extend `crates/zerorouter-server/tests/passthrough.rs` (T048) with the route-level cases.
   - Same-style: the mock receives every unknown body field and every unknown client header; it never receives a floor header, a hop-by-hop header, `x-0router-*` or the access key (US1-8).
   - Cross-style: the mock receives no unknown field and no undeclared header; the record's attempt lists each dropped path (US1-9).
   - A non-stream same-style response with an unknown field reaches the client unchanged, and streamed events keep their names and payloads (US1-10).
@@ -803,21 +803,21 @@ set that installs whole or is refused whole with a message naming every unsuppor
 
 ## Phase 11: Polish & Cross-Cutting Concerns
 
-- [ ] T137 [P] Write the Criterion benches ([R24](research.md#r24-performance-and-benchmarks), SC-013).
+- [X] T137 [P] Write the Criterion benches ([R24](research.md#r24-performance-and-benchmarks), SC-013).
   - `crates/zerorouter-wire/benches/wire.rs`: request translation for each of the 4×4 pairs, stream event translation throughput, usage extraction.
   - `crates/zerorouter-engine/benches/engine.rs`: the attempt loop against an instant mock, measuring the time to first byte that 0router adds (target p95 ≤ 10 ms).
   - `crates/zerorouter-server/benches/server.rs`: the access-key check, route matching, and an end-to-end loopback request.
-- [ ] T138 Run the benches with `--save-baseline slice-003` and commit the summary table in `specs/003-request-pipeline/bench-baseline.md` (machine, date, median and p95 per bench).
-- [ ] T139 Write the connection-reuse test in `crates/zerorouter-server/tests/reuse.rs`: N sequential requests to one mock host within the keep-alive window use one accepted connection (SC-011, FR-021).
-- [ ] T140 [P] Write the documentation:
+- [X] T138 Run the benches with `--save-baseline slice-003` and commit the summary table in `specs/003-request-pipeline/bench-baseline.md` (machine, date, median and p95 per bench).
+- [X] T139 Write the connection-reuse test in `crates/zerorouter-server/tests/reuse.rs`: N sequential requests to one mock host within the keep-alive window use one accepted connection (SC-011, FR-021).
+- [X] T140 [P] Write the documentation:
   - `docs/api-styles.md`, from [contracts/api-style-schema.md](contracts/api-style-schema.md);
   - updates to `docs/plugins.md` for schema 2, forwarding, the floor and the fit check;
   - updates to `docs/operator-config.md` for `accounts.toml`, `keys.toml`, `serve`, `records`, break behaviour and `allow_private_endpoints`.
-- [ ] T141 Run `/rust-parity-audit` on `crates/zerorouter-engine/src/classify.rs`, `cooldown.rs`, `attempt.rs` (retry budgets and timeouts), `crates/zerorouter-wire/src/codec/`, `usage.rs` and `estimate.rs`. Fix every must-fix finding, and record the [R26](research.md#r26-deliberate-deviations-from-9router-summary) deviations as accepted.
-- [ ] T142 Run a security review with the `security-auditor` agent. It covers the secret paths (accounts → upstream injection, redactor coverage, the floor, CLI input), SSRF (gate plus the resolved-IP re-check, no redirects), and the operator socket permissions. Fix every High finding.
-- [ ] T143 Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`, and fix everything they report.
-- [ ] T144 Run all 10 sections of [quickstart.md](quickstart.md) with a scratch `ZEROROUTER_HOME`, and correct the quickstart wherever the real output differs.
-- [ ] T145 [P] Update `CLAUDE.md`: add the three new crates, `styles/bundled/`, `plugins/community/` and `tests/harness/` to the workspace table, and add the `zerorouter serve` run command.
+- [X] T141 Run `/rust-parity-audit` on `crates/zerorouter-engine/src/classify.rs`, `cooldown.rs`, `attempt.rs` (retry budgets and timeouts), `crates/zerorouter-wire/src/codec/`, `usage.rs` and `estimate.rs`. Fix every must-fix finding, and record the [R26](research.md#r26-deliberate-deviations-from-9router-summary) deviations as accepted.
+- [X] T142 Run a security review with the `security-auditor` agent. It covers the secret paths (accounts → upstream injection, redactor coverage, the floor, CLI input), SSRF (gate plus the resolved-IP re-check, no redirects), and the operator socket permissions. Fix every High finding.
+- [X] T143 Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`, and fix everything they report.
+- [X] T144 Run all 10 sections of [quickstart.md](quickstart.md) with a scratch `ZEROROUTER_HOME`, and correct the quickstart wherever the real output differs.
+- [X] T145 [P] Update `CLAUDE.md`: add the three new crates, `styles/bundled/`, `plugins/community/` and `tests/harness/` to the workspace table, and add the `zerorouter serve` run command.
 
 ---
 

@@ -6,6 +6,8 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use url::{Host, Url};
+
 use super::secrets::check_url;
 
 /// Placeholders an endpoint URL may carry, in its path only.
@@ -29,20 +31,52 @@ pub fn check_endpoint_url(url: &str, allow_private: bool) -> Result<(), String> 
         return Err("URL path must not contain `.` or `..` segments".into());
     }
 
-    let host = host_of(authority)?;
+    check_host(url, authority, allow_private)
+}
+
+/// The private-host rule alone, for schema 1 URLs, which are converted to endpoints after
+/// the gate. A host with a placeholder is left to the fit check (regions are unsupported).
+pub fn check_public_host(url: &str, allow_private: bool) -> Result<(), String> {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let authority = &rest[..rest.find(['/', '?', '#']).unwrap_or(rest.len())];
+    if authority.contains(['{', '}']) {
+        return Ok(());
+    }
+    check_host(url, authority, allow_private)
+}
+
+/// The host is read by the parser the upstream client uses, so `\\`, percent-encoded and
+/// full-width forms are judged as the address they connect to.
+fn check_host(url: &str, authority: &str, allow_private: bool) -> Result<(), String> {
+    if url.contains('\\') || authority.contains('%') {
+        return Err("URL must not contain a backslash, or a `%` in its host".into());
+    }
+    let parsed = Url::parse(url).map_err(|e| format!("URL doesn't parse: {e}"))?;
     if allow_private {
         return Ok(());
     }
-    match host_kind(&host) {
-        Host::Ip(ip) if is_private_ip(ip) => Err(format!(
-            "host {host} is loopback, private, link-local or metadata; set allow_private_endpoints = true to allow it"
-        )),
-        Host::Ip(_) => Ok(()),
-        Host::AmbiguousNumeric => Err(format!("host {host} is not a canonical address")),
-        Host::Name if is_private_name(&host) => Err(format!(
-            "host {host} is a local or internal name; set allow_private_endpoints = true to allow it"
-        )),
-        Host::Name => Ok(()),
+    match parsed.host() {
+        None => Err("URL has no host".into()),
+        Some(Host::Ipv4(ip)) => public_ip(IpAddr::V4(ip)),
+        Some(Host::Ipv6(ip)) => public_ip(IpAddr::V6(ip)),
+        Some(Host::Domain(name)) => {
+            let name = name.trim_end_matches('.');
+            if is_private_name(name) {
+                Err(format!("host {name} is a local or internal name; set allow_private_endpoints = true to allow it"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+fn public_ip(ip: IpAddr) -> Result<(), String> {
+    if is_private_ip(ip) {
+        Err(format!(
+            "host {ip} is loopback, private, link-local or metadata; set allow_private_endpoints = true to allow it"
+        ))
+    } else {
+        Ok(())
     }
 }
 
@@ -57,40 +91,6 @@ fn check_path_placeholders(path: &str) -> Result<(), String> {
         rest = &rest[close + 1..];
     }
     if rest.contains('}') { Err("unmatched `}` in URL path".into()) } else { Ok(()) }
-}
-
-/// The host part of an authority, lowercased, without port, brackets or a trailing dot.
-fn host_of(authority: &str) -> Result<String, String> {
-    let host = if let Some(v6) = authority.strip_prefix('[') {
-        v6.split_once(']').ok_or("unclosed `[` in URL host")?.0
-    } else {
-        authority.rsplit_once(':').map_or(authority, |(h, port)| {
-            if port.chars().all(|c| c.is_ascii_digit()) { h } else { authority }
-        })
-    };
-    let host = host.trim_end_matches('.').to_ascii_lowercase();
-    if host.is_empty() { Err("URL has no host".into()) } else { Ok(host) }
-}
-
-enum Host {
-    Ip(IpAddr),
-    /// Digits-and-dots or hex forms (`2130706433`, `0x7f.1`) that resolvers may read as
-    /// an address but aren't dotted-quad.
-    AmbiguousNumeric,
-    Name,
-}
-
-fn host_kind(host: &str) -> Host {
-    if let Ok(ip) = host.parse::<IpAddr>() {
-        return Host::Ip(ip);
-    }
-    let last = host.rsplit('.').next().unwrap_or(host);
-    let numeric_label = |l: &str| {
-        !l.is_empty()
-            && (l.chars().all(|c| c.is_ascii_digit())
-                || l.strip_prefix("0x").is_some_and(|h| h.chars().all(|c| c.is_ascii_hexdigit())))
-    };
-    if numeric_label(last) { Host::AmbiguousNumeric } else { Host::Name }
 }
 
 fn is_private_name(host: &str) -> bool {
@@ -171,6 +171,9 @@ mod tests {
             "http://0.0.0.0/x",
             "http://2130706433/x",
             "http://0x7f.1/x",
+            "http://169.254.169.254\\latest/x",
+            "http://127.0.0.%31/x",
+            "http://\u{ff11}\u{ff12}\u{ff17}.\u{ff10}.\u{ff10}.\u{ff11}/x",
         ] {
             assert!(check_endpoint_url(url, false).is_err(), "{url}");
         }

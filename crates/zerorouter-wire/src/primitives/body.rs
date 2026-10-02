@@ -97,10 +97,13 @@ pub fn parse_multipart(body: &[u8], boundary: &str) -> Result<Value, String> {
     Ok(Value::Object(out))
 }
 
+/// One form part: name, data, file name, content type.
+type FormPart = (String, Vec<u8>, Option<String>, Option<String>);
+
 /// Encodes an object of fields as `multipart/form-data`; returns the body and its
 /// content type.
 pub fn encode_multipart(fields: &Value) -> (Vec<u8>, String) {
-    let mut parts: Vec<(String, Vec<u8>, Option<String>, Option<String>)> = Vec::new();
+    let mut parts: Vec<FormPart> = Vec::new();
     let mut push = |name: &str, v: &Value| match v {
         Value::Null => {}
         Value::String(s) => parts.push((name.to_owned(), s.clone().into_bytes(), None, None)),

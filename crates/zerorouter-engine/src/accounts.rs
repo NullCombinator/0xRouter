@@ -52,7 +52,9 @@ impl Account {
 pub enum Withheld {
     #[error("environment variable {0} is not set")]
     EnvUnset(String),
-    #[error("the active plugin sends traffic to {host}, which this account was not added for; add the account again to confirm")]
+    #[error(
+        "the active plugin sends traffic to {host}, which this account was not added for; add the account again to confirm"
+    )]
     NewHost { host: String },
 }
 
@@ -108,15 +110,21 @@ pub fn last4(s: &str) -> String {
 }
 
 pub fn valid_name(name: &str) -> bool {
-    (1..=32).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+    (1..=32).contains(&name.len())
+        && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
 }
 
-/// Every host a provider sends requests to: its endpoints of every type and any
-/// schema-1 transports.
+/// Every host a provider sends requests to: its endpoints of every type, their token-count
+/// URLs, and any schema-1 transports.
 pub fn provider_hosts(p: &ProviderEntity) -> BTreeSet<String> {
-    let urls = p.endpoints.values().flat_map(|e| e.0.iter().map(|e| e.url.as_str()));
+    let urls = p
+        .endpoints
+        .values()
+        .flat_map(|e| e.0.iter())
+        .flat_map(|e| std::iter::once(e.url.as_str()).chain(e.token_count.iter().map(|t| t.url.as_str())));
     let transports = p.all_transports();
-    let bases = transports.iter().flat_map(|t| t.base_url.iter().chain(t.base_urls.iter().flatten())).map(String::as_str);
+    let bases =
+        transports.iter().flat_map(|t| t.base_url.iter().chain(t.base_urls.iter().flatten())).map(String::as_str);
     urls.chain(bases).filter_map(|u| Url::parse(u).ok()?.host_str().map(str::to_owned)).collect()
 }
 
@@ -140,11 +148,16 @@ impl Accounts {
                 return Err(FileError::invalid(path, AccountError::BadName(a.name).to_string()));
             }
             if list.iter().any(|b| b.provider == a.provider && b.name == a.name) {
-                return Err(FileError::invalid(path, AccountError::Duplicate { provider: a.provider, name: a.name }.to_string()));
+                return Err(FileError::invalid(
+                    path,
+                    AccountError::Duplicate { provider: a.provider, name: a.name }.to_string(),
+                ));
             }
             let (source, secret) = match a.secret {
                 RawSecret::Literal(s) => (SecretSource::Literal, Some(SecretString::new(s))),
-                RawSecret::Env { env: var } => (SecretSource::Env(var.clone()), env(&var).filter(|s| !s.is_empty()).map(SecretString::new)),
+                RawSecret::Env { env: var } => {
+                    (SecretSource::Env(var.clone()), env(&var).filter(|s| !s.is_empty()).map(SecretString::new))
+                }
             };
             list.push(Account {
                 provider: a.provider,
@@ -237,13 +250,18 @@ impl Accounts {
             .ok_or_else(|| AccountError::NotFound { provider: provider.to_owned(), name: name.to_owned() })
     }
 
-    /// Fills in the hosts of hand-written accounts from the loaded providers.
-    pub fn bind_unbound(&mut self, registry: &Registry) {
+    /// Fills in the hosts of hand-written accounts from the loaded providers. Returns
+    /// whether any account was bound, so the caller saves the binding: a later plugin that
+    /// moves the provider to other hosts must find it.
+    pub fn bind_unbound(&mut self, registry: &Registry) -> bool {
+        let mut bound = false;
         for a in self.list.iter_mut().filter(|a| a.hosts.is_empty()) {
             if let Ok(p) = registry.provider(&a.provider) {
                 a.hosts = provider_hosts(p);
+                bound |= !a.hosts.is_empty();
             }
         }
+        bound
     }
 }
 
@@ -284,7 +302,10 @@ disabled = true
 "#;
 
     fn parse() -> Accounts {
-        Accounts::parse(FILE_TEXT, Path::new("accounts.toml"), |v| (v == "ZR_TEST_MAIN").then(|| "sk-from-env-1234".to_owned())).unwrap()
+        Accounts::parse(FILE_TEXT, Path::new("accounts.toml"), |v| {
+            (v == "ZR_TEST_MAIN").then(|| "sk-from-env-1234".to_owned())
+        })
+        .unwrap()
     }
 
     #[test]

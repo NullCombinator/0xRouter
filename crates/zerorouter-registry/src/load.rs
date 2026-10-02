@@ -13,7 +13,6 @@ use std::{env, fs, io};
 
 use url::Url;
 
-use crate::registry::{Registry, RuntimeSettings, UnifiedMember, UnifiedModel, token_clashes, token_path};
 use crate::convert;
 use crate::fit::{self, FitVerdict};
 use crate::registry::{Registry, RuntimeSettings, UnifiedMember, UnifiedModel, token_clashes, token_path};
@@ -256,13 +255,15 @@ pub(crate) fn style_carriers(styles: &[StyleFile]) -> impl Iterator<Item = &str>
 }
 
 /// Bundled plugins load under `strict`: forwarding a floor name is an error. The parity set
-/// adds the community plugins as bundled, with the fit check off.
+/// adds the community plugins as bundled, with the fit check off and private endpoints
+/// allowed (9router has no such rule; the self-hosted ones point at localhost).
 fn bundled(
     ctx: &GateCtx,
     diagnostics: &mut Vec<ValidationError>,
     parity: bool,
 ) -> Result<Vec<Loaded>, Vec<ValidationError>> {
     let ctx = GateCtx { strict: true, ..ctx.clone() };
+    let community_ctx = GateCtx { allow_private: true, ..ctx.clone() };
     let mut out = Vec::with_capacity(BUNDLED.len());
     let mut errors = Vec::new();
     let community: &[(&str, &str)] = if parity { crate::community::COMMUNITY } else { &[] };
@@ -270,7 +271,8 @@ fn bundled(
         BUNDLED.iter().map(|(n, s)| ("bundled", n, s)).chain(community.iter().map(|(n, s)| ("community", n, s)));
     for (dir, name, src) in sources {
         let file = format!("plugins/{dir}/{name}");
-        match validate_with(src, PluginSource::Bundled, &file, &ctx) {
+        let ctx = if dir == "community" { &community_ctx } else { &ctx };
+        match validate_with(src, PluginSource::Bundled, &file, ctx) {
             Ok(g) => {
                 diagnostics.extend(g.diagnostics);
                 out.push(Loaded { entity: g.entity, src: Cow::Borrowed(src), file });

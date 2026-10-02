@@ -14,15 +14,18 @@ Workspace layout:
 | `crates/zerorouter-wire` | API-style interpreter: translates client bodies ↔ IR ↔ provider wire bodies; no I/O, no async runtime |
 | `crates/zerorouter-engine` | Request engine: operator state snapshot, attempt loop (classification, retry, fallback, stay-warm), upstream calls, request records |
 | `crates/zerorouter-server` | HTTP surface over the engine: style-built routes, access-key check, streaming relay, model lists, token counts, operator socket |
-| `crates/zerorouter-cli` | `zerorouter` CLI: `check`, `validate`, `resolve`, `model`, `providers` |
-| `plugins/bundled/` | Bundled provider plugins (TOML), generated from `ref/9router` |
-| `plugins/community/` | Community provider plugins, embedded and installed on request (slice 003; empty so far) |
-| `styles/bundled/` | Bundled client API styles (data files read by `zerorouter-wire`; slice 003, empty so far) |
+| `crates/zerorouter-cli` | `zerorouter` CLI: `serve`, `accounts`, `keys`, `behaviour`, `records`, `plugins`, `check`, `validate`, `resolve`, `model`, `providers` |
+| `plugins/bundled/` | The five chosen providers (schema 2 TOML): seeded from `ref/9router` by the generator, then maintained by hand |
+| `plugins/community/` | The other 116 providers, generated from `ref/9router`; embedded, fit-checked, and installed on request |
+| `styles/bundled/` | The four client API styles (Chat Completions, Messages, Responses, Gemini): data files read by `zerorouter-wire` |
 | `tools/gen-bundled/` | Generator for the bundled plugins, credentials, and parity oracle |
 | `tests/fixtures/9router/` | Parity oracle snapshots (generated; never hand-edit) |
+| `tests/harness/` | Real SDK and harness runs (Python, Node, Claude Code, Codex CLI, headroom) against the server; `ZR_HARNESS=1` |
 | `docs/` | Plugin-author and operator documentation |
 
 After updating `ref/9router`, regenerate with `node tools/gen-bundled/generate.mjs` and commit the output on its own, naming the ref SHA. Build commands need `export CARGO_HOME=$PWD/.cargo-home`.
+
+Run the server with `cargo run -p zerorouter-cli -- serve` (listens on `127.0.0.1:20129`; state in `$ZEROROUTER_HOME`, default `~/.0router`). Add an account with `zerorouter accounts add <provider> <name>` (secret on stdin) and a client key with `zerorouter keys issue <name>`. See `docs/operator-config.md`.
 
 0router re-implements 9router's core routing engine in Rust, with a different routing decision (cache-aware, per-agent isolation, windowed amortization), a unified provider entity model (one plugin = one provider with per-modality sections), unified models as routing targets, first-class support for non-text model types, latency observability, testable combos, and a two-sided plugin model: third-party providers are declared as TOML data files, and harness adapters run as sandboxed WASM. See `init.md` for the full intention and `init.md`→`constitution.md` for the non-negotiable invariants.
 

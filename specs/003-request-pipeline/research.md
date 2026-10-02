@@ -581,6 +581,7 @@ under `specs/003-request-pipeline/bench-baseline.md`.
 | Gemini client tools | dropped | translated | F1 |
 | Non-stream second hop | missing | done | bug |
 | Same-account retry for 429 and other 5xx | none | 1 retry (R7) | ledger: stay warm first |
+| 5xx with rate-limit or overloaded text | status budget (3 retries for 502/503) | 1 retry at the indicated wait (R7 row "rate-limit / overloaded text") | text wins over status, as in classification (T141 finding 1) |
 | Success mark | at stream start | at stream end | R8 |
 | Mid-stream break | terminal error frame | continuation / restart / error event | FR-017/018 |
 | Stall watchdog on forced-stream bodies | none | armed | edge case |
@@ -589,7 +590,7 @@ under `specs/003-request-pipeline/bench-baseline.md`.
 | Auth before JSON parse | JSON first | key first | spend nothing on unauthenticated callers |
 | 401/403 refresh sleep on API keys | ~3 s | none | no refresh token |
 | Anthropic model list | absent | present | Claude Code discovery |
-| Account locks | persisted in DB | in memory | persistence is slice 005 |
+| Account locks | persisted in DB | in memory | persistence is slice 006 |
 | Client headers upstream | none beyond executor-built headers | same-style: all but the floor; cross-style: declared list (R27) | Constitution IV |
 ## R27. Optimizer pass-through (amendment 2026-09-28)
 

@@ -103,3 +103,30 @@ async fn recorded_ttft_and_total_match_the_client_within_10ms() {
         assert_close("total", rec.total_ms, end);
     }
 }
+
+/// The first stream frame isn't held back by Nagle waiting for the client's delayed ACK
+/// (~40 ms per request on a kept-alive connection without TCP_NODELAY).
+#[tokio::test]
+async fn first_stream_frames_are_sent_without_delay() {
+    let s = server().await;
+    s.mock.respond(|_| common::chat_stream());
+    let client = reqwest::Client::new();
+    let body =
+        json!({"model": "mockco/m1", "stream": true, "messages": [{"role": "user", "content": "hi"}]}).to_string();
+    let mut took = Vec::new();
+    for _ in 0..12 {
+        let start = Instant::now();
+        let mut r = client
+            .post(format!("{}/v1/chat/completions", s.base))
+            .bearer_auth(&s.key)
+            .body(body.clone())
+            .send()
+            .await
+            .unwrap();
+        r.chunk().await.unwrap();
+        took.push(start.elapsed());
+        while r.chunk().await.unwrap().is_some() {}
+    }
+    took.sort_unstable();
+    assert!(took[took.len() / 2] < Duration::from_millis(20), "median time to first chunk {:?}", took[took.len() / 2]);
+}

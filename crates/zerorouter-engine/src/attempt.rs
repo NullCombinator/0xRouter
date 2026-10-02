@@ -122,7 +122,10 @@ pub enum Answer {
     },
     Media(MediaAnswer),
     /// A token count: from the provider, or 0router's estimate.
-    Count { input_tokens: u64, estimated: bool },
+    Count {
+        input_tokens: u64,
+        estimated: bool,
+    },
 }
 
 /// An answer, with the provider headers the serving plugin forwards to the client
@@ -592,7 +595,9 @@ impl Run {
         let c = match (self.req.count, &c.endpoint.token_count) {
             (false, _) => c,
             (true, None) if self.estimate(st, c, kind) => return Ok(true),
-            (true, None) => return skip(self, "0router: the request can't be put in the Messages shape to estimate".into(), tried),
+            (true, None) => {
+                return skip(self, "0router: the request can't be put in the Messages shape to estimate".into(), tried);
+            }
             (true, Some(tc)) => {
                 count_endpoint = Endpoint { url: tc.url.clone(), force_stream: false, ..c.endpoint.clone() };
                 counted = Candidate { endpoint: &count_endpoint, ..c.clone() };
@@ -763,7 +768,10 @@ impl Run {
             body: ob.body.clone(),
         };
         let mut out = upstream::build_request(parts).map_err(|e| format!("0router: {e}"))?;
+        upstream::check_ip_host(&out.url, st.registry.runtime().allow_private_endpoints)
+            .map_err(|e| format!("0router: {e}"))?;
         if let Some(s) = &c.provider.session
+            && !st.registry.floor().blocks(&s.header)
             && let Ok(name) = HeaderName::from_bytes(s.header.as_bytes())
         {
             let client = self.req.headers.get(&name).and_then(|v| v.to_str().ok());

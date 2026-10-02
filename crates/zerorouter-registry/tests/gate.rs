@@ -124,9 +124,12 @@ fn every_bundled_and_community_plugin_passes_the_gate() {
     assert_eq!(community::COMMUNITY.len(), 116);
     // With the bundled styles loaded, in the bundled set's strict mode. (A community plugin's
     // `credential_fallback` may name another community plugin: that is the fit check's.)
-    let strict = ctx(true, false);
-    for (file, src) in bundled_sources().iter().chain(community::COMMUNITY) {
-        validate_with(src, PluginSource::Bundled, file, &strict).unwrap_or_else(|e| panic!("{file}: {e:?}"));
+    // The self-hosted community plugins point at localhost, so they need private endpoints.
+    for (file, src) in bundled_sources() {
+        validate_with(src, PluginSource::Bundled, file, &ctx(true, false)).unwrap_or_else(|e| panic!("{file}: {e:?}"));
+    }
+    for (file, src) in community::COMMUNITY {
+        validate_with(src, PluginSource::Bundled, file, &ctx(true, true)).unwrap_or_else(|e| panic!("{file}: {e:?}"));
     }
 }
 
@@ -184,7 +187,7 @@ fn style_corpus_is_rejected_with_one_positioned_error() {
 #[test]
 fn provider_corpus_is_rejected_with_one_positioned_error() {
     let files = corpus("invalid/providers");
-    assert_eq!(files.len(), 16);
+    assert_eq!(files.len(), 19);
     for path in &files {
         let src = fs::read_to_string(path).unwrap();
         let rule = path.file_stem().unwrap().to_str().unwrap();

@@ -8,7 +8,7 @@ use toml::de::{DeTable, DeValue};
 
 use super::errors::{FieldPath, Seg, ValidationError, line_col};
 use super::secrets::{check_map_key, check_query, check_url};
-use super::ssrf::check_endpoint_url;
+use super::ssrf::{check_endpoint_url, check_public_host};
 use super::style_gate::placeholders;
 use crate::floor::{Floor, PatternRisk};
 use crate::schema::{
@@ -48,12 +48,19 @@ pub fn validate(src: &str, source: PluginSource, file: &str) -> Result<ProviderE
 }
 
 /// [`validate`] with the load context schema 2 needs.
-pub fn validate_with(src: &str, source: PluginSource, file: &str, ctx: &GateCtx) -> Result<Gated, Vec<ValidationError>> {
+pub fn validate_with(
+    src: &str,
+    source: PluginSource,
+    file: &str,
+    ctx: &GateCtx,
+) -> Result<Gated, Vec<ValidationError>> {
     let mut plugin = parse::<PluginFile>(src, file)?;
     let mut errors = semantic_errors(&plugin);
     let mut diags = Found::new();
     if plugin.schema_version() >= 2 {
         schema2_errors(&mut plugin, ctx, &mut errors, &mut diags);
+    } else {
+        schema1_hosts(&plugin, ctx, &mut errors);
     }
     let at = |v: Found| v.into_iter().map(|(path, rule)| positioned(src, file, path, rule)).collect::<Vec<_>>();
     if errors.is_empty() {
@@ -218,6 +225,30 @@ fn semantic_errors(p: &PluginFile) -> Found {
     out
 }
 
+/// The private-host rule on the schema 1 URLs that load converts to endpoints: transport
+/// base URLs and capability endpoints.
+fn schema1_hosts(p: &PluginFile, ctx: &GateCtx, errors: &mut Found) {
+    let transports = p.transport.iter().map(|t| (FieldPath::of("transport"), t));
+    let transports =
+        transports.chain(p.transports.iter().enumerate().map(|(i, t)| (FieldPath::of("transports").index(i), t)));
+    let mut urls: Vec<(FieldPath, &str)> = Vec::new();
+    for (base, t) in transports {
+        urls.extend(t.base_url.iter().map(|u| (base.key("base_url"), u.as_str())));
+        urls.extend(
+            t.base_urls.iter().flatten().enumerate().map(|(i, u)| (base.key("base_urls").index(i), u.as_str())),
+        );
+    }
+    for (kind, section) in &p.capabilities {
+        let base = FieldPath::of("capabilities").key(kind.as_str()).key("endpoint").key("base_url");
+        urls.extend(section.endpoint.iter().filter_map(|e| e.base_url.as_deref()).map(|u| (base.clone(), u)));
+    }
+    for (path, url) in urls.into_iter().filter(|(_, u)| !u.is_empty()) {
+        if let Err(rule) = check_public_host(url, ctx.allow_private) {
+            errors.push((path, rule));
+        }
+    }
+}
+
 fn check_transport(t: &Transport, base: &FieldPath, err: &mut impl FnMut(FieldPath, String)) {
     for (k, url) in t.url_fields() {
         // An empty base URL means the operator supplies it (azure).
@@ -288,12 +319,28 @@ fn schema2_errors(p: &mut PluginFile, ctx: &GateCtx, errors: &mut Found, diags: 
 
     let own_auth: Vec<String> = p.auth_headers().map(str::to_owned).collect();
     let floor = Floor::computed(ctx.style_carriers.iter().map(String::as_str), own_auth.iter().map(String::as_str));
+    // The client's value in the session header is kept, so the header must not be one a
+    // client puts its key in or the provider's own auth header.
+    if let Some(s) = &p.session
+        && floor.blocks(&s.header)
+    {
+        err(
+            FieldPath::of("session").key("header"),
+            format!("{:?} is in the forwarding floor; a session id can't be sent in it", s.header),
+        );
+    }
     if let Some(f) = p.forwarding.as_mut() {
         check_forwarding(f, &floor, ctx.strict, &mut err, &mut |path, rule| diags.push((path, rule)));
     }
 }
 
-fn check_endpoint(e: &Endpoint, t: ModelType, base: &FieldPath, ctx: &GateCtx, err: &mut impl FnMut(FieldPath, String)) {
+fn check_endpoint(
+    e: &Endpoint,
+    t: ModelType,
+    base: &FieldPath,
+    ctx: &GateCtx,
+    err: &mut impl FnMut(FieldPath, String),
+) {
     if let Err(rule) = check_endpoint_url(&e.url, ctx.allow_private) {
         err(base.key("url"), rule);
     }
@@ -305,7 +352,10 @@ fn check_endpoint(e: &Endpoint, t: ModelType, base: &FieldPath, ctx: &GateCtx, e
             err(base.key("auth").key("header"), format!("{:?} is not a header name", a.header));
         }
         if !matches!(a.scheme, AuthScheme::Bearer | AuthScheme::Raw) {
-            err(base.key("auth").key("scheme"), format!("{:?}: an endpoint takes `bearer` or `raw`", a.scheme.as_str()));
+            err(
+                base.key("auth").key("scheme"),
+                format!("{:?}: an endpoint takes `bearer` or `raw`", a.scheme.as_str()),
+            );
         }
     }
     match (&e.wire, &e.body, &e.response) {
@@ -369,7 +419,9 @@ fn check_endpoint(e: &Endpoint, t: ModelType, base: &FieldPath, ctx: &GateCtx, e
             err(base.key("token_count").key("url"), rule);
         }
         let counts = t == ModelType::Text
-            && e.wire.as_ref().is_some_and(|w| ctx.style_ops.get(w).is_some_and(|ops| ops.contains(&RouteOp::CountTokens)));
+            && e.wire
+                .as_ref()
+                .is_some_and(|w| ctx.style_ops.get(w).is_some_and(|ops| ops.contains(&RouteOp::CountTokens)));
         if !counts {
             err(base.key("token_count"), "token_count needs a wire style with a count_tokens route".into());
         }
@@ -449,9 +501,9 @@ fn check_forwarding(
 /// A secret-like key anywhere in an inline body template.
 fn secret_key(v: &toml::Value) -> Option<String> {
     match v {
-        toml::Value::Table(t) => t
-            .iter()
-            .find_map(|(k, v)| if is_secret_name(k) { Some(k.clone()) } else { secret_key(v) }),
+        toml::Value::Table(t) => {
+            t.iter().find_map(|(k, v)| if is_secret_name(k) { Some(k.clone()) } else { secret_key(v) })
+        }
         toml::Value::Array(a) => a.iter().find_map(secret_key),
         _ => None,
     }
@@ -549,7 +601,8 @@ kind = "llm"
     }
 
     fn v2(src: &str, ctx: &GateCtx) -> Result<Gated, Vec<String>> {
-        validate_with(src, PluginSource::Bundled, "t.toml", ctx).map_err(|e| e.iter().map(ToString::to_string).collect())
+        validate_with(src, PluginSource::Bundled, "t.toml", ctx)
+            .map_err(|e| e.iter().map(ToString::to_string).collect())
     }
 
     fn v2_fails(src: &str, want: &str) {
@@ -566,17 +619,37 @@ kind = "llm"
 
     #[test]
     fn schema2_rules() {
-        v2_fails(&V2.replace("api.acme.example/v1/messages\"", "127.0.0.1/v1/messages\""), "endpoints.text.url: host 127.0.0.1");
-        v2_fails(&V2.replace("https://api.acme.example/v1/speech", "https://{model}.acme.example/v1/speech"), "only in the URL path");
-        v2_fails(&V2.replace("wire = \"anthropic-messages\"", "wire = \"anthropic-messages\"\nbody = {}"), "mutually exclusive");
+        v2_fails(
+            &V2.replace("api.acme.example/v1/messages\"", "127.0.0.1/v1/messages\""),
+            "endpoints.text.url: host 127.0.0.1",
+        );
+        v2_fails(
+            &V2.replace("https://api.acme.example/v1/speech", "https://{model}.acme.example/v1/speech"),
+            "only in the URL path",
+        );
+        v2_fails(
+            &V2.replace("wire = \"anthropic-messages\"", "wire = \"anthropic-messages\"\nbody = {}"),
+            "mutually exclusive",
+        );
         v2_fails(&V2.replace("{input.audio}", "{secret.key}"), "never see accounts or secrets");
         v2_fails(&V2.replace("{input.audio}", "{request.x}"), "unknown placeholder {request.x}");
-        v2_fails(&V2.replace("file = ", "api_key = \"x\", file = "), "endpoints.stt.body.api_key: secret-like body field");
+        v2_fails(
+            &V2.replace("file = ", "api_key = \"x\", file = "),
+            "endpoints.stt.body.api_key: secret-like body field",
+        );
         v2_fails(&V2.replace("\"request-id\", ", "\"*\", "), "a wildcard needs a prefix");
         v2_fails(&V2.replace("merge = \"append_csv\"", "merge = \"prepend\""), "unknown forward merge");
-        v2_fails(&format!("{V2}\n[endpoints.tts]\nurl = \"https://a.example/x\"\nwire = \"anthropic-messages\"\ncontinuation = {{ method = \"guess\" }}\n"), "unknown continuation method");
+        v2_fails(
+            &format!(
+                "{V2}\n[endpoints.tts]\nurl = \"https://a.example/x\"\nwire = \"anthropic-messages\"\ncontinuation = {{ method = \"guess\" }}\n"
+            ),
+            "unknown continuation method",
+        );
         v2_fails(&V2.replace("url = \"https://api.acme.example/v1/messages\"\n", "url = \"https://api.acme.example/v1/messages\"\nerrors = { body = [{ message = \"e\", code = 99 }] }\n"), "statuses must be 100-599");
-        v2_fails(&format!("{V2}[transport]\nbase_url = \"https://a.example\"\n"), "transport: schema 2 declares this under `endpoints`");
+        v2_fails(
+            &format!("{V2}[transport]\nbase_url = \"https://a.example\"\n"),
+            "transport: schema 2 declares this under `endpoints`",
+        );
         v2_fails(&V2.replace("kind = \"llm\"", "kind = \"image\""), "model-type-without-endpoint");
         let no_count = GateCtx { style_ops: BTreeMap::new(), ..ctx() };
         let got = v2(V2, &no_count).unwrap_err();
@@ -587,7 +660,10 @@ kind = "llm"
     fn floor_names_stripped_or_strict_error() {
         let src = V2.replace("\"request-id\", ", "\"request-id\", \"set-cookie\", ");
         let g = v2(&src, &ctx()).unwrap();
-        assert_eq!(g.entity.forwarding.as_ref().unwrap().to_client.headers, vec!["request-id", "anthropic-ratelimit-*"]);
+        assert_eq!(
+            g.entity.forwarding.as_ref().unwrap().to_client.headers,
+            vec!["request-id", "anthropic-ratelimit-*"]
+        );
         assert!(g.diagnostics[0].to_string().contains("entry stripped"), "{:?}", g.diagnostics);
         let strict = GateCtx { strict: true, ..ctx() };
         assert!(v2(&src, &strict).unwrap_err()[0].contains("security floor"));
@@ -597,7 +673,9 @@ kind = "llm"
 
     #[test]
     fn schema1_rejects_schema2_keys() {
-        let got = errors("schema = 1\nid = \"p\"\ncategory = \"apikey\"\n[endpoints.text]\nurl = \"https://a.example\"\nwire = \"x\"\n");
+        let got = errors(
+            "schema = 1\nid = \"p\"\ncategory = \"apikey\"\n[endpoints.text]\nurl = \"https://a.example\"\nwire = \"x\"\n",
+        );
         assert!(got.iter().any(|r| r.contains("schema 1 has no `endpoints`")), "{got:?}");
     }
 }

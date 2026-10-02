@@ -1,0 +1,12 @@
+# expect: backslash
+schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-acme-key"
+
+[endpoints.text]
+url = 'http://169.254.169.254\latest/v1/chat/completions'
+wire = "openai-chat"
