@@ -22,15 +22,15 @@ Expected: all pass. Notable tests and what they prove:
 
 | Test | Proves |
 |---|---|
-| `signin_device_code`, `signin_pkce_paste`, `signin_headless` | sign-in completes with no display and no listener on the operator's device (SC-001) |
-| `terms_warning_every_time` | anthropic sign-in asks every time; "n" writes nothing (FR-004) |
+| `signin_flows`, `signin` (CLI) | sign-in completes with no display and no listener on the operator's device (SC-001) |
+| `signin` (CLI, terms warning case) | anthropic sign-in asks every time; "n" writes nothing (FR-004) |
 | `expiry_soak` | 2 s tokens over 20+ lifetimes, with idle gaps, zero client failures (SC-003) |
-| `refresh_dedup`, `refresh_rotation_crash` | one refresh per account; newest refresh token always on disk |
-| `needs_signin_named`, `refused_named` | account named in list, records and informational error (SC-005) |
-| `fallback_signin_accounts` | 429/5xx/timeout never reach the client while another account serves (SC-004) |
-| `quota_extract_*`, `quota_idle_polls`, `quota_failed_poll` | shown values equal reported values with poll time (SC-006, SC-007) |
-| `tally_matches_usage` | per-model tally equals summed reported usage, across restarts (SC-008) |
-| `secrets_sentinel` | zero tokens, codes or verifiers anywhere visible (SC-009) |
+| `refresh_dedup`, `refresh_crash` | one refresh per account; newest refresh token always on disk |
+| `needs_signin`, `refused` | account named in list, records and informational error (SC-005) |
+| `fallback_signin` | 429/5xx/timeout never reach the client while another account serves (SC-004) |
+| `quota_extract`, `quota_grpc`, `quota_poll` | shown values equal reported values with poll time (SC-006, SC-007) |
+| `tally`, `quota_history` | per-model tally equals summed reported usage, across restarts (SC-008) |
+| `secrets` | zero tokens, codes or verifiers anywhere visible (SC-009) |
 
 ## 2. Harnesses against signed-in mock accounts
 

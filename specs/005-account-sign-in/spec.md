@@ -37,6 +37,13 @@ revisit the brief.
   headers? → A: Yes, from a closed set of true values the core owns: session id, fresh request
   id, turn count, upstream model, the signed-in account's own email and user id, and a random
   id generated once per installation (which replaces the machine-id hash). Nothing else.
+- Q: May a plugin force request parameters that aren't prompt content (grok-cli's `store`,
+  `reasoning.summary`, `include`, and `reasoning.effort` for effort-suffixed model ids)? → A:
+  The request goes upstream as the client sent it, as far as possible, with minimum friction.
+  A plugin may force a parameter from the closed set `store`, `reasoning.summary`,
+  `reasoning.effort`, `include` only where the provider fails without it (shown by a live
+  check), or where the client asked for it through the model id (effort-suffixed ids). Each
+  forced parameter is recorded. Prompt content, tools and conversation items are never changed.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -312,12 +319,18 @@ supported by this core". A plugin that tries to hold a client secret or token is
   id, the conversation's turn count, the upstream model id, the signed-in account's own email
   and user id, and a random id generated once per installation. No header value may be a hash
   of the request or an id made to resemble another machine or account. 0router MUST NOT change the
-  request body: no tool renaming, decoy tools, injected system text, or invented device,
-  account or user ids.
+  request body beyond the forced parameters of FR-004c: no tool renaming, decoy tools, injected
+  system text, conversation-item changes, or invented device, account or user ids.
 - **FR-004b**: When a provider refuses requests from a signed-in account because of how they are
   sent (not because of quota, expiry or a transient failure), the account MUST be marked
   "refused by provider" in the accounts list with the provider's reason. Requests fall back as
   for any non-serving account, and the informational error names the account and the reason.
+- **FR-004c**: The request body MUST go upstream as the client sent it, as far as possible. A
+  plugin MAY declare forced parameters from the closed set `store`, `reasoning.summary`,
+  `reasoning.effort`, `include` (appended), per endpoint or per model, only where the provider
+  fails without them or the client asked for them through the model id. Each forced parameter
+  MUST be noted in the request record. This extends slice 003's FR-038 for these parameters
+  only.
 - **FR-005**: A provider MUST be able to hold several signed-in accounts and API-key accounts
   at once. Signing in applies to the next request without a restart.
 - **FR-006**: An abandoned, expired or refused sign-in MUST add no account and MUST say why.
@@ -406,8 +419,9 @@ supported by this core". A plugin that tries to hold a client secret or token is
 ### Key Entities
 
 - **Provider account** (extended from slice 003): an API-key account or a signed-in account.
-  Has a provider, a name, a state (active, needs sign-in, refused by provider, disabled), and a
-  polling interval.
+  Has a provider, a name, a state (active, refreshing, needs sign-in, refused by provider,
+  disabled), and a polling interval. "Refreshing" means the token has expired and a refresh is
+  being retried.
 - **Signed-in credentials**: the tokens of one signed-in account, with their expiry. Held only
   by the core, stored like API-key secrets.
 - **Sign-in declaration**: a provider plugin's data for sign-in: endpoints, client id, scopes,
@@ -459,7 +473,9 @@ be revised in planning without asking the user, as long as nothing the user sees
   not a separate provider. 9router's separate `claude` provider stays in the community set.
   *(technical decision)*
 - Sign-in flows, refresh timing and refresh-failure classification follow 9router's behaviour
-  for these providers (Constitution VI). Merging concurrent refreshes follows 9router's dedup.
+  for these providers (Constitution VI), except the deliberate deviations listed in research
+  R19, each asserted in `tests/parity/deviations.toml`. Merging concurrent refreshes follows
+  9router's dedup.
 - A provider's client identity is limited to headers: fixed declared values, which may match
   the official client's (Clarifications Q3), and the core-filled values of Clarifications Q5.
   Hashes of the request and ids made to resemble another machine or account are not

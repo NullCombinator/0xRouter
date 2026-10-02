@@ -65,9 +65,13 @@ fixed string or exactly one placeholder. Security-floor header names (`authoriza
 
 ## Forced parameters (endpoint and model level)
 
+Declared only where the provider fails without them, or where the client asks through the
+model id (spec FR-004c). grok-cli ships with none at endpoint level until live check L3 shows a
+need.
+
 ```toml
 [endpoints.text]
-force = { store = false, "reasoning.summary" = "concise", include = ["reasoning.encrypted_content"] }
+force = { store = false }        # example: only if a live check shows it is required
 
 [[models]]
 id = "grok-4.5-high"

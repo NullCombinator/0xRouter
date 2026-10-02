@@ -45,7 +45,7 @@ matching `signin` account is ignored and reported by `nullrouter check`.
              sign-in ok
    (new) ─────────────────► active ◄──────────────┐
                               │  ▲                │ refresh ok
-              transient fail  │  │ refresh ok     │
+   transient fail after expiry │  │ refresh ok     │
                               ▼  │                │
                           refreshing ─────────────┘
                               │

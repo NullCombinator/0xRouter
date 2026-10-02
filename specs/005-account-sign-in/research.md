@@ -2,8 +2,8 @@
 
 Phase 0 output of `/speckit-plan`. Every item is a technical decision Claude made, per the
 user's standing direction that technical choices are Claude's. Items that change something the
-user can see are marked **(user-visible)**. R7 was confirmed by the user on 2026-10-02
-(spec Clarifications Q5).
+user can see are marked **(user-visible)**. R7 and R8 were confirmed by the user on
+2026-10-02 (spec Clarifications Q5, Q6).
 
 Sources:
 - `ref/9router` at pin `39e36d3`, judged on the request path (chatCore) plus the OAuth and
@@ -212,10 +212,16 @@ values exactly, including the machine-id hash (crosses the Q1 line on invented d
 `reasoning.effort`, keeps a 16-field allowlist, and rewrites Responses input items
 (`grok-cli.js:161-237, 419-526`).
 
-**Decision**:
-- A plugin may declare `force` parameters on an endpoint, from a closed set of non-content
-  fields: `store`, `reasoning.summary`, `reasoning.effort`, `include` (append). Per-model
-  `force` covers the effort-suffixed model ids, together with `upstream_id`.
+**Decision** (user direction 2026-10-02, spec Clarifications Q6: "same HTTP request as the
+client as much as possible", minimum friction):
+- The body goes upstream as the client sent it. A plugin may declare `force` parameters from
+  a closed set of non-content fields (`store`, `reasoning.summary`, `reasoning.effort`,
+  `include` appended), but only where the provider fails without them.
+- grok-cli starts with **no** endpoint-level forced parameters. Live check L3 sends requests
+  without `store`, `reasoning.summary` and `include`; any the server turns out to need are
+  declared then, one by one.
+- Effort-suffixed model ids (`grok-4.5-high`) keep `upstream_id` plus per-model
+  `force."reasoning.effort"`: the client asked for that effort through the model id.
 - Each forced parameter is noted in the request record, as dropped fields are (Constitution IV).
 - The allowlist and the input rewrites are **not** ported. They drop or change conversation
   items (reasoning items, orphan tool outputs, other servers' item references). That is content,
@@ -246,6 +252,9 @@ serves where one exists. The fix, if needed, is a 004 adapter, not this slice.
   instead of per old refresh token.
 - **Rotation**: the new refresh token, or the old one when the response omits it
   (`providers.js:131`).
+- **Clock skew**: `expires_at` is computed from the local clock and `expires_in` when the token
+  arrives, never from the provider's timestamps, so a skewed local clock doesn't shift refresh
+  timing.
 - **Restart (FR-014)**: tokens are read from `tokens.toml` at start. An access token already
   expired is refreshed before the account serves.
 - **Redaction**: every refresh rebuilds the redactor with the new tokens plus the previous
@@ -266,7 +275,7 @@ serves where one exists. The fix, if needed, is a 004 adapter, not this slice.
 | State | Meaning | Serves? | Leaves the state when |
 |---|---|---|---|
 | `active` | usable | yes | — |
-| `refreshing` | token expired, transient refresh failures, retrying with backoff (10 s, 30 s, 1 min, then every 2 min) | no; skipped as "token expired, refresh retrying" | a refresh succeeds |
+| `refreshing` | access token past its expiry and the last refresh failed transiently; retrying with backoff (10 s, 30 s, 1 min, then every 2 min). While the token is still valid, a failed refresh is only retried and the account stays `active` | no; skipped as "token expired, refresh retrying" | a refresh succeeds |
 | `needs sign-in` | permanent refresh failure | no | the operator signs the account in again |
 | `refused by provider` | the provider refused a fresh token's request because of how it was sent (FR-004b) | no | the operator signs in again, or runs `accounts enable` to retry |
 | `disabled` | operator choice | no | `accounts enable` |
@@ -320,7 +329,9 @@ the provider's reason, so they survive a restart.
 doesn't convert. Percent windows show "remaining" as `100 − used`.
 
 **Poll cost**: all of these are billing or usage reads, not inference. None is known to spend
-quota. A provider whose only report would spend quota is "quota not reported" (spec edge case).
+quota. A provider whose only report would spend quota is "quota not reported" (spec edge case):
+no bundled `[quota]` request spends quota, and a future plugin whose only report would must
+omit `[quota]`.
 
 ## R12. The quota extractor (data, not code)
 
@@ -427,7 +438,7 @@ Opt-in (`NR_LIVE=1`) with the operator's real accounts, never in CI.
 |---|---|---|
 | L1 | Does the anthropic client id accept the hosted code-page redirect? What does a subscription refusal look like? | Loopback redirect with paste-back; refusal rule from the observed body |
 | L2 | Does `api.x.ai/v1/models` return rate-limit headers to a signed-in account? | xai shows "quota not reported" |
-| L3 | Does cli-chat-proxy serve with the R7 headers (or with fixed headers only), and serve a Codex CLI session on a same-style route? | Declare what's needed; item-reference issues go to a 004 adapter |
+| L3 | Does cli-chat-proxy serve with the R7 headers, and with the client's body untouched (no `store`, `reasoning.summary`, `include`)? Does it serve a Codex CLI session on a same-style route? | Declare what's needed; item-reference issues go to a 004 adapter |
 | L4 | Real token lifetimes and rotation for each provider | Leads stay as declared |
 | L5 | Each `[quota]` extractor against a real response | Fix the declared paths (data only) |
 
@@ -458,7 +469,7 @@ Opt-in (`NR_LIVE=1`) with the operator's real accounts, never in CI.
 | 9router | 0router | Why |
 |---|---|---|
 | Claude cloaking (tools, decoys, billing header, fake ids) | not ported | Clarifications Q1; Constitution IV |
-| grok-cli input rewrites and field allowlist | not ported; forced non-content parameters only | Constitution IV; 004 adapters own harness coupling |
+| grok-cli input rewrites, field allowlist, always-forced `store`/`reasoning.summary`/`include` | not ported; body as the client sent it; a forced parameter only on live evidence or an effort-suffixed model id | Constitution IV; 004 adapters own harness coupling |
 | `x-grok-agent-id` = machine-id hash | `{install.id}` (R7) | no invented device ids (Q1 line) |
 | Permanent refresh failures ignored | account taken out and named | FR-015, FR-016 |
 | xai never refreshes on 401 | refresh and retry for all three | FR-011 |
