@@ -29,6 +29,7 @@ thiserror.workspace = true
 ulid.workspace = true
 httpdate.workspace = true
 indexmap.workspace = true
+url.workspace = true
 nullrouter-wire.workspace = true
 nullrouter-registry.workspace = true
 axum = { workspace = true, optional = true }
