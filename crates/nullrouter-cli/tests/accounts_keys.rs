@@ -36,6 +36,7 @@ fn accounts_take_the_secret_from_stdin_and_stay_private() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let file = dir.path().join(accounts::FILE);
     assert_eq!(mode(&file), 0o600);
+    assert!(std::fs::read_to_string(&file).unwrap().starts_with("schema = 2\n"), "new files are schema 2");
     let list = Accounts::load(&file).unwrap();
     let a = list.get("anthropic", "main").unwrap();
     assert_eq!(a.source, SecretSource::Literal);
@@ -55,6 +56,25 @@ fn accounts_take_the_secret_from_stdin_and_stay_private() {
     assert!(Accounts::load(&file).unwrap().get("anthropic", "main").unwrap().disabled);
     assert!(nr(dir.path(), &["accounts", "remove", "anthropic", "spare"], "").status.success());
     assert!(Accounts::load(&file).unwrap().get("anthropic", "spare").is_none());
+}
+
+#[test]
+fn a_schema_1_file_is_rewritten_as_schema_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join(accounts::FILE);
+    nullrouter_engine::files::write_private(
+        &file,
+        &format!("schema = 1\n[[account]]\nprovider = \"anthropic\"\nname = \"main\"\nsecret = \"{SECRET}\"\nhosts = [\"api.anthropic.com\"]\n"),
+    )
+    .unwrap();
+    assert!(nr(dir.path(), &["accounts", "disable", "anthropic", "main"], "").status.success());
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.starts_with("schema = 2\n") && text.contains("kind = \"key\""), "{text}");
+    let list = Accounts::load(&file).unwrap();
+    let a = list.get("anthropic", "main").unwrap();
+    assert_eq!(a.kind, accounts::AccountKind::Key);
+    assert!(a.disabled && a.secret.as_ref().unwrap().matches(SECRET));
+    assert_eq!(mode(&file), 0o600);
 }
 
 #[test]

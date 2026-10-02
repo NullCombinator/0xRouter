@@ -1,5 +1,7 @@
 //! Secret redaction (research R23): every account secret and anything shaped like an agent
-//! key becomes `***` in error bodies, log lines and record fields.
+//! key becomes `***` in error bodies, log lines and record fields. Sign-in tokens are
+//! masked too, the current generation and the one before it (spec 005, research R9), so a
+//! token echoed after a refresh is still caught.
 //!
 //! Agent keys are stored as digests, so they are matched by shape (`0r-` + 43 base64url
 //! characters) rather than by value.
@@ -13,7 +15,9 @@ use arc_swap::ArcSwap;
 use nullrouter_registry::SecretString;
 use tracing_subscriber::fmt::MakeWriter;
 
+use crate::accounts::Accounts;
 use crate::keys::PREFIX;
+use crate::tokens::TokenCells;
 
 pub const MASK: &str = "***";
 /// Shorter secrets would mask ordinary words.
@@ -40,6 +44,13 @@ impl Redactor {
                 .expect("literal patterns build")
         });
         Self { secrets }
+    }
+
+    /// Every key account's secret, plus the current and previous access and refresh tokens
+    /// of every sign-in account.
+    pub fn for_state(accounts: &Accounts, tokens: &TokenCells) -> Self {
+        let views = tokens.views();
+        Self::new(accounts.iter().filter_map(|a| a.secret.as_ref()).chain(views.iter().flat_map(|v| v.secrets())))
     }
 
     pub fn redact<'t>(&self, text: &'t str) -> Cow<'t, str> {
@@ -73,6 +84,36 @@ impl Redactor {
             return url;
         }
         Cow::Owned(format!("{head}{}", parts.join("&")))
+    }
+}
+
+/// A snapshot's redactor, swappable on its own so a token refresh can extend it without a
+/// full reload (`Engine::rebuild_redactor`).
+#[derive(Debug, Default)]
+pub struct SharedRedactor(ArcSwap<Redactor>);
+
+impl SharedRedactor {
+    pub fn new(r: Redactor) -> Self {
+        Self(ArcSwap::from_pointee(r))
+    }
+
+    /// The redactor now, for callers that take `&Redactor`.
+    pub fn current(&self) -> Arc<Redactor> {
+        self.0.load_full()
+    }
+
+    pub fn store(&self, r: Arc<Redactor>) {
+        self.0.store(r);
+    }
+
+    /// [`Redactor::redact`] with the current redactor.
+    pub fn redact<'t>(&self, text: &'t str) -> Cow<'t, str> {
+        self.0.load().redact(text)
+    }
+
+    /// [`Redactor::redact_url`] with the current redactor.
+    pub fn redact_url<'t>(&self, url: &'t str) -> Cow<'t, str> {
+        self.0.load().redact_url(url)
     }
 }
 
@@ -178,6 +219,23 @@ mod tests {
         assert!(matches!(r.redact("nothing here"), Cow::Borrowed(_)));
         assert_eq!(r.redact_url("https://h/v1?alt=sse&key=AIzaXYZ&x=1"), "https://h/v1?alt=sse&key=***&x=1");
         assert_eq!(Redactor::default().redact("sk-ant-SENTINEL-1"), "sk-ant-SENTINEL-1");
+    }
+
+    #[test]
+    fn masks_both_token_generations() {
+        let tokens = TokenCells::default();
+        tokens.replace(crate::tokens::tests::entry("xai", "main", "xai-gen1-SENTINEL", &[]));
+        tokens.replace(crate::tokens::tests::entry("xai", "main", "xai-gen2-SENTINEL", &[]));
+        tokens.replace(crate::tokens::tests::entry("xai", "main", "xai-gen3-SENTINEL", &[]));
+        let accounts = Accounts::parse(
+            "schema = 2\n[[account]]\nprovider = \"a\"\nname = \"m\"\nsecret = \"sk-key-SENTINEL\"\n",
+            std::path::Path::new("accounts.toml"),
+            |_| None,
+        )
+        .unwrap();
+        let r = SharedRedactor::new(Redactor::for_state(&accounts, &tokens));
+        let text = "a xai-gen3-SENTINEL b xai-gen2-SENTINEL-refresh c sk-key-SENTINEL d xai-gen1-SENTINEL";
+        assert_eq!(r.redact(text), "a *** b *** c *** d xai-gen1-SENTINEL", "two generations, not three");
     }
 
     #[derive(Clone, Default)]

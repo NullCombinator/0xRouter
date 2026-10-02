@@ -6,6 +6,7 @@ use std::sync::Mutex;
 
 use nullrouter_registry::schema::{InputSemantics, ModelType, RouteOp};
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::keys::AgentId;
 
@@ -100,14 +101,29 @@ pub enum ErrorClass {
     InBand,
     CannotCarry,
     NoAccount,
+    /// A sign-in account with no usable tokens (spec 005, research R10).
+    NeedsSignIn,
+    /// A sign-in account the provider refused (FR-004b).
+    Refused,
+    /// A sign-in account whose expired token is being refreshed.
+    TokenRefreshing,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum AttemptOutcome {
     Ok,
-    Failed { status: Option<u16>, class: ErrorClass, reason: String },
-    Skipped { reason: String },
+    Failed {
+        status: Option<u16>,
+        class: ErrorClass,
+        reason: String,
+    },
+    Skipped {
+        reason: String,
+        /// Why the plan couldn't try it, when it's a class (out-of-service accounts).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        class: Option<ErrorClass>,
+    },
     Cancelled,
 }
 
@@ -126,6 +142,8 @@ pub struct Attempt {
     /// Client body keys this cross-style attempt couldn't carry (research R27). Paths
     /// only, never values. Empty on same-style attempts.
     pub dropped: Vec<Dropped>,
+    /// Provider-forced body parameters this attempt carried (research R8), as sent.
+    pub forced: Vec<(String, Value)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -366,6 +384,7 @@ mod tests {
             outcome: None,
             usage: None,
             dropped: Vec::new(),
+            forced: Vec::new(),
         });
         r
     }
@@ -446,5 +465,23 @@ mod tests {
         assert_eq!(second.input, Some(70));
         total.add(&second);
         assert_eq!((total.input, total.cache_read, total.output), (Some(200), Some(60), Some(10)));
+    }
+
+    #[test]
+    fn sign_in_classes_and_forced_parameters_serialise() {
+        let mut r = rec(1, "xai", None);
+        r.attempts[0].forced.push(("reasoning.effort".into(), Value::from("high")));
+        r.attempts[0].outcome = Some(AttemptOutcome::Skipped {
+            reason: "token expired, refresh retrying".into(),
+            class: Some(ErrorClass::TokenRefreshing),
+        });
+        let j = serde_json::to_value(&r).unwrap();
+        assert_eq!(j["attempts"][0]["forced"], serde_json::json!([["reasoning.effort", "high"]]));
+        assert_eq!(j["attempts"][0]["outcome"]["class"], "token_refreshing");
+        for (c, name) in [(ErrorClass::NeedsSignIn, "needs_sign_in"), (ErrorClass::Refused, "refused")] {
+            assert_eq!(serde_json::to_value(c).unwrap(), name);
+        }
+        let plain = AttemptOutcome::Skipped { reason: "x".into(), class: None };
+        assert!(serde_json::to_value(plain).unwrap().get("class").is_none());
     }
 }

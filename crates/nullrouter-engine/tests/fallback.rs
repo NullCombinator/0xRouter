@@ -109,7 +109,7 @@ async fn a_member_without_an_account_is_a_skipped_attempt() {
     let r = s.engine.records.get(&id).unwrap();
     assert_eq!(r.attempts[0].kind, AttemptKind::Skipped);
     assert_eq!(r.attempts[0].provider, "gamma");
-    let Some(AttemptOutcome::Skipped { reason }) = &r.attempts[0].outcome else {
+    let Some(AttemptOutcome::Skipped { reason, .. }) = &r.attempts[0].outcome else {
         panic!("{:?}", r.attempts[0].outcome)
     };
     assert!(reason.contains("no enabled account"), "{reason}");
@@ -131,7 +131,7 @@ async fn a_member_that_cant_carry_the_request_is_skipped() {
     assert!(s.engine.text(s.engine.snapshot(), req).await.is_ok());
     let r = s.engine.records.get(&id).unwrap();
     assert_eq!((r.attempts[0].provider.as_str(), r.attempts[0].kind), ("msgs", AttemptKind::Skipped));
-    let Some(AttemptOutcome::Skipped { reason }) = &r.attempts[0].outcome else {
+    let Some(AttemptOutcome::Skipped { reason, .. }) = &r.attempts[0].outcome else {
         panic!("{:?}", r.attempts[0].outcome)
     };
     assert!(reason.contains("response format"), "{reason}");

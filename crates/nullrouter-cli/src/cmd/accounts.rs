@@ -90,15 +90,7 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
             // Without `--order`, a new account goes after the provider's others.
             let order = order
                 .unwrap_or_else(|| list.iter().filter(|a| a.provider == provider).map(|a| a.order).max().unwrap_or(0));
-            let account = Account {
-                provider: provider.clone(),
-                name: name.clone(),
-                source,
-                secret,
-                order,
-                disabled: false,
-                hosts,
-            };
+            let account = Account::key(provider.clone(), name.clone(), source, secret, order, hosts);
             list.add(account).map_err(fail)?;
             (provider, name)
         }

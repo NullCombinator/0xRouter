@@ -11,8 +11,10 @@ use std::sync::Mutex;
 use nullrouter_registry::schema::{Endpoint, ModelType, ProviderEntity};
 use nullrouter_registry::{NotFound, Registry, Resolution};
 
-use crate::accounts::{Account, Accounts};
+use crate::accounts::{self, Account, Accounts};
 use crate::keys::AgentId;
+use crate::records::ErrorClass;
+use crate::tokens::TokenCells;
 
 #[derive(Debug, Clone)]
 pub struct Candidate<'s> {
@@ -39,6 +41,9 @@ pub struct Skip {
     pub account: Option<String>,
     pub model: String,
     pub reason: String,
+    /// Set for out-of-service sign-in accounts (`NeedsSignIn`, `Refused`,
+    /// `TokenRefreshing`).
+    pub class: Option<ErrorClass>,
 }
 
 #[derive(Debug, Clone)]
@@ -138,9 +143,12 @@ struct Ask<'a> {
     ty: ModelType,
     client_style: &'a str,
     warm: Option<&'a Warm>,
+    tokens: &'a TokenCells,
 }
 
 /// One member's steps: its accounts in operator order, the warm one first, or one skip.
+/// A sign-in account that can't serve now is a recorded skip naming the command that
+/// brings it back (research R10, FR-016); a disabled account is left out silently.
 fn member<'s>(
     registry: &'s Registry,
     accounts: &'s Accounts,
@@ -149,7 +157,7 @@ fn member<'s>(
     upstream_id: String,
     ask: &Ask,
 ) -> Result<Vec<Step<'s>>, PlanError> {
-    let Ask { ty, client_style, warm } = *ask;
+    let Ask { ty, client_style, warm, tokens } = *ask;
     let model = registry.model(&provider.id, requested).ok().and_then(|m| m.model);
     let wires = model.and_then(|m| m.wires.as_deref());
     let endpoint = endpoints(provider, ty, &upstream_id, wires, client_style)
@@ -178,7 +186,19 @@ fn member<'s>(
         let a = mine.remove(i);
         mine.insert(0, a);
     }
-    Ok(mine.into_iter().map(|a| candidate(Some(a))).collect())
+    Ok(mine
+        .into_iter()
+        .map(|a| match accounts::out_of_service(a, tokens) {
+            None => candidate(Some(a)),
+            Some(w) => Step::Skip(Skip {
+                provider: provider.id.clone(),
+                account: Some(a.name.clone()),
+                model: upstream_id.clone(),
+                reason: w.to_string(),
+                class: w.class(),
+            }),
+        })
+        .collect())
 }
 
 /// The candidate order for one request (research R7, R8): the warm account first, then its
@@ -189,6 +209,7 @@ fn member<'s>(
 pub fn plan<'s>(
     registry: &'s Registry,
     accounts: &'s Accounts,
+    tokens: &TokenCells,
     target: &'s str,
     ty: ModelType,
     client_style: &str,
@@ -207,7 +228,7 @@ pub fn plan<'s>(
     {
         return Err(PlanError::TypeMismatch { target: target.to_owned(), model, route: ty });
     }
-    let ask = Ask { ty, client_style, warm };
+    let ask = Ask { ty, client_style, warm, tokens };
     match resolution {
         Resolution::Direct { provider, requested, upstream_id, .. } => {
             let steps = member(registry, accounts, provider, requested, upstream_id, &ask)?;
@@ -227,6 +248,7 @@ pub fn plan<'s>(
                         account: None,
                         model: m.upstream_id.clone(),
                         reason,
+                        class: None,
                     })
                 };
                 let Ok(provider) = registry.provider(&m.provider) else {

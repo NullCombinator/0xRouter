@@ -509,7 +509,7 @@ impl Run {
             }
             target = model;
         }
-        let plan = match plan::plan(&st.registry, &st.accounts, &target, ty, &client_style, warm.as_ref()) {
+        let plan = match plan::plan(&st.registry, &st.accounts, &st.tokens, &target, ty, &client_style, warm.as_ref()) {
             Ok(p) => p,
             Err(e) => {
                 self.end_request(Outcome::Failed, None);
@@ -524,7 +524,7 @@ impl Run {
         for step in &plan.steps {
             let c = match step {
                 Step::Skip(s) => {
-                    self.skip(&s.provider, s.account.clone(), &s.model, &s.reason, &mut tried);
+                    self.skip(&s.provider, s.account.clone(), &s.model, &s.reason, s.class, &mut tried);
                     continue;
                 }
                 Step::Try(c) => c,
@@ -538,6 +538,7 @@ impl Run {
                     c.account.map(|a| a.name.clone()),
                     &c.upstream_id,
                     &format!("cooling down for {secs} s"),
+                    None,
                     &mut tried,
                 );
                 continue;
@@ -574,7 +575,7 @@ impl Run {
     ) -> Result<bool, Failure> {
         let account = c.account.map(|a| a.name.clone());
         let skip = |run: &mut Self, reason: String, tried: &mut Vec<Tried>| {
-            run.skip(&c.provider.id, account.clone(), &c.upstream_id, &reason, tried);
+            run.skip(&c.provider.id, account.clone(), &c.upstream_id, &reason, None, tried);
             Ok(false)
         };
         let wire = match c.endpoint.wire.as_deref() {
@@ -752,14 +753,18 @@ impl Run {
 
     /// The request for `c`, secret and session header included; `Err` is a skip reason.
     fn outgoing(&self, st: &EngineState, c: &Candidate<'_>, ob: &Outbound) -> Result<upstream::Outgoing, String> {
-        let secret =
-            c.account.map(|a| accounts::release(a, c.provider)).transpose().map_err(|w| format!("0router: {w}"))?;
+        let released = c
+            .account
+            .map(|a| accounts::release(a, c.provider, &st.tokens))
+            .transpose()
+            .map_err(|w| format!("0router: {w}"))?;
+        let redactor = st.redactor.current();
         let parts = RequestParts {
             provider: c.provider,
             endpoint: c.endpoint,
             floor: st.registry.floor(),
-            redactor: &st.redactor,
-            secret,
+            redactor: &redactor,
+            secret: released.as_ref().map(accounts::Released::secret),
             client_style: &self.req.client.id,
             client_headers: &self.req.headers,
             model: &c.upstream_id,
@@ -813,7 +818,8 @@ impl Run {
         let ok = (200..300).contains(&status);
         if ok {
             let allow = c.provider.forwarding.as_ref().map_or(&[][..], |f| &f.to_client.headers[..]);
-            self.forward = forwarding::provider_headers(allow, resp.headers(), st.registry.floor(), &st.redactor);
+            self.forward =
+                forwarding::provider_headers(allow, resp.headers(), st.registry.floor(), &st.redactor.current());
         }
 
         if !ok {
@@ -1381,6 +1387,7 @@ impl Run {
             outcome: None,
             usage: None,
             dropped,
+            forced: Vec::new(),
         };
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
     }
@@ -1406,7 +1413,15 @@ impl Run {
     }
 
     /// A plan entry that can't be tried: a `skipped` attempt and an attempt line.
-    fn skip(&mut self, provider: &str, account: Option<String>, model: &str, reason: &str, tried: &mut Vec<Tried>) {
+    fn skip(
+        &mut self,
+        provider: &str,
+        account: Option<String>,
+        model: &str,
+        reason: &str,
+        class: Option<ErrorClass>,
+        tried: &mut Vec<Tried>,
+    ) {
         self.n += 1;
         let at = self.now();
         let a = Attempt {
@@ -1417,9 +1432,10 @@ impl Run {
             kind: AttemptKind::Skipped,
             started: at,
             ended: Some(at),
-            outcome: Some(AttemptOutcome::Skipped { reason: reason.to_owned() }),
+            outcome: Some(AttemptOutcome::Skipped { reason: reason.to_owned(), class }),
             usage: None,
             dropped: Vec::new(),
+            forced: Vec::new(),
         };
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
         tried.push(Tried {
@@ -1427,7 +1443,7 @@ impl Run {
             account,
             model: model.to_owned(),
             status: None,
-            class: None,
+            class: class.and_then(class_name),
             reason: reason.to_owned(),
             retries: 0,
         });

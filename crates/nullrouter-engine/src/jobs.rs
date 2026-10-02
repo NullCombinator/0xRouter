@@ -123,16 +123,18 @@ impl Engine {
                     .ok_or_else(|| failure(502, format!("0router: account {}/{name} is gone", job.provider)))?,
             ),
         };
-        let secret = account
-            .map(|a| accounts::release(a, provider))
+        let released = account
+            .map(|a| accounts::release(a, provider, &st.tokens))
             .transpose()
             .map_err(|w| failure(502, format!("0router: {w}")))?;
+        let secret = released.as_ref().map(accounts::Released::secret);
+        let redactor = st.redactor.current();
         let headers = HeaderMap::new();
         let parts = RequestParts {
             provider,
             endpoint: &endpoint,
             floor: st.registry.floor(),
-            redactor: &st.redactor,
+            redactor: &redactor,
             secret,
             client_style,
             client_headers: &headers,
