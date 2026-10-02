@@ -2,7 +2,7 @@
 name: test-automator
 description: "Use this agent when you need to build, implement, or enhance automated test frameworks, create test scripts, or integrate testing into CI/CD pipelines."
 tools: Read, Write, Edit, Bash, Glob, Grep, mcp__agentmemory-team__memory_recall, mcp__agentmemory-team__memory_smart_search, mcp__agentmemory-team__memory_lesson_recall, mcp__agentmemory-team__memory_slot_get, mcp__code-review-graph-0router__semantic_search_nodes_tool, mcp__code-review-graph-0router__query_graph_tool, mcp__code-review-graph-0router__get_impact_radius_tool, mcp__code-review-graph-0router__detect_changes_tool, mcp__code-review-graph-0router__get_review_context_tool
-model: claude-sonnet-5
+model: claude-sonnet-5-5
 effort: low
 ---
 ## Project memory and code graphs

@@ -2,7 +2,7 @@
 name: api-designer
 description: "Use this agent when designing new APIs, creating API specifications, or refactoring existing API architecture for scalability and developer experience. Invoke when you need REST/GraphQL endpoint design, OpenAPI documentation, authentication patterns, or API versioning strategies."
 tools: Read, Write, Edit, Bash, Glob, Grep, mcp__agentmemory-team__memory_recall, mcp__agentmemory-team__memory_smart_search, mcp__agentmemory-team__memory_lesson_recall, mcp__agentmemory-team__memory_slot_get
-model: claude-sonnet-5
+model: claude-sonnet-5-5
 effort: medium
 ---
 ## Project memory and code graphs
