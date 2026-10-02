@@ -333,10 +333,10 @@ fn check_route(s: &StyleFile, r: &Route, base: &FieldPath, err: &mut impl FnMut(
     if needs_codec && !s.has_codec(r.model_type) {
         err(base.key("type"), format!("route type {} has no [{}] codec section", r.model_type, r.model_type));
     }
-    if let Some(v) = &r.variant {
-        if s.type_codec(r.model_type).is_none_or(|c| !c.variants.contains_key(v)) {
-            err(base.key("variant"), format!("{v:?} is not a variant of [{}]", r.model_type));
-        }
+    if let Some(v) = &r.variant
+        && s.type_codec(r.model_type).is_none_or(|c| !c.variants.contains_key(v))
+    {
+        err(base.key("variant"), format!("{v:?} is not a variant of [{}]", r.model_type));
     }
     if r.op == RouteOp::CountTokens && s.text.as_ref().is_none_or(|t| t.count_tokens.is_none()) {
         err(base.key("op"), "count_tokens route needs [text.count_tokens]".into());

@@ -1,0 +1,1 @@
+providers/quota-foreign-host.toml:20:13 quota.request.url: host usage.elsewhere.example is not one of this provider's hosts

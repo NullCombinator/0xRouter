@@ -3,6 +3,7 @@
 use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 use std::fmt;
 
+use super::endpoint::ForceMap;
 use super::enums::{ContentKind, ModelKind, WireFormat};
 
 #[derive(Debug, Clone, PartialEq, Default, serde::Deserialize)]
@@ -31,6 +32,10 @@ pub struct Model {
     pub image_gen: Option<bool>,
     /// Schema 2: wire styles this model accepts, in preference order after the native pair.
     pub wires: Option<Vec<String>>,
+    /// Schema 2: request parameters set for this model, on top of the endpoint's (research
+    /// R8). Effort-suffixed ids (`grok-4.5-high`) set `reasoning.effort` here.
+    #[serde(default)]
+    pub force: ForceMap,
 }
 
 /// A `models` element: a full table or a bare ID string (9router `normalizeModel`).

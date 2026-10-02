@@ -5,6 +5,7 @@ pub(crate) mod keys;
 pub(crate) mod model;
 pub(crate) mod plugins;
 pub(crate) mod providers;
+pub(crate) mod quota;
 pub(crate) mod records;
 pub(crate) mod resolve;
 pub(crate) mod serve;

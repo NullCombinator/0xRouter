@@ -1,0 +1,4 @@
+unsupported/signin-section.toml: not supported by this core (0router 0.1.0, plugin schema 1-2)
+  - unsupported/signin-section.toml:9:2 signin: account sign-in is not supported
+  - unsupported/signin-section.toml:17:2 identity: account sign-in is not supported
+No part of this plugin was loaded.

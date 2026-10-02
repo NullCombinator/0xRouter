@@ -1,0 +1,1 @@
+providers/force-messages.toml:9:9 endpoints.text.force: messages can't be forced; allowed: store, reasoning.summary, reasoning.effort, include

@@ -1,19 +1,24 @@
 //! The plugin file and the provider entity it declares (data-model § ProviderEntity).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use indexmap::IndexMap;
 use serde::Deserialize;
+use url::Url;
 
 use super::capability::CapabilitySection;
 use super::endpoint::Endpoints;
 use super::enums::{AuthHook, AuthKind, AuthScheme, CapabilityKind, Category, WireFormat};
 use super::forwarding::Forwarding;
+use super::identity::IdentityDecl;
 use super::model::{Model, de_models};
+use super::models_live::ModelsLiveDecl;
 use super::oauth::OAuthDecl;
 use super::primitives::ModelType;
+use super::quota::QuotaDecl;
 use super::session::ProviderSession;
+use super::signin::SignInDecl;
 use super::transport::Transport;
 
 /// One plugin file, as parsed. Only `id` and `category` are required (FR-006).
@@ -48,6 +53,14 @@ pub struct PluginFile {
     pub endpoints: BTreeMap<ModelType, Endpoints>,
     pub forwarding: Option<Forwarding>,
     pub session: Option<ProviderSession>,
+    /// Schema 2: account sign-in (slice 005). Bundled plugins only.
+    pub signin: Option<SignInDecl>,
+    /// Schema 2: headers on a sign-in account's requests. Bundled plugins only.
+    pub identity: Option<IdentityDecl>,
+    /// Schema 2: how an account's quota is read. Bundled plugins only.
+    pub quota: Option<QuotaDecl>,
+    /// Schema 2: the live model list. Bundled plugins only.
+    pub models_live: Option<ModelsLiveDecl>,
     /// Inert names used only by the fit check.
     #[serde(default)]
     pub requires: Vec<String>,
@@ -55,7 +68,7 @@ pub struct PluginFile {
 
 impl PluginFile {
     pub(crate) fn auth_headers(&self) -> impl Iterator<Item = &str> {
-        auth_headers(self.auth.as_ref(), &self.endpoints)
+        auth_headers(self.auth.as_ref(), &self.endpoints, self.signin.as_ref())
     }
 
     /// `schema`, defaulting to 1.
@@ -106,6 +119,10 @@ pub struct ProviderEntity {
     pub endpoints: BTreeMap<ModelType, Endpoints>,
     pub forwarding: Option<Forwarding>,
     pub session: Option<ProviderSession>,
+    pub signin: Option<SignInDecl>,
+    pub identity: Option<IdentityDecl>,
+    pub quota: Option<QuotaDecl>,
+    pub models_live: Option<ModelsLiveDecl>,
     pub requires: Vec<String>,
     pub source: PluginSource,
 }
@@ -113,9 +130,50 @@ pub struct ProviderEntity {
 fn auth_headers<'a>(
     auth: Option<&'a AuthDecl>,
     endpoints: &'a BTreeMap<ModelType, Endpoints>,
+    signin: Option<&'a SignInDecl>,
 ) -> impl Iterator<Item = &'a str> {
     let per_endpoint = endpoints.values().flat_map(|e| &e.0).filter_map(|e| Some(e.auth.as_ref()?.header.as_str()));
-    auth.and_then(|a| a.header.as_deref()).into_iter().chain(per_endpoint)
+    let signed_in = signin.map(|s| s.auth.header.as_str());
+    auth.and_then(|a| a.header.as_deref()).into_iter().chain(per_endpoint).chain(signed_in)
+}
+
+fn host_of(url: &str) -> Option<String> {
+    Url::parse(url).ok()?.host_str().map(str::to_owned)
+}
+
+/// Every host the provider's endpoints send requests to: endpoint and token-count URLs, and
+/// schema-1 transport base URLs.
+pub(crate) fn endpoint_hosts(
+    endpoints: &BTreeMap<ModelType, Endpoints>,
+    transports: &[&Transport],
+) -> BTreeSet<String> {
+    let urls = endpoints
+        .values()
+        .flat_map(|e| e.0.iter())
+        .flat_map(|e| std::iter::once(e.url.as_str()).chain(e.token_count.iter().map(|t| t.url.as_str())));
+    let bases =
+        transports.iter().flat_map(|t| t.base_url.iter().chain(t.base_urls.iter().flatten())).map(String::as_str);
+    urls.chain(bases).filter_map(host_of).collect()
+}
+
+/// The URLs of `[signin]` (flow and profile), `[quota]` (primary and fallback) and
+/// `[models_live]`, by field path.
+pub(crate) fn account_urls<'a>(
+    signin: Option<&'a SignInDecl>,
+    quota: Option<&'a QuotaDecl>,
+    models_live: Option<&'a ModelsLiveDecl>,
+) -> Vec<(String, &'a str)> {
+    let mut out = Vec::new();
+    if let Some(s) = signin {
+        out.extend(s.flow_urls().map(|(k, u)| (format!("signin.{k}"), u)));
+        out.extend(s.profile.iter().map(|p| ("signin.profile.url".to_owned(), p.url.as_str())));
+    }
+    if let Some(q) = quota {
+        out.push(("quota.request.url".to_owned(), q.primary.request.url.as_str()));
+        out.extend(q.fallback.iter().map(|f| ("quota.fallback.request.url".to_owned(), f.request.url.as_str())));
+    }
+    out.extend(models_live.map(|m| ("models_live.url".to_owned(), m.url.as_str())));
+    out
 }
 
 impl ProviderEntity {
@@ -155,6 +213,10 @@ impl ProviderEntity {
             endpoints: f.endpoints,
             forwarding: f.forwarding,
             session: f.session,
+            signin: f.signin,
+            identity: f.identity,
+            quota: f.quota,
+            models_live: f.models_live,
             requires: f.requires,
             source,
         }
@@ -171,9 +233,26 @@ impl ProviderEntity {
         self.transport.is_some() || self.endpoints.contains_key(&ModelType::Text)
     }
 
-    /// Every header name this provider's secret goes into: `[auth]`'s and each endpoint's.
+    /// Every header name this provider's secret or access token goes into: `[auth]`'s,
+    /// each endpoint's, and `[signin] auth`'s.
     pub fn auth_headers(&self) -> impl Iterator<Item = &str> {
-        auth_headers(self.auth.as_ref(), &self.endpoints)
+        auth_headers(self.auth.as_ref(), &self.endpoints, self.signin.as_ref())
+    }
+
+    /// Every host this provider's endpoints send requests to (endpoint and token-count
+    /// URLs, schema-1 transport base URLs).
+    pub fn endpoint_hosts(&self) -> BTreeSet<String> {
+        endpoint_hosts(&self.endpoints, &self.all_transports())
+    }
+
+    /// The hosts a sign-in account's tokens are bound to (research R5, FR-031): endpoint
+    /// hosts, `[signin]` hosts (flow and profile), `[quota]` hosts (primary and fallback),
+    /// and the `[models_live]` host.
+    pub fn token_hosts(&self) -> BTreeSet<String> {
+        let mut hosts = self.endpoint_hosts();
+        let urls = account_urls(self.signin.as_ref(), self.quota.as_ref(), self.models_live.as_ref());
+        hosts.extend(urls.into_iter().filter_map(|(_, u)| host_of(u)));
+        hosts
     }
 
     /// `transport` followed by every `transports[]` entry.

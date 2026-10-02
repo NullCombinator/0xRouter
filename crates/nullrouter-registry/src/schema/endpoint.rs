@@ -5,10 +5,10 @@ use std::fmt;
 
 use indexmap::IndexMap;
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
-use serde::de::{MapAccess, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::de::{Error as _, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use super::enums::AuthScheme;
+use super::enums::{AuthScheme, closed_enum};
 use super::primitives::{BodyEncoding, ContinuationMethod, ContinuationUnless};
 use super::style::MatchRule;
 
@@ -50,6 +50,83 @@ pub struct Endpoint {
     pub errors: ErrorRules,
     pub token_count: Option<TokenCount>,
     pub continuation: Option<Continuation>,
+    /// Request parameters set on every request to this endpoint (research R8).
+    #[serde(default)]
+    pub force: ForceMap,
+}
+
+closed_enum!(
+    /// The request parameters a plugin may force (research R8, spec Clarifications Q6).
+    /// None of them is conversation content.
+    ForcedParam, "forced parameter" {
+        Store = "store",
+        ReasoningSummary = "reasoning.summary",
+        ReasoningEffort = "reasoning.effort",
+        Include = "include",
+    }
+);
+
+impl ForcedParam {
+    /// The body path the value is written to.
+    pub fn path(self) -> &'static [&'static str] {
+        match self {
+            Self::Store => &["store"],
+            Self::ReasoningSummary => &["reasoning", "summary"],
+            Self::ReasoningEffort => &["reasoning", "effort"],
+            Self::Include => &["include"],
+        }
+    }
+
+    /// `include` is appended to the client's list, deduplicated; the others replace.
+    pub fn appends(self) -> bool {
+        self == Self::Include
+    }
+
+    fn check(self, v: &toml::Value) -> Result<(), String> {
+        let ok = match self {
+            Self::Store => v.is_bool(),
+            Self::ReasoningSummary | Self::ReasoningEffort => v.is_str(),
+            Self::Include => v.as_array().is_some_and(|a| a.iter().all(toml::Value::is_str)),
+        };
+        let want = match self {
+            Self::Store => "a boolean",
+            Self::ReasoningSummary | Self::ReasoningEffort => "a string",
+            Self::Include => "a list of strings",
+        };
+        if ok { Ok(()) } else { Err(format!("{self} must be {want}")) }
+    }
+}
+
+/// `force = { … }` on an endpoint or a model: keys from [`ForcedParam`], values typed per key.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ForceMap(pub IndexMap<ForcedParam, toml::Value>);
+
+impl ForceMap {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (ForcedParam, &toml::Value)> {
+        self.0.iter().map(|(k, v)| (*k, v))
+    }
+}
+
+impl<'de> Deserialize<'de> for ForceMap {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = IndexMap::<String, toml::Value>::deserialize(d)?;
+        let mut out = IndexMap::new();
+        for (k, v) in raw {
+            let Some(p) = ForcedParam::parse(&k) else {
+                return Err(D::Error::custom(format!(
+                    "{k} can't be forced; allowed: {}",
+                    ForcedParam::ALLOWED.join(", ")
+                )));
+            };
+            p.check(&v).map_err(D::Error::custom)?;
+            out.insert(p, v);
+        }
+        Ok(Self(out))
+    }
 }
 
 /// A per-endpoint auth placement (a gateway whose Anthropic route takes `x-api-key`).
@@ -192,6 +269,29 @@ wire = "gemini"
         let c = text.continuation.as_ref().unwrap();
         assert!(c.applies_to("y") && !c.applies_to("x"));
         assert_eq!(d.endpoints[&ModelType::Embeddings].0.len(), 2);
+    }
+
+    #[test]
+    fn force_keys_and_values_are_closed() {
+        let ok: Doc = toml::from_str(
+            "[endpoints.text]\nurl = \"https://a.example\"\nforce = { store = false, \"reasoning.effort\" = \"high\", include = [\"reasoning.encrypted_content\"] }\n",
+        )
+        .unwrap();
+        let f = &ok.endpoints[&ModelType::Text].0[0].force;
+        assert_eq!(
+            f.iter().map(|(k, _)| k).collect::<Vec<_>>(),
+            ForcedParam::ALL.iter().copied().filter(|p| *p != ForcedParam::ReasoningSummary).collect::<Vec<_>>()
+        );
+        assert_eq!(ForcedParam::ReasoningEffort.path(), ["reasoning", "effort"]);
+        let err = |force: &str| {
+            toml::from_str::<Doc>(&format!("[endpoints.text]\nurl = \"https://a.example\"\nforce = {force}\n"))
+                .err()
+                .unwrap()
+                .to_string()
+        };
+        assert!(err("{ messages = [] }").contains("messages can't be forced"));
+        assert!(err("{ store = \"no\" }").contains("store must be a boolean"));
+        assert!(err("{ include = [1] }").contains("include must be a list of strings"));
     }
 
     #[test]

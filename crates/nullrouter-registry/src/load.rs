@@ -373,14 +373,14 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
     let tokens: BTreeSet<&str> = active.iter().flat_map(|l| l.entity.tokens()).collect();
     let mut drop: BTreeSet<usize> = BTreeSet::new();
     for (i, l) in active.iter().enumerate() {
-        if let Some(x) = l.entity.auth.as_ref().and_then(|a| a.credential_fallback.as_deref()) {
-            if !tokens.contains(x) {
-                let e = l.error(FieldPath::of("auth.credential_fallback"), format!("unknown provider {x:?}"));
-                if mode == Mode::Startup && l.user_path().is_some() {
-                    drop.insert(i);
-                }
-                skip(&mut report, &mut errors, l, vec![e]);
+        if let Some(x) = l.entity.auth.as_ref().and_then(|a| a.credential_fallback.as_deref())
+            && !tokens.contains(x)
+        {
+            let e = l.error(FieldPath::of("auth.credential_fallback"), format!("unknown provider {x:?}"));
+            if mode == Mode::Startup && l.user_path().is_some() {
+                drop.insert(i);
             }
+            skip(&mut report, &mut errors, l, vec![e]);
         }
     }
     for i in drop.into_iter().rev() {

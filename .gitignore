@@ -1,5 +1,6 @@
 # environment / secrets
 .env
+.env.*
 .mcp.json
 # operator home for the live checks (accounts.toml holds real provider keys)
 .nr-live/
@@ -11,7 +12,14 @@ ref/
 target/
 .cargo-home/
 .cargo/
+*.rs.bk
+*.log
 
 # OS noise
 .DS_Store
+Thumbs.db
+*.swp
+*.tmp
+.idea/
+.vscode/
 __pycache__/

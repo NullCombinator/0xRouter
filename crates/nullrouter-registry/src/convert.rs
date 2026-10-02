@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use indexmap::IndexMap;
 
 use crate::schema::{
-    AuthScheme, CapabilityKind, Endpoint, EndpointAuth, Endpoints, ErrorRules, ModelType, ProviderEntity,
+    AuthScheme, CapabilityKind, Endpoint, EndpointAuth, Endpoints, ErrorRules, ForceMap, ModelType, ProviderEntity,
     RetryOverride, RetryPolicy, SectionEndpoint, Transport, WireFormat,
 };
 
@@ -33,10 +33,10 @@ pub(crate) fn to_schema2(p: &mut ProviderEntity) {
     }
     for (kind, sec) in &p.capabilities {
         let (Some(t), Some(e)) = (ModelType::from_capability(*kind), &sec.endpoint) else { continue };
-        if t != ModelType::Text {
-            if let Some(ep) = media_endpoint(e) {
-                p.endpoints.insert(t, Endpoints(vec![ep]));
-            }
+        if t != ModelType::Text
+            && let Some(ep) = media_endpoint(e)
+        {
+            p.endpoints.insert(t, Endpoints(vec![ep]));
         }
     }
     for m in p.models.iter_mut().flatten() {
@@ -67,6 +67,7 @@ fn endpoint(url: String, wire: Option<&str>) -> Endpoint {
         errors: ErrorRules::default(),
         token_count: None,
         continuation: None,
+        force: ForceMap::default(),
     }
 }
 

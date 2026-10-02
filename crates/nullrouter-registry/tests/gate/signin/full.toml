@@ -1,0 +1,102 @@
+# Every slice 005 section, as a bundled plugin declares them. Passes the gate in strict mode.
+schema = 2
+id = "grokish"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "Authorization"
+scheme = "bearer"
+
+[endpoints.text]
+url = "https://cli-chat-proxy.grokish.example/v1/responses"
+wire = "openai-responses"
+force_stream = true
+force = { store = false, "reasoning.summary" = "concise", include = ["reasoning.encrypted_content"] }
+
+[signin]
+flow = "pkce"
+client_id = "b1a00492-073a-47ea-816f-4c329264a828"
+scopes = ["openid", "profile", "email", "offline_access", "grok-cli:access", "api:access"]
+discovery_url = "https://auth.grokish.example/.well-known/openid-configuration"
+authorize_url = "https://auth.grokish.example/oauth2/authorize"
+token_url = "https://auth.grokish.example/oauth2/token"
+redirect = [
+    { uri = "https://console.grokish.example/oauth/code/callback", kind = "code_page" },
+    { uri = "http://127.0.0.1:56121/callback", kind = "loopback" },
+]
+params = { plan = "generic", referrer = "cli-proxy-api", nonce = "{random.hex16}" }
+body = "json"
+verifier_bytes = 96
+refresh_lead = "5m"
+auth = { header = "Authorization", scheme = "bearer" }
+terms_warning = true
+
+[signin.profile]
+url = "https://cli-chat-proxy.grokish.example/v1/user"
+email = "email | id_token.email | id_token.preferred_username"
+user_id = "userId | principalId"
+tier = "subscriptionTier"
+
+[[signin.refused]]
+status = [400, 403]
+body_contains = "only authorized for use with the official client"
+
+[identity.headers]
+User-Agent = "grok-shell/0.2.99 (linux; x86_64)"
+x-grok-client-identifier = "grok-shell"
+x-grok-session-id = "{session.id}"
+x-grok-conv-id = "{session.id}"
+x-grok-req-id = "{request.id}"
+x-grok-turn-idx = "{session.turn}"
+x-grok-model-override = "{model.upstream}"
+x-email = "{account.email}"
+x-userid = "{account.user_id}"
+x-grok-agent-id = "{install.id}"
+
+[quota]
+accounts = "signin"
+request = { url = "https://cli-chat-proxy.grokish.example/v1/billing?format=credits", headers = { x-grok-client-mode = "headless" } }
+
+[[quota.window]]
+path = "seven_day_*"
+name = "weekly {1}"
+unit = "percent"
+used = "utilization"
+resets_at = "resets_at"
+
+[[quota.window]]
+path = "limits[*]"
+where = { kind = "weekly_scoped" }
+name = "weekly {scope.model.display_name|lower}"
+unit = "credits"
+used = "used"
+limit = "limit | total"
+resets_at = "billingPeriodEnd | billing_period_end | currentPeriod.end"
+resets_format = "auto"
+unwrap_val = true
+
+[quota.fallback]
+request = { url = "https://grokish.example/grok_api_v2.Billing/GetCreditsConfig", method = "POST", body = "grpc_web_empty" }
+decoder = "grpc_web_ratio"
+name = "credits"
+unit = "percent"
+
+[models_live]
+url = "https://cli-chat-proxy.grokish.example/v1/models"
+headers = { x-xai-token-auth = "xai-grok-cli", x-grok-client-mode = "headless" }
+list = "data | models | results | ."
+id = "id | model_id | modelId | slug | name"
+name = "display_name | displayName | name"
+context = "context_length | context_window"
+max_output = "max_output_tokens"
+type = "text"
+refresh = "6h"
+
+[[models]]
+id = "grok-4.5"
+
+[[models]]
+id = "grok-4.5-high"
+upstream_id = "grok-4.5"
+force = { "reasoning.effort" = "high" }

@@ -116,6 +116,19 @@ pub fn check(p: &ProviderEntity, src: &str, file: &str, ctx: &GateCtx) -> FitVer
     if p.oauth.is_some() {
         f.add(FieldPath::of("oauth"), None, sign_in);
     }
+    // Slice 005: sign-in, identity, quota and live model lists are open to bundled plugins
+    // only. Opening them up later is removing this rule.
+    if !p.is_bundled() {
+        let sections = [
+            ("signin", p.signin.is_some(), sign_in),
+            ("identity", p.identity.is_some(), sign_in),
+            ("models_live", p.models_live.is_some(), sign_in),
+            ("quota", p.quota.is_some(), "quota is not supported"),
+        ];
+        for (key, _, reason) in sections.into_iter().filter(|(_, present, _)| *present) {
+            f.add(FieldPath::of(key), None, reason);
+        }
+    }
     for (i, r) in p.requires.iter().enumerate() {
         let reason = match r.split_once(':') {
             Some(("9router-executor", _)) => "needs a provider-specific executor".to_owned(),

@@ -1,0 +1,17 @@
+# expect: messages can't be forced
+schema = 2
+id = "acme"
+category = "apikey"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/responses"
+wire = "openai-responses"
+force = { store = false, messages = [] }
+
+[signin]
+flow = "device_code"
+client_id = "b1a00492-073a-47ea-816f-4c329264a828"
+scopes = ["openid", "offline_access"]
+device_url = "https://auth.acme.example/oauth2/device/code"
+token_url = "https://auth.acme.example/oauth2/token"
+refresh_lead = "5m"

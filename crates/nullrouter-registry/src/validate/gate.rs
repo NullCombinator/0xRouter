@@ -7,13 +7,15 @@ use toml::Spanned;
 use toml::de::{DeTable, DeValue};
 
 use super::errors::{FieldPath, Seg, ValidationError, line_col};
-use super::secrets::{check_map_key, check_query, check_url};
+use super::secrets::{check_map_key, check_query, check_url, looks_like_secret};
 use super::ssrf::{check_endpoint_url, check_public_host};
 use super::style_gate::placeholders;
 use crate::floor::{Floor, PatternRisk};
 use crate::schema::{
-    AuthScheme, CapabilityKind, Endpoint, Forwarding, KNOWN_OAUTH_PARAMS, KNOWN_SECTION_FORMATS, ModelType, PluginFile,
-    PluginSource, ProviderEntity, RouteOp, Transport,
+    AuthScheme, CapabilityKind, Endpoint, EndpointAuth, Forwarding, HeaderValue, KNOWN_OAUTH_PARAMS,
+    KNOWN_SECTION_FORMATS, ModelType, ModelsLiveDecl, PluginFile, PluginSource, ProviderEntity, QuotaAccounts,
+    QuotaDecl, QuotaDecoder, QuotaSource, RedirectKind, RouteOp, SignInDecl, SignInFlow, SignInParamValue, Transport,
+    WindowRule, account_urls, endpoint_hosts,
 };
 use crate::template::{FieldPath as Selector, Template};
 
@@ -147,8 +149,21 @@ fn semantic_errors(p: &PluginFile) -> Found {
                 err(FieldPath::of(key), "schema 1 has no `".to_owned() + key + "`; set schema = 2");
             }
         }
-        for (i, _) in p.models.iter().flatten().enumerate().filter(|(_, m)| m.wires.is_some()) {
-            err(FieldPath::of("models").index(i).key("wires"), "schema 1 has no `wires`; set schema = 2".into());
+        let sections = [
+            ("signin", p.signin.is_some()),
+            ("identity", p.identity.is_some()),
+            ("quota", p.quota.is_some()),
+            ("models_live", p.models_live.is_some()),
+        ];
+        for (key, _) in sections.into_iter().filter(|(_, present)| *present) {
+            err(FieldPath::of(key), "schema 1 has no `".to_owned() + key + "`; set schema = 2");
+        }
+        for (i, m) in p.models.iter().flatten().enumerate() {
+            for (key, present) in [("wires", m.wires.is_some()), ("force", !m.force.is_empty())] {
+                if present {
+                    err(FieldPath::of("models").index(i).key(key), format!("schema 1 has no `{key}`; set schema = 2"));
+                }
+            }
         }
     }
     if !is_token(&p.id) {
@@ -265,10 +280,10 @@ fn check_transport(t: &Transport, base: &FieldPath, err: &mut impl FnMut(FieldPa
         }
     }
     check_headers(t.headers.iter().flat_map(|h| h.keys()), &base.key("headers"), err);
-    if let Some(r) = &t.default_region {
-        if !t.regions.as_ref().is_some_and(|m| m.contains_key(r)) {
-            err(base.key("default_region"), format!("{r:?} is not a key of regions"));
-        }
+    if let Some(r) = &t.default_region
+        && !t.regions.as_ref().is_some_and(|m| m.contains_key(r))
+    {
+        err(base.key("default_region"), format!("{r:?} is not a key of regions"));
     }
 }
 
@@ -329,9 +344,308 @@ fn schema2_errors(p: &mut PluginFile, ctx: &GateCtx, errors: &mut Found, diags: 
             format!("{:?} is in the forwarding floor; a session id can't be sent in it", s.header),
         );
     }
+    check_account_sections(p, ctx, &floor, &mut err);
     if let Some(f) = p.forwarding.as_mut() {
         check_forwarding(f, &floor, ctx.strict, &mut err, &mut |path, rule| diags.push((path, rule)));
     }
+}
+
+const SECRET: &str = "looks like a secret; plugins can't hold secrets";
+
+/// `[signin]`, `[identity]`, `[quota]` and `[models_live]` (contracts/signin-quota-schema.md,
+/// research R16).
+fn check_account_sections(p: &PluginFile, ctx: &GateCtx, floor: &Floor, err: &mut impl FnMut(FieldPath, String)) {
+    let path = |dotted: &str| FieldPath::of(dotted);
+
+    // Every URL: no placeholders, then the endpoint SSRF rules.
+    let urls = account_urls(p.signin.as_ref(), p.quota.as_ref(), p.models_live.as_ref());
+    let mut bad_url = BTreeSet::new();
+    for (key, url) in &urls {
+        let rule = if url.contains(['{', '}']) {
+            Err("placeholders are not allowed in this URL".to_owned())
+        } else {
+            check_endpoint_url(url, ctx.allow_private)
+        };
+        if let Err(rule) = rule {
+            err(path(key), rule);
+            bad_url.insert(key.clone());
+        }
+    }
+
+    // Host set: the profile, quota and live-model URLs stay on the provider's endpoint and
+    // sign-in hosts, or their sites (grok.com beside cli-chat-proxy.grok.com).
+    let transports: Vec<&Transport> = p.transport.iter().chain(&p.transports).collect();
+    let mut hosts = endpoint_hosts(&p.endpoints, &transports);
+    if let Some(s) = &p.signin {
+        hosts.extend(s.flow_urls().filter_map(|(_, u)| host_of(u)));
+    }
+    let sites: BTreeSet<&str> = hosts.iter().map(|h| site(h)).collect();
+    for (key, url) in urls.iter().filter(|(k, _)| !k.starts_with("signin.") || k == "signin.profile.url") {
+        if bad_url.contains(key) {
+            continue;
+        }
+        if let Some(h) = host_of(url).filter(|h| !hosts.contains(h) && !sites.contains(site(h))) {
+            err(path(key), format!("host {h} is not one of this provider's hosts"));
+        }
+    }
+
+    if let Some(s) = &p.signin {
+        check_signin(s, floor, err);
+    }
+    if let Some(id) = &p.identity {
+        if p.signin.is_none() {
+            err(path("identity"), "[identity] applies to sign-in accounts; declare [signin]".into());
+        }
+        for (name, value) in &id.headers {
+            let at = path("identity.headers").key(name.as_str());
+            if !is_header_name(name) {
+                err(at, format!("{name:?} is not a header name"));
+            } else if floor.blocks(name) {
+                err(at, format!("{name:?} is in the security floor; [identity] can't set it"));
+            } else if matches!(value, HeaderValue::Fixed(v) if looks_like_secret(v)) {
+                err(at, SECRET.into());
+            }
+        }
+    }
+    if let Some(q) = &p.quota {
+        check_quota(q, p.signin.is_some(), floor, err);
+    }
+    if let Some(m) = &p.models_live {
+        check_models_live(m, p.signin.is_some(), floor, err);
+    }
+}
+
+fn check_signin(s: &SignInDecl, floor: &Floor, err: &mut impl FnMut(FieldPath, String)) {
+    let at = |k: &str| FieldPath::of("signin").key(k);
+    if s.client_id.trim().is_empty() {
+        err(at("client_id"), "must not be empty".into());
+    } else if looks_like_secret(&s.client_id) {
+        err(at("client_id"), SECRET.into());
+    }
+    for (i, scope) in s.scopes.iter().enumerate() {
+        if scope.is_empty() || scope.contains(char::is_whitespace) {
+            err(at("scopes").index(i), "a scope is one word with no spaces".into());
+        }
+    }
+    match s.flow {
+        SignInFlow::DeviceCode => {
+            if s.device_url.is_none() {
+                err(FieldPath::of("signin"), "the device_code flow needs `device_url`".into());
+            }
+            let pkce_only = [
+                ("authorize_url", s.authorize_url.is_some()),
+                ("redirect", !s.redirect.is_empty()),
+                ("verifier_bytes", s.verifier_bytes.is_some()),
+            ];
+            for (k, _) in pkce_only.into_iter().filter(|(_, present)| *present) {
+                err(at(k), format!("`{k}` is not used by the device_code flow"));
+            }
+        }
+        SignInFlow::Pkce => {
+            if s.authorize_url.is_none() && s.discovery_url.is_none() {
+                err(FieldPath::of("signin"), "the pkce flow needs `authorize_url` or `discovery_url`".into());
+            }
+            if s.redirect.is_empty() {
+                err(FieldPath::of("signin"), "the pkce flow needs at least one `redirect`".into());
+            }
+            if s.device_url.is_some() {
+                err(at("device_url"), "`device_url` is not used by the pkce flow".into());
+            }
+        }
+    }
+    if let Some(n) = s.verifier_bytes.filter(|n| !(32..=96).contains(n)) {
+        err(at("verifier_bytes"), format!("{n}: verifier_bytes must be 32-96"));
+    }
+    for (i, r) in s.redirect.iter().enumerate() {
+        if let Err(rule) = check_redirect(&r.uri, r.kind) {
+            err(at("redirect").index(i).key("uri"), rule);
+        }
+    }
+    for (k, v) in &s.params {
+        if matches!(v, SignInParamValue::Fixed(v) if looks_like_secret(v)) {
+            err(at("params").key(k.as_str()), SECRET.into());
+        }
+    }
+    check_auth(&s.auth, &at("auth"), err);
+    if s.refresh_lead.is_zero() {
+        err(at("refresh_lead"), "must be more than 0".into());
+    }
+    if let Some(prof) = &s.profile {
+        check_static_headers(&prof.headers, &at("profile").key("headers"), floor, err);
+    }
+    for (i, r) in s.refused.iter().enumerate() {
+        if r.status.is_empty() || r.status.iter().any(|s| !(100..=599).contains(s)) {
+            err(at("refused").index(i).key("status"), "statuses must be 100-599".into());
+        }
+    }
+}
+
+/// A loopback redirect is a local `http` address the core listens on; a code page is a
+/// public `https` page of the provider's.
+fn check_redirect(uri: &str, kind: RedirectKind) -> Result<(), String> {
+    match kind {
+        RedirectKind::CodePage => check_endpoint_url(uri, false),
+        RedirectKind::Loopback => {
+            let u = url::Url::parse(uri).map_err(|e| format!("URL doesn't parse: {e}"))?;
+            let local = matches!(u.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"));
+            if u.scheme() != "http" || !local || u.query().is_some() || u.fragment().is_some() {
+                return Err(
+                    "a loopback redirect is http://127.0.0.1, http://localhost or http://[::1] with a path".into()
+                );
+            }
+            Ok(())
+        }
+    }
+}
+
+fn check_auth(a: &EndpointAuth, base: &FieldPath, err: &mut impl FnMut(FieldPath, String)) {
+    if !is_header_name(&a.header) {
+        err(base.key("header"), format!("{:?} is not a header name", a.header));
+    }
+    if !matches!(a.scheme, AuthScheme::Bearer | AuthScheme::Raw) {
+        err(base.key("scheme"), format!("{:?}: takes `bearer` or `raw`", a.scheme.as_str()));
+    }
+}
+
+/// Static headers of a quota, profile or live-model request: no floor name, no secret
+/// value. Names that only mention a token (`x-xai-token-auth`) are allowed: the value is
+/// checked instead.
+fn check_static_headers(
+    headers: &indexmap::IndexMap<String, String>,
+    base: &FieldPath,
+    floor: &Floor,
+    err: &mut impl FnMut(FieldPath, String),
+) {
+    for (name, value) in headers {
+        let at = base.key(name.as_str());
+        if !is_header_name(name) {
+            err(at, format!("{name:?} is not a header name"));
+        } else if floor.lists(name) {
+            err(at, format!("{name:?} is in the security floor; the core sets it"));
+        } else if looks_like_secret(value) {
+            err(at, SECRET.into());
+        }
+    }
+}
+
+fn check_quota(q: &QuotaDecl, signin: bool, floor: &Floor, err: &mut impl FnMut(FieldPath, String)) {
+    if q.accounts == QuotaAccounts::Signin && !signin {
+        err(FieldPath::of("quota.accounts"), "`signin` needs a [signin] section".into());
+    }
+    let sources = std::iter::once((FieldPath::of("quota"), &q.primary))
+        .chain(q.fallback.iter().map(|f| (FieldPath::of("quota.fallback"), f)));
+    for (base, src) in sources {
+        check_quota_source(src, &base, floor, err);
+    }
+}
+
+fn check_quota_source(src: &QuotaSource, base: &FieldPath, floor: &Floor, err: &mut impl FnMut(FieldPath, String)) {
+    let req = &src.request;
+    if !METHODS.contains(&req.method.as_str()) {
+        err(base.key("request").key("method"), format!("{:?} is not one of {}", req.method, METHODS.join(", ")));
+    }
+    check_static_headers(&req.headers, &base.key("request").key("headers"), floor, err);
+    match src.decoder {
+        QuotaDecoder::Json => {
+            if src.windows.is_empty() {
+                err(base.clone(), "the json decoder needs at least one [[window]] rule".into());
+            }
+            for (k, present) in [("name", src.name.is_some()), ("unit", src.unit.is_some())] {
+                if present {
+                    err(base.key(k), format!("`{k}` is set per [[window]] with the json decoder"));
+                }
+            }
+        }
+        QuotaDecoder::GrpcWebRatio => {
+            if src.name.is_none() || src.unit.is_none() {
+                err(base.clone(), "the grpc_web_ratio decoder needs `name` and `unit`".into());
+            }
+            if !src.windows.is_empty() {
+                err(base.key("window"), "the grpc_web_ratio decoder reads one window; declare no rules".into());
+            }
+        }
+    }
+    for (i, w) in src.windows.iter().enumerate() {
+        check_window(w, &base.key("window").index(i), err);
+    }
+}
+
+fn check_window(w: &WindowRule, base: &FieldPath, err: &mut impl FnMut(FieldPath, String)) {
+    if w.used.is_none() && w.limit.is_none() && w.remaining.is_none() {
+        err(base.clone(), "a window needs `used`, `limit` or `remaining`".into());
+    }
+    if w.path.is_empty() || !w.path.chars().all(|c| c.is_ascii_alphanumeric() || "_-.*[]".contains(c)) {
+        err(base.key("path"), format!("{:?} is not a window path such as `limits[*]` or `seven_day_*`", w.path));
+    }
+    let stars = w.path.matches('*').count();
+    if let Err(rule) = check_window_name(&w.name, stars) {
+        err(base.key("name"), rule);
+    }
+    for (k, v) in &w.filter {
+        if !(v.is_str() || v.is_integer() || v.is_bool()) {
+            err(base.key("where").key(k.as_str()), "compares with a string, integer or boolean".into());
+        }
+    }
+}
+
+/// `{N}` (1-based, at most the number of `*` in the path), `{path}` or `{path|lower}`.
+fn check_window_name(name: &str, stars: usize) -> Result<(), String> {
+    let mut rest = name;
+    while let Some(open) = rest.find('{') {
+        let close = rest[open..].find('}').ok_or("unclosed `{` in window name")? + open;
+        let hole = &rest[open + 1..close];
+        let path = hole.strip_suffix("|lower").unwrap_or(hole);
+        match path.parse::<usize>() {
+            Ok(n) if (1..=stars).contains(&n) => {}
+            Ok(n) => return Err(format!("{{{n}}}: the path binds {stars} `*`")),
+            Err(_) => {
+                crate::schema::ValuePath::parse(path).map_err(|e| format!("{{{hole}}}: {e}"))?;
+                if path.contains('|') {
+                    return Err(format!("{{{hole}}}: the only filter is `|lower`"));
+                }
+            }
+        }
+        rest = &rest[close + 1..];
+    }
+    if rest.contains('}') { Err("unmatched `}` in window name".into()) } else { Ok(()) }
+}
+
+fn check_models_live(m: &ModelsLiveDecl, signin: bool, floor: &Floor, err: &mut impl FnMut(FieldPath, String)) {
+    if !signin {
+        err(FieldPath::of("models_live"), "[models_live] is read with a sign-in account; declare [signin]".into());
+    }
+    check_static_headers(&m.headers, &FieldPath::of("models_live.headers"), floor, err);
+    if m.refresh.is_zero() {
+        err(FieldPath::of("models_live.refresh"), "must be more than 0".into());
+    }
+}
+
+fn host_of(url: &str) -> Option<String> {
+    url::Url::parse(url).ok()?.host_str().map(str::to_owned)
+}
+
+/// Second-level labels under which country domains register names (`example.co.uk`).
+const SECOND_LEVEL: &[&str] = &["co", "com", "net", "org", "gov", "edu", "ac", "or", "ne", "go", "gob"];
+
+/// A host's site: its last two labels, three under a country's second level, or an
+/// address literal as is.
+fn site(host: &str) -> &str {
+    if host.starts_with('[') || host.parse::<std::net::Ipv4Addr>().is_ok() {
+        return host;
+    }
+    let labels: Vec<&str> = host.split('.').collect();
+    let n = labels.len();
+    let country_sld = n >= 3 && labels[n - 1].len() == 2 && SECOND_LEVEL.contains(&labels[n - 2]);
+    let keep = if country_sld { 3 } else { 2 };
+    if n <= keep {
+        return host;
+    }
+    let start: usize = labels[..n - keep].iter().map(|l| l.len() + 1).sum();
+    &host[start..]
+}
+
+fn is_header_name(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 fn check_endpoint(

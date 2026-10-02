@@ -80,6 +80,14 @@ impl Floor {
         self.names.contains(&n) || n.starts_with(CORE_PREFIX) || check_map_key(&n).is_some()
     }
 
+    /// True if `name` is one of the floor's listed names or under the core prefix, without
+    /// the secret-name pattern [`Floor::blocks`] adds: for static request headers whose
+    /// name merely mentions a token (`x-xai-token-auth`).
+    pub fn lists(&self, name: &str) -> bool {
+        let n = name.to_ascii_lowercase();
+        self.names.contains(&n) || n.starts_with(CORE_PREFIX)
+    }
+
     /// Rates a forwarding list entry. Only a trailing `*` is a wildcard; exact names are
     /// always `Ok` here and are checked with [`Floor::blocks`].
     pub fn pattern_risk(&self, pattern: &str) -> PatternRisk {

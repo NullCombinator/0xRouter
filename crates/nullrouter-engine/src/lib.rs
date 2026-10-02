@@ -12,13 +12,18 @@ pub mod clock;
 pub mod cooldown;
 pub mod files;
 pub mod forwarding;
+pub mod identity;
 pub mod inband;
 pub mod jobs;
 pub mod keys;
+pub mod maintenance;
 pub mod plan;
+pub mod quota;
 pub mod records;
 pub mod redact;
+pub mod signin;
 pub mod state;
+pub mod tokens;
 pub mod upstream;
 
 #[cfg(feature = "testkit")]

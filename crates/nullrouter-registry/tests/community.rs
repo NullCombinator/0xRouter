@@ -93,7 +93,7 @@ fn unsupported_corpus_matches_the_goldens() {
         .filter(|p| p.extension().is_some_and(|e| e == "toml"))
         .collect();
     cases.sort();
-    assert_eq!(cases.len(), 11);
+    assert_eq!(cases.len(), 13);
     for path in cases {
         let name = path.file_name().unwrap().to_str().unwrap();
         let shown = Path::new("unsupported").join(name);

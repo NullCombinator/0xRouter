@@ -38,6 +38,51 @@ pub fn check_query(s: &str) -> Result<(), &'static str> {
     if secret { Err("URL must not carry credentials") } else { Ok(()) }
 }
 
+/// Credential prefixes of well-known providers, each followed by an opaque body.
+const SECRET_PREFIXES: &[&str] = &[
+    "sk-",
+    "sk_",
+    "rk_",
+    "pk_live_",
+    "xai-",
+    "gsk_",
+    "hf_",
+    "r8_",
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "github_pat_",
+    "glpat-",
+    "xoxb-",
+    "xoxp-",
+    "AIza",
+    "ya29.",
+    "Bearer ",
+    "Basic ",
+];
+
+/// Whether a *value* looks like a credential: a well-known key prefix followed by at least
+/// 16 opaque characters, a JWT, or a long opaque mixed-case token. UUIDs, versions,
+/// user-agent strings and short names pass.
+pub fn looks_like_secret(value: &str) -> bool {
+    let opaque = |s: &str| s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.+/=".contains(c));
+    let v = value.trim();
+    if SECRET_PREFIXES
+        .iter()
+        .any(|p| v.strip_prefix(p).is_some_and(|rest| rest.trim().len() >= 16 && opaque(rest.trim())))
+    {
+        return true;
+    }
+    if v.starts_with("eyJ") && v.matches('.').count() == 2 && v.len() >= 30 && opaque(v) {
+        return true;
+    }
+    let mixed = v.chars().any(|c| c.is_ascii_uppercase())
+        && v.chars().any(|c| c.is_ascii_lowercase())
+        && v.chars().any(|c| c.is_ascii_digit());
+    v.len() >= 32 && mixed && opaque(v) && !v.contains('.')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -68,6 +113,33 @@ mod tests {
     fn allowed_keys() {
         for k in ["User-Agent", "Anthropic-Version", "token_url", "tokenEndpoint", "X-Title", "size"] {
             assert_eq!(check_map_key(k), None, "{k} should be allowed");
+        }
+    }
+
+    #[test]
+    fn secret_values() {
+        for v in [
+            "sk-ant-oat01-AbCdEf0123456789AbCdEf0123456789",
+            "xai-0123456789abcdefABCDEF0123456789",
+            "ghp_0123456789abcdefABCDEF",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghijk",
+            "Bearer 0123456789abcdef0123",
+            "Zx8Kq2Lm9Pw4Rt7Yv1Bn6Hc3Jd5Fg0Ss",
+        ] {
+            assert!(looks_like_secret(v), "{v}");
+        }
+        for v in [
+            "b1a00492-073a-47ea-816f-4c329264a828",
+            "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+            "grok-shell/0.2.99 (linux; x86_64)",
+            "xai-grok-cli",
+            "oauth-2025-04-20",
+            "cli-proxy-api",
+            "true",
+            "org:create_api_key",
+            "Iv1.b507a08c87ecfe98",
+        ] {
+            assert!(!looks_like_secret(v), "{v}");
         }
     }
 

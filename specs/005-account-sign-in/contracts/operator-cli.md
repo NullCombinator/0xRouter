@@ -45,8 +45,9 @@ secret = { env = "OPENCODE_GO_KEY" }
 | `quota prune --before DATE [provider [name]]` | deletes older history entries |
 | `quota forget <provider> <name>` | deletes an account's history |
 
-Exit codes: 0 ok; 1 usage or validation error; 2 sign-in refused, expired or abandoned; 3 server
-not running (only for commands that need it).
+Exit codes follow the CLI's existing set (`crates/nullrouter-cli/src/main.rs`): 0 ok; 1 invalid
+input or file; 2 usage; 4 no running server (only for commands that need it); new: 5 sign-in
+refused, expired or abandoned.
 
 ## `accounts signin` output
 
@@ -72,7 +73,7 @@ xai/main: signed in as a…@example.com; applied
 
 anthropic prints the terms warning (research R4) before the link and needs `y`.
 
-Abandoned or refused: `xai/main: sign-in ended: access_denied; nothing saved` (exit 2).
+Abandoned or refused: `xai/main: sign-in ended: access_denied; nothing saved` (exit 5).
 
 ## `accounts list` (text)
 

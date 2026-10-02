@@ -7,11 +7,11 @@ use serde::de::{Deserialize, Deserializer, Error as _};
 use serde::{Serialize, Serializer};
 
 macro_rules! closed_enum {
-    ($(#[$meta:meta])* $name:ident, $what:literal { $($variant:ident = $text:literal),+ $(,)? }) => {
+    ($(#[$meta:meta])* $name:ident, $what:literal { $($(#[$vmeta:meta])* $variant:ident = $text:literal),+ $(,)? }) => {
         $(#[$meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
         pub enum $name {
-            $($variant),+
+            $($(#[$vmeta])* $variant),+
         }
 
         impl $name {

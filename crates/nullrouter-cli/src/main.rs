@@ -3,7 +3,7 @@
 //! files in `$NULLROUTER_HOME` and, where a server is running, tells it to reload.
 //!
 //! Exit codes: 0 ok, 1 invalid input or file, 2 usage, 3 plugin not supported by this core,
-//! 4 no running server.
+//! 4 no running server, 5 sign-in refused, expired or abandoned.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -65,6 +65,9 @@ enum Command {
     /// Bundled, installed and community plugins.
     #[command(subcommand)]
     Plugins(cmd::plugins::Command),
+    /// Provider-reported quota and its poll history.
+    #[command(subcommand)]
+    Quota(cmd::quota::Command),
 }
 
 /// Opens the registry, or prints the startup errors and exits 1.
@@ -90,6 +93,7 @@ fn main() -> ExitCode {
         Command::Behaviour(c) => cmd::behaviour::run(cli.home, c),
         Command::Records(c) => cmd::records::run(cli.home, c, cli.json),
         Command::Plugins(c) => cmd::plugins::run(cli.home, c, cli.json),
+        Command::Quota(c) => cmd::quota::run(cli.home, c, cli.json),
     };
     result.unwrap_or_else(|code| code)
 }

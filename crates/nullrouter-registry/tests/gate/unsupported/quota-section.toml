@@ -1,0 +1,23 @@
+schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "Authorization"
+scheme = "bearer"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/chat/completions"
+wire = "openai-chat"
+
+[quota]
+accounts = "key"
+request = { url = "https://api.acme.example/v1/usage" }
+
+[[quota.window]]
+path = "limits[*]"
+name = "{name|lower}"
+unit = "requests"
+used = "used"
+limit = "limit"
