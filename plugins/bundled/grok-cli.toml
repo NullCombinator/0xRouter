@@ -1,0 +1,88 @@
+# Grok CLI / Grok Build (hand-maintained, schema 2; written for slice 005 from the generated
+# community file at ref/9router@39e36d3). Signed-in accounts only: device code at auth.x.ai,
+# inference and billing at cli-chat-proxy.grok.com.
+schema = 2
+id = "grok-cli"
+category = "apikey"
+alias = "gcli"
+aliases = ["grok-build", "gb"]
+
+# The body goes upstream as the client sent it (spec FR-004c): no endpoint-level `force`
+# until live check L3 shows the server needs one. Effort-suffixed model ids carry their
+# effort, which the client asked for through the model id.
+[endpoints.text]
+url = "https://cli-chat-proxy.grok.com/v1/responses"
+wire = "openai-responses"
+force_stream = true
+retry = { "429" = { retries = 2, delay_ms = 2000 }, "502" = { retries = 2, delay_ms = 1500 }, "503" = { retries = 2, delay_ms = 1500 } }
+
+[signin]
+flow = "device_code"
+client_id = "b1a00492-073a-47ea-816f-4c329264a828"
+scopes = ["openid", "profile", "email", "offline_access", "grok-cli:access", "api:access", "conversations:read", "conversations:write"]
+device_url = "https://auth.x.ai/oauth2/device/code"
+token_url = "https://auth.x.ai/oauth2/token"
+params = { referrer = "grok-build" }
+body = "form"
+refresh_lead = "5m"
+auth = { header = "Authorization", scheme = "bearer" }
+
+[signin.profile]
+url = "https://cli-chat-proxy.grok.com/v1/user"
+headers = { x-xai-token-auth = "xai-grok-cli" }
+email = "email | id_token.email | id_token.preferred_username"
+user_id = "userId | principalId"
+tier = "subscriptionTier"
+
+# The official CLI's identity (spec Clarifications Q3, Q5). Live check L3 narrows this to
+# what the server needs.
+[identity.headers]
+User-Agent = "grok-shell/0.2.99 (linux; x86_64)"
+x-grok-client-identifier = "grok-shell"
+x-grok-client-version = "0.2.99"
+x-grok-session-id = "{session.id}"
+x-grok-conv-id = "{session.id}"
+x-grok-req-id = "{request.id}"
+x-grok-turn-idx = "{session.turn}"
+x-grok-model-override = "{model.upstream}"
+x-email = "{account.email}"
+x-userid = "{account.user_id}"
+x-grok-agent-id = "{install.id}"
+
+[forwarding.to_client]
+headers = ["retry-after", "x-ratelimit-*"]
+
+[[models]]
+id = "grok-build"
+name = "Grok Build"
+context_length = 500000
+max_output_tokens = 64000
+
+[[models]]
+id = "grok-4.5"
+name = "Grok 4.5"
+
+[[models]]
+id = "grok-4.5-high"
+name = "Grok 4.5 (High)"
+upstream_id = "grok-4.5"
+force = { "reasoning.effort" = "high" }
+[[models]]
+id = "grok-4.5-medium"
+name = "Grok 4.5 (Medium)"
+upstream_id = "grok-4.5"
+force = { "reasoning.effort" = "medium" }
+[[models]]
+id = "grok-4.5-low"
+name = "Grok 4.5 (Low)"
+upstream_id = "grok-4.5"
+force = { "reasoning.effort" = "low" }
+
+[display]
+name = "Grok CLI (Grok Build)"
+icon = "auto_awesome"
+color = "#1DA1F2"
+text_icon = "GC"
+website = "https://x.ai"
+notice = { text = "Sign in with your xAI / Grok account (device code). Uses Grok Build subscription credits.", signup_url = "https://grok.com/supergrok" }
+priority = 275

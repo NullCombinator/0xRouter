@@ -120,8 +120,8 @@ fn catalog_unknown_is_not_catalog_empty() {
 
 #[test]
 fn every_bundled_and_community_plugin_passes_the_gate() {
-    assert_eq!(bundled_sources().len(), 5);
-    assert_eq!(community::COMMUNITY.len(), 116);
+    assert_eq!(bundled_sources().len(), 7);
+    assert_eq!(community::COMMUNITY.len(), 114);
     // With the bundled styles loaded, in the bundled set's strict mode. (A community plugin's
     // `credential_fallback` may name another community plugin: that is the fit check's.)
     // The self-hosted community plugins point at localhost, so they need private endpoints.

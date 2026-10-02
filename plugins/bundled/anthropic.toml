@@ -26,6 +26,33 @@ trim_trailing_whitespace = true
 unless = ["thinking_enabled", "tool_call_in_progress"]
 models = ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-5-sonnet-20241022"]
 
+# Claude Pro/Max sign-in (slice 005): Claude Code's public PKCE client, no client secret.
+# The hosted code page shows `code#state` to paste back; loopback is the fallback (research
+# R4, live check L1). Every sign-in shows the terms warning (spec FR-004, Clarifications Q2).
+[signin]
+flow = "pkce"
+client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+scopes = ["org:create_api_key", "user:profile", "user:inference"]
+authorize_url = "https://claude.ai/oauth/authorize"
+token_url = "https://api.anthropic.com/v1/oauth/token"
+redirect = [
+    { uri = "https://console.anthropic.com/oauth/code/callback", kind = "code_page" },
+    { uri = "http://localhost:0/callback", kind = "loopback" },
+]
+params = { code = "true" }
+body = "json"
+verifier_bytes = 32
+refresh_lead = "4h"
+auth = { header = "Authorization", scheme = "bearer" }
+terms_warning = true
+
+# Headers only; the request body is never changed (Clarifications Q1, Q3). `oauth-2025-04-20`
+# is required for subscription tokens and is merged with the client's own beta list.
+[identity.headers]
+anthropic-beta = "oauth-2025-04-20"
+User-Agent = "claude-cli/2.1.280 (external, sdk-cli)"
+X-App = "cli"
+
 [forwarding.to_upstream]
 headers = [
   { name = "anthropic-beta", merge = "append_csv", from_styles = ["anthropic-messages"] },

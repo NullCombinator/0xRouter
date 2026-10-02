@@ -410,3 +410,90 @@ style = "*-to-openai-responses"
 fixture = "stream-thinking"
 field = "**"
 reason = "the reasoning item is closed before the message item opens, and each gets its own output_index; 9router opens the message at the reasoning's index and closes the reasoning after it"
+
+# Slice 005: xai and grok-cli are schema 2 and bundled (T036, T037); anthropic gains
+# Claude Pro/Max sign-in, which 9router keeps in its separate `claude` provider.
+
+[[deviation]]
+provider = "anthropic"
+fixture = "providers"
+field = "clientId"
+reason = "subscription sign-in folded into anthropic from 9router's separate claude provider (slice 005 spec Assumptions)"
+
+[[deviation]]
+provider = "anthropic"
+fixture = "providers"
+field = "tokenUrl"
+reason = "subscription sign-in folded into anthropic from 9router's separate claude provider (slice 005 spec Assumptions)"
+
+[[deviation]]
+provider = "xai"
+fixture = "providers"
+field = "auth"
+reason = "schema 2 declares [auth] explicitly; 9router's default executor sets the bearer header in code"
+
+[[deviation]]
+provider = "xai"
+fixture = "providers"
+field = "validateUrl"
+reason = "dashboard key validation; 0router has no key-test call"
+
+[[deviation]]
+provider = "xai"
+fixture = "providers"
+field = "responsesUrl"
+reason = "9router uses it only for web search, which is outside 0router"
+
+[[deviation]]
+provider = "xai"
+fixture = "providers"
+field = "refreshUrl"
+reason = "[signin] refreshes at its token_url; no separate refresh URL is declared"
+
+[[deviation]]
+provider = "grok-cli"
+fixture = "providers"
+field = "modelsUrl"
+reason = "declared as [models_live] (slice 005 R14)"
+
+[[deviation]]
+provider = "grok-cli"
+fixture = "providers"
+field = "userUrl"
+reason = "declared as [signin.profile] (slice 005 R3)"
+
+[[deviation]]
+provider = "grok-cli"
+fixture = "providers"
+field = "billingUrl"
+reason = "declared as [quota] (slice 005 R11)"
+
+[[deviation]]
+provider = "grok-cli"
+fixture = "providers"
+field = "usage"
+reason = "declared as [quota] (slice 005 R11)"
+
+[[deviation]]
+provider = "grok-cli"
+fixture = "providers"
+field = "clientVersion"
+reason = "executor parameter; the value is a fixed [identity] header (slice 005 R7)"
+
+[[deviation]]
+provider = "grok-cli"
+fixture = "providers"
+field = "clientIdentifier"
+reason = "executor parameter; the value is a fixed [identity] header (slice 005 R7)"
+
+[[deviation]]
+provider = "grok-cli"
+fixture = "providers"
+field = "tokenAuth"
+reason = "never read by 9router's executor; sent as a fixed header on profile, quota and live-model calls only"
+
+[[deviation]]
+provider = "grok-cli"
+fixture = "providers"
+field = "headers"
+reason = "client identity headers apply to signed-in accounts only, as [identity] (slice 005 R7)"

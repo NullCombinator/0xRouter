@@ -596,9 +596,10 @@ if (errors.length) {
   process.exit(1);
 }
 
-// Hand-maintained as schema 2 since slice 003 (T054, T083): never written here again. Their
+// Hand-maintained as schema 2 since slice 003 (T054, T083) and slice 005 (xai, grok-cli: T036,
+// T037): never written here again. Their
 // seed is what 9router says today, for a hand diff after a ref update.
-const CHOSEN = ["anthropic", "openrouter", "opencode-zen", "opencode-go", "elevenlabs"];
+const CHOSEN = ["anthropic", "openrouter", "opencode-zen", "opencode-go", "elevenlabs", "xai", "grok-cli"];
 const leaks = (text) => /client_secret|GOCSPX-/.test(text) || credentials.some((c) => text.includes(c.client_secret));
 
 const bundledDir = join(ROOT, "plugins", "bundled");

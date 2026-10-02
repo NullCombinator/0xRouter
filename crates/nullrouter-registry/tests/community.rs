@@ -20,7 +20,7 @@ fn home() -> tempfile::TempDir {
 #[test]
 fn every_community_plugin_fits_and_loads_or_is_refused_whole() {
     let set = community::community();
-    assert_eq!(set.len(), 116);
+    assert_eq!(set.len(), 114);
     let (mut fits, mut refused) = (0, 0);
     for p in set {
         let file = p.file();
@@ -50,7 +50,7 @@ fn every_community_plugin_fits_and_loads_or_is_refused_whole() {
             }
         }
     }
-    assert_eq!(fits + refused, 116);
+    assert_eq!(fits + refused, 114);
     assert!(fits > 0 && refused > 0, "{fits} fit, {refused} refused");
 }
 

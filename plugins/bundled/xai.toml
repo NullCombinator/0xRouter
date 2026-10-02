@@ -1,0 +1,82 @@
+# xAI / Grok account (hand-maintained, schema 2; written for slice 005 from the generated
+# community file at ref/9router@39e36d3). Serves API-key accounts and signed-in Grok accounts.
+schema = 2
+id = "xai"
+category = "apikey"
+alias = "xai"
+
+[auth]
+kind = "apikey"
+header = "Authorization"
+scheme = "bearer"
+
+[endpoints.text]
+url = "https://api.x.ai/v1/chat/completions"
+wire = "openai-chat"
+vision = true
+
+[endpoints.image]
+url = "https://api.x.ai/v1/images/generations"
+wire = "openai-chat"
+
+# Video: xAI's job API (submit to /v1/videos/generations, poll /v1/videos/{request_id}, a
+# download URL instead of a /content route) doesn't fit the slice 003 job model yet; see
+# slice 005 task T099.
+
+# A public PKCE client (no client secret). Endpoints come from discovery when it stays on
+# x.ai, else the URLs below (ref/9router/src/lib/oauth/services/xai.js:26-47).
+[signin]
+flow = "pkce"
+client_id = "b1a00492-073a-47ea-816f-4c329264a828"
+scopes = ["openid", "profile", "email", "offline_access", "grok-cli:access", "api:access"]
+discovery_url = "https://auth.x.ai/.well-known/openid-configuration"
+authorize_url = "https://auth.x.ai/oauth2/authorize"
+token_url = "https://auth.x.ai/oauth2/token"
+redirect = [{ uri = "http://127.0.0.1:56121/callback", kind = "loopback" }]
+params = { plan = "generic", referrer = "cli-proxy-api", nonce = "{random.hex16}" }
+body = "form"
+verifier_bytes = 96
+refresh_lead = "5m"
+auth = { header = "Authorization", scheme = "bearer" }
+
+[forwarding.to_client]
+headers = ["retry-after", "x-ratelimit-*"]
+
+[[models]]
+id = "grok-4.6"
+name = "Grok 4.6"
+
+[[models]]
+id = "grok-4.5"
+name = "Grok 4.5"
+
+[[models]]
+id = "grok-4"
+name = "Grok 4"
+
+[[models]]
+id = "grok-4-fast-reasoning"
+name = "Grok 4 Fast Reasoning"
+
+[[models]]
+id = "grok-code-fast-1"
+name = "Grok Code Fast"
+
+[[models]]
+id = "grok-3"
+name = "Grok 3"
+
+[[models]]
+id = "grok-2-image-1212"
+name = "Grok 2 Image"
+params = ["n", "response_format"]
+kind = "image"
+
+[display]
+name = "xAI (Grok)"
+icon = "auto_awesome"
+color = "#1DA1F2"
+text_icon = "XA"
+website = "https://x.ai"
+notice = { api_key_url = "https://console.x.ai" }
+priority = 280

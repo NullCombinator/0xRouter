@@ -41,12 +41,12 @@ fn list_install_refuse_and_uninstall() {
     let rows = json_out(home, &["--json", "plugins", "list", "--community"]);
     let rows = rows.as_array().unwrap();
     let community: Vec<&Value> = rows.iter().filter(|r| r["set"] == "community").collect();
-    assert_eq!(community.len(), 116);
+    assert_eq!(community.len(), 114);
     assert!(
         community.iter().all(|r| ["fits", "unsupported"].contains(&r["status"].as_str().unwrap())),
         "{community:?}"
     );
-    assert_eq!(rows.iter().filter(|r| r["set"] == "bundled").count(), 5);
+    assert_eq!(rows.iter().filter(|r| r["set"] == "bundled").count(), 7);
     let without = json_out(home, &["--json", "plugins", "list"]);
     assert!(without.as_array().unwrap().iter().all(|r| r["set"] != "community"));
 

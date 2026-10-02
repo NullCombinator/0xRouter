@@ -62,10 +62,18 @@ impl Registry {
         };
         let oauth = p.oauth.as_ref();
         let declared = p.transport.as_ref();
+        // Schema 2 declares sign-in under `[signin]` (slice 005).
+        let signin = p.signin.as_ref();
         Some(ComposedTransport {
             format: t.format.unwrap_or(WireFormat::Openai),
-            client_id: declared.and_then(|t| t.client_id.as_deref()).or_else(|| oauth?.client_id.as_deref()),
-            token_url: declared.and_then(|t| t.token_url.as_deref()).or_else(|| oauth?.token_url.as_deref()),
+            client_id: declared
+                .and_then(|t| t.client_id.as_deref())
+                .or_else(|| oauth?.client_id.as_deref())
+                .or_else(|| Some(signin?.client_id.as_str())),
+            token_url: declared
+                .and_then(|t| t.token_url.as_deref())
+                .or_else(|| oauth?.token_url.as_deref())
+                .or_else(|| Some(signin?.token_url.as_str())),
             client_secret: match self.credentials.get(&p.id) {
                 Some(ResolvedCredential::Available(s)) => Some(*s),
                 _ => None,
@@ -139,9 +147,11 @@ impl Registry {
                 composed(id)?.token_url
             }),
             auth_urls: pick(&["iflow", "kiro"], |id| declared(id)?.auth_url.as_deref()),
-            // 9router lists grok-cli's token URL as its refresh URL.
-            refresh_urls: pick(&["cline", "kimi", "xai", "grok-cli"], |id| {
-                if id == "grok-cli" { composed(id)?.token_url } else { declared(id)?.refresh_url.as_deref() }
+            // 9router lists grok-cli's token URL as its refresh URL. A schema-2 `[signin]`
+            // refreshes at its token URL (slice 005), so xai's is that too.
+            refresh_urls: pick(&["cline", "kimi", "xai", "grok-cli"], |id| match declared(id) {
+                Some(t) if id != "grok-cli" => t.refresh_url.as_deref(),
+                _ => composed(id)?.token_url,
             }),
             client_ids: pick(&["claude", "codex", "iflow", "kimi", "grok-cli"], |id| composed(id)?.client_id),
         }
