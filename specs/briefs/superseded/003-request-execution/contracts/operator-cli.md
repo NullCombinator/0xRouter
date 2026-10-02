@@ -7,17 +7,17 @@ The existing commands (`check`, `validate`, `resolve`, `model`, `providers`) are
 unchanged. They do not need a running server. `check` also validates `keys.toml` when it
 exists and prints connection and access-key counts, never values.
 
-## `zerorouter-cli serve`
+## `nullrouter-cli serve`
 
 ```text
-zerorouter-cli serve [--listen ADDR] [--observations-cap N]
+nullrouter-cli serve [--listen ADDR] [--observations-cap N]
 ```
 
 | Option | Env | Default |
 |---|---|---|
-| `--listen` | `ZEROROUTER_LISTEN` | `127.0.0.1:20129` |
-| `--observations-cap` | `ZEROROUTER_OBSERVATIONS_CAP` | `10000` (at least 1) |
-| — | `ZEROROUTER_HOME` | `~/.0router` |
+| `--listen` | `NULLROUTER_LISTEN` | `127.0.0.1:20129` |
+| `--observations-cap` | `NULLROUTER_OBSERVATIONS_CAP` | `10000` (at least 1) |
+| — | `NULLROUTER_HOME` | `~/.0router` |
 | — | `FETCH_CONNECT_TIMEOUT_MS` | 60000 (9router parsing) |
 | — | `STREAM_STALL_TIMEOUT_MS` | 360000 (9router parsing) |
 | — | `RUST_LOG` | `info` |
@@ -30,7 +30,7 @@ zerorouter-cli serve [--listen ADDR] [--observations-cap N]
 4. Print one line to stderr:
 
    ```text
-   zerorouter: serving on 127.0.0.1:20129 (47 connectable providers, 2 connections, 1 access key); operator socket ~/.0router/run/operator.sock
+   nullrouter: serving on 127.0.0.1:20129 (47 connectable providers, 2 connections, 1 access key); operator socket ~/.0router/run/operator.sock
    ```
 
 **Stopping**: on SIGINT or SIGTERM, stop accepting new requests, let in-flight requests
@@ -45,7 +45,7 @@ run for up to 10 s, then exit 0.
 | 2 | usage error |
 | 3 | bind error (the address is in use, or another server owns the socket) |
 
-## `zerorouter-cli reload`
+## `nullrouter-cli reload`
 
 It connects to the operator socket and sends `reload`.
 
@@ -55,10 +55,10 @@ It connects to the operator socket and sends `reload`.
   state.
 - **No server**: prints `no running server at <socket>` and exits 3.
 
-## `zerorouter-cli obs`
+## `nullrouter-cli obs`
 
 ```text
-zerorouter-cli obs [--provider P] [--unified U] [--agent A] [--session S]
+nullrouter-cli obs [--provider P] [--unified U] [--agent A] [--session S]
                    [--endpoint chat|messages|count_tokens|embeddings|models]
                    [--since T] [--until T] [--include-count-tokens]
                    [--limit N] [--json]
@@ -84,7 +84,7 @@ AT                    AGENT   SESSION        TARGET                       CONN  
 
 ## Operator channel protocol
 
-- **Transport**: the Unix socket `$ZEROROUTER_HOME/run/operator.sock`.
+- **Transport**: the Unix socket `$NULLROUTER_HOME/run/operator.sock`.
   - The directory is 0700 and the socket is 0600.
   - A peer whose uid is not the server's is closed without a response.
 - **Framing**: one UTF-8 JSON object per line. There is one request per connection, and

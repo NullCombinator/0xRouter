@@ -49,17 +49,17 @@ passthrough); `ring` for SHA-256 (heavier than `sha2`).
 
 | Crate | Role | I/O |
 |---|---|---|
-| `zerorouter-registry` (extended) | plugin schema 2, API-style files, gate additions, fit check, security floor, community set | files only |
-| `zerorouter-wire` (new) | style interpreter: intermediate representation (IR), request and response codecs, stream readers and writers, usage, token estimator, error bodies | none (pure) |
-| `zerorouter-engine` (new) | accounts, agent keys, classification, attempt loop, stay-warm, break handling, upstream client, records | network |
-| `zerorouter-server` (new) | axum router built from style routes, access-key check, relay, operator socket | network |
-| `zerorouter-cli` (extended) | `serve`, `accounts`, `keys`, `records`, `plugins`, `behaviour` | — |
+| `nullrouter-registry` (extended) | plugin schema 2, API-style files, gate additions, fit check, security floor, community set | files only |
+| `nullrouter-wire` (new) | style interpreter: intermediate representation (IR), request and response codecs, stream readers and writers, usage, token estimator, error bodies | none (pure) |
+| `nullrouter-engine` (new) | accounts, agent keys, classification, attempt loop, stay-warm, break handling, upstream client, records | network |
+| `nullrouter-server` (new) | axum router built from style routes, access-key check, relay, operator socket | network |
+| `nullrouter-cli` (extended) | `serve`, `accounts`, `keys`, `records`, `plugins`, `behaviour` | — |
 
-**Rationale**: `zerorouter-wire` has no I/O, so translation is unit-tested and benchmarked
+**Rationale**: `nullrouter-wire` has no I/O, so translation is unit-tested and benchmarked
 in isolation, and a parity audit targets one crate. The engine has no axum types, so it is
 testable without HTTP. The server is thin.
 
-**Alternatives**: one big `zerorouter-core` (slower builds, blurred audit targets); putting
+**Alternatives**: one big `nullrouter-core` (slower builds, blurred audit targets); putting
 styles inside the registry crate (would pull runtime codecs into the load path).
 
 ## R3. Client API styles as data
@@ -78,7 +78,7 @@ styles inside the registry crate (would pull runtime codecs into the load path).
   thinking forms, async jobs, named cross-style repairs). This is the slice-002 rule for
   quirks, hooks and formats.
 
-The core translates through one IR (`zerorouter-wire::ir`): a request IR (messages, parts,
+The core translates through one IR (`nullrouter-wire::ir`): a request IR (messages, parts,
 tools, params), a stream event IR (block start/delta/stop, tool-call start/argument
 fragment/stop, usage, finish, error, keepalive) and a response IR. Each style file drives
 one decoder and one encoder for each direction.
@@ -287,7 +287,7 @@ upstream error, validation refusal), the body is the client style's own error sh
 its `[errors]` template:
 - the standard message field holds: a one-line summary, the record id, then one line per
   attempt (`provider/account model: reason`);
-- a structured extra field `zerorouter` holds `{ record_id, attempts: [{provider, account,
+- a structured extra field `nullrouter` holds `{ record_id, attempts: [{provider, account,
   model, status, reason, retries}] }`. Account names are shown, never keys;
 - header `x-0router-request-id: <record id>` on every response, success or error;
 - status: a non-fallback upstream 4xx keeps its status; all-attempts-failed returns 503
@@ -371,7 +371,7 @@ is exact parity (`tests/unit/count-tokens.test.js`, 3 cases). The record marks i
 is present), `GET /v1beta/models` (Gemini shape). Listed: every unified model and every
 direct `<provider>/<model>` of every type, for providers with at least one account. Each
 entry carries its type in the style's own field where one exists (Gemini
-`supportedGenerationMethods`), else in an extra `zerorouter` field. 9router has no
+`supportedGenerationMethods`), else in an extra `nullrouter` field. 9router has no
 Anthropic list; 0router adds it because Claude Code's gateway model discovery calls it.
 
 ## R16. Non-text model types
@@ -486,9 +486,9 @@ generator-emitted `requires = ["9router-executor:<id>"]` for providers with a sp
 nothing.
 
 Packaging: the 116 community plugins live in `plugins/community/`, generated, embedded in
-the binary (no network). `zerorouter plugins list --community` shows fit status;
-`zerorouter plugins install <id>` runs gate + fit, then copies the file to
-`$ZEROROUTER_HOME/plugins/`. Fit is re-checked on every load.
+the binary (no network). `nullrouter plugins list --community` shows fit status;
+`nullrouter plugins install <id>` runs gate + fit, then copies the file to
+`$NULLROUTER_HOME/plugins/`. Fit is re-checked on every load.
 
 Generator: `generate.mjs` writes chosen-five seeds to `tools/gen-bundled/seeds/` and
 community files to `plugins/community/`; it stops emitting web search/fetch sections.
@@ -501,8 +501,8 @@ now differ from 9router, the difference is listed in `tests/parity/deviations.to
 ## R20. Operator state and hot apply
 
 **Decision**:
-- `$ZEROROUTER_HOME/accounts.toml`: provider accounts (`provider`, `name`, secret literal
-  or `{ env = "VAR" }`, order). `$ZEROROUTER_HOME/keys.toml`: agent keys (id, name,
+- `$NULLROUTER_HOME/accounts.toml`: provider accounts (`provider`, `name`, secret literal
+  or `{ env = "VAR" }`, order). `$NULLROUTER_HOME/keys.toml`: agent keys (id, name,
   digest, created, revoked, break-behaviour override). Both 0600; 0router refuses to start
   if either is group- or world-readable.
 - `config.toml` (slice 002) gains `[server] listen` (default `127.0.0.1:20129`) and
@@ -510,7 +510,7 @@ now differ from 9router, the difference is listed in `tests/parity/deviations.to
 - Secrets enter the CLI on stdin, never argv. They are never printed back: listings show
   the name and the last four characters.
 - The CLI writes files atomically (temp + rename), then asks a running server to reload
-  over the operator socket `$ZEROROUTER_HOME/run/operator.sock` (0600, NDJSON requests).
+  over the operator socket `$NULLROUTER_HOME/run/operator.sock` (0600, NDJSON requests).
   The server swaps an `ArcSwap` snapshot; in-flight requests keep the old one. Without a
   running server the change applies at next start.
 - Records are queried over the same socket (they exist only in the server's memory).
@@ -557,7 +557,7 @@ under `specs/003-request-pipeline/bench-baseline.md`.
 ## R25. Test strategy
 
 **Decision**:
-- **Unit and parity** (`zerorouter-wire`): 9router translator fixtures regenerated through
+- **Unit and parity** (`nullrouter-wire`): 9router translator fixtures regenerated through
   the `generate.mjs` resolve hook (oracle extension), plus deviation assertions (R4).
 - **Engine**: in-process axum mock upstreams scripted per test (status sequences, cut
   streams after N events, stalls, in-band errors, 429 with `retry-after`), covering R6–R10.

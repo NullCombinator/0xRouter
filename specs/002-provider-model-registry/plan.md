@@ -6,7 +6,7 @@
 
 ## Summary
 
-The first compiling slice of 0router is a Rust library, `zerorouter-registry`. It loads
+The first compiling slice of 0router is a Rust library, `nullrouter-registry`. It loads
 provider entities from strict, data-only TOML plugins, applies operator state from
 `~/.0router/config.toml` (unified models, per-provider settings, and replace/decline
 decisions), and answers lookups:
@@ -19,7 +19,7 @@ Snapshots are immutable and swapped atomically on explicit reload.
 The 121 bundled plugins are generated from 9router's *evaluated* registry by a Node dev
 tool. The four hardcoded OAuth client secrets move into a core credential table, bound
 to their OAuth hosts. Parity is checked against oracle fixtures regenerated from the
-pinned `ref/9router`. A thin `zerorouter-cli` exposes `check`, `validate`, `resolve`, and
+pinned `ref/9router`. A thin `nullrouter-cli` exposes `check`, `validate`, `resolve`, and
 `model` for operators and the quickstart.
 
 ## Technical Context
@@ -32,7 +32,7 @@ the dev-time generator.
 ([research R12](research.md#r12-crates))
 
 **Storage**: Files only. Bundled plugins are embedded in the binary. User plugins live
-in `$ZEROROUTER_HOME/plugins/*.toml` and operator state in `$ZEROROUTER_HOME/config.toml`.
+in `$NULLROUTER_HOME/plugins/*.toml` and operator state in `$NULLROUTER_HOME/config.toml`.
 ([R7](research.md#r7-operator-owned-state-location-and-format))
 
 **Testing**: `cargo test`, split into four kinds:
@@ -125,8 +125,8 @@ specs/002-provider-model-registry/
 ├── quickstart.md        # Phase 1: runnable validation guide
 ├── contracts/
 │   ├── plugin-schema.md     # Plugin TOML format + rejection rules
-│   ├── operator-config.md   # $ZEROROUTER_HOME layout + config.toml
-│   └── registry-api.md      # Library API + zerorouter-cli
+│   ├── operator-config.md   # $NULLROUTER_HOME layout + config.toml
+│   └── registry-api.md      # Library API + nullrouter-cli
 ├── checklists/
 │   └── requirements.md
 └── tasks.md             # Phase 2 (/speckit-tasks, not created here)
@@ -137,7 +137,7 @@ specs/002-provider-model-registry/
 ```text
 Cargo.toml                          # [workspace]
 crates/
-├── zerorouter-registry/
+├── nullrouter-registry/
 │   ├── Cargo.toml
 │   ├── build.rs                    # embeds plugins/bundled/*.toml via include_str! table
 │   ├── src/
@@ -165,7 +165,7 @@ crates/
 │   │   └── reload.rs               # FR-024–026, SC-007
 │   └── benches/
 │       └── resolve.rs
-└── zerorouter-cli/
+└── nullrouter-cli/
     ├── Cargo.toml
     └── src/
         ├── main.rs                 # clap dispatch; exit codes 0/1/2
@@ -184,7 +184,7 @@ tests/
 
 **Structure Decision**:
 - A Cargo workspace with `crates/`, so later slices (routing, execution, server) can be
-  added as sibling crates that depend on `zerorouter-registry`.
+  added as sibling crates that depend on `nullrouter-registry`.
 - Generated artefacts are committed. Each header records the `ref/9router` SHA, and
   `generate.mjs` is the only writer.
 - Parity fixtures live at the repo root (`tests/fixtures/9router/`) because later slices

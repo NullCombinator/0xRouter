@@ -9,8 +9,8 @@ this brief. Don't accept it.
 
 | Capability | Status | Evidence |
 |---|---|---|
-| Provider entities from TOML plugins, validation gate, bundled set | shipped | slice 002, `crates/zerorouter-registry`, parity tests |
-| Unified models (declare, look up, map to upstream IDs) | shipped | slice 002, `zerorouter resolve` / `model` |
+| Provider entities from TOML plugins, validation gate, bundled set | shipped | slice 002, `crates/nullrouter-registry`, parity tests |
+| Unified models (declare, look up, map to upstream IDs) | shipped | slice 002, `nullrouter resolve` / `model` |
 | Plugin safety (data only, secrets in the core credential table) | shipped (load time) | 002 validation corpus, `credentials/` |
 | Non-text model types | partial | typed in the registry; nothing executes them |
 | Request execution (server, accounts, streaming) | absent | → this slice |

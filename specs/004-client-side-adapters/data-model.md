@@ -15,7 +15,7 @@ validation and states. Slice 003 entities (`AgentKey`, `Attempt`, `RequestRecord
 | `WasmHash` | `sha256:` + hex of `module.wasm` | — |
 | `AlertId` | `al_` + 10 chars | — |
 
-## Operator state (files in `$ZEROROUTER_HOME`)
+## Operator state (files in `$NULLROUTER_HOME`)
 
 ### AgentKey (`keys.toml`, extended)
 
@@ -30,7 +30,7 @@ validation and states. Slice 003 entities (`AgentKey`, `Attempt`, `RequestRecord
 | Field | Default | Rule |
 |---|---|---|
 | `catalogue_url` | this repository's raw `catalogue/index.toml` URL | Must be HTTPS and pass the SSRF rules (003 R17) |
-| `builder` | `zerorouter-builder` found on `PATH`, else absent | Path to the builder binary. Absent means installs stop at `queued` |
+| `builder` | `nullrouter-builder` found on `PATH`, else absent | Path to the builder binary. Absent means installs stop at `queued` |
 | `request_deadline_ms` | 20 | 1–1000 |
 | `event_deadline_ms` | 2 | 1–100 |
 | `memory_mib` | 64 | 1–512 |

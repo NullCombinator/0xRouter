@@ -4,8 +4,8 @@ import os
 from anthropic import Anthropic, APIStatusError
 from failed import check
 
-c = Anthropic(base_url=os.environ["ZR_BASE"], api_key=os.environ["ZR_KEY"], max_retries=0)
-model = os.environ["ZR_MODEL"]
+c = Anthropic(base_url=os.environ["NR_BASE"], api_key=os.environ["NR_KEY"], max_retries=0)
+model = os.environ["NR_MODEL"]
 messages = [{"role": "user", "content": "Say hello."}]
 
 r = c.messages.create(model=model, max_tokens=64, messages=messages)

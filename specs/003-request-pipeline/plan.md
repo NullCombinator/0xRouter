@@ -6,7 +6,7 @@
 
 ## Summary
 
-Slice 003 is the first slice a client can use end to end. `zerorouter serve` listens on
+Slice 003 is the first slice a client can use end to end. `nullrouter serve` listens on
 `127.0.0.1:20129` and accepts four client API styles: OpenAI Chat Completions, Anthropic
 Messages, OpenAI Responses and Gemini generateContent. It serves them from the operator's
 API-key accounts on five bundled providers: anthropic, openrouter, opencode-zen,
@@ -14,7 +14,7 @@ opencode-go and elevenlabs.
 
 The approach:
 - **Styles are data.** Each style is a TOML file (`styles/bundled/`) read by a pure
-  interpreter crate, `zerorouter-wire`. The file gives routes, key and session carriers,
+  interpreter crate, `nullrouter-wire`. The file gives routes, key and session carriers,
   codecs for each model type, stream grammar and error shape. Every stateful algorithm is a
   named core primitive chosen from a closed set. Any client style reaches any provider
   through one intermediate representation. ([R3](research.md#r3-client-api-styles-as-data))
@@ -28,7 +28,7 @@ The approach:
 
   ([R17](research.md#r17-provider-schema-2-and-the-chosen-five),
   [R18](research.md#r18-forwarding-and-the-security-floor))
-- **Failures stay inside 0router.** `zerorouter-engine` classifies each failure with
+- **Failures stay inside 0router.** `nullrouter-engine` classifies each failure with
   9router's rules. It retries the same account first (stay warm), then other accounts, then
   other members of the unified model. Once output has reached the client, a stream break
   continues where the provider declares support. Otherwise the operator's choice applies:
@@ -57,7 +57,7 @@ HTTP/2, multipart), `futures-util`, `bytes`, `memchr`, `serde_json` (`raw_value`
 ([R1](research.md#r1-toolchain-and-crates))
 
 **Storage**: Files and memory only.
-- `$ZEROROUTER_HOME/accounts.toml` and `keys.toml`, both mode 0600.
+- `$NULLROUTER_HOME/accounts.toml` and `keys.toml`, both mode 0600.
 - `config.toml`, extended with `[server]`, `[pipeline]` and `allow_private_endpoints`.
 - Installed community plugins in `plugins/`.
 - Records, the stay-warm map, cooldowns and video jobs live in memory.
@@ -175,7 +175,7 @@ specs/003-request-pipeline/
 ```text
 Cargo.toml                          # [workspace] gains wire, engine, server
 crates/
-├── zerorouter-registry/            # extended
+├── nullrouter-registry/            # extended
 │   └── src/
 │       ├── schema/                 # + style.rs, endpoint.rs, forwarding.rs, session.rs
 │       ├── validate/               # + style gate, SSRF, floor, template placeholders
@@ -183,7 +183,7 @@ crates/
 │       ├── convert.rs              # schema 1 → 2 for community plugins
 │       ├── floor.rs                # security floor names and checks
 │       └── community.rs            # embedded community set, install/uninstall
-├── zerorouter-wire/                # new, no I/O
+├── nullrouter-wire/                # new, no I/O
 │   ├── src/
 │   │   ├── ir/                     # request, stream event, response IR
 │   │   ├── template.rs             # typed templates: encode + reverse decode
@@ -196,7 +196,7 @@ crates/
 │   │   └── error_body.rs           # informational error bodies per style
 │   ├── tests/                      # parity vs tests/fixtures/9router/translate/*, deviations
 │   └── benches/wire.rs
-├── zerorouter-engine/              # new
+├── nullrouter-engine/              # new
 │   ├── src/
 │   │   ├── accounts.rs             # accounts.toml, SecretString, host binding
 │   │   ├── keys.rs                 # keys.toml, digests, AgentId
@@ -213,7 +213,7 @@ crates/
 │   ├── tests/                      # scripted mock upstreams: retry, fallback, breaks,
 │   │                               #   usage, cancellation, reuse, secrets sentinel
 │   └── benches/engine.rs
-├── zerorouter-server/              # new
+├── nullrouter-server/              # new
 │   ├── src/
 │   │   ├── router.rs               # axum router from style routes, discriminators
 │   │   ├── auth.rs                 # key check before body read
@@ -222,7 +222,7 @@ crates/
 │   │   └── operator.rs             # Unix socket, NDJSON protocol
 │   ├── tests/                      # end-to-end on loopback
 │   └── benches/server.rs
-└── zerorouter-cli/                 # extended
+└── nullrouter-cli/                 # extended
     └── src/cmd/                    # + serve, accounts, keys, behaviour, records, plugins
 styles/
 └── bundled/                        # openai-chat, anthropic-messages, openai-responses, gemini
@@ -244,9 +244,9 @@ tests/
 ```
 
 **Structure Decision**:
-- `zerorouter-wire` has no I/O, so translation is tested and benchmarked on its own, and
+- `nullrouter-wire` has no I/O, so translation is tested and benchmarked on its own, and
   the parity audit targets one crate.
-- `zerorouter-engine` has no axum types. `zerorouter-server` is a thin layer over it.
+- `nullrouter-engine` has no axum types. `nullrouter-server` is a thin layer over it.
 - The five bundled plugins become hand-maintained schema-2 files. The generator writes only
   the community set and the oracle fixtures.
 - Style files sit at the repo root beside `plugins/`, because they are the same kind of

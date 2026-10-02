@@ -7,9 +7,9 @@
 - **Baseline name**: `slice-003`, saved in `target/criterion` (local only)
 
 ```bash
-cargo bench -p zerorouter-wire   --bench wire   -- --save-baseline slice-003
-cargo bench -p zerorouter-engine --bench engine -- --save-baseline slice-003
-cargo bench -p zerorouter-server --bench server -- --save-baseline slice-003
+cargo bench -p nullrouter-wire   --bench wire   -- --save-baseline slice-003
+cargo bench -p nullrouter-engine --bench engine -- --save-baseline slice-003
+cargo bench -p nullrouter-server --bench server -- --save-baseline slice-003
 # compare later with --baseline slice-003
 ```
 
@@ -38,7 +38,7 @@ the client's delayed ACK. `serve::run` now sets it, and
 `tests/timing.rs::first_stream_frames_are_sent_without_delay` guards against a return.
 The row above is the run after the fix.
 
-## Wire (`zerorouter-wire`, no I/O)
+## Wire (`nullrouter-wire`, no I/O)
 
 Request: decode plus encode of an agent turn (system prompt, 10 exchanges each with a tool
 call and its result, 2 tools). Rows are the client style; columns are the wire.
@@ -69,7 +69,7 @@ Usage extraction from a whole response:
 |---|---|---|---|
 | 1.157 µs | 1.644 µs | 1.443 µs | 1.191 µs |
 
-## Server (`zerorouter-server`)
+## Server (`nullrouter-server`)
 
 | Bench | Median |
 |---|---|

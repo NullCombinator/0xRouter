@@ -5,12 +5,12 @@ Audited 2026-10-02 against `ref/9router` on its request path (`chatCore` → `Ba
 
 | Rust | 9router |
 |---|---|
-| `crates/zerorouter-engine/src/classify.rs` | `open-sse/config/errorConfig.js` (`ERROR_RULES`, `BACKOFF_CONFIG`), `open-sse/services/accountFallback.js` (`checkFallbackError`, `getQuotaCooldown`), `open-sse/config/runtimeConfig.js` (`DEFAULT_RETRY_CONFIG`) |
-| `crates/zerorouter-engine/src/cooldown.rs` | `src/sse/services/auth.js` (`markAccountUnavailable`, `clearAccountError`) |
-| `crates/zerorouter-engine/src/attempt.rs`, `upstream.rs` (budgets, timeouts) | `open-sse/executors/base.js` (`tryRetry`, connect timer), `open-sse/handlers/chatCore/streamingHandler.js` (stall) |
-| `crates/zerorouter-wire/src/codec/` | `open-sse/translator/*`; evidence: `tests/parity_translate.rs`, `tests/deviations.rs`, `tests/bundled.rs` against the generated oracle |
-| `crates/zerorouter-wire/src/usage.rs` | `open-sse/utils/usageTracking.js`; evidence: `tests/usage.rs` (`usage_matches_the_9router_oracle`) |
-| `crates/zerorouter-wire/src/estimate.rs` | `src/app/api/v1/messages/count_tokens/route.js` (`estimateAnthropicInputTokens`); evidence: `tests/estimate.rs` |
+| `crates/nullrouter-engine/src/classify.rs` | `open-sse/config/errorConfig.js` (`ERROR_RULES`, `BACKOFF_CONFIG`), `open-sse/services/accountFallback.js` (`checkFallbackError`, `getQuotaCooldown`), `open-sse/config/runtimeConfig.js` (`DEFAULT_RETRY_CONFIG`) |
+| `crates/nullrouter-engine/src/cooldown.rs` | `src/sse/services/auth.js` (`markAccountUnavailable`, `clearAccountError`) |
+| `crates/nullrouter-engine/src/attempt.rs`, `upstream.rs` (budgets, timeouts) | `open-sse/executors/base.js` (`tryRetry`, connect timer), `open-sse/handlers/chatCore/streamingHandler.js` (stall) |
+| `crates/nullrouter-wire/src/codec/` | `open-sse/translator/*`; evidence: `tests/parity_translate.rs`, `tests/deviations.rs`, `tests/bundled.rs` against the generated oracle |
+| `crates/nullrouter-wire/src/usage.rs` | `open-sse/utils/usageTracking.js`; evidence: `tests/usage.rs` (`usage_matches_the_9router_oracle`) |
+| `crates/nullrouter-wire/src/estimate.rs` | `src/app/api/v1/messages/count_tokens/route.js` (`estimateAnthropicInputTokens`); evidence: `tests/estimate.rs` |
 
 ## Checked and matching
 

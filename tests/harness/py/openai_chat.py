@@ -4,8 +4,8 @@ import os
 from openai import APIStatusError, OpenAI
 from failed import check
 
-c = OpenAI(base_url=os.environ["ZR_BASE"] + "/v1", api_key=os.environ["ZR_KEY"], max_retries=0)
-model = os.environ["ZR_MODEL"]
+c = OpenAI(base_url=os.environ["NR_BASE"] + "/v1", api_key=os.environ["NR_KEY"], max_retries=0)
+model = os.environ["NR_MODEL"]
 messages = [{"role": "user", "content": "Say hello."}]
 
 r = c.chat.completions.create(model=model, messages=messages)

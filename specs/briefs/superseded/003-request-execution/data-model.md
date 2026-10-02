@@ -2,7 +2,7 @@
 
 **Feature**: [spec.md](spec.md) | **Research**: [research.md](research.md)
 
-All types live in `crates/zerorouter-server` unless noted otherwise. Registry types
+All types live in `crates/nullrouter-server` unless noted otherwise. Registry types
 (`Registry`, `ProviderEntity`, `Transport`, `UnifiedModel`, `Resolution`, `NotFound`,
 `ModelInfo`, `WireFormat`) are 002's and are used unchanged.
 

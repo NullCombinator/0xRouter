@@ -8,9 +8,9 @@
 //   plugins/community/<id>.toml for every provider except the chosen five, whose schema 2
 //     files in plugins/bundled/ are hand-maintained
 //   tools/gen-bundled/seeds/<id>.json for the chosen five: their evaluated 9router entry
-//   crates/zerorouter-registry/src/schema/oauth_params.rs
-//   crates/zerorouter-registry/src/schema/section_formats.rs
-//   crates/zerorouter-registry/src/credentials/bundled.rs
+//   crates/nullrouter-registry/src/schema/oauth_params.rs
+//   crates/nullrouter-registry/src/schema/section_formats.rs
+//   crates/nullrouter-registry/src/credentials/bundled.rs
 //   tests/fixtures/9router/*.json
 //   tests/fixtures/9router/translate/<from>-to-<to>/<case>.json, from tools/gen-bundled/translate-inputs
 //
@@ -637,7 +637,7 @@ for (const id of CHOSEN) {
 }
 
 const rsList = (xs) => xs.map((x) => `    ${JSON.stringify(x)},`).join("\n");
-const schemaDir = join(ROOT, "crates", "zerorouter-registry", "src", "schema");
+const schemaDir = join(ROOT, "crates", "nullrouter-registry", "src", "schema");
 writeFileSync(join(schemaDir, "oauth_params.rs"), `// ${HEADER}
 
 /// \`oauth.params\` keys the core knows. Anything else is rejected (research R5).
@@ -658,7 +658,7 @@ const credRs = credentials.map((c) => `    RawCredential {
         client_secret: ${JSON.stringify(c.client_secret)},
         bound_hosts: &[${c.bound_hosts.map((h) => JSON.stringify(h)).join(", ")}],
     },`).join("\n");
-writeFileSync(join(ROOT, "crates", "zerorouter-registry", "src", "credentials", "bundled.rs"), `// ${HEADER}
+writeFileSync(join(ROOT, "crates", "nullrouter-registry", "src", "credentials", "bundled.rs"), `// ${HEADER}
 //
 // Public "installed-app" OAuth client secrets that 9router ships in its source. They live
 // here, in the core, so no plugin file or plugin-visible type ever carries them (FR-012).

@@ -10,14 +10,14 @@ success criterion. Commands run from the repo root.
 2. **Node ≥ 22**: only needed to regenerate bundled plugins or oracle fixtures.
 3. A scratch operator home, so your real `~/.0router` is untouched:
    ```bash
-   export ZEROROUTER_HOME="$(mktemp -d)"
+   export NULLROUTER_HOME="$(mktemp -d)"
    ```
 
 ## 1. Regenerate the bundled set and the oracle (only after updating `ref/9router`)
 
 ```bash
 node tools/gen-bundled/generate.mjs
-git diff --stat plugins/bundled tests/fixtures/9router crates/zerorouter-registry/src/credentials
+git diff --stat plugins/bundled tests/fixtures/9router crates/nullrouter-registry/src/credentials
 ```
 
 **Expect**:
@@ -28,7 +28,7 @@ git diff --stat plugins/bundled tests/fixtures/9router crates/zerorouter-registr
 ## 2. Parity with 9router (US1, US2 · SC-001, SC-004)
 
 ```bash
-cargo test -p zerorouter-registry --test parity
+cargo test -p nullrouter-registry --test parity
 ```
 
 **Expect**: all pass. The tests assert:
@@ -45,7 +45,7 @@ cargo test -p zerorouter-registry --test parity
 
 ```bash
 grep -rlE 'GOCSPX-|REDACTED_IFLOW_OAUTH_CLIENT_SECRET|client_secret' plugins/ && echo FAIL || echo OK
-cargo test -p zerorouter-registry --test secrets   # scans every bundled file for all 4 table values
+cargo test -p nullrouter-registry --test secrets   # scans every bundled file for all 4 table values
 ```
 
 **Expect**: `OK`.
@@ -53,8 +53,8 @@ cargo test -p zerorouter-registry --test secrets   # scans every bundled file fo
 ## 4. Validation gate (US4 · SC-003)
 
 ```bash
-cargo test -p zerorouter-registry --test gate
-cargo run -q -p zerorouter-cli -- validate crates/zerorouter-registry/tests/gate/invalid/*.toml
+cargo test -p nullrouter-registry --test gate
+cargo run -q -p nullrouter-cli -- validate crates/nullrouter-registry/tests/gate/invalid/*.toml
 ```
 
 **Expect**:
@@ -68,7 +68,7 @@ The corpus has at least one file per rule in
 ## 5. Declare and resolve a unified model (US3 · SC-005)
 
 ```bash
-cat > "$ZEROROUTER_HOME/config.toml" <<'EOF'
+cat > "$NULLROUTER_HOME/config.toml" <<'EOF'
 schema = 1
 [[unified_model]]
 name = "sonnet"
@@ -77,7 +77,7 @@ members = [
   { provider = "openrouter", model = "anthropic/claude-sonnet-4.5" },
 ]
 EOF
-cargo run -q -p zerorouter-cli -- resolve sonnet --json
+cargo run -q -p nullrouter-cli -- resolve sonnet --json
 ```
 
 **Expect**:
@@ -88,28 +88,28 @@ cargo run -q -p zerorouter-cli -- resolve sonnet --json
 ## 6. Addressing rules (Clarify Q1, Q2)
 
 ```bash
-cargo run -q -p zerorouter-cli -- resolve kr/claude-sonnet-4-5 --json          # direct, catalogued
-cargo run -q -p zerorouter-cli -- resolve openai/brand-new-model --json         # direct, uncatalogued → allowed by default
-cargo run -q -p zerorouter-cli -- resolve claude-sonnet-4.5; echo "exit=$?"     # bare, undeclared → exit=2
-printf '\n[provider.openai]\nallow_uncatalogued_models = false\n' >> "$ZEROROUTER_HOME/config.toml"
-cargo run -q -p zerorouter-cli -- resolve openai/brand-new-model; echo "exit=$?" # → exit=2
+cargo run -q -p nullrouter-cli -- resolve kr/claude-sonnet-4-5 --json          # direct, catalogued
+cargo run -q -p nullrouter-cli -- resolve openai/brand-new-model --json         # direct, uncatalogued → allowed by default
+cargo run -q -p nullrouter-cli -- resolve claude-sonnet-4.5; echo "exit=$?"     # bare, undeclared → exit=2
+printf '\n[provider.openai]\nallow_uncatalogued_models = false\n' >> "$NULLROUTER_HOME/config.toml"
+cargo run -q -p nullrouter-cli -- resolve openai/brand-new-model; echo "exit=$?" # → exit=2
 ```
 
 ## 7. Conflicts and credential binding (US4 scenarios 5–7 · FR-012a)
 
 ```bash
-mkdir -p "$ZEROROUTER_HOME/plugins"
+mkdir -p "$NULLROUTER_HOME/plugins"
 sed 's#oauth2.googleapis.com#evil.example#' plugins/bundled/gemini-cli.toml \
-  | sed '/^# Generated/d' > "$ZEROROUTER_HOME/plugins/gemini-cli.toml"
-cargo run -q -p zerorouter-cli -- check                     # conflict pending; bundled gemini-cli active
-printf '\n[plugin_decisions]\ngemini-cli = "replace"\n' >> "$ZEROROUTER_HOME/config.toml"
-cargo run -q -p zerorouter-cli -- check                     # user gemini-cli active; credential WITHHELD (evil.example)
+  | sed '/^# Generated/d' > "$NULLROUTER_HOME/plugins/gemini-cli.toml"
+cargo run -q -p nullrouter-cli -- check                     # conflict pending; bundled gemini-cli active
+printf '\n[plugin_decisions]\ngemini-cli = "replace"\n' >> "$NULLROUTER_HOME/config.toml"
+cargo run -q -p nullrouter-cli -- check                     # user gemini-cli active; credential WITHHELD (evil.example)
 ```
 
 ## 8. Reload safety (FR-024 – FR-026 · SC-007)
 
 ```bash
-cargo test -p zerorouter-registry --test reload
+cargo test -p nullrouter-registry --test reload
 ```
 
 **Expect**: pass. The test runs repeated reloads while many threads resolve targets. It
@@ -119,7 +119,7 @@ file leaves the old snapshot serving.
 ## 9. Performance gate (Constitution · SC-006)
 
 ```bash
-cargo bench -p zerorouter-registry --bench resolve
+cargo bench -p nullrouter-registry --bench resolve
 ```
 
 **Expect**:
@@ -127,7 +127,7 @@ cargo bench -p zerorouter-registry --bench resolve
 - `resolve` p50 under 1 µs.
 
 Record the numbers as the Criterion baseline for later slices:
-`cargo bench -p zerorouter-registry --bench resolve -- --save-baseline slice-002`.
+`cargo bench -p nullrouter-registry --bench resolve -- --save-baseline slice-002`.
 
 Measured for slice 002 (release build, median): load ≈ 15 ms; resolve direct ≈ 465 ns,
 direct with suffix ≈ 869 ns, unified ≈ 48 ns, uncatalogued ≈ 226 ns, not found ≈ 88 ns.

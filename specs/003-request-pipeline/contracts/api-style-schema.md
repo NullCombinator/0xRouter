@@ -108,7 +108,7 @@ Repairs run only when client style ≠ provider wire, and never change message t
 
 ```toml
 [errors]
-body = { type = "error", error = { type = "{error.type}", message = "{error.message}" }, zerorouter = "{error.details}" }
+body = { type = "error", error = { type = "{error.type}", message = "{error.message}" }, nullrouter = "{error.details}" }
 type_map = { 400 = "invalid_request_error", 401 = "authentication_error", 403 = "permission_error", 404 = "not_found_error", 429 = "rate_limit_error", 500 = "api_error", 503 = "api_error", 529 = "overloaded_error" }
 stream_event = { event = "error", data = "{error.body}" }
 keepalive = { event = "ping", data = { type = "ping" } }

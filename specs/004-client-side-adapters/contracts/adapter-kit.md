@@ -1,6 +1,6 @@
 # Contract: Adapter kit and sandbox ABI
 
-The adapter kit (`zerorouter-adapter-kit`) is the one crate a third-party adapter may depend on.
+The adapter kit (`nullrouter-adapter-kit`) is the one crate a third-party adapter may depend on.
 This contract covers:
 - the Rust API that adapter authors write against;
 - the WASM ABI between the module and the core;
@@ -13,7 +13,7 @@ Research: [R2](../research.md#r2-where-an-adapter-runs-and-what-it-sees),
 ## Author API (Rust)
 
 ```rust
-use zerorouter_adapter_kit::{export, Adapter, Context, Edits, Input, Reason};
+use nullrouter_adapter_kit::{export, Adapter, Context, Edits, Input, Reason};
 
 struct MyHarness;
 
@@ -49,9 +49,9 @@ clock, randomness, environment or threads, and the target has none either.
 
 ### Custom section
 
-`zr.abi`: 4 bytes, the little-endian `u32` ABI major version. Required. Current: `1`.
+`nr.abi`: 4 bytes, the little-endian `u32` ABI major version. Required. Current: `1`.
 
-### Imports (module `zr`)
+### Imports (module `nr`)
 
 | Name | Signature | Behaviour |
 |---|---|---|

@@ -252,7 +252,7 @@ status = { name = "operations/{job.id}", done = "{job.done}", error = "{job.erro
 status_map = { queued = "queued", in_progress = "in_progress", completed = "completed", failed = "failed" }
 
 [errors]
-body = { error = { code = "{error.code}", message = "{error.message}", status = "{error.type}", zerorouter = "{error.details}" } }
+body = { error = { code = "{error.code}", message = "{error.message}", status = "{error.type}", nullrouter = "{error.details}" } }
 type_map = { 400 = "INVALID_ARGUMENT", 401 = "UNAUTHENTICATED", 403 = "PERMISSION_DENIED", 404 = "NOT_FOUND", 429 = "RESOURCE_EXHAUSTED", 500 = "INTERNAL", 502 = "UNAVAILABLE", 503 = "UNAVAILABLE", 504 = "DEADLINE_EXCEEDED" }
 stream_event = { data = "{error.body}" }
 # google-genai (Python) parses every SSE line as JSON, comments included: the keepalive is

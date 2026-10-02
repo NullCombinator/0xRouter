@@ -27,11 +27,11 @@ tested on its own.
 
 Cargo workspace at the repo root ([plan § Project Structure](plan.md#project-structure)):
 
-- `crates/zerorouter-registry/`: schema, gate, styles, fit check, community set (sync, no tokio)
-- `crates/zerorouter-wire/`: style interpreter, IR, codecs, framing (pure, no I/O, no tokio)
-- `crates/zerorouter-engine/`: accounts, keys, attempt loop, upstream client, records
-- `crates/zerorouter-server/`: axum surface, relay, operator socket
-- `crates/zerorouter-cli/`: operator CLI
+- `crates/nullrouter-registry/`: schema, gate, styles, fit check, community set (sync, no tokio)
+- `crates/nullrouter-wire/`: style interpreter, IR, codecs, framing (pure, no I/O, no tokio)
+- `crates/nullrouter-engine/`: accounts, keys, attempt loop, upstream client, records
+- `crates/nullrouter-server/`: axum surface, relay, operator socket
+- `crates/nullrouter-cli/`: operator CLI
 - `styles/bundled/`: the four API-style files
 - `plugins/bundled/`: the chosen five (schema 2, hand-maintained after seeding)
 - `plugins/community/`: the other 116 (schema 1, generated)
@@ -41,13 +41,13 @@ Cargo workspace at the repo root ([plan § Project Structure](plan.md#project-st
 
 Three refinements to the plan's tree:
 
-- The gate corpora stay where slice 002 put them: `crates/zerorouter-registry/tests/gate/`.
+- The gate corpora stay where slice 002 put them: `crates/nullrouter-registry/tests/gate/`.
   New subdirectories are `invalid/styles/`, `invalid/providers/`, `strict/` and
   `unsupported/`.
-- The scripted mock upstream lives in `zerorouter-engine` behind a `testkit` feature
+- The scripted mock upstream lives in `nullrouter-engine` behind a `testkit` feature
   (`src/testkit/`), so the engine and server tests share it without a new crate.
-- The template parser (the AST and its validation) lives in `zerorouter-registry`, because
-  the gate needs it. `zerorouter-wire` renders and reverse-matches the parsed AST.
+- The template parser (the AST and its validation) lives in `nullrouter-registry`, because
+  the gate needs it. `nullrouter-wire` renders and reverse-matches the parsed AST.
 
 Build commands need `export CARGO_HOME=$PWD/.cargo-home`. `ref/` is git-ignored. Generated
 artefacts record the `ref/9router` SHA in their header.
@@ -73,23 +73,23 @@ the user to run the given command with `! …` in the session. Never ask them fo
     - `futures-util`, `bytes`, `memchr`, `sha2`, `base64`, `getrandom`, `aho-corasick`, `tracing`, `tracing-subscriber` (`env-filter`);
     - `ulid` or an equivalent for time-sortable ids.
   - Add `raw_value` to the existing `serde_json` features.
-  - Add path dependencies for `zerorouter-wire`, `zerorouter-engine` and `zerorouter-server`.
-- [X] T003 [P] Create `crates/zerorouter-wire/Cargo.toml` and `src/lib.rs`.
-  - Dependencies: `serde`, `serde_json`, `bytes`, `memchr`, `base64`, `thiserror`, `indexmap`, `zerorouter-registry`. No `tokio`, no network.
+  - Add path dependencies for `nullrouter-wire`, `nullrouter-engine` and `nullrouter-server`.
+- [X] T003 [P] Create `crates/nullrouter-wire/Cargo.toml` and `src/lib.rs`.
+  - Dependencies: `serde`, `serde_json`, `bytes`, `memchr`, `base64`, `thiserror`, `indexmap`, `nullrouter-registry`. No `tokio`, no network.
   - Modules `ir`, `template`, `codec`, `stream`, `primitives`, `usage`, `estimate`, `error_body`, each with an empty file.
   - `[[bench]] name = "wire"`, `harness = false`. `lints.workspace = true`.
-- [X] T004 [P] Create `crates/zerorouter-engine/Cargo.toml` and `src/lib.rs`.
-  - Dependencies: `tokio`, `tokio-util`, `reqwest`, `futures-util`, `bytes`, `sha2`, `base64`, `getrandom`, `aho-corasick`, `tracing`, `arc-swap`, `serde`, `toml`, `serde_json`, `thiserror`, `ulid`, `zerorouter-wire`, `zerorouter-registry`.
+- [X] T004 [P] Create `crates/nullrouter-engine/Cargo.toml` and `src/lib.rs`.
+  - Dependencies: `tokio`, `tokio-util`, `reqwest`, `futures-util`, `bytes`, `sha2`, `base64`, `getrandom`, `aho-corasick`, `tracing`, `arc-swap`, `serde`, `toml`, `serde_json`, `thiserror`, `ulid`, `nullrouter-wire`, `nullrouter-registry`.
   - Feature `testkit`, which pulls in `axum` for the mock upstream.
   - Modules `accounts`, `keys`, `classify`, `cooldown`, `plan`, `attempt`, `breaks`, `upstream`, `forwarding`, `jobs`, `records`, `redact`, `state`, and `testkit` (cfg feature).
   - `[[bench]] name = "engine"`, `harness = false`.
-- [X] T005 [P] Create `crates/zerorouter-server/Cargo.toml` and `src/lib.rs`.
-  - Dependencies: `axum`, `tokio`, `tokio-util`, `futures-util`, `bytes`, `tracing`, `tracing-subscriber`, `serde_json`, `zerorouter-engine`, `zerorouter-wire`, `zerorouter-registry`.
-  - Dev-dependency: `zerorouter-engine` with `testkit`.
+- [X] T005 [P] Create `crates/nullrouter-server/Cargo.toml` and `src/lib.rs`.
+  - Dependencies: `axum`, `tokio`, `tokio-util`, `futures-util`, `bytes`, `tracing`, `tracing-subscriber`, `serde_json`, `nullrouter-engine`, `nullrouter-wire`, `nullrouter-registry`.
+  - Dev-dependency: `nullrouter-engine` with `testkit`.
   - Modules `router`, `auth`, `relay`, `models`, `count`, `operator`, `serve`.
   - `[[bench]] name = "server"`, `harness = false`.
-- [X] T006 [P] Extend `crates/zerorouter-cli`.
-  - Add `tokio` and `zerorouter-server` dependencies.
+- [X] T006 [P] Extend `crates/nullrouter-cli`.
+  - Add `tokio` and `nullrouter-server` dependencies.
   - Add clap subcommands `serve`, `accounts`, `keys`, `behaviour`, `records` and `plugins`, each dispatching to an empty `src/cmd/<name>.rs`.
   - Exit codes per [contracts/operator-cli.md](contracts/operator-cli.md#commands): 0 ok, 1 invalid input or file, 2 usage, 3 plugin not supported, 4 no running server.
 - [X] T007 [P] Create the empty data directories and their placeholders.
@@ -117,7 +117,7 @@ and upstream client, and the server shell. Every story depends on these.
 Rule for every new struct: `#[serde(deny_unknown_fields)]`, `snake_case` keys, and
 `Option` wherever absence is distinct.
 
-- [X] T010 [P] Add the closed primitive enums in `crates/zerorouter-registry/src/schema/primitives.rs`. Each has `Display` and `pub const ALLOWED: &[&str]`.
+- [X] T010 [P] Add the closed primitive enums in `crates/nullrouter-registry/src/schema/primitives.rs`. Each has `Display` and `pub const ALLOWED: &[&str]`.
   - Stream and layout choices:
     - `Framing`: `sse_named | sse_data | sse_data_done | ndjson | json_array`;
     - `BlockModel`: `explicit | implicit`;
@@ -146,7 +146,7 @@ Rule for every new struct: `#[serde(deny_unknown_fields)]`, `snake_case` keys, a
     - `ContinuationUnless`: `thinking_enabled | tool_call_in_progress`;
     - `SessionDerive`: `ses_sha256_hex32 | ses_time_base62`;
     - `ForwardMerge`: `replace | append_csv`.
-- [X] T011 [P] Implement the template parser in `crates/zerorouter-registry/src/template.rs` ([contracts/api-style-schema.md § Mapping vocabulary](contracts/api-style-schema.md#mapping-vocabulary-closed)), with unit tests.
+- [X] T011 [P] Implement the template parser in `crates/nullrouter-registry/src/template.rs` ([contracts/api-style-schema.md § Mapping vocabulary](contracts/api-style-schema.md#mapping-vocabulary-closed)), with unit tests.
   - Parse a JSON-shaped `toml::Value` into a `Template` AST, supporting:
     - a whole-string placeholder `"{p}"`, which keeps the value's type;
     - interpolation `"x{p}y"`;
@@ -155,23 +155,23 @@ Rule for every new struct: `#[serde(deny_unknown_fields)]`, `snake_case` keys, a
   - `Template::check(ctx: PlaceholderSet)` rejects any placeholder outside the context's fixed set.
   - Always reject `{account.*}`, `{secret.*}`, and anything containing an operator or a space (`{a+b}` → "expressions are not allowed").
   - Field paths `a.b[0].c` and `a[*].b` are parsed to a `FieldPath`. Selectors only.
-- [X] T012 [P] Implement the endpoint URL rules in `crates/zerorouter-registry/src/validate/ssrf.rs` ([R18](research.md#r18-forwarding-and-the-security-floor)), with unit tests.
+- [X] T012 [P] Implement the endpoint URL rules in `crates/nullrouter-registry/src/validate/ssrf.rs` ([R18](research.md#r18-forwarding-and-the-security-floor)), with unit tests.
   - Placeholders `{model}` and `{voice}` only, and only in the path.
   - Reject loopback, private (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7), link-local (169.254/16, fe80::/10) and metadata hosts (169.254.169.254, fd00:ec2::254, `metadata.google.internal`), plus `localhost`, `*.local` and `*.internal`, unless `allow_private: bool` is set.
   - Export `is_private_ip(IpAddr) -> bool` for the engine's resolved-IP re-check.
-- [X] T013 [P] Implement the security floor in `crates/zerorouter-registry/src/floor.rs` ([contracts/provider-schema-v2.md § Forwarding](contracts/provider-schema-v2.md#forwarding-and-the-security-floor)), with unit tests.
+- [X] T013 [P] Implement the security floor in `crates/nullrouter-registry/src/floor.rs` ([contracts/provider-schema-v2.md § Forwarding](contracts/provider-schema-v2.md#forwarding-and-the-security-floor)), with unit tests.
   - A static list: `authorization`, `proxy-authorization`, `x-api-key`, `api-key`, `x-goog-api-key`, `xi-api-key`, `cookie`, `set-cookie`, `set-cookie2`, `www-authenticate`, `proxy-authenticate`, `x-amz-security-token`, `x-auth-token`.
   - The hop-by-hop and core-owned set: `host`, `content-length`, `transfer-encoding`, `connection`, `keep-alive`, `proxy-connection`, `te`, `trailer`, `upgrade`, `content-encoding`, request `accept-encoding`, and `x-0router-*`.
   - Anything matching slice 002's secret-name check (`validate/secrets.rs::check_map_key`).
   - `Floor::computed(styles, providers)` adds every loaded style's key-carrier headers and every loaded provider's auth header.
   - `Floor::blocks(name)` is case-insensitive.
   - `Floor::pattern_risk(pattern)` returns `Error` for a bare `*` or a prefix shorter than 3 characters, `Warning` if the wildcard could match a floor name, else `Ok`.
-- [X] T014 [P] Define the API-style schema in `crates/zerorouter-registry/src/schema/style.rs` per [contracts/api-style-schema.md](contracts/api-style-schema.md). Depends on T010.
+- [X] T014 [P] Define the API-style schema in `crates/nullrouter-registry/src/schema/style.rs` per [contracts/api-style-schema.md](contracts/api-style-schema.md). Depends on T010.
   - `StyleFile`: `schema = 1`, `kind = "api-style"`, `id`, `[access_key] carriers` (`header` or `query`, with `scheme: raw | bearer`), `[session] carriers` (`header`, body `path`, or `extractor`), and `[[routes]]` (`method`, `path`, `op`, `type`, `model`, `stream`, `discriminator`).
   - Optional per-type codec sections: `text`, `embeddings`, `image`, `tts`, `stt`, `video`.
   - `[errors]`: `body`, `type_map`, `stream_event`, `keepalive`.
   - Template-valued fields are kept as `toml::Value` and parsed by T011 in the gate.
-- [X] T015 [P] Define the schema-2 provider parts in `crates/zerorouter-registry/src/schema/endpoint.rs`, `forwarding.rs` and `session.rs` per [contracts/provider-schema-v2.md](contracts/provider-schema-v2.md). Depends on T010.
+- [X] T015 [P] Define the schema-2 provider parts in `crates/nullrouter-registry/src/schema/endpoint.rs`, `forwarding.rs` and `session.rs` per [contracts/provider-schema-v2.md](contracts/provider-schema-v2.md). Depends on T010.
   - `Endpoint` fields:
     - `url`, `method`, and either `wire` or `body` + `response`;
     - `headers` (IndexMap), `encoding`;
@@ -182,12 +182,12 @@ Rule for every new struct: `#[serde(deny_unknown_fields)]`, `snake_case` keys, a
   - `endpoints.<type>` accepts one table or an array of tables (one entry per wire).
   - `Forwarding`: `to_upstream.headers [{name, merge, from_styles}]` and `to_client { headers, body }`.
   - `Session`: `{ header, derive }`.
-- [X] T016 Extend `crates/zerorouter-registry/src/schema/plugin.rs` for schema 2. Depends on T015.
+- [X] T016 Extend `crates/nullrouter-registry/src/schema/plugin.rs` for schema 2. Depends on T015.
   - `schema = 2` adds `endpoints: BTreeMap<ModelType, OneOrMany<Endpoint>>`, `forwarding`, `session`, `requires: Vec<String>` and `models[].wires: Vec<StyleId>`.
   - Schema 2 rejects the schema-1 execution keys `transport`, `transports`, `capabilities.*.endpoint`, `quirks`, `executor_params` and `auth.hooks`, with the rule "schema 2 declares this under `endpoints`".
   - Schema 1 parses exactly as in slice 002.
-- [X] T017 Add operator settings in `crates/zerorouter-registry/src/schema/config.rs`: `allow_private_endpoints: bool` (default `false`), `[server] listen` (default `"127.0.0.1:20129"`) and `[pipeline] break_behaviour = "restart" | "error_event"` (default `restart`). Update the config unit tests.
-- [X] T018 Implement the style gate in `crates/zerorouter-registry/src/validate/style_gate.rs`. Depends on T011, T014.
+- [X] T017 Add operator settings in `crates/nullrouter-registry/src/schema/config.rs`: `allow_private_endpoints: bool` (default `false`), `[server] listen` (default `"127.0.0.1:20129"`) and `[pipeline] break_behaviour = "restart" | "error_event"` (default `restart`). Update the config unit tests.
+- [X] T018 Implement the style gate in `crates/nullrouter-registry/src/validate/style_gate.rs`. Depends on T011, T014.
   - Collect every error, not only the first, and apply slice 002's secret checks.
   - Path templates allow `{name}` and `{name*}` only.
   - Route collisions across all loaded style files: two routes may share (method, path) only when their discriminators are disjoint and exactly one of them has none (the default).
@@ -196,7 +196,7 @@ Rule for every new struct: `#[serde(deny_unknown_fields)]`, `snake_case` keys, a
   - The `errors.body` template must contain `{error.message}` and `{error.details}`. `type_map` must cover 400, 401, 404, 429, 500 and 503.
   - Every response and stream rule must reverse unambiguously for a style used as an upstream wire (error `ambiguous-stream-rules`).
   - A style file may not declare forwarding.
-- [X] T019 Extend the plugin gate in `crates/zerorouter-registry/src/validate/gate.rs` for schema 2. Depends on T012, T013, T016, T018.
+- [X] T019 Extend the plugin gate in `crates/nullrouter-registry/src/validate/gate.rs` for schema 2. Depends on T012, T013, T016, T018.
   - The signature gains `ctx: GateCtx { style_ids, style_ops, strict: bool, allow_private: bool }`.
   - Endpoint rules:
     - `wire` must name a loaded style, and `wire` and `body` are mutually exclusive;
@@ -211,54 +211,54 @@ Rule for every new struct: `#[serde(deny_unknown_fields)]`, `snake_case` keys, a
     - a bare `*` or a short prefix is an error;
     - a secret-like body path is an error.
   - Keep the existing `validate()` signature as a wrapper, so slice 002 callers compile.
-- [X] T020 Load the styles in `crates/zerorouter-registry/build.rs`, `src/load.rs` and `src/registry.rs`. Depends on T017, T019.
+- [X] T020 Load the styles in `crates/nullrouter-registry/build.rs`, `src/load.rs` and `src/registry.rs`. Depends on T017, T019.
   - `build.rs` also embeds `styles/bundled/*.toml`.
   - `load` validates styles first, then plugins with `GateCtx`. Bundled plugins load under `strict`. `allow_private` comes from `config.toml`.
   - `Registry` gains `styles()`, `style(id)`, `endpoints(provider, ModelType) -> &[Endpoint]` and `floor() -> &Floor`.
   - A malformed style file is a startup error that names the file (US7-4).
-- [X] T021 Derive slice 002's composed-transport view from schema-2 `endpoints` in `crates/zerorouter-registry/src/views.rs`, so `composed_transport()` still answers for schema-2 providers. Add the deviation-assertion helper in `crates/zerorouter-registry/tests/parity/deviations.rs`: it loads `tests/parity/deviations.toml` and lets a parity comparison skip exactly the listed (provider, fixture, field), failing if a listed deviation no longer differs.
+- [X] T021 Derive slice 002's composed-transport view from schema-2 `endpoints` in `crates/nullrouter-registry/src/views.rs`, so `composed_transport()` still answers for schema-2 providers. Add the deviation-assertion helper in `crates/nullrouter-registry/tests/parity/deviations.rs`: it loads `tests/parity/deviations.toml` and lets a parity comparison skip exactly the listed (provider, fixture, field), failing if a listed deviation no longer differs.
 
 ### Wire: IR, templates, framing, generic codecs
 
-- [X] T022 [P] Define the request IR in `crates/zerorouter-wire/src/ir/request.rs` ([R3](research.md#r3-client-api-styles-as-data)).
+- [X] T022 [P] Define the request IR in `crates/nullrouter-wire/src/ir/request.rs` ([R3](research.md#r3-client-api-styles-as-data)).
   - `Request { model, system, messages, tools, tool_choice, params, stream, extra }`.
   - `Message { role, parts }`, where `Part` is one of `Text`, `Image { media }`, `Audio { media }`, `ToolCall { id, name, arguments }`, `ToolResult { id, name, content, is_error }` or `Thinking { text, signature, vendor }`.
   - `Params` holds `max_tokens`, `temperature`, `top_p`, `stop`, `thinking`, `response_format`, `metadata`, and `extra: Map<String, RawValue>` for native passthrough.
   - Per-type IR: `EmbeddingsRequest`, `ImageRequest`, `TtsRequest { input, voice, format }`, `SttRequest { audio, language }` and `VideoRequest`.
-- [X] T023 [P] Define the stream event IR and the response IR in `crates/zerorouter-wire/src/ir/event.rs` and `src/ir/response.rs`. The events are `Preamble`, `BlockStart { kind: Text | Thinking | ToolCall { id, name } }`, `TextDelta`, `ThinkingDelta`, `Signature`, `ToolArguments`, `BlockStop`, `Usage`, `Finish { reason }`, `Error`, `Keepalive` and `Done`. `Response` holds the same content as final blocks, plus usage and finish.
-- [X] T024 Implement template render and reverse-match in `crates/zerorouter-wire/src/template.rs` over the T011 AST, with unit tests. Depends on T011.
+- [X] T023 [P] Define the stream event IR and the response IR in `crates/nullrouter-wire/src/ir/event.rs` and `src/ir/response.rs`. The events are `Preamble`, `BlockStart { kind: Text | Thinking | ToolCall { id, name } }`, `TextDelta`, `ThinkingDelta`, `Signature`, `ToolArguments`, `BlockStop`, `Usage`, `Finish { reason }`, `Error`, `Keepalive` and `Done`. `Response` holds the same content as final blocks, plus usage and finish.
+- [X] T024 Implement template render and reverse-match in `crates/nullrouter-wire/src/template.rs` over the T011 AST, with unit tests. Depends on T011.
   - `render(&Template, &Ctx) -> serde_json::Value` keeps types for whole-string placeholders and omits `{p?}` keys when absent.
   - `match_value(&Template, &Value) -> Option<Bindings>` matches literal parts and extracts placeholders.
   - A property test covers `match(render(t, ctx)) == ctx` for each template in `styles/bundled/`, once those exist.
-- [X] T025 [P] Implement incremental framers in `crates/zerorouter-wire/src/stream/framing.rs` with `memchr`, plus unit tests.
+- [X] T025 [P] Implement incremental framers in `crates/nullrouter-wire/src/stream/framing.rs` with `memchr`, plus unit tests.
   - Framers: named SSE (`event:` + `data:`), data-only SSE with and without `[DONE]`, NDJSON, and a streamed JSON array (Gemini non-SSE).
   - Push-based: `feed(&[u8]) -> impl Iterator<Item = Frame>`.
   - Handle CRLF, `:` comments, multi-line `data:`, and a chunk split at every byte offset (tested exhaustively on fixtures).
-- [X] T026 Implement `ClientStreamState` and the style stream writer in `crates/zerorouter-wire/src/stream/writer.rs` ([data-model § ClientStreamState](data-model.md#clientstreamstate)). Depends on T023, T024.
+- [X] T026 Implement `ClientStreamState` and the style stream writer in `crates/nullrouter-wire/src/stream/writer.rs` ([data-model § ClientStreamState](data-model.md#clientstreamstate)). Depends on T023, T024.
   - Fields: `preamble_sent`, `output_seen`, `open_block` (`None | Text { index } | Thinking { index, signed } | ToolCall { index, args_started }`), `next_block_index`, `next_output_index`, `sequence_number` and `partial_text`. The counters are "carried across segments". `partial_text` is "a copy, the stream is not held".
   - Encode IR events with the style's `[[text.stream.events]]` templates under `blocks = explicit | implicit` and `tool_arguments = fragments | whole`.
   - Expose the counters `{block.index}`, `{tool.ordinal}`, `{output.index}`, `{sequence.number}` and `{response.id}`, and the accumulations `{block.full_text}`, `{block.full_arguments}` and `{response.rendered}`.
-- [X] T027 Implement the generic request codec in `crates/zerorouter-wire/src/codec/request.rs`. Depends on T022, T024.
+- [X] T027 Implement the generic request codec in `crates/nullrouter-wire/src/codec/request.rs`. Depends on T022, T024.
   - `decode(style, body) -> IR` and `encode(IR, wire_style) -> body`, driven by `[text.layout]`, `[text.parts]` and `[text.params]`.
   - Repairs (`ensure_tool_call_ids`, `fill_missing_tool_results`, `gemini_schema_sanitize`, `gemini_function_name_sanitize`) run only when the client style differs from the wire, and never change message text.
   - A part the wire can't carry returns `Err(CannotCarry { part, reason })`. Nothing is dropped.
-- [X] T028 Implement the generic response and stream codec in `crates/zerorouter-wire/src/codec/response.rs` and `src/stream/reader.rs`. Depends on T023, T024, T025.
+- [X] T028 Implement the generic response and stream codec in `crates/nullrouter-wire/src/codec/response.rs` and `src/stream/reader.rs`. Depends on T023, T024, T025.
   - Provider frames → IR events, through the wire style's stream rules (reverse-match).
   - Provider non-stream body → `Response` IR → the client body. The second hop always goes through the IR.
   - `finish` maps both ways.
-- [X] T029 [P] Add a minimal test style in `crates/zerorouter-wire/tests/fixtures/mini-style.toml` and `tests/generic.rs` that exercise T024–T028 without the real styles: a round-trip request, a stream of text + tool call, and a non-stream response.
+- [X] T029 [P] Add a minimal test style in `crates/nullrouter-wire/tests/fixtures/mini-style.toml` and `tests/generic.rs` that exercise T024–T028 without the real styles: a round-trip request, a stream of text + tool call, and a non-stream response.
 
 ### Engine: operator state, redaction, upstream client, records
 
-- [X] T030 [P] Implement provider accounts in `crates/zerorouter-engine/src/accounts.rs` ([data-model § ProviderAccount](data-model.md#provideraccount-accountstoml)), with unit tests.
+- [X] T030 [P] Implement provider accounts in `crates/nullrouter-engine/src/accounts.rs` ([data-model § ProviderAccount](data-model.md#provideraccount-accountstoml)), with unit tests.
   - Load and save `accounts.toml`, `schema = 1`, `[[account]] provider, name, secret, order, disabled`.
   - `name`: "`[a-z0-9_-]{1,32}`", "unique per provider".
-  - `secret`: a literal or `{ env = "VAR" }`, held in `SecretString` (from `zerorouter-registry::credentials`), with `Debug` printing `***`. It is "never serialised back in clear".
+  - `secret`: a literal or `{ env = "VAR" }`, held in `SecretString` (from `nullrouter-registry::credentials`), with `Debug` printing `***`. It is "never serialised back in clear".
   - An account for a provider that isn't loaded is "reported unused, not an error".
   - Reading fails if the file is group- or world-readable (mode & 0o077 ≠ 0), naming the file and the fix `chmod 600`.
   - Writes are atomic (temp file + rename) and create the file with mode 0600.
   - Host binding: the secret is released only for the endpoint hosts the provider had when the account was added. A replacing plugin with new hosts withholds the secret until re-confirmed (slice 002 FR-012a rule).
-- [X] T031 [P] Implement agent keys in `crates/zerorouter-engine/src/keys.rs` ([data-model § AgentKey](data-model.md#agentkey-keystoml), [R12](research.md#r12-access-keys-and-agent-identity)), with unit tests.
+- [X] T031 [P] Implement agent keys in `crates/nullrouter-engine/src/keys.rs` ([data-model § AgentKey](data-model.md#agentkey-keystoml), [R12](research.md#r12-access-keys-and-agent-identity)), with unit tests.
   - Generation: `0r-` + base64url (no padding) of 32 random bytes from `getrandom`, which gives 43 characters. It is returned once.
   - Stored fields:
     - `id`: "`ak_` + 8 chars";
@@ -268,14 +268,14 @@ Rule for every new struct: `#[serde(deny_unknown_fields)]`, `snake_case` keys, a
   - Lookup is a `HashMap<digest, KeyId>`. A revoked key never matches.
   - `AgentId = (key id, Option<session id>)`, with the session "≤ 256 chars" (longer values truncated, 9router `normalizeSessionId`).
   - Same 0600 and atomic-write rules as T030.
-- [X] T032 [P] Implement the redactor in `crates/zerorouter-engine/src/redact.rs` ([R23](research.md#r23-secret-redaction)), with unit tests.
+- [X] T032 [P] Implement the redactor in `crates/nullrouter-engine/src/redact.rs` ([R23](research.md#r23-secret-redaction)), with unit tests.
   - `Redactor::new(secrets)` builds an Aho-Corasick automaton over every account secret (≥ 8 characters) and every agent key.
   - `redact(&str) -> Cow<str>` replaces each match with `***`. `redact_url` also removes `key=` query values.
   - `RedactLayer`, a `tracing_subscriber::Layer`, formats every event through the current redactor (via `ArcSwap`).
-- [X] T033 Implement the engine snapshot in `crates/zerorouter-engine/src/state.rs`. Depends on T030–T032.
+- [X] T033 Implement the engine snapshot in `crates/nullrouter-engine/src/state.rs`. Depends on T030–T032.
   - `EngineState { registry, accounts, keys, config, redactor, generation }` behind `ArcSwap`.
   - `reload()` runs on `spawn_blocking` and swaps atomically. In-flight requests keep the old snapshot. A failed reload keeps the previous one and returns the error.
-- [X] T034 Implement the upstream client in `crates/zerorouter-engine/src/upstream.rs` ([R22](research.md#r22-connection-reuse), [R18](research.md#r18-forwarding-and-the-security-floor)). Depends on T012, T033.
+- [X] T034 Implement the upstream client in `crates/nullrouter-engine/src/upstream.rs` ([R22](research.md#r22-connection-reuse), [R18](research.md#r18-forwarding-and-the-security-floor)). Depends on T012, T033.
   - One process-wide `reqwest::Client`:
     - rustls, HTTP/2 through ALPN;
     - `pool_idle_timeout(90 s)` and `tcp_keepalive(60 s)`;
@@ -284,14 +284,14 @@ Rule for every new struct: `#[serde(deny_unknown_fields)]`, `snake_case` keys, a
   - A custom DNS resolver re-checks every resolved IP with `ssrf::is_private_ip`, unless `allow_private_endpoints` is set.
   - `build_request(endpoint, account, body, client_headers)` assembles headers in this order: client headers → floor → plugin static headers → core auth last. The secret is injected here only, as `x-api-key`, Bearer or `xi-api-key` per the plugin's auth scheme.
   - `{model}` and `{voice}` are percent-encoded, and `.`/`..` segments are rejected.
-- [X] T035 [P] Implement the record store in `crates/zerorouter-engine/src/records.rs` ([data-model § RequestRecord](data-model.md#requestrecord), [R21](research.md#r21-records-store)), with unit tests.
+- [X] T035 [P] Implement the record store in `crates/nullrouter-engine/src/records.rs` ([data-model § RequestRecord](data-model.md#requestrecord), [R21](research.md#r21-records-store)), with unit tests.
   - `RequestRecord` has the data-model fields; `Attempt` has `n`, `provider`, `account`, `model`, `kind`, `started`, `ended`, `outcome` and `usage`.
   - `Usage` fields are `Option<u64>`, where "`None` = not reported". It also has `input_semantics` and `estimated`.
   - Ids are "`rq_` + 26-char time-sortable id".
   - The state machine is `in_progress → succeeded | failed | refused | cancelled`.
   - The store is a "Ring of 10 000 records, oldest evicted", with indexes by id, provider and unified model rebuilt on eviction.
   - Queries: by id, by provider, by unified model, newest first, with a limit.
-- [X] T036 [P] Implement the scripted mock upstream in `crates/zerorouter-engine/src/testkit/mock_upstream.rs` (feature `testkit`).
+- [X] T036 [P] Implement the scripted mock upstream in `crates/nullrouter-engine/src/testkit/mock_upstream.rs` (feature `testkit`).
   - An in-process axum server on `127.0.0.1:0`, driven by a per-request script:
     - reply with a status and body;
     - stream N frames and then cut the connection;
@@ -304,20 +304,20 @@ Rule for every new struct: `#[serde(deny_unknown_fields)]`, `snake_case` keys, a
 
 ### Server shell
 
-- [X] T037 Implement route matching in `crates/zerorouter-server/src/router.rs`. Depends on T020.
+- [X] T037 Implement route matching in `crates/nullrouter-server/src/router.rs`. Depends on T020.
   - Build a route table from every loaded style's `[[routes]]`.
   - Use its own matcher (`{name}` for one segment, `{name*}` for the rest including `/`, and a literal suffix after `{name*}` such as `:generateContent`), plus `header_present` discriminators.
   - Mount a single axum fallback handler that dispatches `(style, route, captures)`.
   - An unknown path returns 404 in the OpenAI error shape.
-- [X] T038 Implement the access-key check in `crates/zerorouter-server/src/auth.rs` ([contracts/client-surface.md § Access key](contracts/client-surface.md#access-key)). Depends on T031, T037.
+- [X] T038 Implement the access-key check in `crates/nullrouter-server/src/auth.rs` ([contracts/client-surface.md § Access key](contracts/client-surface.md#access-key)). Depends on T031, T037.
   - Read the style's carriers in order before touching the body.
   - A missing, unknown or revoked key gets 401 in the style's error shape with `x-0router-request-id`, and a `refused` record with no agent. Nothing is sent upstream.
-- [X] T039 Implement the relay in `crates/zerorouter-server/src/relay.rs` ([R5](research.md#r5-streaming-relay-and-constitution-v)). Depends on T026.
+- [X] T039 Implement the relay in `crates/nullrouter-server/src/relay.rs` ([R5](research.md#r5-streaming-relay-and-constitution-v)). Depends on T026.
   - SSE responses use `axum::response::sse::Sse<impl Stream>` built with `StreamExt` adaptors over the engine's IR event channel.
   - Non-SSE streamed bodies use `Body::from_stream`.
   - A `CancelOnDrop` guard owns the request's `CancellationToken` and cancels it when the response body drops.
   - Every response gets `x-0router-request-id`.
-- [X] T040 Implement `serve` in `crates/zerorouter-server/src/serve.rs` and `crates/zerorouter-cli/src/cmd/serve.rs`. Depends on T033, T037–T039.
+- [X] T040 Implement `serve` in `crates/nullrouter-server/src/serve.rs` and `crates/nullrouter-cli/src/cmd/serve.rs`. Depends on T033, T037–T039.
   - Build the `EngineState`, refuse to start on a 0600 violation (T030/T031), bind `[server] listen` or `--listen`, install `RedactLayer` on stderr, and shut down cleanly on SIGINT/SIGTERM.
 - [X] T041 Run `cargo test --workspace` and confirm slice 002's tests still pass (with deviations listed, if any) and the Phase 2 unit tests are green.
 
@@ -343,8 +343,8 @@ in CI), and every request produces a record.
   - For each input in `tools/gen-bundled/translate-inputs/*.json`, write the translated output to `tests/fixtures/9router/translate/<from>-to-<to>/<case>.json`. The inputs cover plain text, system, multi-turn, tools with results, images, thinking and `response_format`, for every pair 9router covers among `openai`, `claude`, `openai-responses` and `gemini`.
   - Also write stream-event fixtures: upstream frames in, client frames out.
   - Header: the ref SHA. Commit the output on its own.
-- [X] T043 [P] [US1] Write the translation parity tests in `crates/zerorouter-wire/tests/parity_translate.rs`. They compare the wire codecs and the four style files against every `tests/fixtures/9router/translate/**` case, with differences allowed only through `tests/parity/deviations.toml`.
-- [X] T044 [P] [US1] Write the deviation assertions in `crates/zerorouter-wire/tests/deviations.rs`, one test per row of [R4](research.md#r4-translation-behaviour-parity-and-deliberate-deviations):
+- [X] T043 [P] [US1] Write the translation parity tests in `crates/nullrouter-wire/tests/parity_translate.rs`. They compare the wire codecs and the four style files against every `tests/fixtures/9router/translate/**` case, with differences allowed only through `tests/parity/deviations.toml`.
+- [X] T044 [P] [US1] Write the deviation assertions in `crates/nullrouter-wire/tests/deviations.rs`, one test per row of [R4](research.md#r4-translation-behaviour-parity-and-deliberate-deviations):
   - no Claude Code system prompt;
   - `response_format` goes to the native field, or the result is `CannotCarry`;
   - no fingerprint tools;
@@ -355,38 +355,38 @@ in CI), and every request produces a record.
   - the non-stream second hop is correct.
 
   Add the matching `[[deviation]]` rows to `tests/parity/deviations.toml`.
-- [X] T045 [P] [US1] Write end-to-end style tests in `crates/zerorouter-server/tests/styles.rs` with the mock upstream.
+- [X] T045 [P] [US1] Write end-to-end style tests in `crates/nullrouter-server/tests/styles.rs` with the mock upstream.
   - Cover each client style × each wire (native and translated), streamed and not.
   - The bodies must be valid for the client style: the stream grammar, block start before deltas, no reused index, and a terminal event.
   - `x-0router-request-id` must be present.
   - Client-visible usage must equal the mock's usage (US1-1).
-- [X] T046 [P] [US1] Write the access-key and session tests in `crates/zerorouter-server/tests/auth.rs`.
+- [X] T046 [P] [US1] Write the access-key and session tests in `crates/nullrouter-server/tests/auth.rs`.
   - No key, an unknown key and a revoked key each return 401 in the style's shape, and the mock received nothing (US1-4). Run this in all four styles.
   - The Gemini `?key=` carrier works.
   - Two Claude Code sessions (`metadata.user_id` `_session_` form) under one key are distinct agents in their records (US1-5).
-- [X] T047 [P] [US1] Write the cancellation test in `crates/zerorouter-server/tests/cancel.rs`. When the client drops mid-stream, the mock sees the disconnect within 1 s (SC-010, US1-6), and the record is `cancelled`.
-- [X] T048 [P] [US1] Write the passthrough test in `crates/zerorouter-server/tests/passthrough.rs`. In a native pair and in a translated pair, the prompt text (system, messages, tool results) reaches the mock byte-for-byte equal as a string value (US1-7).
+- [X] T047 [P] [US1] Write the cancellation test in `crates/nullrouter-server/tests/cancel.rs`. When the client drops mid-stream, the mock sees the disconnect within 1 s (SC-010, US1-6), and the record is `cancelled`.
+- [X] T048 [P] [US1] Write the passthrough test in `crates/nullrouter-server/tests/passthrough.rs`. In a native pair and in a translated pair, the prompt text (system, messages, tool results) reaches the mock byte-for-byte equal as a string value (US1-7).
 
 ### Optimizer pass-through (amendment 2026-09-28) ⚠️ before T049
 
 Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-pass-through-amendment-2026-09-28). These change Phase 2 code (T027, T028, T034, T035, T039), so they land before the style files and the attempt path are built on it.
 
-- [X] T146 [P] [US1] Write the wire pass-through tests in `crates/zerorouter-wire/tests/passthrough.rs` with the mini style (T029).
+- [X] T146 [P] [US1] Write the wire pass-through tests in `crates/nullrouter-wire/tests/passthrough.rs` with the mini style (T029).
   - Same-style: a body with unknown keys at the top level, on a message, on a part and on a tool, plus a block type no template knows, comes out JSON-equal to the input except the model path, the forced stream path and `stream_options.include_usage`.
   - Cross-style: the same body encodes without the unknown keys, and the returned drop list holds each one's path and a reason, with no values. An unknown block type is still `CannotCarry`.
   - Same-style non-stream response: unknown response fields survive, and usage is still read from it.
-- [X] T147 [P] [US1] Extend `crates/zerorouter-server/tests/passthrough.rs` (T048) with the route-level cases.
+- [X] T147 [P] [US1] Extend `crates/nullrouter-server/tests/passthrough.rs` (T048) with the route-level cases.
   - Same-style: the mock receives every unknown body field and every unknown client header; it never receives a floor header, a hop-by-hop header, `x-0router-*` or the access key (US1-8).
   - Cross-style: the mock receives no unknown field and no undeclared header; the record's attempt lists each dropped path (US1-9).
   - A non-stream same-style response with an unknown field reaches the client unchanged, and streamed events keep their names and payloads (US1-10).
   - Fallback crossing styles: the first, same-style attempt fails with a 503; the second, cross-style attempt records its drops and gets no unknown headers (edge case).
-- [X] T148 [US1] Implement same-style forwarding and drop tracking in `crates/zerorouter-wire/src/codec/request.rs`. Depends on T027.
+- [X] T148 [US1] Implement same-style forwarding and drop tracking in `crates/nullrouter-wire/src/codec/request.rs`. Depends on T027.
   - `forward(body: &Value, wire: &Style, edits: &Edits) -> Value` returns the client body with edits at named paths only: model path → upstream id, stream path when forced, `stream_options.include_usage` on a streamed Chat wire.
   - The decoder records every key no rule consumed, at any depth, as a path (`Request::unplaced`). `encode` on a cross-style wire returns the paths it couldn't place with the body. Opaque content still refuses the encode.
   - `encode` is no longer called for same-style attempts, so opaque content there is not an error.
-- [X] T149 [US1] Implement the same-style response path in `crates/zerorouter-wire/src/codec/response.rs` and `crates/zerorouter-server/src/relay.rs`. Depends on T028, T039. A non-stream same-style body is returned as received; usage and in-band errors are read from it without rebuilding. The stream path keeps R5's rules.
-- [X] T150 [US1] Add `dropped: Vec<Dropped { path, reason }>` to `Attempt` in `crates/zerorouter-engine/src/records.rs` ([data-model § Attempt](data-model.md#attempt)), and show it in `records get`. Depends on T035. Unit-test that no value is stored, only the path.
-- [X] T151 [US1] Implement the same-style header rule in `crates/zerorouter-engine/src/forwarding.rs` and `upstream.rs::build_request`. Depends on T013, T034. Same-style attempts send every client header except the floor, hop-by-hop headers, `x-0router-*` and `accept-encoding`, then apply the secret-value and CR/LF checks and any declared `merge` rule. Cross-style attempts keep the declared list (T122).
+- [X] T149 [US1] Implement the same-style response path in `crates/nullrouter-wire/src/codec/response.rs` and `crates/nullrouter-server/src/relay.rs`. Depends on T028, T039. A non-stream same-style body is returned as received; usage and in-band errors are read from it without rebuilding. The stream path keeps R5's rules.
+- [X] T150 [US1] Add `dropped: Vec<Dropped { path, reason }>` to `Attempt` in `crates/nullrouter-engine/src/records.rs` ([data-model § Attempt](data-model.md#attempt)), and show it in `records get`. Depends on T035. Unit-test that no value is stored, only the path.
+- [X] T151 [US1] Implement the same-style header rule in `crates/nullrouter-engine/src/forwarding.rs` and `upstream.rs::build_request`. Depends on T013, T034. Same-style attempts send every client header except the floor, hop-by-hop headers, `x-0router-*` and `accept-encoding`, then apply the secret-value and CR/LF checks and any declared `merge` rule. Cross-style attempts keep the declared list (T122).
 - [X] T152 [US1] Add the headroom chain runner to `tests/harness/` (extends T058; SC-014, US1-11).
   - Start `headroom proxy --port <free port> --anthropic-api-url http://127.0.0.1:<0router port> --openai-api-url http://127.0.0.1:<0router port>/v1`. Point the `anthropic` and `openai` Python SDKs at headroom, streamed and not streamed.
   - The mock provider asserts that headroom's added fields and headers arrived on same-style routes, and the records list the drops on cross-style routes.
@@ -399,12 +399,12 @@ Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-p
   - Carriers: `x-api-key`, then Bearer.
   - Session carriers: the `claude_code_user_id` extractor, then `x-claude-code-session-id`.
   - The full `[text]` codec, including stream events (`message_start`, `content_block_*`, `message_delta`, `message_stop`, `ping`).
-  - `[errors]` with a top-level `zerorouter` field and the type map from the contract.
+  - `[errors]` with a top-level `nullrouter` field and the type map from the contract.
 - [x] T050 [P] [US1] Write `styles/bundled/openai-chat.toml` with its text routes and codec.
   - Routes: `/v1/chat/completions`, plus the default `GET /v1/models`.
   - Carrier: Bearer. Session carriers: Codex `session_id` header, then the `prompt_cache_key` body path.
   - Stream: `sse_data_done`, implicit blocks, tool-argument fragments.
-  - Errors: `error.zerorouter`.
+  - Errors: `error.nullrouter`.
   - The non-text sections come in US3.
 - [x] T051 [P] [US1] Write `styles/bundled/openai-responses.toml`.
   - Route `/v1/responses`. `/v1/responses/input_tokens` is declared here and wired in US6.
@@ -415,8 +415,8 @@ Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-p
   - Session header as the Gemini CLI sends it.
   - Codec: `system_instruction`, `function_call_part`/`function_response_part`, tool results matched by `name`, and the `gemini_thinking_config` thinking form.
   - Stream: `sse_data` with `?alt=sse`, or a JSON array otherwise.
-  - Errors: `error.{code,message,status,zerorouter}`.
-- [x] T053 [US1] Add the `claude_code_user_id` session extractor and session carrier handling in `crates/zerorouter-wire/src/primitives/session.rs`, and the `ses_sha256_hex32` / `ses_time_base62` derivations (9router `opencode-session` parity, oracle `tests/unit/opencode-session.test.js` → `tests/fixtures/9router/session/*.json` via T042's generator hook).
+  - Errors: `error.{code,message,status,nullrouter}`.
+- [x] T053 [US1] Add the `claude_code_user_id` session extractor and session carrier handling in `crates/nullrouter-wire/src/primitives/session.rs`, and the `ses_sha256_hex32` / `ses_time_base62` derivations (9router `opencode-session` parity, oracle `tests/unit/opencode-session.test.js` → `tests/fixtures/9router/session/*.json` via T042's generator hook).
 - [x] T054 [US1] Seed the chosen four text providers as schema 2 ([R17](research.md#r17-provider-schema-2-and-the-chosen-five)).
   - Change `generate.mjs` to write `tools/gen-bundled/seeds/{anthropic,openrouter,opencode-zen,opencode-go,elevenlabs}.json` and to stop writing those five into `plugins/bundled/`.
   - Hand-write `plugins/bundled/anthropic.toml`, `openrouter.toml`, `opencode-zen.toml` and `opencode-go.toml` as schema 2, with the text endpoints only:
@@ -425,26 +425,26 @@ Spec FR-038–FR-042, SC-014, US1-8 to US1-11; [R27](research.md#r27-optimizer-p
     - **opencode**: per-wire endpoints under `/zen/v1` and `/zen/go/v1`, per-model `wires` from the seed, `force_stream` where 9router forces it, `x-api-key` on `/messages` (endpoint `auth`), and `[session] header = "x-opencode-session"` with `derive = "ses_time_base62"` (zen) or `"ses_sha256_hex32"` (go).
   - No `systemone` section, no fingerprint tools, no User-Agent spoofing.
   - Add `[[deviation]]` rows for every slice 002 parity field that now differs.
-- [x] T055 [US1] Implement the happy-path attempt in `crates/zerorouter-engine/src/attempt.rs` and `src/plan.rs`. Depends on T027, T028, T034, T035, T054, T148–T151.
+- [x] T055 [US1] Implement the happy-path attempt in `crates/nullrouter-engine/src/attempt.rs` and `src/plan.rs`. Depends on T027, T028, T034, T035, T054, T148–T151.
   - Resolve the target (slice 002 `resolve`), build a one-candidate `RequestPlan` (first account in operator order), and choose the endpoint: the native pair first, then the model's `wires` order.
   - Build the body: `forward` (T148) on a same-style endpoint, `encode` otherwise, and put the drop list on the attempt (T150). Send, and read frames into IR events on a bounded channel.
   - Honour the `CancellationToken` with `tokio::select!` on every await.
   - Finish the record as `succeeded`, `failed` or `cancelled`.
   - When streaming to a Chat wire, set `stream_options.include_usage = true`, and strip the extra usage chunk if the client didn't ask for it ([R13](research.md#r13-usage-and-records)).
   - `force_stream`: collect the stream into a non-stream client response through the `Response` IR.
-- [x] T056 [US1] Wire text generation in `crates/zerorouter-server/src/router.rs` and `relay.rs`. Depends on T055. Route `op = generate`, `type = text` → decode (T027) → engine → relay (T039) in the client style, streamed or not.
-- [x] T057 [US1] Implement `accounts add` and `keys issue` in `crates/zerorouter-cli/src/cmd/accounts.rs` and `keys.rs`.
+- [x] T056 [US1] Wire text generation in `crates/nullrouter-server/src/router.rs` and `relay.rs`. Depends on T055. Route `op = generate`, `type = text` → decode (T027) → engine → relay (T039) in the client style, streamed or not.
+- [x] T057 [US1] Implement `accounts add` and `keys issue` in `crates/nullrouter-cli/src/cmd/accounts.rs` and `keys.rs`.
   - `accounts add <provider> <name> [--env VAR] [--order N]` reads the secret from stdin, never argv, and warns if stdin is a TTY without hiding the input.
   - `keys issue <name> [--break restart|error_event]` prints the key once.
   - Both write through T030/T031.
 - [x] T058 [US1] Write the harness scripts in `tests/harness/` and the runner `tests/harness/run.sh`.
   - Python and Node scripts per style: `openai` chat and responses, `anthropic` messages, `google-genai` generateContent.
-  - Each sends one streamed and one non-streamed text request to a running `zerorouter serve` backed by mock upstreams, and exits non-zero on any SDK error.
+  - Each sends one streamed and one non-streamed text request to a running `nullrouter serve` backed by mock upstreams, and exits non-zero on any SDK error.
   - Also Claude Code (`claude -p`, with `ANTHROPIC_BASE_URL`) and Codex (`codex exec`, with `OPENAI_BASE_URL`) runners, each skipped with a message when the tool is absent.
   - `run.sh` fails unless at least two harnesses ran (SC-001).
-  - Wire it as `crates/zerorouter-server/tests/harness.rs`, marked `#[ignore]` unless `ZR_HARNESS=1`.
-- [X] T059 [US1] Run `cargo test -p zerorouter-wire -p zerorouter-server` (including T146–T147) and `ZR_HARNESS=1 cargo test -p zerorouter-server --test harness` (including T152's headroom chain), then fix until green. Run slice 002's parity tests and confirm that only listed deviations differ.
-- [ ] T060 [US1] *operator-run* Live smoke: ask the user to run `! ZR_LIVE=1 cargo test -p zerorouter-engine --test live -- text`. It sends one streamed and one non-streamed request per text provider with their accounts. Also check that opencode API-key requests succeed without fingerprint tools ([R4](research.md#r4-translation-behaviour-parity-and-deliberate-deviations)). Write the test in `crates/zerorouter-engine/tests/live.rs` (skipped unless `ZR_LIVE=1`).
+  - Wire it as `crates/nullrouter-server/tests/harness.rs`, marked `#[ignore]` unless `NR_HARNESS=1`.
+- [X] T059 [US1] Run `cargo test -p nullrouter-wire -p nullrouter-server` (including T146–T147) and `NR_HARNESS=1 cargo test -p nullrouter-server --test harness` (including T152's headroom chain), then fix until green. Run slice 002's parity tests and confirm that only listed deviations differ.
+- [ ] T060 [US1] *operator-run* Live smoke: ask the user to run `! NR_LIVE=1 cargo test -p nullrouter-engine --test live -- text`. It sends one streamed and one non-streamed request per text provider with their accounts. Also check that opencode API-key requests succeed without fingerprint tools ([R4](research.md#r4-translation-behaviour-parity-and-deliberate-deviations)). Write the test in `crates/nullrouter-engine/tests/live.rs` (skipped unless `NR_LIVE=1`).
 
 **Checkpoint**: MVP. A standard client gets text answers in its own style from each text
 provider.
@@ -462,8 +462,8 @@ informational error in its own style.
 ### Tests for User Story 2 ⚠️
 
 - [X] T061 [US2] Add the classification oracle to `generate.mjs`. Run `checkFallbackError` over the `tests/unit/account-fallback-4xx.test.js` cases plus a generated grid (statuses 400–599 × the ERROR_RULES texts × JSON and plain bodies), and write `tests/fixtures/9router/classify/cases.json`.
-- [X] T062 [P] [US2] Write classification parity in `crates/zerorouter-engine/tests/classify.rs` against `tests/fixtures/9router/classify/cases.json`: the verdict, the cooldown, and the backoff level progression (2000·2^(level−1), capped at 300 000, max level 15).
-- [X] T063 [P] [US2] Write `crates/zerorouter-engine/tests/retry.rs` for every row of the [R7](research.md#r7-retry-order-and-budgets) budget table:
+- [X] T062 [P] [US2] Write classification parity in `crates/nullrouter-engine/tests/classify.rs` against `tests/fixtures/9router/classify/cases.json`: the verdict, the cooldown, and the backoff level progression (2000·2^(level−1), capped at 300 000, max level 15).
+- [X] T063 [P] [US2] Write `crates/nullrouter-engine/tests/retry.rs` for every row of the [R7](research.md#r7-retry-order-and-budgets) budget table:
   - 502, network error and connect timeout: 3 retries at 3 s;
   - 503: 3 × 2 s;
   - 504: 2 × 3 s;
@@ -474,57 +474,57 @@ informational error in its own style.
   - a plugin `retry` override.
 
   Use tokio paused time. *(Done without it: paused time auto-advances while the engine waits on the loopback socket and fires header timeouts that never happened. The table is checked through `classify::budget`, and the loop with plugin overrides at short delays.)*
-- [X] T064 [P] [US2] Write `crates/zerorouter-engine/tests/fallback.rs`.
+- [X] T064 [P] [US2] Write `crates/nullrouter-engine/tests/fallback.rs`.
   - For a unified model with two accounts and two members, cover every failure kind: the order is same account → other account → other member (SC-002).
   - A direct `<provider>/<model>` target stops after its accounts (US2-4).
   - A non-fallback 4xx is returned at once with its status and the upstream message first (US2-5).
   - A member with no account or not installed is a `skipped` attempt with a reason.
   - A `CannotCarry` target is skipped.
-- [X] T065 [P] [US2] Write `crates/zerorouter-engine/tests/stay_warm.rs`.
+- [X] T065 [P] [US2] Write `crates/nullrouter-engine/tests/stay_warm.rs`.
   - After a move to the backup account, the agent's next request goes to backup. Once backup fails over and main recovers, the next request goes to main (SC-003).
   - A warm account in cooldown is skipped until the cooldown ends.
   - With two concurrent requests from one agent, the last success wins.
   - A stream that breaks isn't counted as warm.
-- [X] T066 [P] [US2] Write `crates/zerorouter-engine/tests/timeouts.rs`.
+- [X] T066 [P] [US2] Write `crates/nullrouter-engine/tests/timeouts.rs`.
   - No response headers within `timeout_ms` counts as a 502 and is retried.
   - No byte for `stall_timeout_ms` is a break, including on a `force_stream` body collected for a non-stream client.
   - `envMs` parsing: an integer > 0, else the default.
-- [X] T067 [P] [US2] Write `crates/zerorouter-server/tests/errors.rs`.
-  - For each style, when all attempts fail: status 503, `retry-after` equal to the seconds until the earliest cooldown ends, and a body per [contracts/client-surface.md § Informational error body](contracts/client-surface.md#informational-error-body). The message lists every attempt and the record id, the `zerorouter` field has the same attempts, and the header id equals the body id (US2-6).
+- [X] T067 [P] [US2] Write `crates/nullrouter-server/tests/errors.rs`.
+  - For each style, when all attempts fail: status 503, `retry-after` equal to the seconds until the earliest cooldown ends, and a body per [contracts/client-surface.md § Informational error body](contracts/client-surface.md#informational-error-body). The message lists every attempt and the record id, the `nullrouter` field has the same attempts, and the header id equals the body id (US2-6).
   - While the engine retries, the stream sends keepalives and holds the preamble: no `message_start` is sent twice.
   - A client disconnect during a backoff sleep cancels it, and no further upstream request starts.
 
 ### Implementation for User Story 2
 
-- [X] T068 [US2] Port the classification in `crates/zerorouter-engine/src/classify.rs` ([R6](research.md#r6-error-classification)).
+- [X] T068 [US2] Port the classification in `crates/nullrouter-engine/src/classify.rs` ([R6](research.md#r6-error-classification)).
   - Text rules come first: lowercase substring, first match wins, against `"[<status>]: <raw body>"`.
   - The status rules come next.
   - Result: `Verdict { class, fallback: bool, cooldown: Cooldown }`, with the classes from data-model `Attempt.class`.
-- [X] T069 [US2] Implement cooldowns in `crates/zerorouter-engine/src/cooldown.rs`.
+- [X] T069 [US2] Implement cooldowns in `crates/nullrouter-engine/src/cooldown.rs`.
   - Keyed by "`(provider id, account name, model id) → { until: Instant, backoff_level: u8 (≤ 15) }`".
   - A success clears the model's cooldown and, when no other cooldown is active, resets the level (9router `auth.js:326-333`).
   - Provide `earliest_end()` for `retry-after`.
-- [X] T070 [US2] Extend `crates/zerorouter-engine/src/plan.rs` with the full candidate order and the `WarmMap`.
+- [X] T070 [US2] Extend `crates/nullrouter-engine/src/plan.rs` with the full candidate order and the `WarmMap`.
   - Order: the warm account first (if not cooling), then that provider's remaining accounts in operator order, then the other members (unified targets only), each with their accounts.
   - The `WarmMap` is keyed by "`(AgentId, Target) → (provider id, account name)`". It is "updated on successful completion only" (stream end).
-- [X] T071 [US2] Extend `crates/zerorouter-engine/src/attempt.rs` into the full attempt loop.
+- [X] T071 [US2] Extend `crates/nullrouter-engine/src/attempt.rs` into the full attempt loop.
   - Same-account budgets per R7, with plugin overrides.
   - Parse `retry-after` (seconds or HTTP date) and the reset headers.
   - Record attempts with kind `initial | same_account_retry | next_account | next_member | skipped`.
   - Backoff sleeps sit inside `tokio::select!` with the cancellation token.
   - Apply the connect timeout and the stall watchdog to every streamed and chunked body ([R10](research.md#r10-timeouts)).
   - A break before any content event is an ordinary transient failure.
-- [X] T072 [US2] Add the preamble hold and keepalive in `crates/zerorouter-wire/src/stream/writer.rs` and `crates/zerorouter-server/src/relay.rs`.
+- [X] T072 [US2] Add the preamble hold and keepalive in `crates/nullrouter-wire/src/stream/writer.rs` and `crates/nullrouter-server/src/relay.rs`.
   - Header events are held until the first content event or the end of the attempt, and dropped if the attempt is replaced.
   - Between attempts, send the style's `[errors] keepalive` (Messages `event: ping`, an SSE comment for the others).
-- [X] T073 [US2] Implement informational error bodies in `crates/zerorouter-wire/src/error_body.rs` ([R11](research.md#r11-informational-errors)) and use them in the server's error path.
+- [X] T073 [US2] Implement informational error bodies in `crates/nullrouter-wire/src/error_body.rs` ([R11](research.md#r11-informational-errors)) and use them in the server's error path.
   - The message is a one-line summary with the record id, then one line per attempt: `provider/account model: reason`.
   - A non-fallback upstream error keeps its upstream message verbatim first.
-  - The `zerorouter` details are `{ record_id, attempts: [{provider, account, model, status, class, reason, retries}] }`.
+  - The `nullrouter` details are `{ record_id, attempts: [{provider, account, model, status, class, reason, retries}] }`.
   - The type comes from the style's `type_map`.
   - Every string passes through the redactor.
 - [X] T074 [US2] Add the SDK error checks to `tests/harness/`. For each style's SDK (Python and Node), an all-attempts-failed request must raise the SDK's normal API error type, not a parse error, with the record id readable from the message (SC-009).
-- [X] T075 [US2] Run `cargo test -p zerorouter-engine -p zerorouter-server` and the harness, then fix until green.
+- [X] T075 [US2] Run `cargo test -p nullrouter-engine -p nullrouter-server` and the harness, then fix until green.
 
 **Checkpoint**: US1 and US2 together satisfy the slice's first two fail conditions.
 
@@ -539,7 +539,7 @@ retry, fallback, errors and records as text.
 
 ### Tests for User Story 3 ⚠️
 
-- [X] T076 [P] [US3] Write `crates/zerorouter-server/tests/types.rs` with the mock upstream.
+- [X] T076 [P] [US3] Write `crates/nullrouter-server/tests/types.rs` with the mock upstream.
   - One test per type through the OpenAI routes:
     - openrouter embeddings;
     - openrouter image (`b64_json`);
@@ -549,12 +549,12 @@ retry, fallback, errors and records as text.
     - openrouter video (submit 202 → poll → content through a `vj_` id).
   - Also through the Gemini routes: `embedContent`, `batchEmbedContents`, image and TTS via response modality, and `predictLongRunning` + `operations/{id}`.
   - Each record carries its type and usage (US3-1 to US3-3).
-- [X] T077 [P] [US3] Write the non-text fallback test in `crates/zerorouter-engine/tests/fallback_types.rs`: a unified embeddings model and a unified TTS model, each with two members, fall back exactly like text when the first member fails (US3-4, SC-007).
-- [X] T078 [P] [US3] Write the type-mismatch test in `crates/zerorouter-server/tests/type_mismatch.rs`: an embeddings model on `/v1/chat/completions` and a TTS request to an embeddings model each return 400 in the style's shape, naming both types. The mock received nothing (US3-5, FR-012).
+- [X] T077 [P] [US3] Write the non-text fallback test in `crates/nullrouter-engine/tests/fallback_types.rs`: a unified embeddings model and a unified TTS model, each with two members, fall back exactly like text when the first member fails (US3-4, SC-007).
+- [X] T078 [P] [US3] Write the type-mismatch test in `crates/nullrouter-server/tests/type_mismatch.rs`: an embeddings model on `/v1/chat/completions` and a TTS request to an embeddings model each return 400 in the style's shape, naming both types. The mock received nothing (US3-5, FR-012).
 
 ### Implementation for User Story 3
 
-- [X] T079 [P] [US3] Add the non-text primitives in `crates/zerorouter-wire/src/primitives/`:
+- [X] T079 [P] [US3] Add the non-text primitives in `crates/nullrouter-wire/src/primitives/`:
   - `media.rs`: `data_url`, `anthropic_source`, `gemini_inline_data`, `url`;
   - `embeddings.rs`: `float`, `base64_f32le`;
   - `body.rs`: `json`, `multipart` (file parts from `{input.audio}`), `binary`;
@@ -578,18 +578,18 @@ retry, fallback, errors and records as text.
   - New STT section: `POST /v1/speech-to-text`, multipart, `body = { file = "{input.audio}", model_id = "{model.upstream_id}", language_code = "{input.language?}" }`, `response = { text = "text", language = "language_code" }`, and `models = ["scribe_v2"]`.
   - Never set `webhook`.
   - Add `[[deviation]]` rows for the parity fields that differ.
-- [X] T084 [US3] Generalise the engine over model types in `crates/zerorouter-engine/src/attempt.rs`.
+- [X] T084 [US3] Generalise the engine over model types in `crates/nullrouter-engine/src/attempt.rs`.
   - The candidate's endpoint is chosen by `ModelType`.
   - Inline `body`/`response` endpoints are rendered with the wire templates.
   - Voice resolution: the request's `voice` field (OpenAI), the speech config (Gemini), or 9router's `model/voice` string for parity.
   - Check the route's type against the target model's type before any upstream call (FR-012).
-- [X] T085 [US3] Implement video jobs in `crates/zerorouter-engine/src/jobs.rs`.
-  - The `JobMap` maps "`zerorouter job id → (provider, account, upstream job id, record id)`", with ids `vj_…`.
+- [X] T085 [US3] Implement video jobs in `crates/nullrouter-engine/src/jobs.rs`.
+  - The `JobMap` maps "`nullrouter job id → (provider, account, upstream job id, record id)`", with ids `vj_…`.
   - Retry and fallback apply at submission only. Each client poll makes one upstream poll on the owning account (60 s bound, R7 retries on that account).
   - The record stays `in_progress` until the final content is delivered or the job fails.
-- [X] T086 [US3] Relay binary and job responses in `crates/zerorouter-server/src/relay.rs`: `Body::from_stream` for audio, with `content-type` from the upstream, and the job submit, poll and content routes.
-- [ ] T087 [US3] *operator-run* Live types check. Ask the user to run `! ZR_LIVE=1 cargo test -p zerorouter-engine --test live -- types`. It covers one request per type and provider, whether openrouter's speech endpoint works (T082 choice), and whether `scribe_v1` is accepted. Update the plugins from the result.
-- [X] T088 [US3] Run `cargo test -p zerorouter-server --test types --test type_mismatch` and `-p zerorouter-engine --test fallback_types`, then fix until green.
+- [X] T086 [US3] Relay binary and job responses in `crates/nullrouter-server/src/relay.rs`: `Body::from_stream` for audio, with `content-type` from the upstream, and the job submit, poll and content routes.
+- [ ] T087 [US3] *operator-run* Live types check. Ask the user to run `! NR_LIVE=1 cargo test -p nullrouter-engine --test live -- types`. It covers one request per type and provider, whether openrouter's speech endpoint works (T082 choice), and whether `scribe_v1` is accepted. Update the plugins from the result.
+- [X] T088 [US3] Run `cargo test -p nullrouter-server --test types --test type_mismatch` and `-p nullrouter-engine --test fallback_types`, then fix until green.
 
 **Checkpoint**: All three P1 stories work. The slice is usable end to end for every model
 type.
@@ -606,7 +606,7 @@ or an error event.
 
 ### Tests for User Story 4 ⚠️
 
-- [X] T089 [P] [US4] Write `crates/zerorouter-engine/tests/breaks.rs`, run in each client style.
+- [X] T089 [P] [US4] Write `crates/nullrouter-engine/tests/breaks.rs`, run in each client style.
   - **Continuation**: a cut after 20 text deltas with a continuation-capable next target gives one uninterrupted answer. There is no repeated or missing delta, the partial answer was sent as the trailing assistant turn (trailing whitespace trimmed), the record has two segments with usage added, and `break_handling = continued` (SC-008, US4-1).
   - **Restart**, the default: the open block closes. A new text block holds exactly `— connection lost, answer restarted —` (in Chat and Gemini, a text delta with blank lines around it). The new answer follows with shifted block indexes, output indexes and sequence numbers (US4-2).
   - **Error event**, via a key override: the style's stream error event with the record id, then a clean end (US4-3).
@@ -617,18 +617,18 @@ or an error event.
 
 ### Implementation for User Story 4
 
-- [X] T091 [US4] Implement break handling in `crates/zerorouter-engine/src/breaks.rs` per the [data-model break transitions](data-model.md#clientstreamstate).
+- [X] T091 [US4] Implement break handling in `crates/nullrouter-engine/src/breaks.rs` per the [data-model break transitions](data-model.md#clientstreamstate).
   - `open_block = ToolCall{args_started}` → error event.
   - A continuation target is available → continue: the original request plus `partial_text` as the trailing assistant turn, the continuation's preamble suppressed, its first text block merged into the open block, and its usage added.
   - Otherwise, when the behaviour is `restart`: close the block, add the note block, re-send the original request to the next target, and shift the indexes.
   - Otherwise: close the block and send the error event.
   - Eligibility: the endpoint declares `[continuation]`, the model is in `models` (or not in `except_models`), no `unless` condition holds, and the partial answer encodes into the target wire (no `CannotCarry`).
-- [X] T092 [US4] Add the restart note and the index shifting to `crates/zerorouter-wire/src/stream/writer.rs`. The exact note text is `— connection lost, answer restarted —`. Styles with explicit blocks get a new block; implicit styles get a delta surrounded by `\n\n`. Keep the counters across segments.
-- [X] T093 [US4] Resolve the break behaviour in `crates/zerorouter-engine/src/state.rs`: the agent key's `break_behaviour` if set, else `[pipeline] break_behaviour`, else `restart`.
-- [X] T094 [US4] Implement `behaviour set-break restart|error_event` in `crates/zerorouter-cli/src/cmd/behaviour.rs` (writes `config.toml`) and `keys set-break <name|id> restart|error_event|default` in `crates/zerorouter-cli/src/cmd/keys.rs` (FR-031). Both hot-apply through T104 when a server runs.
+- [X] T092 [US4] Add the restart note and the index shifting to `crates/nullrouter-wire/src/stream/writer.rs`. The exact note text is `— connection lost, answer restarted —`. Styles with explicit blocks get a new block; implicit styles get a delta surrounded by `\n\n`. Keep the counters across segments.
+- [X] T093 [US4] Resolve the break behaviour in `crates/nullrouter-engine/src/state.rs`: the agent key's `break_behaviour` if set, else `[pipeline] break_behaviour`, else `restart`.
+- [X] T094 [US4] Implement `behaviour set-break restart|error_event` in `crates/nullrouter-cli/src/cmd/behaviour.rs` (writes `config.toml`) and `keys set-break <name|id> restart|error_event|default` in `crates/nullrouter-cli/src/cmd/keys.rs` (FR-031). Both hot-apply through T104 when a server runs.
 - [X] T095 [US4] Declare continuation in `plugins/bundled/anthropic.toml`: `method = "assistant_prefill"`, `trim_trailing_whitespace = true`, `unless = ["thinking_enabled", "tool_call_in_progress"]`, and `models = ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-5-sonnet-20241022"]`. These stay subject to T096. Declare nothing for openrouter or opencode until T096 confirms a model family.
-- [ ] T096 [US4] *operator-run* Live continuation check. Ask the user to run `! ZR_LIVE=1 cargo test -p zerorouter-engine --test live -- continuation`. It confirms that prefill continues on each T095 model, that Claude 4.6+ returns 400 for prefill, and whether openrouter or opencode families accept prefill. Remove any declaration the check doesn't confirm.
-- [X] T097 [US4] Run `cargo test -p zerorouter-engine --test breaks` and the replay harness, then fix until green.
+- [ ] T096 [US4] *operator-run* Live continuation check. Ask the user to run `! NR_LIVE=1 cargo test -p nullrouter-engine --test live -- continuation`. It confirms that prefill continues on each T095 model, that Claude 4.6+ returns 400 for prefill, and whether openrouter or opencode families accept prefill. Remove any declaration the check doesn't confirm.
+- [X] T097 [US4] Run `cargo test -p nullrouter-engine --test breaks` and the replay harness, then fix until green.
 
 **Checkpoint**: Stream breaks never waste a finished part silently, and every outcome is
 visible in the record.
@@ -645,19 +645,19 @@ queryable from the CLI, account and key management with hot apply, and no secret
 ### Tests for User Story 5 ⚠️
 
 - [X] T098 [US5] Add the usage oracle to `generate.mjs`. Run 9router's usage extraction (`extractUsage*`, `concerns/usage.js`) over the cases in `tests/unit/cached-token-usage.test.js`, `extract-usage-cache-shapes.test.js`, `openai-responses-usage-completed.test.js`, `usage-concern.test.js` and `opencode-go-usage.test.js`, and write `tests/fixtures/9router/usage/*.json`.
-- [X] T099 [P] [US5] Write `crates/zerorouter-wire/tests/usage.rs`, covering:
+- [X] T099 [P] [US5] Write `crates/nullrouter-wire/tests/usage.rs`, covering:
   - parity with `tests/fixtures/9router/usage/`;
   - Responses nested `input_tokens_details.cached_tokens` → `cache_read` (US5-2);
   - openrouter `prompt_tokens_details.cache_write_tokens` → `cache_write`;
   - Gemini `cachedContentTokenCount` and `thoughtsTokenCount`;
   - an absent field → `None` ("not reported"), never 0 and never an estimate;
   - the Messages→Chat semantics conversion.
-- [X] T100 [P] [US5] Write `crates/zerorouter-engine/tests/usage_records.rs`. For every chosen text provider × client style, the recorded input, output, cache-read and cache-write equal the mock's reported numbers, and so does the client-visible usage (SC-004).
-- [X] T101 [P] [US5] Write `crates/zerorouter-server/tests/timing.rs`. A mock with a scripted delay before the first content and before the end must give recorded `ttft_ms` and `total_ms` within 10 ms of what the test client measures (SC-005). A streamed record is never missing TTFT.
-- [X] T102 [P] [US5] Write `crates/zerorouter-server/tests/secrets.rs`.
+- [X] T100 [P] [US5] Write `crates/nullrouter-engine/tests/usage_records.rs`. For every chosen text provider × client style, the recorded input, output, cache-read and cache-write equal the mock's reported numbers, and so does the client-visible usage (SC-004).
+- [X] T101 [P] [US5] Write `crates/nullrouter-server/tests/timing.rs`. A mock with a scripted delay before the first content and before the end must give recorded `ttft_ms` and `total_ms` within 10 ms of what the test client measures (SC-005). A streamed record is never missing TTFT.
+- [X] T102 [P] [US5] Write `crates/nullrouter-server/tests/secrets.rs`.
   - Configure sentinel secrets (`SENTINEL-PROVIDER-…`, and an agent key) and have the mock echo the provider secret in an error body and a header.
   - Scan the captured logs, every record, every client response (bodies and headers), CLI output, the headers the mock received beyond the auth header, and the plugin-visible `Registry` debug output. There must be zero occurrences (SC-006, US5-5, FR-033).
-- [X] T103 [P] [US5] Write `crates/zerorouter-cli/tests/operator.rs` against a running test server.
+- [X] T103 [P] [US5] Write `crates/nullrouter-cli/tests/operator.rs` against a running test server.
   - `records list --provider`, `--model` and `records show` return exactly the matching records (US5-3).
   - `accounts add`, `list`, `remove`, `disable` and `enable`, and `keys issue`, `list` and `revoke`, apply to the next request without a restart (US5-4).
   - A revoked key is rejected at once.
@@ -666,18 +666,18 @@ queryable from the CLI, account and key management with hot apply, and no secret
 
 ### Implementation for User Story 5
 
-- [X] T104 [US5] Implement the operator socket in `crates/zerorouter-server/src/operator.rs` ([contracts/operator-cli.md § Operator socket protocol](contracts/operator-cli.md#operator-socket-protocol)).
-  - A Unix socket at `$ZEROROUTER_HOME/run/operator.sock`, mode 0600, carrying NDJSON: `reload`, `records.list`, `records.get` and `accounts.state`.
+- [X] T104 [US5] Implement the operator socket in `crates/nullrouter-server/src/operator.rs` ([contracts/operator-cli.md § Operator socket protocol](contracts/operator-cli.md#operator-socket-protocol)).
+  - A Unix socket at `$NULLROUTER_HOME/run/operator.sock`, mode 0600, carrying NDJSON: `reload`, `records.list`, `records.get` and `accounts.state`.
   - A failed reload keeps the previous snapshot and returns the error.
   - Remove a stale socket at start.
-- [X] T105 [US5] Complete record filling in `crates/zerorouter-engine/src/attempt.rs` and `src/records.rs`.
+- [X] T105 [US5] Complete record filling in `crates/nullrouter-engine/src/attempt.rs` and `src/records.rs`.
   - Usage is merged per field (last value wins) and summed across segments.
   - `ttft_ms` is taken at the first content event written to the client, and `total_ms` at the last byte written. Both are measured from request arrival at the server's socket write, so the server reports write times back to the engine.
   - Carry `break_handling`, `served_by`, `job` and `model_type`.
   - Every string field passes through the redactor.
-- [X] T106 [US5] Implement `records list [--provider P] [--model UNIFIED] [--limit N] [--json]` and `records show <rq_id> [--json]` in `crates/zerorouter-cli/src/cmd/records.rs`. The text layout follows [contracts/operator-cli.md § records show](contracts/operator-cli.md#records-show-output-text), with `not reported` for `None` usage fields. Each attempt lists its `dropped` paths and reasons (T150).
-- [X] T107 [US5] Complete `accounts list|remove|disable|enable` in `crates/zerorouter-cli/src/cmd/accounts.rs` and `keys list|revoke` in `crates/zerorouter-cli/src/cmd/keys.rs`. Each mutating command writes atomically and then sends `reload` over the socket, printing `applied` or `saved; applies at next start`.
-- [X] T108 [US5] Run `cargo test -p zerorouter-wire --test usage`, `-p zerorouter-engine --test usage_records`, `-p zerorouter-server --test timing --test secrets` and `-p zerorouter-cli --test operator`, then fix until green.
+- [X] T106 [US5] Implement `records list [--provider P] [--model UNIFIED] [--limit N] [--json]` and `records show <rq_id> [--json]` in `crates/nullrouter-cli/src/cmd/records.rs`. The text layout follows [contracts/operator-cli.md § records show](contracts/operator-cli.md#records-show-output-text), with `not reported` for `None` usage fields. Each attempt lists its `dropped` paths and reasons (T150).
+- [X] T107 [US5] Complete `accounts list|remove|disable|enable` in `crates/nullrouter-cli/src/cmd/accounts.rs` and `keys list|revoke` in `crates/nullrouter-cli/src/cmd/keys.rs`. Each mutating command writes atomically and then sends `reload` over the socket, printing `applied` or `saved; applies at next start`.
+- [X] T108 [US5] Run `cargo test -p nullrouter-wire --test usage`, `-p nullrouter-engine --test usage_records`, `-p nullrouter-server --test timing --test secrets` and `-p nullrouter-cli --test operator`, then fix until green.
 
 **Checkpoint**: Every request is traceable from its error message to its full record.
 
@@ -693,23 +693,23 @@ Responses and Gemini count routes, using the provider's count or 9router's estim
 ### Tests for User Story 6 ⚠️
 
 - [X] T109 [US6] Add the estimator oracle to `generate.mjs`. Run `estimateAnthropicInputTokens` over the 3 cases of `tests/unit/count-tokens.test.js` plus generated requests (system, tools, images, multi-turn), and write `tests/fixtures/9router/count/*.json`.
-- [X] T110 [P] [US6] Write `crates/zerorouter-server/tests/models.rs`.
+- [X] T110 [P] [US6] Write `crates/nullrouter-server/tests/models.rs`.
   - OpenAI, Anthropic (with `anthropic-version`) and Gemini lists have the right shape.
-  - They include every unified model and every direct model of every type, with the type in `zerorouter.type` or the Gemini `supportedGenerationMethods`.
+  - They include every unified model and every direct model of every type, with the type in `nullrouter.type` or the Gemini `supportedGenerationMethods`.
   - A provider with no account is absent (US6-1, US6-2).
   - `get_model` works for a model containing `/`.
-- [X] T111 [P] [US6] Write `crates/zerorouter-server/tests/count.rs`.
+- [X] T111 [P] [US6] Write `crates/nullrouter-server/tests/count.rs`.
   - An anthropic target: the count comes from the mock's `count_tokens` endpoint (US6-3).
   - An openrouter target: the estimate equals the oracle, the response has the `x-0router-estimate: true` header, and the record is `estimated` (US6-4).
   - Run in all three count styles, including the same retry order on a transient failure.
 
 ### Implementation for User Story 6
 
-- [X] T112 [P] [US6] Port the estimator in `crates/zerorouter-wire/src/estimate.rs`: ceil(chars/4) over system, tools and message parts of the request translated into the Messages shape, with exact parity to `tests/fixtures/9router/count/`.
-- [X] T113 [US6] Implement token counting in `crates/zerorouter-server/src/count.rs` and the engine. Route `op = count_tokens` resolves the target like generation. If the text endpoint declares `[token_count]`, translate to that wire and call it with the same retry order; otherwise estimate. Response shapes follow [contracts/client-surface.md § Token counting](contracts/client-surface.md#token-counting).
-- [X] T114 [US6] Implement model lists in `crates/zerorouter-server/src/models.rs`: `list_models` and `get_model` for the OpenAI shape (default), the Anthropic shape (discriminated by `anthropic-version`) and the Gemini shape, over unified models plus direct models on providers with at least one enabled account.
+- [X] T112 [P] [US6] Port the estimator in `crates/nullrouter-wire/src/estimate.rs`: ceil(chars/4) over system, tools and message parts of the request translated into the Messages shape, with exact parity to `tests/fixtures/9router/count/`.
+- [X] T113 [US6] Implement token counting in `crates/nullrouter-server/src/count.rs` and the engine. Route `op = count_tokens` resolves the target like generation. If the text endpoint declares `[token_count]`, translate to that wire and call it with the same retry order; otherwise estimate. Response shapes follow [contracts/client-surface.md § Token counting](contracts/client-surface.md#token-counting).
+- [X] T114 [US6] Implement model lists in `crates/nullrouter-server/src/models.rs`: `list_models` and `get_model` for the OpenAI shape (default), the Anthropic shape (discriminated by `anthropic-version`) and the Gemini shape, over unified models plus direct models on providers with at least one enabled account.
 - [X] T115 [US6] Add the Gemini routes `:countTokens`, `GET /v1beta/models` and `GET /v1beta/models/{model*}` to `styles/bundled/gemini.toml`. Make sure the count and list routes declared in T049 and T051 have their codecs.
-- [X] T116 [US6] Run `cargo test -p zerorouter-server --test models --test count`, then fix until green.
+- [X] T116 [US6] Run `cargo test -p nullrouter-server --test models --test count`, then fix until green.
 
 **Checkpoint**: Claude Code, Codex CLI and Gemini CLI can discover models and count tokens.
 
@@ -725,22 +725,22 @@ and plugins with actionable messages.
 
 ### Tests for User Story 7 ⚠️
 
-- [X] T117 [P] [US7] Add the style gate corpus in `crates/zerorouter-registry/tests/gate/invalid/styles/`, one file per case with an `.expected` diagnostic: `unknown-key`, `unknown-placeholder` (`{request.api_key}`), `bad-path-template`, `route-collision` (two files), `missing-codec`, `ambiguous-stream-rules`, `finish-map-incomplete`, `error-template-missing-message`, `bad-carrier-scheme`, `unknown-session-extractor`, `unknown-framing` and `expression-in-template` (`{a+b}`).
-- [X] T118 [P] [US7] Add the schema-2 provider corpus in `crates/zerorouter-registry/tests/gate/invalid/providers/`: `endpoint-unknown-type`, `url-private-ip`, `url-localhost`, `placeholder-in-host`, `wire-and-body`, `unknown-body-placeholder`, `body-secret-key`, `forwarding-wildcard-bare`, `forwarding-bad-merge`, `forwarding-body-secret-path`, `continuation-unknown-method`, `token-count-without-count-style`, `error-rule-bad-status`, `schema2-with-transport`, `model-type-without-endpoint` and `endpoint-auth-bad-scheme`. Add `crates/zerorouter-registry/tests/gate/strict/forwarding-authorization.toml`, which loads with a diagnostic and the entry stripped in normal mode and is an error in strict mode.
-- [X] T119 [US7] Extend `crates/zerorouter-registry/tests/gate.rs`.
+- [X] T117 [P] [US7] Add the style gate corpus in `crates/nullrouter-registry/tests/gate/invalid/styles/`, one file per case with an `.expected` diagnostic: `unknown-key`, `unknown-placeholder` (`{request.api_key}`), `bad-path-template`, `route-collision` (two files), `missing-codec`, `ambiguous-stream-rules`, `finish-map-incomplete`, `error-template-missing-message`, `bad-carrier-scheme`, `unknown-session-extractor`, `unknown-framing` and `expression-in-template` (`{a+b}`).
+- [X] T118 [P] [US7] Add the schema-2 provider corpus in `crates/nullrouter-registry/tests/gate/invalid/providers/`: `endpoint-unknown-type`, `url-private-ip`, `url-localhost`, `placeholder-in-host`, `wire-and-body`, `unknown-body-placeholder`, `body-secret-key`, `forwarding-wildcard-bare`, `forwarding-bad-merge`, `forwarding-body-secret-path`, `continuation-unknown-method`, `token-count-without-count-style`, `error-rule-bad-status`, `schema2-with-transport`, `model-type-without-endpoint` and `endpoint-auth-bad-scheme`. Add `crates/nullrouter-registry/tests/gate/strict/forwarding-authorization.toml`, which loads with a diagnostic and the entry stripped in normal mode and is an error in strict mode.
+- [X] T119 [US7] Extend `crates/nullrouter-registry/tests/gate.rs`.
   - Every corpus file gets exactly its expected diagnostic.
   - The four shipped styles and the five bundled plugins pass in strict mode (US7-4).
   - `url-localhost` passes when `allow_private_endpoints = true`.
-- [X] T120 [P] [US7] Write `crates/zerorouter-engine/tests/forwarding.rs`.
+- [X] T120 [P] [US7] Write `crates/nullrouter-engine/tests/forwarding.rs`.
   - From a cross-style client, a declared `anthropic-beta` reaches the anthropic mock and is appended to any static value, and an undeclared client header doesn't reach it (US7-1). From a same-style client, the undeclared header does reach it (FR-039).
   - The mock's `request-id` and `anthropic-ratelimit-requests-remaining` reach the client (US7-2).
   - A client's `x-api-key`, `authorization` and `cookie` never reach any mock, and a mock `set-cookie` never reaches the client (US7-3).
   - A declared header whose value contains a configured secret is dropped. A value with CR/LF is rejected.
-- [X] T121 [P] [US7] Write `crates/zerorouter-engine/tests/inband.rs`. A test plugin declares `errors.body` for an error inside a 200 body and `errors.stream` for a stream error event with a `status_map`. Both are classified with the declared status and trigger fallback (US7-5, FR-024).
+- [X] T121 [P] [US7] Write `crates/nullrouter-engine/tests/inband.rs`. A test plugin declares `errors.body` for an error inside a 200 body and `errors.stream` for a stream error event with a `status_map`. Both are classified with the declared status and trigger fallback (US7-5, FR-024).
 
 ### Implementation for User Story 7
 
-- [X] T122 [US7] Implement forwarding in `crates/zerorouter-engine/src/forwarding.rs`.
+- [X] T122 [US7] Implement forwarding in `crates/nullrouter-engine/src/forwarding.rs`.
   - Upstream, cross-style attempts: client headers from the declaring `from_styles` only, with `merge = replace | append_csv`, then the floor, the secret-value check and the CR/LF check. Same-style attempts use T151's rule.
   - Downstream: provider headers through the `to_client.headers` allowlist (with `-*` suffix wildcards), then the floor, then the core headers.
   - `to_client.body` paths are copied verbatim, in native pairs only.
@@ -749,8 +749,8 @@ and plugins with actionable messages.
   - Upstream: `anthropic-beta` (`append_csv`) and `anthropic-version` (`replace`), both `from_styles = ["anthropic-messages"]`.
   - To the client: `request-id`, `retry-after` and `anthropic-ratelimit-*`.
   - Add the equivalent declarations for openrouter and opencode from their seeds, where 9router forwards anything.
-- [X] T124 [US7] Implement in-band error detection in `crates/zerorouter-engine/src/attempt.rs`. Endpoint `errors.body` rules are checked on 200 bodies, and `errors.stream` rules on stream frames. A match becomes a classified failure with the declared or mapped status and class `in_band`.
-- [X] T125 [US7] Run `cargo test -p zerorouter-registry --test gate` and `-p zerorouter-engine --test forwarding --test inband`, then fix until green.
+- [X] T124 [US7] Implement in-band error detection in `crates/nullrouter-engine/src/attempt.rs`. Endpoint `errors.body` rules are checked on 200 bodies, and `errors.stream` rules on stream frames. A match becomes a classified failure with the declared or mapped status and class `in_band`.
+- [X] T125 [US7] Run `cargo test -p nullrouter-registry --test gate` and `-p nullrouter-engine --test forwarding --test inband`, then fix until green.
 
 **Checkpoint**: The core stays generic. Every provider- and style-specific fact is data that
 passes the gate.
@@ -766,36 +766,36 @@ set that installs whole or is refused whole with a message naming every unsuppor
 
 ### Tests for User Story 8 ⚠️
 
-- [X] T126 [P] [US8] Add the fit corpus in `crates/zerorouter-registry/tests/gate/unsupported/`, each case with a golden `.expected` message in the [contract format](contracts/provider-schema-v2.md#fit-check): `oauth-auth`, `cookie-category`, `kiro-format`, `quirk`, `hook`, `executor-requires`, `web-search-section`, `systemone-section`, `schema-3`, `unknown-wire-style` and `mixed` (several parts, all listed).
-- [X] T127 [P] [US8] Write `crates/zerorouter-registry/tests/community.rs`.
+- [X] T126 [P] [US8] Add the fit corpus in `crates/nullrouter-registry/tests/gate/unsupported/`, each case with a golden `.expected` message in the [contract format](contracts/provider-schema-v2.md#fit-check): `oauth-auth`, `cookie-category`, `kiro-format`, `quirk`, `hook`, `executor-requires`, `web-search-section`, `systemone-section`, `schema-3`, `unknown-wire-style` and `mixed` (several parts, all listed).
+- [X] T127 [P] [US8] Write `crates/nullrouter-registry/tests/community.rs`.
   - A sweep over all 116 community plugins: each either fits and loads, or is refused with every unsupported part listed, file:line:col for each. No panic (SC-012).
   - A refused plugin contributes nothing to the snapshot: no models, no aliases, no unified-model members (US8-3).
   - The goldens from T126 match.
-- [X] T128 [P] [US8] Write `crates/zerorouter-cli/tests/plugins.rs`.
+- [X] T128 [P] [US8] Write `crates/nullrouter-cli/tests/plugins.rs`.
   - `plugins list --community` shows 116 entries with their fit status.
   - `plugins install qoder` exits 3 with the refusal message.
-  - `plugins install deepseek` installs, appears in `zerorouter providers`, and serves a request against the mock once an account is added (US8-1).
+  - `plugins install deepseek` installs, appears in `nullrouter providers`, and serves a request against the mock once an account is added (US8-1).
   - `plugins uninstall` removes it.
 
 ### Implementation for User Story 8
 
 - [X] T129 [US8] Change `tools/gen-bundled/generate.mjs` to write the 116 non-chosen providers to `plugins/community/*.toml` (schema 1), to delete them from `plugins/bundled/`, and to stop emitting web search and web fetch sections.
-  - Emit `requires = ["9router-executor:<id>"]` for providers that have a specialised 9router executor (`open-sse/executors/*` other than the default), and add the `requires` key to the schema-1 structs in `crates/zerorouter-registry/src/schema/plugin.rs`.
+  - Emit `requires = ["9router-executor:<id>"]` for providers that have a specialised 9router executor (`open-sse/executors/*` other than the default), and add the `requires` key to the schema-1 structs in `crates/nullrouter-registry/src/schema/plugin.rs`.
   - Commit the output on its own, naming the ref SHA.
-- [X] T130 [US8] Implement the schema 1 → 2 conversion in `crates/zerorouter-registry/src/convert.rs` per [contracts/provider-schema-v2.md § Schema 1 → 2 conversion](contracts/provider-schema-v2.md#schema-1--2-conversion-community-plugins).
+- [X] T130 [US8] Implement the schema 1 → 2 conversion in `crates/nullrouter-registry/src/convert.rs` per [contracts/provider-schema-v2.md § Schema 1 → 2 conversion](contracts/provider-schema-v2.md#schema-1--2-conversion-community-plugins).
   - `[transport]` → `[endpoints.text]`, and each capability endpoint → `[endpoints.<type>]`.
   - The format maps to a wire: `openai` → `openai-chat`, `claude` → `anthropic-messages`, `openai-responses`, `gemini`.
   - `image_to_text` → `vision = true`.
   - Keep the source spans for fit messages.
-- [X] T131 [US8] Implement the fit check in `crates/zerorouter-registry/src/fit.rs` ([R19](research.md#r19-fit-or-refuse-and-the-community-set)).
+- [X] T131 [US8] Implement the fit check in `crates/nullrouter-registry/src/fit.rs` ([R19](research.md#r19-fit-or-refuse-and-the-community-set)).
   - `FitVerdict::Fits | Unsupported { parts: [UnsupportedPart { span, path, value, reason }] }`.
   - Unsupported: OAuth or cookie/web-cookie auth (even alongside an API key), wires other than the four, web search, web fetch and systemone sections, quirks, hooks, `executor_params`, credential fallback, regions, media formats not implemented, any `requires` entry, and a schema other than 1 or 2.
   - The message format follows the contract exactly, ending "No part of this plugin was loaded."
-- [X] T132 [US8] Implement the community set in `crates/zerorouter-registry/src/community.rs` and `build.rs`: embed `plugins/community/*.toml`, precompute each `FitVerdict`, and provide `install(id, home)` (gate + fit, then copy to `$ZEROROUTER_HOME/plugins/`) and `uninstall(id, home)`.
-- [X] T133 [US8] Apply fit-or-refuse at load in `crates/zerorouter-registry/src/load.rs`. Every user plugin is fit-checked on every load, and an `Unsupported` one is skipped whole and reported in `LoadReport`. Add a test-only `parity_set()` (feature `parity`) that loads bundled + community with the fit check off.
-- [X] T134 [US8] Move slice 002's parity tests to `parity_set()` in `crates/zerorouter-registry/tests/parity/main.rs`, so they still see 121 providers (FR-036, US8-4), and make sure every chosen-five difference has a `[[deviation]]` row.
-- [X] T135 [US8] Implement `plugins list [--community]`, `plugins install <id>` (exit 3 on Unsupported) and `plugins uninstall <id>` in `crates/zerorouter-cli/src/cmd/plugins.rs`, followed by a socket `reload`.
-- [X] T136 [US8] Run `cargo test -p zerorouter-registry` (all targets) and `-p zerorouter-cli --test plugins`, then fix until green.
+- [X] T132 [US8] Implement the community set in `crates/nullrouter-registry/src/community.rs` and `build.rs`: embed `plugins/community/*.toml`, precompute each `FitVerdict`, and provide `install(id, home)` (gate + fit, then copy to `$NULLROUTER_HOME/plugins/`) and `uninstall(id, home)`.
+- [X] T133 [US8] Apply fit-or-refuse at load in `crates/nullrouter-registry/src/load.rs`. Every user plugin is fit-checked on every load, and an `Unsupported` one is skipped whole and reported in `LoadReport`. Add a test-only `parity_set()` (feature `parity`) that loads bundled + community with the fit check off.
+- [X] T134 [US8] Move slice 002's parity tests to `parity_set()` in `crates/nullrouter-registry/tests/parity/main.rs`, so they still see 121 providers (FR-036, US8-4), and make sure every chosen-five difference has a `[[deviation]]` row.
+- [X] T135 [US8] Implement `plugins list [--community]`, `plugins install <id>` (exit 3 on Unsupported) and `plugins uninstall <id>` in `crates/nullrouter-cli/src/cmd/plugins.rs`, followed by a socket `reload`.
+- [X] T136 [US8] Run `cargo test -p nullrouter-registry` (all targets) and `-p nullrouter-cli --test plugins`, then fix until green.
 
 **Checkpoint**: All eight user stories work independently.
 
@@ -804,20 +804,20 @@ set that installs whole or is refused whole with a message naming every unsuppor
 ## Phase 11: Polish & Cross-Cutting Concerns
 
 - [X] T137 [P] Write the Criterion benches ([R24](research.md#r24-performance-and-benchmarks), SC-013).
-  - `crates/zerorouter-wire/benches/wire.rs`: request translation for each of the 4×4 pairs, stream event translation throughput, usage extraction.
-  - `crates/zerorouter-engine/benches/engine.rs`: the attempt loop against an instant mock, measuring the time to first byte that 0router adds (target p95 ≤ 10 ms).
-  - `crates/zerorouter-server/benches/server.rs`: the access-key check, route matching, and an end-to-end loopback request.
+  - `crates/nullrouter-wire/benches/wire.rs`: request translation for each of the 4×4 pairs, stream event translation throughput, usage extraction.
+  - `crates/nullrouter-engine/benches/engine.rs`: the attempt loop against an instant mock, measuring the time to first byte that 0router adds (target p95 ≤ 10 ms).
+  - `crates/nullrouter-server/benches/server.rs`: the access-key check, route matching, and an end-to-end loopback request.
 - [X] T138 Run the benches with `--save-baseline slice-003` and commit the summary table in `specs/003-request-pipeline/bench-baseline.md` (machine, date, median and p95 per bench).
-- [X] T139 Write the connection-reuse test in `crates/zerorouter-server/tests/reuse.rs`: N sequential requests to one mock host within the keep-alive window use one accepted connection (SC-011, FR-021).
+- [X] T139 Write the connection-reuse test in `crates/nullrouter-server/tests/reuse.rs`: N sequential requests to one mock host within the keep-alive window use one accepted connection (SC-011, FR-021).
 - [X] T140 [P] Write the documentation:
   - `docs/api-styles.md`, from [contracts/api-style-schema.md](contracts/api-style-schema.md);
   - updates to `docs/plugins.md` for schema 2, forwarding, the floor and the fit check;
   - updates to `docs/operator-config.md` for `accounts.toml`, `keys.toml`, `serve`, `records`, break behaviour and `allow_private_endpoints`.
-- [X] T141 Run `/rust-parity-audit` on `crates/zerorouter-engine/src/classify.rs`, `cooldown.rs`, `attempt.rs` (retry budgets and timeouts), `crates/zerorouter-wire/src/codec/`, `usage.rs` and `estimate.rs`. Fix every must-fix finding, and record the [R26](research.md#r26-deliberate-deviations-from-9router-summary) deviations as accepted.
+- [X] T141 Run `/rust-parity-audit` on `crates/nullrouter-engine/src/classify.rs`, `cooldown.rs`, `attempt.rs` (retry budgets and timeouts), `crates/nullrouter-wire/src/codec/`, `usage.rs` and `estimate.rs`. Fix every must-fix finding, and record the [R26](research.md#r26-deliberate-deviations-from-9router-summary) deviations as accepted.
 - [X] T142 Run a security review with the `security-auditor` agent. It covers the secret paths (accounts → upstream injection, redactor coverage, the floor, CLI input), SSRF (gate plus the resolved-IP re-check, no redirects), and the operator socket permissions. Fix every High finding.
 - [X] T143 Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`, and fix everything they report.
-- [X] T144 Run all 10 sections of [quickstart.md](quickstart.md) with a scratch `ZEROROUTER_HOME`, and correct the quickstart wherever the real output differs.
-- [X] T145 [P] Update `CLAUDE.md`: add the three new crates, `styles/bundled/`, `plugins/community/` and `tests/harness/` to the workspace table, and add the `zerorouter serve` run command.
+- [X] T144 Run all 10 sections of [quickstart.md](quickstart.md) with a scratch `NULLROUTER_HOME`, and correct the quickstart wherever the real output differs.
+- [X] T145 [P] Update `CLAUDE.md`: add the three new crates, `styles/bundled/`, `plugins/community/` and `tests/harness/` to the workspace table, and add the `nullrouter serve` run command.
 
 ---
 
@@ -930,6 +930,6 @@ T129) each go in their own commit, whose message names the `ref/9router` SHA.
   target; it is never dropped.
 - Never follow upstream redirects, and never pass a secret to anything plugin-visible.
 - Never edit `ref/9router/` or `tests/fixtures/9router/` by hand. Regenerate them.
-- Never add `tokio` or `unsafe` to `zerorouter-registry` or `zerorouter-wire`.
+- Never add `tokio` or `unsafe` to `nullrouter-registry` or `nullrouter-wire`.
 - The chosen five are hand-maintained after T054 and T083. `generate.mjs` must never write
   them again.

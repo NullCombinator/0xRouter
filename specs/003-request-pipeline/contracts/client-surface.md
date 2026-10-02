@@ -83,16 +83,16 @@ reason to refuse a request (FR-038–FR-041, research R27).
   fresh block indexes. In Chat Completions and Gemini streams, the note is a text delta
   surrounded by blank lines.
 - **Error event**: the style's stream error event, then a clean end:
-  - Messages: `event: error` / `{"type":"error","error":{"type":…,"message":…},"zerorouter":{…}}`
-  - Chat: `data: {"error":{…,"zerorouter":{…}}}` then `data: [DONE]`
-  - Responses: `response.failed` with `response.error` and `zerorouter`
-  - Gemini: a final chunk with `error` (`code`, `message`, `status`, `zerorouter`)
+  - Messages: `event: error` / `{"type":"error","error":{"type":…,"message":…},"nullrouter":{…}}`
+  - Chat: `data: {"error":{…,"nullrouter":{…}}}` then `data: [DONE]`
+  - Responses: `response.failed` with `response.error` and `nullrouter`
+  - Gemini: a final chunk with `error` (`code`, `message`, `status`, `nullrouter`)
 - A break while a tool call's arguments are partly sent always ends with the error event.
 
 ## Informational error body
 
 The style's error shape with two additions: the attempt summary in the standard message
-field and the `zerorouter` extra object.
+field and the `nullrouter` extra object.
 
 Messages example (all attempts failed):
 
@@ -103,7 +103,7 @@ Messages example (all attempts failed):
     "type": "api_error",
     "message": "0router: no provider could serve claude-sonnet (record rq_01JAB…). Tried: anthropic/main claude-sonnet-4-20250514: 503 overloaded after 3 retries; anthropic/backup claude-sonnet-4-20250514: 429 rate limited, cooling down 4 s; openrouter/main anthropic/claude-sonnet-4: 502 network error after 3 retries."
   },
-  "zerorouter": {
+  "nullrouter": {
     "record_id": "rq_01JAB…",
     "attempts": [
       { "provider": "anthropic", "account": "main", "model": "claude-sonnet-4-20250514", "status": 503, "class": "transient", "reason": "overloaded", "retries": 3 },
@@ -118,9 +118,9 @@ Placement per style:
 
 | Style | Message field | Extra field |
 |---|---|---|
-| Messages | `error.message` | top-level `zerorouter` |
-| Chat, Responses (non-stream) | `error.message` | `error.zerorouter` |
-| Gemini | `error.message` | `error.zerorouter` (inside `error`, next to `code`, `status`) |
+| Messages | `error.message` | top-level `nullrouter` |
+| Chat, Responses (non-stream) | `error.message` | `error.nullrouter` |
+| Gemini | `error.message` | `error.nullrouter` (inside `error`, next to `code`, `status`) |
 
 Status: a non-fallback upstream error keeps its status and its upstream message comes first
 in the message field; all-attempts-failed is 503. Refusals by 0router: 401 (key), 400 (type
@@ -144,7 +144,7 @@ Every unified model and every direct model of every type on providers with at le
 account. Shapes: OpenAI `{"object":"list","data":[{"id","object":"model","owned_by"}]}`;
 Anthropic `{"data":[{"id","type":"model","display_name"}],"has_more":false}`; Gemini
 `{"models":[{"name":"models/…","supportedGenerationMethods":[…]}]}`. The model type appears
-in an extra `zerorouter.type` field on each entry.
+in an extra `nullrouter.type` field on each entry.
 
 ## Video jobs
 

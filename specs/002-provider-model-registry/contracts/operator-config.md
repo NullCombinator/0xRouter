@@ -7,7 +7,7 @@ write this file).
 ## Layout
 
 ```text
-$ZEROROUTER_HOME  (default: ~/.0router)
+$NULLROUTER_HOME  (default: ~/.0router)
 ├── config.toml
 └── plugins/
     └── *.toml        # user plugins; top level only, other extensions ignored
@@ -70,7 +70,7 @@ reload (FR-024).
 
 ## Load report
 
-Each load (startup or reload) produces a report. It is shown by `zerorouter-cli check`
+Each load (startup or reload) produces a report. It is shown by `nullrouter-cli check`
 and later by the dashboard. It lists:
 - pending conflicts (a user plugin shadowed by a bundled one with no decision yet);
 - declined user plugins;

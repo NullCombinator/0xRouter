@@ -1,0 +1,67 @@
+# expect: route type image has no [image] codec section
+schema = 1
+kind = "api-style"
+id = "mini"
+
+[access_key]
+carriers = [{ header = "authorization", scheme = "bearer" }]
+
+[[routes]]
+method = "POST"
+path = "/v1/chat"
+op = "generate"
+type = "image"
+model = { body = "model" }
+stream = { body = "stream" }
+
+[[routes]]
+method = "GET"
+path = "/v1/models/{model*}"
+op = "get_model"
+type = "text"
+model = { path = "model" }
+
+[text.layout]
+system = "first_message"
+messages = "messages"
+content = "content"
+tool_calls = "message_field"
+tool_results = "tool_role_message"
+arguments = "json_string"
+
+[text.parts.text]
+data = { type = "text", text = "{part.text}" }
+
+[text.finish]
+stop = "stop"
+length = "length"
+tool_calls = "tool_calls"
+content_filter = "content_filter"
+
+[text.finish_out]
+error = "stop"
+
+[text.usage]
+input = "usage.prompt_tokens"
+input_semantics = "includes_cache"
+
+[text.response]
+body = { id = "{response.id}", choices = [{ message = { content = "{response.text}" }, finish_reason = "{response.finish}" }] }
+
+[text.stream]
+framing = "sse_data_done"
+blocks = "implicit"
+tool_arguments = "fragments"
+
+[[text.stream.events]]
+on = "text_delta"
+data = { choices = [{ delta = { content = "{delta.text}" } }] }
+
+[[text.stream.events]]
+on = "finish"
+data = { choices = [{ finish_reason = "{finish}" }] }
+
+[errors]
+body = { error = { type = "{error.type}", message = "{error.message}" }, nullrouter = "{error.details}" }
+type_map = { 400 = "invalid_request_error", 401 = "authentication_error", 404 = "not_found_error", 429 = "rate_limit_error", 500 = "api_error", 503 = "api_error" }
+stream_event = { data = "{error.body}" }

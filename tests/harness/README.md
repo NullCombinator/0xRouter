@@ -1,6 +1,6 @@
 # Harness tests (spec 003)
 
-Real client SDKs and coding harnesses against a running `zerorouter serve` backed by
+Real client SDKs and coding harnesses against a running `nullrouter serve` backed by
 mock upstreams. They prove that standard clients accept 0router's bodies, streams and
 errors (SC-001, SC-009, US4 replay).
 
@@ -18,14 +18,14 @@ npm_config_cache=/tmp/npm-cache-0router npm install --prefix tests/harness opena
 ## Run
 
 ```bash
-ZR_HARNESS=1 cargo test -p zerorouter-server --test harness -- --nocapture
+NR_HARNESS=1 cargo test -p nullrouter-server --test harness -- --nocapture
 ```
 
 The test starts the server over a scripted OpenAI-compatible provider (`mockco/m1`,
 answering "Hello"), then calls `run.sh`. Against a server you run yourself:
 
 ```bash
-ZR_BASE=http://127.0.0.1:20129 ZR_KEY=0r-… ZR_MODEL=anthropic/claude-sonnet-4-20250514 tests/harness/run.sh
+NR_BASE=http://127.0.0.1:20129 NR_KEY=0r-… NR_MODEL=anthropic/claude-sonnet-4-20250514 tests/harness/run.sh
 ```
 
 | Harness | Script | Styles |
@@ -37,12 +37,12 @@ ZR_BASE=http://127.0.0.1:20129 ZR_KEY=0r-… ZR_MODEL=anthropic/claude-sonnet-4-
 | headroom chain | `headroom.sh` → `py/headroom_chain.py` | anthropic and openai SDKs → `headroom proxy` → 0router |
 
 Each sends one whole and one streamed request and expects the text "Hello". With
-`ZR_MODEL_FAIL` set (the test sets `broken/m1`, whose every attempt gets a 401), each SDK
+`NR_MODEL_FAIL` set (the test sets `broken/m1`, whose every attempt gets a 401), each SDK
 also expects its own API error, not a parse error, with the record id in the message (Claude Code
 and Codex send what they send). A missing tool is skipped with a message; `run.sh` fails
 on any failure, or if fewer than two harnesses ran (SC-001).
 
-The headroom chain (SC-014, US1-11) runs when `ZR_MODEL_MESSAGES` names a messages-wire
+The headroom chain (SC-014, US1-11) runs when `NR_MODEL_MESSAGES` names a messages-wire
 model (the cargo test sets `multi/m-messages`) and a headroom with its proxy extras is in
 `.venv` or on `PATH`; otherwise it is skipped and doesn't count toward SC-001. Each SDK
 sends to a same-style and a cross-style model, marking every request with an unknown body

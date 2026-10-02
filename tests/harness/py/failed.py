@@ -1,14 +1,14 @@
-"""The all-attempts-failed check (T074, SC-009): with ZR_MODEL_FAIL set (a model whose every
+"""The all-attempts-failed check (T074, SC-009): with NR_MODEL_FAIL set (a model whose every
 attempt fails), `call` must raise the SDK's own API error, not a parse error, and the
 message must carry the record id."""
 import os
 import re
 
-FAIL = os.environ.get("ZR_MODEL_FAIL")
+FAIL = os.environ.get("NR_MODEL_FAIL")
 
 
 def check(error_type, call):
-    """Runs `call(model)` against the failing model; a no-op without ZR_MODEL_FAIL."""
+    """Runs `call(model)` against the failing model; a no-op without NR_MODEL_FAIL."""
     if not FAIL:
         return
     try:

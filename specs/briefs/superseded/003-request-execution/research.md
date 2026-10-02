@@ -14,7 +14,7 @@ rationale, and the alternatives considered. Citations to 9router are relative to
 
 **Decision**
 
-- Add a library crate, `crates/zerorouter-server`. It depends on `zerorouter-registry` and
+- Add a library crate, `crates/nullrouter-server`. It depends on `nullrouter-registry` and
   holds everything in this slice:
   - accounts and access keys;
   - placeholder selection;
@@ -23,7 +23,7 @@ rationale, and the alternatives considered. Citations to 9router are relative to
   - observations;
   - the HTTP surface;
   - the operator channel.
-- `zerorouter-cli` gains three commands: `serve`, `reload`, and `obs`
+- `nullrouter-cli` gains three commands: `serve`, `reload`, and `obs`
   ([R12](#r12-operator-channel-and-cli)).
 - New workspace dependencies (latest versions checked on crates.io, 2026-09-27):
 
@@ -157,7 +157,7 @@ fails.
 
 **Decision**
 
-- A new operator file, `$ZEROROUTER_HOME/keys.toml`, holds `schema = 1`, `[[access_key]]`,
+- A new operator file, `$NULLROUTER_HOME/keys.toml`, holds `schema = 1`, `[[access_key]]`,
   and `[[connection]]` (see [contracts/keys-file.md](contracts/keys-file.md)).
 - A secret is either a literal string or `{ env = "VAR" }`.
 - Environment references are resolved **at load**:
@@ -559,7 +559,7 @@ from its declared headers.
 **Decision**
 
 - **Channel**:
-  - A Unix domain socket at `$ZEROROUTER_HOME/run/operator.sock`.
+  - A Unix domain socket at `$NULLROUTER_HOME/run/operator.sock`.
   - The directory is created with mode 0700 and the socket is chmod 0600.
   - On accept, the peer uid (tokio `UnixStream::peer_cred`) must equal the socket
     file's owner uid, which is the server's own uid. This avoids `unsafe` and extra
@@ -572,17 +572,17 @@ from its declared headers.
   - Ops: `reload`, `observations`, `status`.
   - See [contracts/operator-cli.md](contracts/operator-cli.md).
 - **CLI**:
-  - `zerorouter-cli serve [--listen ADDR] [--observations-cap N]`.
-  - `zerorouter-cli reload`.
-  - `zerorouter-cli obs [--provider P] [--unified U] [--agent A] [--session S]
+  - `nullrouter-cli serve [--listen ADDR] [--observations-cap N]`.
+  - `nullrouter-cli reload`.
+  - `nullrouter-cli obs [--provider P] [--unified U] [--agent A] [--session S]
     [--endpoint E] [--since T] [--until T] [--include-count-tokens] [--limit N]
     [--json]`.
   - The client side uses a blocking `std::os::unix::net::UnixStream`, so the CLI's
     offline commands stay runtime-free.
 - **Server settings**:
-  - Listen address: default `127.0.0.1:20129`, from `--listen` or `ZEROROUTER_LISTEN`.
+  - Listen address: default `127.0.0.1:20129`, from `--listen` or `NULLROUTER_LISTEN`.
   - Observation cap: default 10 000, from `--observations-cap` or
-    `ZEROROUTER_OBSERVATIONS_CAP`.
+    `NULLROUTER_OBSERVATIONS_CAP`.
   - Both take effect at `serve` start. The default port is one above 9router's 20128,
     so both can run side by side for parity checks.
 
@@ -724,11 +724,11 @@ the spec (504). Reverting to 502 is a one-line change and one test.
 | Kind | Where | What |
 |---|---|---|
 | Unit | modules | env parsing, session extraction, client detection, header build, body rewrite, SSE framing, usage merge, error formatting, percentiles |
-| `parity` | `crates/zerorouter-server/tests/parity/` | every R14 fixture |
+| `parity` | `crates/nullrouter-server/tests/parity/` | every R14 fixture |
 | `e2e` | `tests/e2e/` | an in-process server against in-process `axum` mock upstreams that record requests and script responses: delays, mid-stream breaks, stalls, HTML pages, and 4xx/5xx |
 | `cancel` | e2e | client drop, then the mock observes connection close within 1 s (SC-004), over 50 runs |
 | `concurrency` | e2e | 100 concurrent streams through one connection; the mock releases events in lockstep and asserts no serialization (SC-007) |
-| `secrets` | e2e | sentinel keys (`zr-sentinel-…`) in `keys.toml`; captures observations, `tracing` output, CLI output, error bodies, and mock-received requests; asserts SC-006 |
+| `secrets` | e2e | sentinel keys (`nr-sentinel-…`) in `keys.toml`; captures observations, `tracing` output, CLI output, error bodies, and mock-received requests; asserts SC-006 |
 | `reload` | e2e | reload during an in-flight stream; an invalid `keys.toml` keeps the old state |
 | Bench | `benches/relay.rs` (Criterion) | relay overhead per event and TTFT delta against a direct mock (SC-003), plus a `select` + `outbound` build micro-bench |
 | Live smoke | `quickstart.md`, manual | Claude Code and an OpenAI SDK against real providers (SC-002) |

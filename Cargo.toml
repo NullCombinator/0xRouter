@@ -35,10 +35,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ulid = "1"
 httpdate = "1"
-zerorouter-registry = { path = "crates/zerorouter-registry" }
-zerorouter-wire = { path = "crates/zerorouter-wire" }
-zerorouter-engine = { path = "crates/zerorouter-engine" }
-zerorouter-server = { path = "crates/zerorouter-server" }
+nullrouter-registry = { path = "crates/nullrouter-registry" }
+nullrouter-wire = { path = "crates/nullrouter-wire" }
+nullrouter-engine = { path = "crates/nullrouter-engine" }
+nullrouter-server = { path = "crates/nullrouter-server" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -47,9 +47,9 @@ unsafe_code = "forbid"
 all = { level = "warn", priority = -1 }
 
 # Parsing 121 bundled plugins dominates load time, and the derived deserialisers live in
-# zerorouter-registry. Optimising both keeps debug loads and the 200-reload test fast.
+# nullrouter-registry. Optimising both keeps debug loads and the 200-reload test fast.
 [profile.dev.package."*"]
 opt-level = 2
 
-[profile.dev.package.zerorouter-registry]
+[profile.dev.package.nullrouter-registry]
 opt-level = 1

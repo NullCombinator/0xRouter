@@ -49,9 +49,9 @@ SC-012):
 
 | Command | Requests |
 |---|---|
-| `zerorouter catalogue list` / `show <harness>` | the index |
-| `zerorouter catalogue install <harness> [<semver>]` | the index, then one archive |
-| `zerorouter catalogue check` | the index |
+| `nullrouter catalogue list` / `show <harness>` | the index |
+| `nullrouter catalogue install <harness> [<semver>]` | the index, then one archive |
+| `nullrouter catalogue check` | the index |
 
 ## Fetch and verify
 
@@ -62,7 +62,7 @@ SC-012):
    - 30 s timeout.
 2. The archive's SHA-256 must equal `sha256`. On a mismatch, the fetch is refused with
    `catalogue_hash_mismatch`, and nothing is unpacked.
-3. **Unpack** safely, into a temp dir under `$ZEROROUTER_HOME/adapters/.staging/`.
+3. **Unpack** safely, into a temp dir under `$NULLROUTER_HOME/adapters/.staging/`.
    - Refused: symlinks, hard links, device files, absolute or `..` paths, more than 64
      entries, more than 256 KiB unpacked.
    - A single top-level directory is stripped.
@@ -75,7 +75,7 @@ SC-012):
 
 ```
 harness      installed  active    catalogue newest
-claude-code  0.1.0      0.1.0     0.2.0   (update available: zerorouter catalogue install claude-code 0.2.0)
+claude-code  0.1.0      0.1.0     0.2.0   (update available: nullrouter catalogue install claude-code 0.2.0)
 ```
 
 `check` never installs anything (US4-4).

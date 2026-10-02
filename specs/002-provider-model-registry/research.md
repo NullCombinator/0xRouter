@@ -29,8 +29,8 @@ a toolchain into the repo (large, and still needs a registry cache for crates).
 ## R2. Language, edition, crate layout
 
 **Decision**: Rust stable, edition 2024 (MSRV 1.85). Cargo workspace at repo root. This
-slice adds one library crate, `zerorouter-registry`, plus a thin binary crate,
-`zerorouter-cli`, used for the validation and resolve checks in quickstart.
+slice adds one library crate, `nullrouter-registry`, plus a thin binary crate,
+`nullrouter-cli`, used for the validation and resolve checks in quickstart.
 
 **Rationale**: Constitution requires Rust. The crate name can't start with a digit (a 001
 error). The registry is pure data plus lookups, so it takes **no async runtime**. Reads
@@ -192,7 +192,7 @@ and a request can't safely hold a guard across `.await`.
 ## R7. Operator-owned state location and format
 
 **Decision**: One operator config file plus one user-plugin directory, under a home
-directory resolved as `$ZEROROUTER_HOME` if set, otherwise `~/.0router/`:
+directory resolved as `$NULLROUTER_HOME` if set, otherwise `~/.0router/`:
 
 ```
 ~/.0router/
@@ -217,7 +217,7 @@ edited by hand, and belongs in version control).
 **Decision**: A Node script, `tools/gen-bundled/generate.mjs`, imports
 `ref/9router/open-sse/providers/registry/index.js` (the evaluated registry) and writes:
 - `plugins/bundled/<id>.toml`: one file per active registry entry, with secrets removed;
-- `crates/zerorouter-registry/src/credentials/bundled.rs`: the static credential table
+- `crates/nullrouter-registry/src/credentials/bundled.rs`: the static credential table
   with `bound_hosts`;
 - `tests/fixtures/9router/*.json`: the parity oracle (R9).
 
@@ -342,7 +342,7 @@ These are the baselines future regressions are judged against.
 | `indexmap` (serde) | Ordered `headers` / `endpoints` / `params` maps, so parity comparisons keep 9router's key order |
 | `serde_json` (dev) | Loading fixtures in parity tests |
 | `criterion` (dev) | Benchmarks |
-| `clap` (cli only) | `zerorouter-cli` arguments |
+| `clap` (cli only) | `nullrouter-cli` arguments |
 
 No `tokio`, `inventory`, or `once_cell` in the library. Static tables use `std::sync::LazyLock`.
 

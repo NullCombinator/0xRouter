@@ -6,8 +6,8 @@ Protocol: `/rust-parity-audit`. Date: 2026-09-27. Oracle: `ref/9router@39e36d3`.
 
 | Rust | JS | Purpose |
 |---|---|---|
-| `crates/zerorouter-registry/src/lookup.rs` | `open-sse/config/providerModels.js`, `providers/models/schema.js`, `providers/models/namePatterns.js` | Model lookup, thinking suffix, version-separator tolerance, upstream id, derived names |
-| `crates/zerorouter-registry/src/views.rs` | `open-sse/providers/index.js` (`buildTransport`, `PROVIDER_ID_TO_ALIAS`), `tests/__baseline__/verify-oauth-urls.mjs` | Composed transport, alias maps, OAuth URL groups |
+| `crates/nullrouter-registry/src/lookup.rs` | `open-sse/config/providerModels.js`, `providers/models/schema.js`, `providers/models/namePatterns.js` | Model lookup, thinking suffix, version-separator tolerance, upstream id, derived names |
+| `crates/nullrouter-registry/src/views.rs` | `open-sse/providers/index.js` (`buildTransport`, `PROVIDER_ID_TO_ALIAS`), `tests/__baseline__/verify-oauth-urls.mjs` | Composed transport, alias maps, OAuth URL groups |
 
 Side effects: none on either side. Both are pure reads of static data.
 

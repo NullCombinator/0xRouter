@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { ApiError, GoogleGenAI } from "@google/genai";
 import { check } from "./failed.mjs";
 
-const ai = new GoogleGenAI({ apiKey: process.env.ZR_KEY, httpOptions: { baseUrl: process.env.ZR_BASE, apiVersion: "v1beta" } });
-const model = process.env.ZR_MODEL;
+const ai = new GoogleGenAI({ apiKey: process.env.NR_KEY, httpOptions: { baseUrl: process.env.NR_BASE, apiVersion: "v1beta" } });
+const model = process.env.NR_MODEL;
 
 const r = await ai.models.generateContent({ model, contents: "Say hello." });
 assert.equal(r.text, "Hello");

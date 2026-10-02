@@ -1,9 +1,9 @@
 # Operator configuration
 
-The operator's state lives in one directory, `$ZEROROUTER_HOME` (default `~/.0router`):
+The operator's state lives in one directory, `$NULLROUTER_HOME` (default `~/.0router`):
 
 ```text
-$ZEROROUTER_HOME
+$NULLROUTER_HOME
 ├── config.toml     # unified models, per-provider settings, plugin decisions, server settings
 ├── accounts.toml   # provider accounts and their secrets (mode 0600)
 ├── keys.toml       # agent key digests (mode 0600)
@@ -22,9 +22,9 @@ and slice 003's [`operator-cli.md`](../specs/003-request-pipeline/contracts/oper
 ## Running the server
 
 ```bash
-zerorouter accounts add anthropic main        # paste the API key on stdin
-zerorouter keys issue claude-code-laptop      # prints the agent key once
-zerorouter serve                              # foreground; logs to stderr, redacted
+nullrouter accounts add anthropic main        # paste the API key on stdin
+nullrouter keys issue claude-code-laptop      # prints the agent key once
+nullrouter serve                              # foreground; logs to stderr, redacted
 ```
 
 `serve` listens on `127.0.0.1:20129` unless `--listen` or `config.toml` says otherwise:
@@ -45,11 +45,11 @@ An account is one secret for one provider. A provider can have several; they are
 `order`, and an account that is rate-limited or failing cools down while the others serve.
 
 ```bash
-zerorouter accounts add openrouter main                    # secret from stdin, never argv
-zerorouter accounts add openrouter ci --env OPENROUTER_KEY # read from the environment at load
-zerorouter accounts add openrouter backup --order 1
-zerorouter accounts list                                   # name, order, …last4 or env:VAR, state
-zerorouter accounts disable openrouter backup              # or enable, remove
+nullrouter accounts add openrouter main                    # secret from stdin, never argv
+nullrouter accounts add openrouter ci --env OPENROUTER_KEY # read from the environment at load
+nullrouter accounts add openrouter backup --order 1
+nullrouter accounts list                                   # name, order, …last4 or env:VAR, state
+nullrouter accounts disable openrouter backup              # or enable, remove
 ```
 
 ```toml
@@ -71,9 +71,9 @@ Every client request carries an agent key. 0router stores only a digest and the 
 characters, so a lost key can't be shown again: issue a new one.
 
 ```bash
-zerorouter keys issue claude-code-laptop      # prints the key (0r-…) once
-zerorouter keys list                          # id, name, …last4, created, revoked
-zerorouter keys revoke claude-code-laptop     # by name or id
+nullrouter keys issue claude-code-laptop      # prints the key (0r-…) once
+nullrouter keys list                          # id, name, …last4, created, revoked
+nullrouter keys revoke claude-code-laptop     # by name or id
 ```
 
 The key's id is the agent's identity: provider session ids are derived from it, and
@@ -91,8 +91,8 @@ break_behaviour = "restart"   # restart | error_event
 ```
 
 ```bash
-zerorouter behaviour set-break error_event              # the operator default
-zerorouter keys set-break claude-code-laptop restart    # per key; `default` clears it
+nullrouter behaviour set-break error_event              # the operator default
+nullrouter keys set-break claude-code-laptop restart    # per key; `default` clears it
 ```
 
 ## Private endpoints
@@ -112,8 +112,8 @@ account that served it, every attempt with its outcome, time to first token and 
 usage, and anything left out when translating across styles.
 
 ```bash
-zerorouter records list --limit 20            # newest first; --provider, --model, --json
-zerorouter records show rq_01JAB3…           # the full record with attempts
+nullrouter records list --limit 20            # newest first; --provider, --model, --json
+nullrouter records show rq_01JAB3…           # the full record with attempts
 ```
 
 Records live in the server's memory. `records` needs a running server and exits 4 without
@@ -129,9 +129,9 @@ Clients name a target in one of two ways:
   a provider's model, so `claude-sonnet-4.5` alone is not found unless you declared it.
 
 ```bash
-zerorouter resolve kr/claude-sonnet-4-5 --json
-zerorouter model kr claude-sonnet-4-5          # what the provider declares about it
-zerorouter providers --capability tts
+nullrouter resolve kr/claude-sonnet-4-5 --json
+nullrouter model kr claude-sonnet-4-5          # what the provider declares about it
+nullrouter providers --capability tts
 ```
 
 ## Declaring a unified model
@@ -153,7 +153,7 @@ members = [
 Check it:
 
 ```bash
-zerorouter resolve sonnet
+nullrouter resolve sonnet
 # unified sonnet:
 #   0. kiro claude-sonnet-4-5 → upstream claude-sonnet-4.5
 #   1. openrouter anthropic/claude-sonnet-4.5 → upstream anthropic/claude-sonnet-4.5
@@ -210,7 +210,7 @@ config.toml:4:1 unified_model[0].members[1].provider: unknown provider "xx"
     acknowledged, or `saved; applies at next start` when no server is running. A hand
     edit applies at the next start or the next such reload.
 
-`zerorouter check` prints the load report:
+`nullrouter check` prints the load report:
 - provider counts;
 - pending and declined conflicts;
 - withheld credentials;

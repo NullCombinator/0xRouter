@@ -1,4 +1,4 @@
-# Contract: `zerorouter-registry` Library API and `zerorouter-cli`
+# Contract: `nullrouter-registry` Library API and `nullrouter-cli`
 
 **Consumers**: later 0router slices (routing decision, execution, model tests, combos,
 dashboard) and the operator via the CLI.
@@ -102,16 +102,16 @@ never read out through the public API.
 | No public function returns a raw `client_secret`: `SecretString::expose` is `pub(crate)` | `compile_fail` doc-test calling `expose()` from outside the crate + API review |
 | Lookups during reload see old or new, never mixed | concurrency test (SC-007) |
 
-## CLI: `zerorouter-cli`
+## CLI: `nullrouter-cli`
 
 Operator and quickstart tool. It does not serve requests.
 
 | Command | Output | Exit |
 |---|---|---|
-| `zerorouter-cli check [--home DIR]` | Load report: counts, conflicts, withheld credentials, skipped plugins, all errors | 0 ok · 1 errors |
-| `zerorouter-cli validate FILE…` | Gate result per plugin file | 0 all valid · 1 otherwise |
-| `zerorouter-cli resolve TARGET [--home DIR] [--json]` | The `Resolution` (provider(s), upstream IDs, catalogued flag) or `NotFound` | 0 found · 2 not found |
-| `zerorouter-cli model PROVIDER MODEL [--json]` | `ModelInfo` | 0 · 2 |
-| `zerorouter-cli providers [--capability KIND]` | Provider list | 0 |
+| `nullrouter-cli check [--home DIR]` | Load report: counts, conflicts, withheld credentials, skipped plugins, all errors | 0 ok · 1 errors |
+| `nullrouter-cli validate FILE…` | Gate result per plugin file | 0 all valid · 1 otherwise |
+| `nullrouter-cli resolve TARGET [--home DIR] [--json]` | The `Resolution` (provider(s), upstream IDs, catalogued flag) or `NotFound` | 0 found · 2 not found |
+| `nullrouter-cli model PROVIDER MODEL [--json]` | `ModelInfo` | 0 · 2 |
+| `nullrouter-cli providers [--capability KIND]` | Provider list | 0 |
 
 `--json` output is stable and is used by the quickstart checks.

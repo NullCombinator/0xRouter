@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import Anthropic from "@anthropic-ai/sdk";
 import { check } from "./failed.mjs";
 
-const c = new Anthropic({ baseURL: process.env.ZR_BASE, apiKey: process.env.ZR_KEY, maxRetries: 0 });
-const model = process.env.ZR_MODEL;
+const c = new Anthropic({ baseURL: process.env.NR_BASE, apiKey: process.env.NR_KEY, maxRetries: 0 });
+const model = process.env.NR_MODEL;
 const messages = [{ role: "user", content: "Say hello." }];
 
 const r = await c.messages.create({ model, max_tokens: 64, messages });

@@ -1,0 +1,37 @@
+[package]
+name = "nullrouter-server"
+version = "0.1.0"
+description = "0router HTTP surface: client API styles, relay, operator socket"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+axum.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures-util.workspace = true
+bytes.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+nullrouter-engine.workspace = true
+nullrouter-wire.workspace = true
+nullrouter-registry.workspace = true
+url.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+toml.workspace = true
+nullrouter-engine = { workspace = true, features = ["testkit"] }
+criterion.workspace = true
+tempfile.workspace = true
+reqwest.workspace = true
+
+[[bench]]
+name = "server"
+harness = false
+
+[lints]
+workspace = true

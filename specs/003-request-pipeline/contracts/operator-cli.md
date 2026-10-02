@@ -1,7 +1,7 @@
 # Contract: Operator CLI and state files
 
 Extends [slice 002's operator config](../../002-provider-model-registry/contracts/operator-config.md)
-and CLI. `$ZEROROUTER_HOME` defaults to `~/.0router`.
+and CLI. `$NULLROUTER_HOME` defaults to `~/.0router`.
 
 ## Files
 
@@ -55,21 +55,21 @@ Existing: `check`, `validate`, `resolve`, `model`, `providers`.
 
 | Command | Effect |
 |---|---|
-| `zerorouter serve [--listen ADDR]` | run the server; foreground; logs to stderr (redacted) |
-| `zerorouter accounts add <provider> <name> [--env VAR] [--order N]` | secret read from stdin unless `--env`; never from argv |
-| `zerorouter accounts list [<provider>]` | provider, name, order, `…last4` or `env:VAR`, state (active, disabled, cooling until …) |
-| `zerorouter accounts remove <provider> <name>` | — |
-| `zerorouter accounts disable\|enable <provider> <name>` | — |
-| `zerorouter keys issue <name> [--break restart\|error_event]` | prints the key once; stores the digest |
-| `zerorouter keys list` | id, name, `…last4`, created, revoked, override |
-| `zerorouter keys revoke <name\|id>` | — |
-| `zerorouter keys set-break <name\|id> restart\|error_event\|default` | per-key override (FR-031) |
-| `zerorouter behaviour set-break restart\|error_event` | operator default (FR-031) |
-| `zerorouter records list [--provider P] [--model UNIFIED] [--limit N] [--json]` | newest first |
-| `zerorouter records show <rq_id> [--json]` | full record with attempts |
-| `zerorouter plugins list [--community]` | bundled, installed, community with fit status |
-| `zerorouter plugins install <id>` | gate + fit, then copy to `plugins/`; refusal message and exit 3 if unsupported |
-| `zerorouter plugins uninstall <id>` | — |
+| `nullrouter serve [--listen ADDR]` | run the server; foreground; logs to stderr (redacted) |
+| `nullrouter accounts add <provider> <name> [--env VAR] [--order N]` | secret read from stdin unless `--env`; never from argv |
+| `nullrouter accounts list [<provider>]` | provider, name, order, `…last4` or `env:VAR`, state (active, disabled, cooling until …) |
+| `nullrouter accounts remove <provider> <name>` | — |
+| `nullrouter accounts disable\|enable <provider> <name>` | — |
+| `nullrouter keys issue <name> [--break restart\|error_event]` | prints the key once; stores the digest |
+| `nullrouter keys list` | id, name, `…last4`, created, revoked, override |
+| `nullrouter keys revoke <name\|id>` | — |
+| `nullrouter keys set-break <name\|id> restart\|error_event\|default` | per-key override (FR-031) |
+| `nullrouter behaviour set-break restart\|error_event` | operator default (FR-031) |
+| `nullrouter records list [--provider P] [--model UNIFIED] [--limit N] [--json]` | newest first |
+| `nullrouter records show <rq_id> [--json]` | full record with attempts |
+| `nullrouter plugins list [--community]` | bundled, installed, community with fit status |
+| `nullrouter plugins install <id>` | gate + fit, then copy to `plugins/`; refusal message and exit 3 if unsupported |
+| `nullrouter plugins uninstall <id>` | — |
 
 Mutating commands write the file atomically, then send `reload` to the running server. The
 output says `applied` (server acknowledged) or `saved; applies at next start` (no server).

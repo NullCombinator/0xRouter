@@ -6,7 +6,7 @@
 
 ## Summary
 
-This is the first end-to-end slice. It adds a new async crate, `zerorouter-server`, on
+This is the first end-to-end slice. It adds a new async crate, `nullrouter-server`, on
 top of the 002 registry.
 
 **Request path**
@@ -33,7 +33,7 @@ top of the 002 registry.
   atomically with the registry on reload.
 - Every request leaves one in-memory observation: identity, target, outcome, TTFT,
   duration, usage split into cache read/write, and upstream headers.
-- The operator queries observations and triggers reloads through `zerorouter-cli` over
+- The operator queries observations and triggers reloads through `nullrouter-cli` over
   an owner-only Unix socket.
 
 **Scope**: 45 chat providers and 10 embeddings providers are executable at the pin, 47
@@ -53,13 +53,13 @@ distinct providers in total
 - `tracing` and `tracing-subscriber`.
 - `serde_json` gains the `raw_value` feature.
 
-Existing: `zerorouter-registry`, `arc-swap`, `indexmap`, `serde`, `toml`, `clap`,
+Existing: `nullrouter-registry`, `arc-swap`, `indexmap`, `serde`, `toml`, `clap`,
 `criterion`.
 
-**Storage**: files only. `$ZEROROUTER_HOME/keys.toml` is new operator state, 0600 when
+**Storage**: files only. `$NULLROUTER_HOME/keys.toml` is new operator state, 0600 when
 it holds literals ([R4](research.md#r4-accounts-and-access-keys-file-secrets-validation-fr-004a-fr-006fr-010)).
 Observations are in memory only (a bounded ring). The operator socket is
-`$ZEROROUTER_HOME/run/operator.sock`.
+`$NULLROUTER_HOME/run/operator.sock`.
 
 **Testing**: `cargo test` ([R16](research.md#r16-test-strategy)):
 - unit tests;
@@ -70,7 +70,7 @@ Observations are in memory only (a bounded ring). The operator socket is
 
 **Target Platform**: Linux (the operator channel is a Unix domain socket; peer-uid check).
 
-**Project Type**: a library crate (`zerorouter-server`) plus subcommands in the existing
+**Project Type**: a library crate (`nullrouter-server`) plus subcommands in the existing
 CLI binary. Cargo workspace.
 
 **Performance Goals**:
@@ -159,9 +159,9 @@ Cargo.toml                              # + tokio, tokio-util, axum, reqwest, fu
                                         #   bytes, memchr, sha2, tracing(-subscriber);
                                         #   serde_json +raw_value
 crates/
-├── zerorouter-registry/
+├── nullrouter-registry/
 │   └── src/lib.rs, load.rs             # + Registry::load_candidate; LoadReport: Serialize
-├── zerorouter-server/                  # NEW
+├── nullrouter-server/                  # NEW
 │   ├── Cargo.toml
 │   ├── src/
 │   │   ├── lib.rs                      # Server { state: ArcSwap<State>, obs, http client }
@@ -195,7 +195,7 @@ crates/
 │   │                                   #   cancel.rs, concurrency.rs, secrets.rs, reload.rs
 │   └── benches/
 │       └── relay.rs
-└── zerorouter-cli/
+└── nullrouter-cli/
     └── src/cmd/                        # + serve.rs, reload.rs, obs.rs; check.rs + keys summary
 docs/
 ├── operator-config.md                  # + keys.toml, serve, reload, obs

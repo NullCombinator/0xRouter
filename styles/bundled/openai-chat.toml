@@ -222,6 +222,6 @@ status = { id = "{job.id}", object = "video", model = "{job.model?}", status = "
 status_map = { queued = "queued", in_progress = "in_progress", completed = "completed", failed = "failed" }
 
 [errors]
-body = { error = { message = "{error.message}", type = "{error.type}", code = "{error.code}", zerorouter = "{error.details}" } }
+body = { error = { message = "{error.message}", type = "{error.type}", code = "{error.code}", nullrouter = "{error.details}" } }
 type_map = { 400 = "invalid_request_error", 401 = "invalid_request_error", 403 = "invalid_request_error", 404 = "invalid_request_error", 429 = "rate_limit_exceeded", 500 = "server_error", 502 = "server_error", 503 = "server_error" }
 stream_event = { data = "{error.body}" }

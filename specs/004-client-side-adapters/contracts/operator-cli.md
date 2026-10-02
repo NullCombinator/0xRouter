@@ -23,25 +23,25 @@ for `keys.toml`.
 
 | Command | Effect |
 |---|---|
-| `zerorouter keys issue <name> [--harness H] [--break …]` | As in slice 003, with an optional harness |
-| `zerorouter keys set-harness <name\|id> <H>` / `--clear` | Binds or unbinds a harness |
-| `zerorouter keys list` | Gains a `harness` column |
+| `nullrouter keys issue <name> [--harness H] [--break …]` | As in slice 003, with an optional harness |
+| `nullrouter keys set-harness <name\|id> <H>` / `--clear` | Binds or unbinds a harness |
+| `nullrouter keys list` | Gains a `harness` column |
 
 **Adapters** (FR-029):
 
 | Command | Effect |
 |---|---|
-| `zerorouter adapters list` | For each harness: its versions, states, the active version and a count of unacknowledged alerts. hermes shows as `built-in` |
-| `zerorouter adapters show <H> [<version>]` | The manifest summary and selectors, state and reason, origin, `source_fp`, `wasm_hash`, the review report, and the decision |
-| `zerorouter adapters install <dir\|archive.tar.gz>` | Gate, then queue. Prints the version id and the next state. A refusal prints the gate lines and exits 3 |
-| `zerorouter adapters review <H> <version> [--retry]` | Shows the report. `--retry` requeues a quarantined review |
-| `zerorouter adapters build <H> <version> --retry` | Requeues a build (for example once the builder has been installed) |
-| `zerorouter adapters approve <H> <version> [--note T]` | Only from `reported`. The version becomes active from the next request |
-| `zerorouter adapters reject <H> <version> [--note T]` | From `reported` or `quarantined` |
-| `zerorouter adapters clear <H> <version>` | `suspect` → `approved`. It asks for confirmation and shows the guardrail events first |
-| `zerorouter adapters remove <H> [<version>] [--force]` | Removes a version, or the whole harness. The active version needs `--force` |
-| `zerorouter adapters rebuild [<H>]` | Rebuilds approved versions against the current kit (R9). Run it before upgrading to avoid the plain-client window |
-| `zerorouter adapters review-settings --model M --budget N [--reserve-output N]` | Sets `[review]` (FR-022). `--clear` removes it |
+| `nullrouter adapters list` | For each harness: its versions, states, the active version and a count of unacknowledged alerts. hermes shows as `built-in` |
+| `nullrouter adapters show <H> [<version>]` | The manifest summary and selectors, state and reason, origin, `source_fp`, `wasm_hash`, the review report, and the decision |
+| `nullrouter adapters install <dir\|archive.tar.gz>` | Gate, then queue. Prints the version id and the next state. A refusal prints the gate lines and exits 3 |
+| `nullrouter adapters review <H> <version> [--retry]` | Shows the report. `--retry` requeues a quarantined review |
+| `nullrouter adapters build <H> <version> --retry` | Requeues a build (for example once the builder has been installed) |
+| `nullrouter adapters approve <H> <version> [--note T]` | Only from `reported`. The version becomes active from the next request |
+| `nullrouter adapters reject <H> <version> [--note T]` | From `reported` or `quarantined` |
+| `nullrouter adapters clear <H> <version>` | `suspect` → `approved`. It asks for confirmation and shows the guardrail events first |
+| `nullrouter adapters remove <H> [<version>] [--force]` | Removes a version, or the whole harness. The active version needs `--force` |
+| `nullrouter adapters rebuild [<H>]` | Rebuilds approved versions against the current kit (R9). Run it before upgrading to avoid the plain-client window |
+| `nullrouter adapters review-settings --model M --budget N [--reserve-output N]` | Sets `[review]` (FR-022). `--clear` removes it |
 
 **Updating** (FR-029): there is no separate `update` command. Installing a newer version of an
 installed harness, with `adapters install` or `catalogue install`, is the update. It goes through
@@ -52,18 +52,18 @@ operator approves the new one (FR-023).
 
 | Command | Effect |
 |---|---|
-| `zerorouter alerts list [--all]` | Unacknowledged alerts, newest first: id, kind, harness@version, record, detail, time |
-| `zerorouter alerts ack <id\|--all>` | Acknowledges one alert or all of them |
+| `nullrouter alerts list [--all]` | Unacknowledged alerts, newest first: id, kind, harness@version, record, detail, time |
+| `nullrouter alerts ack <id\|--all>` | Acknowledges one alert or all of them |
 
 **Catalogue** (FR-031, [catalogue.md](catalogue.md)). These are the only commands that contact
 the catalogue:
 
 | Command | Effect |
 |---|---|
-| `zerorouter catalogue list` | Harness, summary, newest version, and whether it is installed |
-| `zerorouter catalogue show <H>` | All versions, source URLs and fingerprints |
-| `zerorouter catalogue install <H> [<semver>]` | Fetch, verify, gate and queue. The newest version is the default |
-| `zerorouter catalogue check` | Lists newer versions of installed harnesses. Installs nothing |
+| `nullrouter catalogue list` | Harness, summary, newest version, and whether it is installed |
+| `nullrouter catalogue show <H>` | All versions, source URLs and fingerprints |
+| `nullrouter catalogue install <H> [<semver>]` | Fetch, verify, gate and queue. The newest version is the default |
+| `nullrouter catalogue check` | Lists newer versions of installed harnesses. Installs nothing |
 
 Exit codes: 0 ok; 1 invalid input or file; 2 usage; 3 refused by the gate or by
 verification; 4 no running server (for commands that need one); 5 the catalogue is

@@ -11,9 +11,9 @@ Contracts: [http-api](contracts/http-api.md) · [keys-file](contracts/keys-file.
 ```bash
 cd ~/Desktop/0router
 export CARGO_HOME=$PWD/.cargo-home
-cargo build -p zerorouter-cli            # binary: target/debug/zerorouter-cli
+cargo build -p nullrouter-cli            # binary: target/debug/nullrouter-cli
 export PATH=$PWD/target/debug:$PATH
-export ZEROROUTER_HOME=$(mktemp -d)      # a scratch home, so ~/.0router is untouched
+export NULLROUTER_HOME=$(mktemp -d)      # a scratch home, so ~/.0router is untouched
 ```
 
 - Node 22 or later is needed only to regenerate fixtures
@@ -22,12 +22,12 @@ export ZEROROUTER_HOME=$(mktemp -d)      # a scratch home, so ~/.0router is unto
 ## 1. Automated validation (no network)
 
 ```bash
-cargo test -p zerorouter-server --test parity     # SC-001, SC-005, SC-008, SC-010, SC-011
-cargo test -p zerorouter-server --test e2e        # US1–US5 against in-process mock upstreams
-cargo test -p zerorouter-server --test e2e cancel        # SC-004 (50 runs, < 1 s)
-cargo test -p zerorouter-server --test e2e concurrency   # SC-007 (100 streams)
-cargo test -p zerorouter-server --test e2e secrets       # SC-006
-cargo bench -p zerorouter-server --bench relay            # SC-003: TTFT delta, median < 5 ms
+cargo test -p nullrouter-server --test parity     # SC-001, SC-005, SC-008, SC-010, SC-011
+cargo test -p nullrouter-server --test e2e        # US1–US5 against in-process mock upstreams
+cargo test -p nullrouter-server --test e2e cancel        # SC-004 (50 runs, < 1 s)
+cargo test -p nullrouter-server --test e2e concurrency   # SC-007 (100 streams)
+cargo test -p nullrouter-server --test e2e secrets       # SC-006
+cargo bench -p nullrouter-server --bench relay            # SC-003: TTFT delta, median < 5 ms
 cargo test --workspace                                    # 002 suites stay green
 ```
 
@@ -37,12 +37,12 @@ Expected result: every suite passes. Each deliberate deviation (research
 ## 2. Keys file
 
 ```bash
-cat > $ZEROROUTER_HOME/keys.toml <<'EOF'
+cat > $NULLROUTER_HOME/keys.toml <<'EOF'
 schema = 1
 
 [[access_key]]
 agent = "laptop"
-key   = { env = "ZR_KEY" }
+key   = { env = "NR_KEY" }
 
 [[connection]]
 provider = "anthropic"
@@ -54,8 +54,8 @@ provider = "deepseek"
 name     = "main"
 api_key  = { env = "DEEPSEEK_API_KEY" }
 EOF
-export ZR_KEY=zr-local-$(head -c 12 /dev/urandom | base64 | tr -dc a-zA-Z0-9)
-zerorouter-cli check        # expect: 2 connections, 1 access key; no values printed
+export NR_KEY=nr-local-$(head -c 12 /dev/urandom | base64 | tr -dc a-zA-Z0-9)
+nullrouter-cli check        # expect: 2 connections, 1 access key; no values printed
 ```
 
 **Negative checks**:
@@ -69,7 +69,7 @@ zerorouter-cli check        # expect: 2 connections, 1 access key; no values pri
 ## 3. Serve
 
 ```bash
-zerorouter-cli serve &                  # 127.0.0.1:20129
+nullrouter-cli serve &                  # 127.0.0.1:20129
 ```
 
 **Auth (US5 scenario 6)**:
@@ -77,7 +77,7 @@ zerorouter-cli serve &                  # 127.0.0.1:20129
 ```bash
 curl -s localhost:20129/v1/models                                   # 401 Missing API key
 curl -s localhost:20129/v1/models -H "Authorization: Bearer nope"   # 401 Invalid API key
-curl -s localhost:20129/v1/models -H "x-api-key: $ZR_KEY" | jq '.data[].id' | head
+curl -s localhost:20129/v1/models -H "x-api-key: $NR_KEY" | jq '.data[].id' | head
 ```
 
 The listing shows only anthropic and deepseek models, plus unified models backed by
@@ -88,7 +88,7 @@ them.
 **OpenAI format, streamed (US1 scenario 1)**:
 
 ```bash
-curl -N localhost:20129/v1/chat/completions -H "Authorization: Bearer $ZR_KEY" \
+curl -N localhost:20129/v1/chat/completions -H "Authorization: Bearer $NR_KEY" \
   -H 'content-type: application/json' \
   -d '{"model":"deepseek/deepseek-chat","stream":true,"messages":[{"role":"user","content":"hi"}]}'
 ```
@@ -98,17 +98,17 @@ Expected: `data:` events arrive incrementally, then `data: [DONE]`.
 **Anthropic format with Claude Code (US1 scenarios 2 and 8)**:
 
 ```bash
-ANTHROPIC_BASE_URL=http://127.0.0.1:20129 ANTHROPIC_API_KEY=$ZR_KEY \
+ANTHROPIC_BASE_URL=http://127.0.0.1:20129 ANTHROPIC_API_KEY=$NR_KEY \
 ANTHROPIC_MODEL=anthropic/claude-sonnet-4-5 claude -p "say hi"
 ```
 
-Expected: the reply streams. `zerorouter-cli obs --provider anthropic` shows agent
+Expected: the reply streams. `nullrouter-cli obs --provider anthropic` shows agent
 `laptop`, a `claude:<uuid>` session, and native pair = true.
 
 **Format mismatch (edge case)**:
 
 ```bash
-curl -s localhost:20129/v1/messages -H "x-api-key: $ZR_KEY" -H 'content-type: application/json' \
+curl -s localhost:20129/v1/messages -H "x-api-key: $NR_KEY" -H 'content-type: application/json' \
   -d '{"model":"groq/llama-3.3-70b-versatile","max_tokens":8,"messages":[{"role":"user","content":"hi"}]}'
 ```
 
@@ -119,8 +119,8 @@ Expected: an Anthropic-shaped error for a provider that has no connection (404
 ## 5. Observations (US3)
 
 ```bash
-zerorouter-cli obs --provider deepseek
-zerorouter-cli obs --agent laptop --since 15m --json | jq '.summary'
+nullrouter-cli obs --provider deepseek
+nullrouter-cli obs --agent laptop --since 15m --json | jq '.summary'
 ```
 
 Expected:
@@ -133,9 +133,9 @@ Expected:
 ## 6. Reload (US5 scenario 3)
 
 1. Add a second anthropic connection before `personal` in `keys.toml`.
-2. Run `zerorouter-cli reload`. The report prints, and the next request runs on the new
+2. Run `nullrouter-cli reload`. The report prints, and the next request runs on the new
    connection.
-3. Introduce a typo in the provider name, then run `zerorouter-cli reload`.
+3. Introduce a typo in the provider name, then run `nullrouter-cli reload`.
 
 Expected after step 3: exit 1 with the error line, and requests keep using the previous
 connections.
@@ -143,5 +143,5 @@ connections.
 ## 7. Clean up
 
 ```bash
-kill %1; rm -rf $ZEROROUTER_HOME
+kill %1; rm -rf $NULLROUTER_HOME
 ```

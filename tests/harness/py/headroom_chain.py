@@ -9,8 +9,8 @@ import os
 from anthropic import Anthropic
 from openai import OpenAI
 
-base, key = os.environ["HR_BASE"], os.environ["ZR_KEY"]
-chat_model, messages_model = os.environ["ZR_MODEL"], os.environ["ZR_MODEL_MESSAGES"]
+base, key = os.environ["HR_BASE"], os.environ["NR_KEY"]
+chat_model, messages_model = os.environ["NR_MODEL"], os.environ["NR_MODEL_MESSAGES"]
 
 
 def marks(who):

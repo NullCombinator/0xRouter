@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import OpenAI from "openai";
 import { check } from "./failed.mjs";
 
-const c = new OpenAI({ baseURL: `${process.env.ZR_BASE}/v1`, apiKey: process.env.ZR_KEY, maxRetries: 0 });
-const model = process.env.ZR_MODEL;
+const c = new OpenAI({ baseURL: `${process.env.NR_BASE}/v1`, apiKey: process.env.NR_KEY, maxRetries: 0 });
+const model = process.env.NR_MODEL;
 
 const r = await c.responses.create({ model, input: "Say hello." });
 assert.equal(r.output_text, "Hello");

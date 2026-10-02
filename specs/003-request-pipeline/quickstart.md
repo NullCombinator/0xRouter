@@ -9,9 +9,9 @@ the [contracts](contracts/); this guide says what to run and what to expect.
 cd ~/Desktop/0router
 export CARGO_HOME=$PWD/.cargo-home
 cargo build --workspace
-export ZEROROUTER_HOME=$(mktemp -d)       # clean operator home; keep the path short:
+export NULLROUTER_HOME=$(mktemp -d)       # clean operator home; keep the path short:
                                           # run/operator.sock must fit in 108 bytes
-alias zr=./target/debug/zerorouter
+alias nr=./target/debug/nullrouter
 ```
 
 Harness tests also need Python 3 with `openai`, `anthropic` and `google-genai`, plus Node
@@ -30,11 +30,11 @@ narrower test target.
 ## 1. Setup: account, key, server (US1, US5)
 
 ```bash
-printf '%s' "$ANTHROPIC_API_KEY" | zr accounts add anthropic main    # secret on stdin
-zr accounts list                  # anthropic  main  0  …last4  active
-zr keys issue laptop              # prints 0r-… once; copy it
-export ZR_KEY=0r-…
-zr serve &                        # 127.0.0.1:20129
+printf '%s' "$ANTHROPIC_API_KEY" | nr accounts add anthropic main    # secret on stdin
+nr accounts list                  # anthropic  main  0  …last4  active
+nr keys issue laptop              # prints 0r-… once; copy it
+export NR_KEY=0r-…
+nr serve &                        # 127.0.0.1:20129
 ```
 
 Expected:
@@ -45,20 +45,20 @@ Expected:
 
 ## 2. One key, four styles, any provider (US1, SC-001)
 
-Automated: `cargo test -p zerorouter-server --test styles` and `tests/harness/run.sh`
+Automated: `cargo test -p nullrouter-server --test styles` and `tests/harness/run.sh`
 (both use mock upstreams).
 
 By hand against the running server, one request per style for the same model:
 
 ```bash
-curl -s localhost:20129/v1/chat/completions -H "authorization: Bearer $ZR_KEY" \
+curl -s localhost:20129/v1/chat/completions -H "authorization: Bearer $NR_KEY" \
   -d '{"model":"anthropic/claude-sonnet-4-20250514","stream":true,"messages":[{"role":"user","content":"hi"}]}'
-curl -s localhost:20129/v1/messages -H "x-api-key: $ZR_KEY" -H 'anthropic-version: 2023-06-01' \
+curl -s localhost:20129/v1/messages -H "x-api-key: $NR_KEY" -H 'anthropic-version: 2023-06-01' \
   -d '{"model":"anthropic/claude-sonnet-4-20250514","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}'
-curl -s localhost:20129/v1/responses -H "authorization: Bearer $ZR_KEY" \
+curl -s localhost:20129/v1/responses -H "authorization: Bearer $NR_KEY" \
   -d '{"model":"anthropic/claude-sonnet-4-20250514","input":"hi"}'
 curl -s "localhost:20129/v1beta/models/anthropic/claude-sonnet-4-20250514:generateContent" \
-  -H "x-goog-api-key: $ZR_KEY" -d '{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}'
+  -H "x-goog-api-key: $NR_KEY" -d '{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}'
 ```
 
 Expected:
@@ -70,16 +70,16 @@ Expected:
 Harness runners (operator-run when the tool isn't installed):
 
 ```bash
-ANTHROPIC_BASE_URL=http://127.0.0.1:20129 ANTHROPIC_API_KEY=$ZR_KEY claude -p "say ok"
-OPENAI_BASE_URL=http://127.0.0.1:20129/v1 OPENAI_API_KEY=$ZR_KEY codex exec "say ok"
+ANTHROPIC_BASE_URL=http://127.0.0.1:20129 ANTHROPIC_API_KEY=$NR_KEY claude -p "say ok"
+OPENAI_BASE_URL=http://127.0.0.1:20129/v1 OPENAI_API_KEY=$NR_KEY codex exec "say ok"
 ```
 
 Both should complete. With a tool call, Claude Code must run the tool and continue.
 
 ## 3. Failures don't reach the client (US2, SC-002, SC-003, SC-009)
 
-`cargo test -p zerorouter-engine --test retry --test fallback --test stay_warm --test timeouts`
-and `cargo test -p zerorouter-server --test errors`
+`cargo test -p nullrouter-engine --test retry --test fallback --test stay_warm --test timeouts`
+and `cargo test -p nullrouter-server --test errors`
 
 The scripted mocks cover:
 
@@ -94,7 +94,7 @@ The scripted mocks cover:
 
 ## 4. Every model type (US3, SC-007)
 
-`cargo test -p zerorouter-server --test types` (mocks) covers:
+`cargo test -p nullrouter-server --test types` (mocks) covers:
 - text;
 - embeddings;
 - image;
@@ -106,36 +106,36 @@ Each is tested through the OpenAI routes and, where the Gemini style has a route
 Gemini too. A type mismatch (an embeddings model on `/v1/chat/completions`) returns 400
 naming both types.
 
-Live (opt-in, operator keys): `ZR_LIVE=1 cargo test -p zerorouter-engine --test live -- types`
+Live (opt-in, operator keys): `NR_LIVE=1 cargo test -p nullrouter-engine --test live -- types`
 
 ## 5. Stream breaks (US4, SC-008)
 
-`cargo test -p zerorouter-engine --test breaks`
+`cargo test -p nullrouter-engine --test breaks`
 
 | Script | Expected client stream |
 |---|---|
 | cut after 20 text deltas; the next target declares continuation | one uninterrupted answer, no marker, `break continued` |
 | same, no continuation target, default behaviour | the open block closes, a note block `— connection lost, answer restarted —` appears, the full answer follows with new block indexes |
-| same, key overridden with `zr keys set-break laptop error_event` | the style's stream error event, then a clean end |
+| same, key overridden with `nr keys set-break laptop error_event` | the style's stream error event, then a clean end |
 | cut while tool-call arguments are streaming | error event, even under restart |
 | cut before any content | invisible to the client; a normal retry |
 
 For the Messages style, the restart stream is replayed through the Anthropic SDK stream
 parser and must parse with no error. Claude Code is run against a mock that cuts once.
 
-Live (opt-in): `ZR_LIVE=1 … --test live -- continuation` confirms prefill continuation on
+Live (opt-in): `NR_LIVE=1 … --test live -- continuation` confirms prefill continuation on
 the catalogued pre-4.6 anthropic models and the 400 on 4.6+.
 
 ## 6. Records (US5, SC-004, SC-005, SC-006)
 
 ```bash
-zr records list --provider anthropic
-zr records list --model claude-sonnet
-zr records show rq_…                # format: contracts/operator-cli.md
+nr records list --provider anthropic
+nr records list --model claude-sonnet
+nr records show rq_…                # format: contracts/operator-cli.md
 ```
 
-`cargo test -p zerorouter-wire --test usage`, `-p zerorouter-engine --test usage_records`,
-`-p zerorouter-server --test timing --test secrets` and `-p zerorouter-cli --test operator`:
+`cargo test -p nullrouter-wire --test usage`, `-p nullrouter-engine --test usage_records`,
+`-p nullrouter-server --test timing --test secrets` and `-p nullrouter-cli --test operator`:
 - **Usage**: for each provider and style pair, recorded input, output, cache-read and
   cache-write match the mock's usage exactly. A field the provider omits shows
   `not reported`.
@@ -149,11 +149,11 @@ The estimate still needs an account for the target provider (any secret will do;
 request is sent):
 
 ```bash
-printf 'sk-or-placeholder' | zr accounts add openrouter main    # prints "applied"
-curl -s localhost:20129/v1/models -H "authorization: Bearer $ZR_KEY"
-curl -s localhost:20129/v1/models -H "x-api-key: $ZR_KEY" -H 'anthropic-version: 2023-06-01'
-curl -s localhost:20129/v1beta/models -H "x-goog-api-key: $ZR_KEY"
-curl -si localhost:20129/v1/messages/count_tokens -H "x-api-key: $ZR_KEY" -H 'anthropic-version: 2023-06-01' \
+printf 'sk-or-placeholder' | nr accounts add openrouter main    # prints "applied"
+curl -s localhost:20129/v1/models -H "authorization: Bearer $NR_KEY"
+curl -s localhost:20129/v1/models -H "x-api-key: $NR_KEY" -H 'anthropic-version: 2023-06-01'
+curl -s localhost:20129/v1beta/models -H "x-goog-api-key: $NR_KEY"
+curl -si localhost:20129/v1/messages/count_tokens -H "x-api-key: $NR_KEY" -H 'anthropic-version: 2023-06-01' \
   -d '{"model":"openrouter/openai/gpt-5","messages":[{"role":"user","content":"hi"}]}'
 ```
 
@@ -165,9 +165,9 @@ Expected:
 
 ## 8. Specifics as data, security floor (US7)
 
-`cargo test -p zerorouter-registry --test gate` and
-`cargo test -p zerorouter-engine --test forwarding --test inband`:
-- every file in `crates/zerorouter-registry/tests/gate/invalid/styles/` and `…/invalid/providers/` is
+`cargo test -p nullrouter-registry --test gate` and
+`cargo test -p nullrouter-engine --test forwarding --test inband`:
+- every file in `crates/nullrouter-registry/tests/gate/invalid/styles/` and `…/invalid/providers/` is
   rejected with its expected diagnostic;
 - a plugin declaring `authorization` in `forwarding.to_upstream` loads with that entry
   stripped (strict mode: rejected);
@@ -177,12 +177,12 @@ Expected:
 ## 9. Community plugins (US8, SC-012)
 
 ```bash
-zr plugins list --community       # 5 bundled ("loaded") + 116 community, each "fits" or "unsupported"
-zr plugins install qoder          # exit 3, message per contracts/provider-schema-v2.md#fit-check
-zr plugins install groq           # fits; installed; appears in zr providers
+nr plugins list --community       # 5 bundled ("loaded") + 116 community, each "fits" or "unsupported"
+nr plugins install qoder          # exit 3, message per contracts/provider-schema-v2.md#fit-check
+nr plugins install groq           # fits; installed; appears in nr providers
 ```
 
-`cargo test -p zerorouter-registry --test community` sweeps all 116 plugins:
+`cargo test -p nullrouter-registry --test community` sweeps all 116 plugins:
 - each one either loads or is refused with every unsupported part listed;
 - no refused plugin contributes anything to the snapshot;
 - the `tests/gate/unsupported/` goldens match.
@@ -190,8 +190,8 @@ zr plugins install groq           # fits; installed; appears in zr providers
 ## 10. Cancellation, reuse, performance (SC-010, SC-011, SC-013)
 
 ```bash
-cargo test -p zerorouter-server --test cancel --test reuse
-cargo bench -p zerorouter-wire -p zerorouter-engine -p zerorouter-server
+cargo test -p nullrouter-server --test cancel --test reuse
+cargo bench -p nullrouter-wire -p nullrouter-engine -p nullrouter-server
 ```
 
 Expected:

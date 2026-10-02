@@ -1,14 +1,14 @@
 // Mid-stream breaks (T090, US4): every SDK's stream parser takes a restarted answer and
-// an answer ended by the error event. ZR_MODEL_CUT names a model whose first stream for a
-// body is cut after "w0 w1 w2 "; ZR_KEY_STRICT is a key whose break behaviour is error_event.
+// an answer ended by the error event. NR_MODEL_CUT names a model whose first stream for a
+// body is cut after "w0 w1 w2 "; NR_KEY_STRICT is a key whose break behaviour is error_event.
 import assert from "node:assert/strict";
 import Anthropic from "@anthropic-ai/sdk";
 import { ApiError, GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 
 const NOTE = "— connection lost, answer restarted —";
-const base = process.env.ZR_BASE;
-const model = process.env.ZR_MODEL_CUT;
+const base = process.env.NR_BASE;
+const model = process.env.NR_MODEL_CUT;
 const ask = "Say hello.";
 
 /** [name, api error type, streamed call returning the text], one per style. */
@@ -48,13 +48,13 @@ function styles(apiKey) {
 }
 
 // Restart: the cut words, the note, then the new answer, and the parser finishes cleanly.
-for (const [name, , call] of styles(process.env.ZR_KEY)) {
+for (const [name, , call] of styles(process.env.NR_KEY)) {
   const text = await call(`node-restart-${name}`);
   assert.ok(text.startsWith("w0 w1 w2") && text.includes(NOTE) && text.endsWith("Hello"), `${name}: ${JSON.stringify(text)}`);
 }
 
 // Error event: the SDK throws its own API error, or ends the stream; never a parse error.
-for (const [name, ApiErrorType, call] of styles(process.env.ZR_KEY_STRICT)) {
+for (const [name, ApiErrorType, call] of styles(process.env.NR_KEY_STRICT)) {
   let text;
   try {
     text = await call(`node-error-${name}`);

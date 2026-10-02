@@ -31,7 +31,7 @@ Two graph servers are available. `code-review-graph` indexes `ref/9router` (JS),
 
 - `query_graph_tool` — callers of a JS function. Parity is judged on 9router's request path, so check who actually calls a helper before copying its quirks.
 
-On the Rust graph, use `semantic_search_nodes_tool` and `query_graph_tool` to find existing 0router code (don't re-implement what `zerorouter-registry` already provides), and `get_impact_radius_tool` / `detect_changes_tool` to see what your change touches.
+On the Rust graph, use `semantic_search_nodes_tool` and `query_graph_tool` to find existing 0router code (don't re-implement what `nullrouter-registry` already provides), and `get_impact_radius_tool` / `detect_changes_tool` to see what your change touches.
 
 Use these before opening files — they surface structure that grep can't.
 

@@ -1,6 +1,8 @@
 # environment / secrets
 .env
 .mcp.json
+# operator home for the live checks (accounts.toml holds real provider keys)
+.nr-live/
 
 # upstream reference clone + its generated code graph (never committed)
 ref/
@@ -8,6 +10,7 @@ ref/
 # Rust build output and the project-local cargo home (set by the launcher)
 target/
 .cargo-home/
+.cargo/
 
 # OS noise
 .DS_Store

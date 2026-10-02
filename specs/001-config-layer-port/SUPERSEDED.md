@@ -23,7 +23,7 @@ on `claude-sonnet-4-6`. It targets an exact file-by-file parity port of 9router'
 11. Registry has ~92 providers with transport (121 total), not "40+".
 12. Registry files can't be regex-parsed — 15 contain functions. Use `snapshot-providers.mjs`.
 13. Retry values have no env overrides. `parseInt` accepts "120000abc".
-14. Crate name `0router-config` is invalid (starts with digit). Use `zerorouter-config`.
+14. Crate name `0router-config` is invalid (starts with digit). Use `nullrouter-config`.
 15. FR-009 locks built-ins — contradicts the 2026-09-26 decision (bundled providers are plugins
     the user can replace).
 16. The plan's constitution check cites "FR-004" for the parity audit, but FR-004 is

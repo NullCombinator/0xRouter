@@ -23,7 +23,7 @@ this brief. Don't accept it.
 | Capability | Status | Evidence |
 |---|---|---|
 | Provider plugins, validation gate, unified-model lookup | shipped | slice 002 |
-| Request pipeline foundation (styles as data, keys, accounts, redactor, schema 2) | partial | 003 Phase 1–2 (41/145 tasks), `zerorouter-wire`/`-engine`/`-server`, uncommitted |
+| Request pipeline foundation (styles as data, keys, accounts, redactor, schema 2) | partial | 003 Phase 1–2 (41/145 tasks), `nullrouter-wire`/`-engine`/`-server`, uncommitted |
 | Serving requests, translation, model listing, token counting | absent | 003 US1, US6 |
 | Retry, fallback, classification | absent | 003 US2 |
 | Non-text model types executing | absent | 003 US3 |

@@ -10,16 +10,16 @@ slice 003's quickstart passes.
 cd ~/Desktop/0router
 export CARGO_HOME=$PWD/.cargo-home
 cargo build --workspace
-export ZEROROUTER_HOME=$(mktemp -d)
-alias zr=./target/debug/zerorouter
+export NULLROUTER_HOME=$(mktemp -d)
+alias nr=./target/debug/nullrouter
 ```
 
 For builder checks (sections 3 onwards), the builder needs its pinned toolchain:
 
 ```bash
 rustup target add wasm32-unknown-unknown --toolchain 1.93.1
-cargo build -p zerorouter-builder
-./target/debug/zerorouter-builder setup      # unpacks the embedded kit; fetches serde once
+cargo build -p nullrouter-builder
+./target/debug/nullrouter-builder setup      # unpacks the embedded kit; fetches serde once
 ```
 
 ## 0. Whole suite (no network, no builder needed)
@@ -34,8 +34,8 @@ fixtures), the scrambler audit, tamper tests, the update lifecycle and hermes on
 ## 1. No adapters, no builder (FR-013, SC-011)
 
 ```bash
-PATH=/usr/bin:/bin cargo test -p zerorouter-server     # the slice 003 suite, builder not on PATH
-zr serve &                                             # starts; `adapters list` shows hermes only
+PATH=/usr/bin:/bin cargo test -p nullrouter-server     # the slice 003 suite, builder not on PATH
+nr serve &                                             # starts; `adapters list` shows hermes only
 ```
 
 **Expected**: the slice 003 suite passes, and `serve` logs no builder or review-model
@@ -44,8 +44,8 @@ warning.
 ## 2. hermes (US1, FR-006–FR-009, SC-001)
 
 ```bash
-zr keys issue hermes-desktop --harness hermes         # prints the key once
-cargo test -p zerorouter-adapters --test hermes        # images, attachments, echoed reasoning
+nr keys issue hermes-desktop --harness hermes         # prints the key once
+cargo test -p nullrouter-adapters --test hermes        # images, attachments, echoed reasoning
 ```
 
 **Expected**:
@@ -54,19 +54,19 @@ cargo test -p zerorouter-adapters --test hermes        # images, attachments, ec
 - Each change is in the record by path.
 
 Live (opt-in, needs operator accounts): run
-`ZR_LIVE=1 cargo test -p zerorouter-server --test harness_hermes -- --ignored`. It runs
+`NR_LIVE=1 cargo test -p nullrouter-server --test harness_hermes -- --ignored`. It runs
 hermes against anthropic, openrouter, opencode-zen and opencode-go, with tools, reasoning
 and images, streamed and not streamed. It also fills in or confirms the reject table.
 
 ## 3. Install, review, decide (US2, FR-019–FR-022)
 
 ```bash
-zr adapters install crates/zerorouter-adapters/tests/fixtures/noop   # → queued → building → in_review
-zr adapters show noop                                  # quarantined: no_review_model
-zr adapters review-settings --model claude-sonnet --budget 60000
-zr adapters review noop <version> --retry              # → reported (live model)
-zr adapters approve noop <version>
-zr keys issue test-agent --harness noop
+nr adapters install crates/nullrouter-adapters/tests/fixtures/noop   # → queued → building → in_review
+nr adapters show noop                                  # quarantined: no_review_model
+nr adapters review-settings --model claude-sonnet --budget 60000
+nr adapters review noop <version> --retry              # → reported (live model)
+nr adapters approve noop <version>
+nr keys issue test-agent --harness noop
 ```
 
 **Expected**:
@@ -77,8 +77,8 @@ zr keys issue test-agent --harness noop
 ## 4. Gate refusals (FR-010, FR-011, SC-004)
 
 ```bash
-cargo test -p zerorouter-adapters --test gate
-zr adapters install crates/zerorouter-adapters/tests/gate/invalid/multi_reason   # exit 3
+cargo test -p nullrouter-adapters --test gate
+nr adapters install crates/nullrouter-adapters/tests/gate/invalid/multi_reason   # exit 3
 ```
 
 **Expected**: one line per reason, matching `multi_reason/.expected`. The expected codes
@@ -87,8 +87,8 @@ include `foreign_dependency`, `build_script` and `opaque_blob`.
 ## 5. Hostile adapters and the guardrail (US3, SC-002, SC-003)
 
 ```bash
-cargo test -p zerorouter-server --test hostile
-cargo test -p zerorouter-adapters --test guard
+cargo test -p nullrouter-server --test hostile
+cargo test -p nullrouter-adapters --test guard
 ```
 
 **Expected**:
@@ -103,7 +103,7 @@ cargo test -p zerorouter-adapters --test guard
 ## 6. Tampering (FR-012, SC-005)
 
 ```bash
-cargo test -p zerorouter-adapters --test tamper
+cargo test -p nullrouter-adapters --test tamper
 ```
 
 **Expected**: editing `source/src/lib.rs` or `module.wasm` after approval causes a load
@@ -112,7 +112,7 @@ refusal and a `source_mismatch` alert, and bound keys work as plain clients.
 ## 7. Updates never break a working setup (US4, FR-023, SC-006)
 
 ```bash
-cargo test -p zerorouter-server --test adapter_lifecycle
+cargo test -p nullrouter-server --test adapter_lifecycle
 ```
 
 **Expected**: under constant load, v1 serves 100% of requests while v2 is queued, in review,
@@ -121,7 +121,7 @@ quarantined, rejected and then approved. From the next request after approval, v
 ## 8. Kit upgrade (FR-032, SC-013)
 
 ```bash
-cargo test -p zerorouter-adapters --test kit_upgrade
+cargo test -p nullrouter-adapters --test kit_upgrade
 ```
 
 **Expected**:
@@ -132,7 +132,7 @@ cargo test -p zerorouter-adapters --test kit_upgrade
 ## 9. Catalogue (FR-031, SC-012)
 
 ```bash
-cargo test -p zerorouter-adapters --test catalogue     # local HTTPS mock
+cargo test -p nullrouter-adapters --test catalogue     # local HTTPS mock
 ```
 
 **Expected**:
@@ -145,11 +145,11 @@ cargo test -p zerorouter-adapters --test catalogue     # local HTTPS mock
 Live, opt-in, with the builder and a review model:
 
 ```bash
-zr catalogue install claude-code          # or: zr adapters install adapters/community/claude-code
-zr adapters review claude-code <version> --retry
-zr adapters approve claude-code <version>
-zr keys issue cc-laptop --harness claude-code
-ZR_LIVE=1 cargo test -p zerorouter-server --test harness_claude_code -- --ignored
+nr catalogue install claude-code          # or: nr adapters install adapters/community/claude-code
+nr adapters review claude-code <version> --retry
+nr adapters approve claude-code <version>
+nr keys issue cc-laptop --harness claude-code
+NR_LIVE=1 cargo test -p nullrouter-server --test harness_claude_code -- --ignored
 ```
 
 **Expected**:
@@ -161,7 +161,7 @@ ZR_LIVE=1 cargo test -p zerorouter-server --test harness_claude_code -- --ignore
 ## 11. Benchmarks (FR-030, SC-010)
 
 ```bash
-cargo bench -p zerorouter-adapters -p zerorouter-sandbox -- --save-baseline slice-004
+cargo bench -p nullrouter-adapters -p nullrouter-sandbox -- --save-baseline slice-004
 ```
 
 **Expected**: adapter plus guardrail at p95 ≤ 5 ms on the 1 MB request bench, and ≤ 1 ms

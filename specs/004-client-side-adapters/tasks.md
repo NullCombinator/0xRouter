@@ -32,20 +32,20 @@ Cargo workspace at the repo root ([plan § Project Structure](plan.md#project-st
 
 | Path | What it is |
 |---|---|
-| `crates/zerorouter-adapter-kit/` | Guest library: edit model, context, ABI glue. The only crate allowed `unsafe` |
-| `crates/zerorouter-sandbox/` | wasmtime host: engine, module load, per-call instance, limits |
-| `crates/zerorouter-adapters/` | Selectors, apply, guardrail, hermes, gate, scrambler, review, store, catalogue, alerts |
-| `crates/zerorouter-builder/` | Separate binary; never a dependency of any other crate |
-| `crates/zerorouter-engine/`, `-server/`, `-cli/` | Extended |
+| `crates/nullrouter-adapter-kit/` | Guest library: edit model, context, ABI glue. The only crate allowed `unsafe` |
+| `crates/nullrouter-sandbox/` | wasmtime host: engine, module load, per-call instance, limits |
+| `crates/nullrouter-adapters/` | Selectors, apply, guardrail, hermes, gate, scrambler, review, store, catalogue, alerts |
+| `crates/nullrouter-builder/` | Separate binary; never a dependency of any other crate |
+| `crates/nullrouter-engine/`, `-server/`, `-cli/` | Extended |
 | `adapters/community/claude-code/` | The proof adapter. Outside the workspace (`exclude`) |
 | `catalogue/index.toml` | The catalogue |
-| `crates/zerorouter-adapters/tests/` | `gate/invalid/`, `hostile/` (sources plus checked-in `.wasm`), `guard/`, `fixtures/` |
+| `crates/nullrouter-adapters/tests/` | `gate/invalid/`, `hostile/` (sources plus checked-in `.wasm`), `guard/`, `fixtures/` |
 | `tests/parity/deviations.toml` | Gains the slice 004 deviations |
 | `tests/harness/` | Gains the hermes and Claude Code runners |
 
 One addition to the plan's tree:
 - The testkit that loads a fixture adapter straight into a store, skipping install, lives in
-  `zerorouter-adapters` behind a `testkit` feature (`src/testkit.rs`). It lets US3, US4 and US6
+  `nullrouter-adapters` behind a `testkit` feature (`src/testkit.rs`). It lets US3, US4 and US6
   tests run without the builder.
 
 Build commands need `export CARGO_HOME=$PWD/.cargo-home`.
@@ -69,10 +69,10 @@ Slice 003 work needs it pointed back at `specs/003-request-pipeline`.
     into most directly:
     - T049–T054 (the four style files and their codecs);
     - T055 (happy-path attempt) and T071 (full attempt loop with fallback) in
-      `crates/zerorouter-engine/src/attempt.rs`;
+      `crates/nullrouter-engine/src/attempt.rs`;
     - T056 (text generation wired through `router.rs` and `relay.rs`);
     - T105 (record filling).
-  - `crates/zerorouter-engine/src/attempt.rs` must hold the attempt loop, not a stub.
+  - `crates/nullrouter-engine/src/attempt.rs` must hold the attempt loop, not a stub.
   - If either check fails, **stop** and tell the user that slice 004 waits on slice 003.
   - Point `.specify/feature.json` at `specs/004-client-side-adapters` only after this passes.
 - [ ] T002 Check the toolchain for adapters ([R1](research.md#r1-toolchain-and-crates)).
@@ -93,7 +93,7 @@ Slice 003 work needs it pointed back at `specs/003-request-pipeline`.
     - `prettyplease` 0.2, `proc-macro2` (`span-locations`), `flate2`, `tar`, `semver`;
     - path dependencies for the four new crates.
   - Do not add `wasi` or `component-model` features.
-- [ ] T004 [P] Create `crates/zerorouter-adapter-kit/Cargo.toml` and `src/lib.rs`.
+- [ ] T004 [P] Create `crates/nullrouter-adapter-kit/Cargo.toml` and `src/lib.rs`.
   - Dependencies: `serde` (`derive`) and `serde_json` only. `version = "1.0.0"`.
   - Modules `edit`, `context`, `input`, `abi`, each an empty file.
   - Lints: the kit does **not** use `lints.workspace = true`. The workspace sets
@@ -102,14 +102,14 @@ Slice 003 work needs it pointed back at `specs/003-request-pipeline`.
     `[lints.clippy] all = { level = "warn", priority = -1 }`. Only `src/abi.rs` gets
     `#![allow(unsafe_code)]`. Record the reason in a comment that points to plan § Complexity
     Tracking.
-- [ ] T005 [P] Create `crates/zerorouter-sandbox/Cargo.toml` and `src/lib.rs`.
+- [ ] T005 [P] Create `crates/nullrouter-sandbox/Cargo.toml` and `src/lib.rs`.
   - Dependencies: `wasmtime`, `tokio` (`time`, `rt`), `sha2`, `serde_json`, `thiserror`,
-    `tracing`, `zerorouter-adapter-kit` (for the shared JSON types).
+    `tracing`, `nullrouter-adapter-kit` (for the shared JSON types).
   - Modules `engine`, `module`, `call`, `abi`.
   - `[[bench]] name = "sandbox"`, `harness = false`. `lints.workspace = true`.
-- [ ] T006 [P] Create `crates/zerorouter-adapters/Cargo.toml` and `src/lib.rs`.
-  - Dependencies: `zerorouter-adapter-kit`, `zerorouter-sandbox`, `zerorouter-wire`,
-    `zerorouter-registry`, `serde`, `serde_json`, `toml`, `syn`, `prettyplease`,
+- [ ] T006 [P] Create `crates/nullrouter-adapters/Cargo.toml` and `src/lib.rs`.
+  - Dependencies: `nullrouter-adapter-kit`, `nullrouter-sandbox`, `nullrouter-wire`,
+    `nullrouter-registry`, `serde`, `serde_json`, `toml`, `syn`, `prettyplease`,
     `proc-macro2`, `sha2`, `flate2`, `tar`, `semver`, `reqwest`, `tokio`, `thiserror`,
     `tracing`, `base64`.
   - Feature `testkit`.
@@ -117,21 +117,21 @@ Slice 003 work needs it pointed back at `specs/003-request-pipeline`.
     `review`, `store`, `builder_client`, `catalogue`, `alerts`, `fingerprint`, and `testkit`
     (cfg feature).
   - `[[bench]] name = "adapters"`, `harness = false`.
-- [ ] T007 [P] Create `crates/zerorouter-builder/Cargo.toml` and `src/main.rs`.
-  - A binary named `zerorouter-builder`, depending on `serde`, `serde_json`, `sha2`, `clap`
+- [ ] T007 [P] Create `crates/nullrouter-builder/Cargo.toml` and `src/main.rs`.
+  - A binary named `nullrouter-builder`, depending on `serde`, `serde_json`, `sha2`, `clap`
     and `thiserror`. No other workspace crate may depend on it.
   - Subcommands `setup` and `build`. `build` reads a JSON job from stdin.
 - [ ] T008 [P] Create the directories and placeholders.
   - `adapters/community/.cargo/config.toml` with
-    `[patch.crates-io] zerorouter-adapter-kit = { path = "../../crates/zerorouter-adapter-kit" }`,
+    `[patch.crates-io] nullrouter-adapter-kit = { path = "../../crates/nullrouter-adapter-kit" }`,
     so `cargo test` inside a community adapter resolves the unpublished kit
     ([R8](research.md#r8-the-builder), Kit source). It sits outside every package, so the gate
     never sees it, and the builder never reads it because it builds in a temp dir with its own
     `CARGO_HOME`.
   - `catalogue/index.toml` holding only `schema = 1`.
-  - `crates/zerorouter-adapters/tests/{gate/invalid,hostile,guard,fixtures}/.gitkeep`.
+  - `crates/nullrouter-adapters/tests/{gate/invalid,hostile,guard,fixtures}/.gitkeep`.
 - [ ] T009 Run `cargo build --workspace && cargo clippy --workspace -- -D warnings` on the
-  skeleton, and confirm that `cargo tree -i zerorouter-builder` shows no dependent.
+  skeleton, and confirm that `cargo tree -i nullrouter-builder` shows no dependent.
 
 ---
 
@@ -144,13 +144,13 @@ share: edits, selectors, key binding, records.
 
 ### Tests for the foundation ⚠️
 
-- [ ] T010 [P] Selector tests in `crates/zerorouter-adapters/tests/selector.rs`.
+- [ ] T010 [P] Selector tests in `crates/nullrouter-adapters/tests/selector.rs`.
   - Parse `messages[*].content[*]`, `tools`, `$`, `messages[2].images` and quoted keys.
   - Refuse more than 8 segments, empty segments and bad brackets.
   - Extract matches with concrete paths from a nested body. `$` yields the whole body at
     path `$`.
   - No match yields an empty list.
-- [ ] T011 [P] Edit-check and apply tests in `crates/zerorouter-adapters/tests/apply.rs`, one
+- [ ] T011 [P] Edit-check and apply tests in `crates/nullrouter-adapters/tests/apply.rs`, one
   test per rule of [R5](research.md#r5-checking-an-adapters-edits-before-the-guardrail). Each
   rule is refused with its named `invalid_output` rule:
   - a path not under a selector;
@@ -163,18 +163,18 @@ share: edits, selectors, key binding, records.
 
   Removing array elements at several indices applies from the highest index down, so the
   paths stay valid. The original body is untouched after apply.
-- [ ] T012 [P] Key binding tests in `crates/zerorouter-engine/tests/keys_harness.rs`.
+- [ ] T012 [P] Key binding tests in `crates/nullrouter-engine/tests/keys_harness.rs`.
   - `harness` round-trips through `keys.toml`, and files without it still load.
   - Reserved names (`opencode`, `grok-build`, `zcode`) and malformed names are refused.
   - `^[a-z][a-z0-9-]{1,31}$` is enforced.
   - An unknown well-formed name is accepted.
-- [ ] T013 [P] Record tests in `crates/zerorouter-engine/tests/records_adapter.rs`.
+- [ ] T013 [P] Record tests in `crates/nullrouter-engine/tests/records_adapter.rs`.
   - `AdapterRun`, `ContentChange` and `GuardrailEvent` serialise with exactly the
     [data-model.md](data-model.md#adapterrun-on-attempt-and-response_adapter-on-requestrecord)
     fields.
   - A record built from a run that removed a string containing a sentinel secret and a
     sentinel prompt holds neither (FR-025).
-- [ ] T014 [P] Engine seam tests in `crates/zerorouter-engine/tests/adapter_seam.rs`, using a
+- [ ] T014 [P] Engine seam tests in `crates/nullrouter-engine/tests/adapter_seam.rs`, using a
   test adapter that removes a field.
   - (a) The request reaching the mock upstream lacks the field, and the attempt's record lists
     the change.
@@ -189,7 +189,7 @@ share: edits, selectors, key binding, records.
 
 ### Implementation
 
-- [ ] T015 [P] Kit edit model in `crates/zerorouter-adapter-kit/src/edit.rs`.
+- [ ] T015 [P] Kit edit model in `crates/nullrouter-adapter-kit/src/edit.rs`.
   - `Path`: a vector of key or index segments, with `Display` as `a[1].b` and a round-trip
     parser.
   - `Kind { Removed, Converted }`.
@@ -199,7 +199,7 @@ share: edits, selectors, key binding, records.
   - `Edit { op, path, kind, value? }`, and `Edits` with `remove(path, reason)` and
     `convert(path, value, reason)`.
   - JSON shapes as in [contracts/adapter-kit.md](contracts/adapter-kit.md#call-sequence).
-- [ ] T016 [P] Kit context and input in `crates/zerorouter-adapter-kit/src/context.rs` and
+- [ ] T016 [P] Kit context and input in `crates/nullrouter-adapter-kit/src/context.rs` and
   `src/input.rs`.
   - `Context { direction, provider, target_style, same_style, model, model_type,
     capabilities { vision, file_input, reasoning }, stream, attempt }`, with capabilities
@@ -207,23 +207,23 @@ share: edits, selectors, key binding, records.
   - `Input { parts: Vec<Part { path, value }> }`.
   - The `Adapter` trait with `on_request`, and default no-op `on_response` and `on_event`.
   - `KIT_ABI: u32 = 1`.
-- [ ] T017 Selectors in `crates/zerorouter-adapters/src/selector.rs`.
+- [ ] T017 Selectors in `crates/nullrouter-adapters/src/selector.rs`.
   - `Selector::parse`, with at most 8 segments.
   - `extract(&Value, &[Selector]) -> Vec<Part>`, a native walk that clones only the matched
     subtrees.
   - `covers(&[Selector], &Path) -> bool`.
   - Make T010 pass.
-- [ ] T018 Edit checks and apply in `crates/zerorouter-adapters/src/apply.rs`.
+- [ ] T018 Edit checks and apply in `crates/nullrouter-adapters/src/apply.rs`.
   - `check(&Value, &[Selector], &[Edit]) -> Result<(), InvalidOutput{rule}>` with the R5
     limits.
   - `apply(&Value, &[Edit]) -> Value` works on a clone. Array removals run in descending
     index order.
   - `changes(&[Edit]) -> Vec<ContentChange>`.
   - Make T011 pass.
-- [ ] T019 `AgentKey.harness` in `crates/zerorouter-engine/src/keys.rs`, plus `HarnessName`
+- [ ] T019 `AgentKey.harness` in `crates/nullrouter-engine/src/keys.rs`, plus `HarnessName`
   with its validation and the `BUILTIN` and `RESERVED` name tables in
-  `crates/zerorouter-adapters/src/lib.rs`. Keep `deny_unknown_fields`. Make T012 pass.
-- [ ] T020 Record types in `crates/zerorouter-engine/src/records.rs`.
+  `crates/nullrouter-adapters/src/lib.rs`. Keep `deny_unknown_fields`. Make T012 pass.
+- [ ] T020 Record types in `crates/nullrouter-engine/src/records.rs`.
   - `Attempt.adapter: Option<AdapterRun>` and `RequestRecord.response_adapter:
     Option<AdapterRun>`.
   - `AdapterRun { harness, version, outcome, changes, guardrail, duration_us }`.
@@ -233,17 +233,17 @@ share: edits, selectors, key binding, records.
   - Run the redactor over `path` strings.
   - Make T013 pass.
 - [ ] T021 `[adapters]` config: add `pub adapters: AdaptersSettings` (`#[serde(default)]`,
-  `deny_unknown_fields`) to `OperatorConfig` in `crates/zerorouter-registry/src/schema/config.rs`,
-  and pass it into the engine state in `crates/zerorouter-engine/src/state.rs`. Fields and
+  `deny_unknown_fields`) to `OperatorConfig` in `crates/nullrouter-registry/src/schema/config.rs`,
+  and pass it into the engine state in `crates/nullrouter-engine/src/state.rs`. Fields and
   defaults: `catalogue_url`, `builder`, `request_deadline_ms = 20` (1–1000),
   `event_deadline_ms = 2` (1–100), `memory_mib = 64` (1–512), `max_instances = 64`.
-- [ ] T022 The runner in `crates/zerorouter-adapters/src/runner.rs`.
+- [ ] T022 The runner in `crates/nullrouter-adapters/src/runner.rs`.
   - `enum AdapterRunner { Builtin(Builtin), Wasm(WasmHandle) }`. The `Wasm` arm is a stub
     returning `not_run` until T046.
   - `run_request(&self, ctx, &Value) -> RunOutcome { body: Cow<Value>, run: AdapterRun }`,
     and `run_response` and `run_event` likewise.
   - Built-ins are resolved from a static table by `HarnessName`. No `Box<dyn>`.
-- [ ] T023 Engine seam in `crates/zerorouter-engine/src/attempt.rs` and `src/state.rs`.
+- [ ] T023 Engine seam in `crates/nullrouter-engine/src/attempt.rs` and `src/state.rs`.
   - `EngineState` gains the adapter view: the runner per harness.
   - For each attempt, when the key has a harness, build the `AttemptContext` from the
     attempt's provider, endpoint wire style, same_style flag, upstream model, model type and
@@ -251,14 +251,14 @@ share: edits, selectors, key binding, records.
     `decode`/`encode`. Put the `AdapterRun` on the `Attempt`.
   - Fallback re-runs the adapter against the original client body.
   - Adapter work runs inside the attempt's `CancellationToken` scope.
-- [ ] T024 Response seam in `crates/zerorouter-server/src/relay.rs` (streamed) and in the
+- [ ] T024 Response seam in `crates/nullrouter-server/src/relay.rs` (streamed) and in the
   engine's non-stream path.
   - After the event is re-encoded for the client (`for_client`), run `run_event` per event
     without buffering. Run `run_response` once on a non-stream body.
   - Aggregate the changes into `RequestRecord.response_adapter`, prefixing paths with
     `event[N].`.
   - Make T014 pass.
-- [ ] T025 `keys` CLI in `crates/zerorouter-cli/src/cmd/keys.rs`, per
+- [ ] T025 `keys` CLI in `crates/nullrouter-cli/src/cmd/keys.rs`, per
   [contracts/operator-cli.md](contracts/operator-cli.md#commands).
   - `keys issue <name> --harness H`.
   - `keys set-harness <name|id> <H>` and `keys set-harness <name|id> --clear`.
@@ -281,7 +281,7 @@ mocks, then live, every turn completes and every change is recorded.
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T026 [P] [US1] hermes unit tests in `crates/zerorouter-adapters/tests/hermes.rs`.
+- [ ] T026 [P] [US1] hermes unit tests in `crates/nullrouter-adapters/tests/hermes.rs`.
   - (a) `reasoning_content`, `reasoning` and `reasoning_details` on assistant messages are
     removed with `target_rejects_field` only when the provider is in the reject table and
     `same_style` is true.
@@ -296,24 +296,24 @@ mocks, then live, every turn completes and every change is recorded.
     `image_url`, PDFs to `file` with `file_data` and `filename`.
   - (f) A MIME type no model can read is left unconverted.
   - (g) No edit ever touches `tool_calls`, `tools` or a `role:"tool"` message.
-- [ ] T027 [P] [US1] hermes engine tests in `crates/zerorouter-engine/tests/hermes_e2e.rs`,
+- [ ] T027 [P] [US1] hermes engine tests in `crates/nullrouter-engine/tests/hermes_e2e.rs`,
   with the scripted mock for each chosen provider's wire style, streamed and not.
   - A three-turn session with a tool call and result, echoed reasoning, and an image turn.
   - Assert what each mock received, that every turn succeeds, and the record's changes.
   - US1-5: the same body from a key without a harness goes through unchanged, and no
     adapter is recorded.
 - [ ] T028 [P] [US1] hermes harness runner in `tests/harness/hermes/`.
-  - A script that drives the real hermes agent against `zerorouter serve`. No stand-in client:
+  - A script that drives the real hermes agent against `nullrouter serve`. No stand-in client:
     SC-001 is about hermes itself. If hermes can't be installed under Landlock, the script is
     *operator-run*, like T031, and the user installs hermes outside the session.
   - It covers tools, reasoning across turns, an image, an attachment, and streamed and
     non-streamed runs.
-  - Gate it behind `ZR_LIVE=1` in `crates/zerorouter-server/tests/harness_hermes.rs`
+  - Gate it behind `NR_LIVE=1` in `crates/nullrouter-server/tests/harness_hermes.rs`
     (`#[ignore]`).
 
 ### Implementation for User Story 1
 
-- [ ] T029 [US1] The hermes adapter in `crates/zerorouter-adapters/src/builtin/hermes.rs`.
+- [ ] T029 [US1] The hermes adapter in `crates/nullrouter-adapters/src/builtin/hermes.rs`.
   - Request selectors: `messages[*].reasoning_content`, `messages[*].reasoning`,
     `messages[*].reasoning_details`, `messages[*].images`, `messages[*].attachments`,
     `messages[*].experimental_attachments`, `messages[*].content`, `messages[*].role`.
@@ -329,16 +329,16 @@ mocks, then live, every turn completes and every change is recorded.
   - `hermes images: converted, 9router deletes (modality.js)`;
   - `echoed reasoning: removed by adapter per table, not in core (paramSupport.js)`.
 
-  Assert both in a parity test in `crates/zerorouter-adapters/tests/hermes.rs`.
+  Assert both in a parity test in `crates/nullrouter-adapters/tests/hermes.rs`.
 - [ ] T031 [US1] *operator-run* live check that fills the reject table.
   - Ask the user to run
-    `! ZR_LIVE=1 cargo test -p zerorouter-server --test harness_hermes -- --ignored --nocapture`,
+    `! NR_LIVE=1 cargo test -p nullrouter-server --test harness_hermes -- --ignored --nocapture`,
     once with the table empty for the four chosen providers.
   - Add only the providers that returned a 400 naming an echoed reasoning field to
     `REJECTS_ECHOED_REASONING`, and cite the run date in a comment.
   - Re-run until every turn passes (SC-001). Record the results in
     `tests/harness/README.md`.
-- [ ] T032 [US1] Add `zerorouter adapters list` in `crates/zerorouter-cli/src/cmd/adapters.rs`
+- [ ] T032 [US1] Add `nullrouter adapters list` in `crates/nullrouter-cli/src/cmd/adapters.rs`
   (new) that shows hermes as `built-in`, for US1's operator view. Other subcommands return
   "not available yet" until US2.
 
@@ -356,19 +356,19 @@ foundation here, not a later story.
 
 ### Tests ⚠️
 
-- [ ] T033 [P] Sandbox tests in `crates/zerorouter-sandbox/tests/sandbox.rs`, using WAT
+- [ ] T033 [P] Sandbox tests in `crates/nullrouter-sandbox/tests/sandbox.rs`, using WAT
   fixtures compiled with `wasmtime::Module::new` in-test.
-  - A module importing anything other than `zr.abi_version` or `zr.log` (for example
+  - A module importing anything other than `nr.abi_version` or `nr.log` (for example
     `wasi_snapshot_preview1.fd_write` or `env.socket`) is refused at load, with the import
     named.
   - A missing `zr_on_request`, `zr_alloc` or `memory` export is refused.
-  - A module without the `zr.abi` section, or with an unsupported ABI, is refused.
+  - A module without the `nr.abi` section, or with an unsupported ABI, is refused.
   - An infinite loop returns `deadline` within the deadline plus 5 ms, without blocking
     other Tokio tasks: a concurrent timer task keeps ticking.
   - A `memory.grow` past 64 MiB returns `memory`.
   - `unreachable` returns `trap`.
   - A valid module's output round-trips.
-- [ ] T034 [P] Guardrail tests in `crates/zerorouter-adapters/tests/guard.rs`, with one
+- [ ] T034 [P] Guardrail tests in `crates/nullrouter-adapters/tests/guard.rs`, with one
   module per client style under `tests/guard/` (`openai_chat.rs`, `anthropic_messages.rs`,
   `openai_responses.rs`, `gemini.rs`), per [R6](research.md#r6-the-guardrail).
   - Request cases, each giving its named rule:
@@ -384,7 +384,7 @@ foundation here, not a later story.
   - Undecodable cases: an edit that leaves the body or event undecodable in the client style
     gives `failed{invalid_output: undecodable}`, sends the original, raises `adapter_failed`,
     and does **not** mark the adapter suspect ([R6](research.md#r6-the-guardrail) step 4).
-- [ ] T035 [P] Store and state-machine tests in `crates/zerorouter-adapters/tests/store.rs`.
+- [ ] T035 [P] Store and state-machine tests in `crates/nullrouter-adapters/tests/store.rs`.
   - Every transition in the
     [data-model.md state machine](data-model.md#adapterversion-state-machine), and every
     forbidden transition refused. For example, approving from `in_review` is refused.
@@ -392,15 +392,15 @@ foundation here, not a later story.
   - `index.toml` round-trips, and writes are atomic.
   - Files are mode 0600 and directories 0700.
   - `serve` refuses a group-readable `adapters/`.
-- [ ] T036 [P] Fingerprint and tamper tests in `crates/zerorouter-adapters/tests/tamper.rs`.
+- [ ] T036 [P] Fingerprint and tamper tests in `crates/nullrouter-adapters/tests/tamper.rs`.
   - `source_fp` is stable across file order and mtime, and changes on any byte, rename or
     added file.
   - Loading after editing `source/src/lib.rs` or `module.wasm` is refused with
     `source_mismatch`. An alert is raised, and a request from a bound key completes as a
     plain client (SC-005, US2-6).
-- [ ] T037 [P] Builder tests in `crates/zerorouter-builder/tests/build.rs`, which skip with a
+- [ ] T037 [P] Builder tests in `crates/nullrouter-builder/tests/build.rs`, which skip with a
   message when the wasm32 target is missing.
-  - The fixture `crates/zerorouter-adapters/tests/fixtures/noop/` builds offline after
+  - The fixture `crates/nullrouter-adapters/tests/fixtures/noop/` builds offline after
     `setup`, resolving the kit from the local registry with no crates.io access.
   - Two builds give an identical `wasm_hash`.
   - A fixture with a `compile` error returns `{"ok":false,"error":"compile"}` with at most
@@ -415,40 +415,40 @@ foundation here, not a later story.
 
 ### Implementation
 
-- [ ] T038 [P] Kit ABI in `crates/zerorouter-adapter-kit/src/abi.rs`, the file allowed
+- [ ] T038 [P] Kit ABI in `crates/nullrouter-adapter-kit/src/abi.rs`, the file allowed
   `unsafe`.
   - `zr_alloc`, and input decode from `(ptr, len)`.
   - The output is packed as `(ptr << 32) | len`, and `0` means no edits.
-  - The `zr.abi` custom section, via `#[link_section]` inside the macro.
+  - The `nr.abi` custom section, via `#[link_section]` inside the macro.
   - `macro_rules! export!` generates `zr_on_request`, `zr_on_response` and `zr_on_event`
     for a type implementing `Adapter`.
-  - A `log!` macro calling the `zr.log` import, capped at 512 bytes.
+  - A `log!` macro calling the `nr.log` import, capped at 512 bytes.
   - Document that `#[no_mangle]` appears only inside `export!`.
-- [ ] T039 [P] Sandbox engine in `crates/zerorouter-sandbox/src/engine.rs`.
+- [ ] T039 [P] Sandbox engine in `crates/nullrouter-sandbox/src/engine.rs`.
   - One process-wide `Engine`, with `epoch_interruption(true)`, `async_support(true)`,
     `consume_fuel(false)`, and threads, relaxed SIMD and multi-memory off.
   - Pooling allocator sized by `max_instances`.
   - A Tokio ticker task that increments the epoch every 1 ms and stops on shutdown.
-- [ ] T040 Sandbox module load in `crates/zerorouter-sandbox/src/module.rs`.
+- [ ] T040 Sandbox module load in `crates/nullrouter-sandbox/src/module.rs`.
   - Inputs: `wasm` bytes, the expected `wasm_hash` and the manifest flags.
-  - Checks: SHA-256 matches; `Module::new` (never `deserialize`); imports ⊆ {`zr.abi_version`,
-    `zr.log`}; required exports present; `zr.abi` supported (current and previous major).
+  - Checks: SHA-256 matches; `Module::new` (never `deserialize`); imports ⊆ {`nr.abi_version`,
+    `nr.log`}; required exports present; `nr.abi` supported (current and previous major).
   - Returns an `InstancePre`, or a `LoadError` naming the reason.
   - Make T033's load cases pass.
-- [ ] T041 Sandbox call in `crates/zerorouter-sandbox/src/call.rs` and `src/abi.rs`.
+- [ ] T041 Sandbox call in `crates/nullrouter-sandbox/src/call.rs` and `src/abi.rs`.
   - A fresh `Store` per call, with a `ResourceLimiter` of 64 MiB memory, 10,000 table
     elements and 1 instance.
   - `set_epoch_deadline`, with `epoch_deadline_async_yield_and_update`.
   - Write the input through `zr_alloc`, call, and read the output with bounds checks
     (16 MiB in and out).
   - Map traps to `deadline`, `memory`, `trap` or `invalid_output`.
-  - `zr.log` is rate-limited to 8 calls per invocation, redacted, and written at `debug`.
+  - `nr.log` is rate-limited to 8 calls per invocation, redacted, and written at `debug`.
   - The previous-ABI shim goes in `abi.rs`.
   - Make T033 pass.
-- [ ] T042 [P] Fingerprint in `crates/zerorouter-adapters/src/fingerprint.rs`.
+- [ ] T042 [P] Fingerprint in `crates/nullrouter-adapters/src/fingerprint.rs`.
   - The canonical tree hash, over sorted relative paths, each `path\0len\0bytes`.
   - Output `sha256:<hex>`.
-- [ ] T043 Store in `crates/zerorouter-adapters/src/store.rs`, per
+- [ ] T043 Store in `crates/nullrouter-adapters/src/store.rs`, per
   [data-model.md](data-model.md#adapterindex-adaptersindextoml).
   - The layout `adapters/<harness>/<version-id>/{source/, module.wasm, build.json,
     review.json, decision.json}`.
@@ -458,28 +458,28 @@ foundation here, not a later story.
   - A `transition(from, to)` table that refuses anything else.
   - Atomic writes, mode 0600 files and 0700 directories.
   - Make T035 pass.
-- [ ] T044 [P] Alerts in `crates/zerorouter-adapters/src/alerts.rs`.
+- [ ] T044 [P] Alerts in `crates/nullrouter-adapters/src/alerts.rs`.
   - `adapters/alerts.toml` holds `Alert { id: al_+10, kind, harness, version, record?,
     detail, at, acked? }`. Kinds: `guardrail`, `adapter_failed`, `source_mismatch`,
     `module_refused`, `rebuild_failed`, `quarantined`, `refused`.
   - Repeated `adapter_failed` alerts for the same version and reason within 60 s fold into
     one alert with a count.
   - Every alert is also logged at `warn`, and `detail` is fixed text plus codes only.
-- [ ] T045 The builder in `crates/zerorouter-builder/src/main.rs`, per
+- [ ] T045 The builder in `crates/nullrouter-builder/src/main.rs`, per
   [R8](research.md#r8-the-builder) and
   [contracts/adapter-package.md](contracts/adapter-package.md#after-the-gate).
   - Kit embedding ([R8](research.md#r8-the-builder), Kit source): the kit is not on
     crates.io.
-    - `tools/package-kit.sh` runs `cargo package -p zerorouter-adapter-kit --no-verify`, and
+    - `tools/package-kit.sh` runs `cargo package -p nullrouter-adapter-kit --no-verify`, and
       writes the `.crate` and a pinned `Cargo.lock` (kit, `serde`, `serde_json`) to
-      `crates/zerorouter-builder/kit/`.
+      `crates/nullrouter-builder/kit/`.
     - The builder embeds both with `include_bytes!`.
-    - A test in `crates/zerorouter-builder/tests/kit_embed.rs` fails if the embedded `.crate`'s
-      sources differ from `crates/zerorouter-adapter-kit/`, so the two never drift.
+    - A test in `crates/nullrouter-builder/tests/kit_embed.rs` fails if the embedded `.crate`'s
+      sources differ from `crates/nullrouter-adapter-kit/`, so the two never drift.
   - `setup`:
-    - write `$ZEROROUTER_HOME/builder/rust-toolchain.toml`, pinned to 1.93.1 with
+    - write `$NULLROUTER_HOME/builder/rust-toolchain.toml`, pinned to 1.93.1 with
       `wasm32-unknown-unknown`;
-    - unpack the embedded kit into `builder/vendor/zerorouter-adapter-kit-<ver>/`, with its
+    - unpack the embedded kit into `builder/vendor/nullrouter-adapter-kit-<ver>/`, with its
       `.cargo-checksum.json`;
     - fetch `serde` and `serde_json` at the locked versions into the same directory. This is
       the builder's only network use, run once on the operator's command;
@@ -496,7 +496,7 @@ foundation here, not a later story.
     - build twice and compare the hashes;
     - output the JSON result.
   - Make T037 pass.
-- [ ] T046 Wasm runner arm in `crates/zerorouter-adapters/src/runner.rs` and
+- [ ] T046 Wasm runner arm in `crates/nullrouter-adapters/src/runner.rs` and
   `builder_client.rs`.
   - `WasmHandle { harness, version, manifest selectors, InstancePre }` is loaded at reload
     from the store's active version.
@@ -512,16 +512,16 @@ foundation here, not a later story.
   - `builder_client.rs` spawns the configured builder binary with a JSON job and a timeout.
     A missing binary gives `builder_not_installed`.
   - Make T036 pass.
-- [ ] T047 [P] `zerorouter-adapters` testkit in `src/testkit.rs` (feature `testkit`).
+- [ ] T047 [P] `nullrouter-adapters` testkit in `src/testkit.rs` (feature `testkit`).
   - `install_fixture(home, harness, wasm_bytes, source_dir, state)` writes a store entry
     directly, with the correct hashes.
   - `wat_adapter(behaviour)` builds small WAT modules for hostile and guard cases, so tests
     don't need the builder.
-- [ ] T048 The guardrail in `crates/zerorouter-adapters/src/guard.rs`, per
+- [ ] T048 The guardrail in `crates/nullrouter-adapters/src/guard.rs`, per
   [R6](research.md#r6-the-guardrail).
   - `check_request(style, &before_ir, &after_body)`, `check_response(...)` and
     `check_event(style, &before_event, &after_event)`.
-  - They use slice 003's `zerorouter-wire` codecs and return `Ok`, `Violation{rule, paths}`,
+  - They use slice 003's `nullrouter-wire` codecs and return `Ok`, `Violation{rule, paths}`,
     or `Undecodable`. `Undecodable` is handled as a failure (`invalid_output` rule
     `undecodable`): send the original, raise `adapter_failed`, and don't mark the adapter
     suspect.
@@ -557,22 +557,22 @@ serves before approval, and an operator with no adapters needs none of it.
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T049 [P] [US2] Gate corpus in `crates/zerorouter-adapters/tests/gate/invalid/`.
+- [ ] T049 [P] [US2] Gate corpus in `crates/nullrouter-adapters/tests/gate/invalid/`.
   - One directory per code in
     [contracts/adapter-package.md § Gate rules](contracts/adapter-package.md#gate-rules-and-refusal-messages),
     21 codes, each with a golden `.expected` file (`refused: <code> at <location>: <message>`).
   - Plus `multi_reason/`, holding `foreign_dependency`, `build_script`, `proc_macro` and
     `opaque_blob` together, whose `.expected` lists all four.
   - Plus `valid/noop`, which must pass.
-  - Test runner: `crates/zerorouter-adapters/tests/gate.rs`, covering SC-004.
-- [ ] T050 [P] [US2] Scrambler tests in `crates/zerorouter-adapters/tests/scramble.rs`.
+  - Test runner: `crates/nullrouter-adapters/tests/gate.rs`, covering SC-004.
+- [ ] T050 [P] [US2] Scrambler tests in `crates/nullrouter-adapters/tests/scramble.rs`.
   - Collect every identifier the fixture defines (items, fields, variants, bindings,
     lifetimes, labels, generics) with a `syn` visitor.
   - Assert that none appears in the scrambled output, as whole tokens.
   - Assert no `//`, `/*`, `///` or `#[doc` remains.
   - Assert that kit and `std` names and string literals survive.
   - Assert the scrambled output still parses (SC-007).
-- [ ] T051 [P] [US2] Review tests in `crates/zerorouter-adapters/tests/review.rs`, against a
+- [ ] T051 [P] [US2] Review tests in `crates/nullrouter-adapters/tests/review.rs`, against a
   mock provider via the engine testkit.
   - (a) With no `[review]`, the state is `quarantined` / `no_review_model`, and no request is
     made.
@@ -592,7 +592,7 @@ serves before approval, and an operator with no adapters needs none of it.
   - (e) A provider error gives `quarantined`, and a previously active version keeps serving.
   - (f) A valid report gives `reported`, with `review.json` written.
   - (g) The review request is recorded with agent `review:<harness>@<version>`.
-- [ ] T052 [P] [US2] Catalogue tests in `crates/zerorouter-adapters/tests/catalogue.rs`,
+- [ ] T052 [P] [US2] Catalogue tests in `crates/nullrouter-adapters/tests/catalogue.rs`,
   against a local HTTPS mock (self-signed CA trusted in-test).
   - Index parse, with unknown keys refused.
   - Archive `sha256` mismatch gives `catalogue_hash_mismatch`, with nothing unpacked.
@@ -603,7 +603,7 @@ serves before approval, and an operator with no adapters needs none of it.
   - Catalogue and local installs of the same source produce identical store entries apart
     from `origin` (SC-012).
 - [ ] T053 [P] [US2] Install pipeline test in
-  `crates/zerorouter-server/tests/adapter_install.rs`. It needs the builder and skips when
+  `crates/nullrouter-server/tests/adapter_install.rs`. It needs the builder and skips when
   the target is missing.
   - `adapters install fixtures/noop` goes queued → building → in_review → reported (mock
     review model).
@@ -612,18 +612,18 @@ serves before approval, and an operator with no adapters needs none of it.
     runs.
   - Keys bound to other harnesses are unaffected.
 - [ ] T054 [P] [US2] No-adapter run test in
-  `crates/zerorouter-server/tests/no_adapters.rs` (SC-011, US2-7).
+  `crates/nullrouter-server/tests/no_adapters.rs` (SC-011, US2-7).
   - With `[adapters] builder` pointing at a missing path, and no `[review]`, `serve` starts
     and logs no adapter warning.
   - Slice 003's end-to-end smoke passes, and the process never spawns a child.
-- [ ] T055 [P] [US2] Zero-contact test in `crates/zerorouter-server/tests/catalogue_quiet.rs`.
+- [ ] T055 [P] [US2] Zero-contact test in `crates/nullrouter-server/tests/catalogue_quiet.rs`.
   - With `catalogue_url` pointing at a counting mock, run `serve` through a full request mix,
     a reload and a restart.
   - The mock counts 0 requests (SC-012, FR-031).
 
 ### Implementation for User Story 2
 
-- [ ] T056 [US2] The gate in `crates/zerorouter-adapters/src/gate.rs`, per
+- [ ] T056 [US2] The gate in `crates/nullrouter-adapters/src/gate.rs`, per
   [R7](research.md#r7-validation-gate-for-adapter-source) and the contract table.
   - The file walk uses `symlink_metadata`, and never follows links.
   - Size and count caps: 256 KiB total, 64 files, 64 KiB per `.rs` file.
@@ -638,7 +638,7 @@ serves before approval, and an operator with no adapters needs none of it.
       elements or encoding more than 128 bytes.
   - Collect every reason, and sort them by file and line.
   - Make T049 pass.
-- [ ] T057 [US2] The scrambler in `crates/zerorouter-adapters/src/scramble.rs`, per
+- [ ] T057 [US2] The scrambler in `crates/nullrouter-adapters/src/scramble.rs`, per
   [R10](research.md#r10-review-pipeline).
   - Pass 1 collects the definitions.
   - Pass 2 is a `VisitMut` that renames defined identifiers to `v1…vN` in first-seen order,
@@ -646,15 +646,15 @@ serves before approval, and an operator with no adapters needs none of it.
   - Strip `#[doc]` attributes, and print with `prettyplease`.
   - Keep a line map on the operator's side only, stored in `review.json`, never sent.
   - Make T050 pass.
-- [ ] T058 [US2] Internal requests in `crates/zerorouter-engine/src/internal.rs` (new).
+- [ ] T058 [US2] Internal requests in `crates/nullrouter-engine/src/internal.rs` (new).
   - `InternalRequest { agent_label, model, system, user, max_tokens }` runs through the
     normal plan and attempt loop on the operator's accounts, with no key check and no
     adapter.
   - It is recorded with the given agent label.
   - The review uses it. It is not reachable from any HTTP route.
-- [ ] T059 [US2] Review in `crates/zerorouter-adapters/src/review.rs`.
+- [ ] T059 [US2] Review in `crates/nullrouter-adapters/src/review.rs`.
   - Resolve `[review] model`.
-  - Estimate the input with `zerorouter_wire::estimate`, and add `reserve_output`. Compare
+  - Estimate the input with `nullrouter_wire::estimate`, and add `reserve_output`. Compare
     with `budget_tokens`, and quarantine with both numbers when it doesn't fit.
   - The fixed system prompt frames the source as untrusted data, and requires the JSON
     `{risk, summary, findings[{location, concern}]}`.
@@ -664,7 +664,7 @@ serves before approval, and an operator with no adapters needs none of it.
   - Write `review.json` with `model`, `provider`, `tokens_in`, `tokens_out` and `record`.
   - Reviews run from a one-at-a-time background queue (a tokio task).
   - Make T051 pass.
-- [ ] T060 [US2] The install flow in `crates/zerorouter-adapters/src/lib.rs` (`install()`).
+- [ ] T060 [US2] The install flow in `crates/nullrouter-adapters/src/lib.rs` (`install()`).
   - Unpack an archive, or read a directory.
   - Run the gate. A refusal writes a version entry with state `refused` and its reasons, and
     raises a `refused` alert.
@@ -674,7 +674,7 @@ serves before approval, and an operator with no adapters needs none of it.
     the state to `in_review`.
   - Enqueue the review. A missing builder leaves `queued` / `builder_not_installed`.
   - Make T053 pass.
-- [ ] T061 [US2] The catalogue client in `crates/zerorouter-adapters/src/catalogue.rs`, per
+- [ ] T061 [US2] The catalogue client in `crates/nullrouter-adapters/src/catalogue.rs`, per
   [contracts/catalogue.md](contracts/catalogue.md).
   - Fetch with slice 003's `reqwest` client and SSRF rules:
     - HTTPS only;
@@ -687,17 +687,17 @@ serves before approval, and an operator with no adapters needs none of it.
     grep-style check on the call graph via `cfg(test)`, or with a module visibility
     restriction.
   - Make T052 and T055 pass.
-- [ ] T062 [US2] `adapters` CLI in `crates/zerorouter-cli/src/cmd/adapters.rs`: `install`,
+- [ ] T062 [US2] `adapters` CLI in `crates/nullrouter-cli/src/cmd/adapters.rs`: `install`,
   `show`, `review [--retry]`, `build --retry`, `approve [--note]`, `reject [--note]` and
   `review-settings --model --budget [--reserve-output] | --clear`.
   - Exit codes per [contracts/operator-cli.md](contracts/operator-cli.md#commands). A gate
     refusal exits 3.
   - `approve` is allowed only from `reported`. It writes `decision.json`, sets `active`,
     supersedes the previous version, and reloads.
-- [ ] T063 [US2] `catalogue` CLI in `crates/zerorouter-cli/src/cmd/catalogue.rs`: `list`,
+- [ ] T063 [US2] `catalogue` CLI in `crates/nullrouter-cli/src/cmd/catalogue.rs`: `list`,
   `show <H>`, and `install <H> [<semver>]` (the newest version by default). Unreachable
   catalogue exits 5.
-- [ ] T064 [US2] Operator socket ops in `crates/zerorouter-server/src/operator.rs`:
+- [ ] T064 [US2] Operator socket ops in `crates/nullrouter-server/src/operator.rs`:
   `adapters.state`, `adapters.review` (enqueue) and `alerts.list`.
   - Approve, reject, clear and remove are file writes followed by `reload`.
   - Make T054 pass.
@@ -716,7 +716,7 @@ until cleared, and every request completes.
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T065 [P] [US3] Hostile corpus in `crates/zerorouter-adapters/tests/hostile/`.
+- [ ] T065 [P] [US3] Hostile corpus in `crates/nullrouter-adapters/tests/hostile/`.
   - Each case is a Rust source against the kit (where the attack is expressible), plus a
     checked-in `.wasm`, built once by the builder or hand-written in WAT where the kit can't
     express the attack.
@@ -740,7 +740,7 @@ until cleared, and every request completes.
     - `add_unplaced_field`;
     - `legit_removal`.
   - Add a README listing what each case tries.
-- [ ] T066 [US3] Hostile suite in `crates/zerorouter-server/tests/hostile.rs`.
+- [ ] T066 [US3] Hostile suite in `crates/nullrouter-server/tests/hostile.rs`.
   - Install each T065 case with the testkit as `approved`, bind a key, and send streamed
     and non-streamed requests through a mock upstream.
   - Assert, per case:
@@ -754,26 +754,26 @@ until cleared, and every request completes.
     - `legit_removal` goes through with its changes recorded.
 
   This covers SC-002, SC-003 and US3-1 to US3-8.
-- [ ] T067 [P] [US3] Suspect lifecycle test in `crates/zerorouter-server/tests/suspect.rs`.
+- [ ] T067 [P] [US3] Suspect lifecycle test in `crates/nullrouter-server/tests/suspect.rs`.
   - After a guardrail event, requests from **every** key bound to the harness are served as
     plain clients, with `not_run{suspect}`.
   - `adapters clear` returns the version to `approved`, and the next request runs it
     (US3-6).
   - A mid-stream violation: events before it went out edited, and events after it go out
     unedited. No event is recalled.
-- [ ] T068 [P] [US3] Cancellation test in `crates/zerorouter-server/tests/adapter_cancel.rs`.
+- [ ] T068 [P] [US3] Cancellation test in `crates/nullrouter-server/tests/adapter_cancel.rs`.
   - A client disconnect during a slow (`loop`) adapter call stops the upstream request
     within 1 s.
   - The sandbox call is dropped and no instance leaks: the pool count returns to 0.
 
 ### Implementation for User Story 3
 
-- [ ] T069 [US3] Suspect handling in `crates/zerorouter-adapters/src/runner.rs`.
+- [ ] T069 [US3] Suspect handling in `crates/nullrouter-adapters/src/runner.rs`.
   - At reload, the runner for a harness whose active version is `suspect` is
     `not_run{suspect}`, and keys bound to it are served as plain clients.
   - The `blocked` path drops the runner for the rest of that request's stream.
   - Make T067 pass.
-- [ ] T070 [US3] `adapters clear <H> <version>` in `crates/zerorouter-cli/src/cmd/adapters.rs`.
+- [ ] T070 [US3] `adapters clear <H> <version>` in `crates/nullrouter-cli/src/cmd/adapters.rs`.
   It prints the version's guardrail events from alerts and records, asks for confirmation
   (`--yes` to skip), sets the state `suspect` → `approved`, and reloads.
 - [ ] T071 [US3] Make T066 and T068 pass. Fix any gap in T040, T041, T046 or T048 that the
@@ -793,14 +793,14 @@ the reviewed source.
 ### Tests for User Story 4 ⚠️
 
 - [ ] T072 [P] [US4] Lifecycle under load in
-  `crates/zerorouter-server/tests/adapter_lifecycle.rs`.
+  `crates/nullrouter-server/tests/adapter_lifecycle.rs`.
   - 20 concurrent streaming clients on a key bound to `fixture-v1`, which is approved.
   - Move v2 through `queued`, `in_review`, `quarantined`, `rejected`, and then a second v2
     submission to `approved`.
   - Assert 0 failed requests.
   - Every request before the approval is served by v1, every request whose attempt starts
     after it by v2, and in-flight streams finish on v1 (SC-006, US4-1 to US4-3).
-- [ ] T073 [P] [US4] Kit upgrade test in `crates/zerorouter-adapters/tests/kit_upgrade.rs`.
+- [ ] T073 [P] [US4] Kit upgrade test in `crates/nullrouter-adapters/tests/kit_upgrade.rs`.
   - Store an approved version whose `build.json` has `kit_abi` = current − 2.
   - At startup it never loads, since the sandbox refuses the ABI. It is flagged
     `rebuilding`, and records show `not_run{rebuilding}`.
@@ -809,31 +809,31 @@ the reviewed source.
   - A stub returning `compile` gives `rebuild_failed`, an alert, and plain-client keys
     (SC-013, FR-032).
 - [ ] T074 [P] [US4] No-auto-update test in
-  `crates/zerorouter-adapters/tests/catalogue.rs` (extend).
+  `crates/nullrouter-adapters/tests/catalogue.rs` (extend).
   - `catalogue check` against a mock index listing a newer version prints it.
   - The store is unchanged afterwards, byte for byte (US4-4).
-- [ ] T075 [P] [US4] Removal test in `crates/zerorouter-server/tests/adapter_remove.rs`.
+- [ ] T075 [P] [US4] Removal test in `crates/nullrouter-server/tests/adapter_remove.rs`.
   - `adapters remove <H>` lists the bound keys and asks for confirmation.
   - Afterwards the keys are plain clients, with `not_run{removed}`.
   - Removing the active version without `--force` is refused.
 
 ### Implementation for User Story 4
 
-- [ ] T076 [US4] Active-version swap in `crates/zerorouter-adapters/src/store.rs` and
+- [ ] T076 [US4] Active-version swap in `crates/nullrouter-adapters/src/store.rs` and
   `runner.rs`.
   - `approve` sets `active`, and the previous version becomes `superseded`, in one atomic
     index write.
   - The runner is captured per request at its start from the `ArcSwap` snapshot, so in-flight
     requests keep their version.
   - Make T072 pass.
-- [ ] T077 [US4] Kit-upgrade rebuild in `crates/zerorouter-adapters/src/lib.rs`
+- [ ] T077 [US4] Kit-upgrade rebuild in `crates/nullrouter-adapters/src/lib.rs`
   (`startup_rebuilds()`), called from `serve`.
   - Find approved versions whose `kit_abi` is not supported, and set `rebuilding`.
   - Rebuild in the background through `builder_client`, and require an equal `source_fp`.
   - On success, replace `module.wasm` and `build.json`, clear the flag, and reload.
   - On failure, set `rebuild_failed` and raise an alert.
   - Make T073 pass.
-- [ ] T078 [US4] CLI additions in `crates/zerorouter-cli/src/cmd/adapters.rs` and
+- [ ] T078 [US4] CLI additions in `crates/nullrouter-cli/src/cmd/adapters.rs` and
   `catalogue.rs`.
   - `adapters rebuild [<H>]`: the same rebuild, run in the foreground before an upgrade.
   - `adapters remove <H> [<version>] [--force] [--yes]`.
@@ -874,10 +874,10 @@ provider.
     - empty text and empty messages;
     - duplicate built-in and MCP tools.
   - Regenerate, and commit the fixtures alone, naming the `ref/9router` SHA.
-- [ ] T080 [P] [US5] Parity test in `crates/zerorouter-adapters/tests/claude_code_parity.rs`.
+- [ ] T080 [P] [US5] Parity test in `crates/nullrouter-adapters/tests/claude_code_parity.rs`.
   - Run the adapter as production does: build `adapters/community/claude-code` with the
     builder, and check in the resulting `.wasm` and its `build.json` as
-    `crates/zerorouter-adapters/tests/fixtures/claude-code/`. The test loads them with the T047
+    `crates/nullrouter-adapters/tests/fixtures/claude-code/`. The test loads them with the T047
     testkit and calls them through the sandbox. No native linking into any workspace crate.
   - A companion check fails if the checked-in module's `source_fp` no longer matches
     `adapters/community/claude-code/`, so a source change forces a rebuild of the fixture.
@@ -888,7 +888,7 @@ provider.
     with `target_cannot_carry_block`.
   - No edit adds a tool call or a tool definition: the guardrail passes on every fixture.
 - [ ] T081 [P] [US5] Claude Code harness runner:
-  `crates/zerorouter-server/tests/harness_claude_code.rs` (`#[ignore]`, `ZR_LIVE=1`), with
+  `crates/nullrouter-server/tests/harness_claude_code.rs` (`#[ignore]`, `NR_LIVE=1`), with
   sessions using tools and web search against each chosen text provider. It reuses slice
   003's `tests/harness/` Claude Code runner, pointed at a key bound to `claude-code`.
 
@@ -914,7 +914,7 @@ provider.
     zeroed mtimes and uid/gid, `gzip -n`.
   - Add `catalogue/index.toml` `[[entry]] claude-code` with version `0.1.0`, the release asset
     URL, `sha256`, `source_fp` and `kit = "1"`.
-  - Add a test in `crates/zerorouter-adapters/tests/catalogue.rs` that parses the real
+  - Add a test in `crates/nullrouter-adapters/tests/catalogue.rs` that parses the real
     `catalogue/index.toml`, and checks that packaging `adapters/community/claude-code` gives
     the listed `sha256` and `source_fp`.
   - Publishing the release asset is outward-facing: ask the user before running
@@ -922,7 +922,7 @@ provider.
 - [ ] T084 [US5] *operator-run* full pipeline, per
   [quickstart § 10](quickstart.md#10-claude-code-through-the-full-pipeline-us5-fr-027-fr-028-sc-008).
   - Ask the user to run the install, review with their review model, approve, key, and
-    `ZR_LIVE=1` harness commands with `! …`.
+    `NR_LIVE=1` harness commands with `! …`.
   - Record the result, the review report's risk level and the per-provider pass/fail in
     `tests/harness/README.md` (SC-008).
 
@@ -941,7 +941,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
 
 ### Tests for User Story 6 ⚠️
 
-- [ ] T085 [P] [US6] Output tests in `crates/zerorouter-cli/tests/adapter_output.rs`.
+- [ ] T085 [P] [US6] Output tests in `crates/nullrouter-cli/tests/adapter_output.rs`.
   - `records show` text for three cases, matching the contract's layout exactly: an adapter
     that ran with changes, one that ran with none (it still names the adapter and version,
     US6-2), and a blocked one.
@@ -949,7 +949,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
   - `adapters list` states and alert counts.
   - `alerts list` and `alerts ack <id>|--all`.
 - [ ] T086 [P] [US6] No-content sentinel in
-  `crates/zerorouter-server/tests/records_no_content.rs`.
+  `crates/nullrouter-server/tests/records_no_content.rs`.
   - Run hermes, the `legit_removal` fixture and the Claude Code fixture over bodies that hold
     unique sentinels in every removed or converted value.
   - Serialise the whole record store, `alerts.toml` and the log capture. Zero sentinels may
@@ -958,14 +958,14 @@ each change by path, kind and reason, and each guardrail event, and never any co
 
 ### Implementation for User Story 6
 
-- [ ] T087 [US6] `records show` rendering in `crates/zerorouter-cli/src/cmd/records.rs`.
+- [ ] T087 [US6] `records show` rendering in `crates/nullrouter-cli/src/cmd/records.rs`.
   - Per attempt, `adapter <harness> <version|built-in>: <outcome>`, then the change lines,
     then the guardrail lines.
   - A `response adapter:` line, per
     [contracts/operator-cli.md](contracts/operator-cli.md#records-show-additions-text).
-- [ ] T088 [US6] `alerts` CLI in `crates/zerorouter-cli/src/cmd/alerts.rs` (new): `list
+- [ ] T088 [US6] `alerts` CLI in `crates/nullrouter-cli/src/cmd/alerts.rs` (new): `list
   [--all]` and `ack <id>|--all`.
-- [ ] T089 [US6] `adapters list` in full, in `crates/zerorouter-cli/src/cmd/adapters.rs`:
+- [ ] T089 [US6] `adapters list` in full, in `crates/nullrouter-cli/src/cmd/adapters.rs`:
   harness, versions and states, the active version, `rebuilding` or `rebuild_failed` flags,
   and the unacknowledged alert count. hermes shows `built-in`.
 - [ ] T090 [US6] Make T085 and T086 pass.
@@ -977,10 +977,10 @@ each change by path, kind and reason, and each guardrail event, and never any co
 ## Phase 10: Polish & Cross-Cutting Concerns
 
 - [ ] T091 [P] Benchmarks, per [R14](research.md#r14-performance-and-benchmarks).
-  - `crates/zerorouter-adapters/benches/adapters.rs`: `guard_request` at 10 KB, 100 KB and
+  - `crates/nullrouter-adapters/benches/adapters.rs`: `guard_request` at 10 KB, 100 KB and
     1 MB (anthropic-messages, one removal), `guard_event`, `selector_extract` on 1 MB, and
     `hermes_request` with images.
-  - `crates/zerorouter-sandbox/benches/sandbox.rs`: `call_noop`, and `call_claude_code` with
+  - `crates/nullrouter-sandbox/benches/sandbox.rs`: `call_noop`, and `call_claude_code` with
     a 100 KB body.
   - Include a no-harness baseline on slice 003's `engine` bench, to show zero cost.
 - [ ] T092 Run `cargo bench -- --save-baseline slice-004`.
@@ -993,13 +993,13 @@ each change by path, kind and reason, and each guardrail event, and never any co
   - If either target is missed, stop and report the numbers before optimising. The
     `optimize-perf` workflow is the route.
 - [ ] T093 [P] Parity audit: `/rust-parity-audit` on
-  `crates/zerorouter-adapters/src/builtin/hermes.rs` and
+  `crates/nullrouter-adapters/src/builtin/hermes.rs` and
   `adapters/community/claude-code/src/lib.rs`, judged on chatCore's request path. Fix any
   High findings, and record Low ones as accepted.
 - [ ] T094 [P] Security review: run the `security-auditor` agent over:
-  - `zerorouter-sandbox`;
+  - `nullrouter-sandbox`;
   - `gate.rs`, `catalogue.rs`, `guard.rs` and `store.rs`;
-  - `zerorouter-builder`;
+  - `nullrouter-builder`;
   - the kit's `abi.rs`.
 
   Focus on sandbox escape, gate bypass, path traversal, hash-check TOCTOU and secret flow.
@@ -1018,7 +1018,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
   Record any gap in the commit message.
 - [ ] T098 Run `cargo clippy --workspace --all-targets -- -D warnings` and
   `cargo test --workspace`. Confirm that `unsafe` appears only in
-  `crates/zerorouter-adapter-kit/src/abi.rs`: `grep -rn "unsafe" crates/ --include='*.rs'`
+  `crates/nullrouter-adapter-kit/src/abi.rs`: `grep -rn "unsafe" crates/ --include='*.rs'`
   must list only that file.
 
 ---
@@ -1128,8 +1128,8 @@ US2: T056–T064        US3: T065–T069
 - Adapters remove or convert. They never insert (Constitution IV). No change to the edit model
   may add an insert operation.
 - Records, alerts and logs hold paths and codes, never removed or converted values.
-- The core never calls `Module::deserialize`, and never depends on `zerorouter-builder`.
+- The core never calls `Module::deserialize`, and never depends on `nullrouter-builder`.
 - No catalogue request is made without an operator command. Nothing in `serve`, reload or
   startup touches `catalogue.rs`.
 - Never edit `ref/9router/` or `tests/fixtures/9router/` by hand. Regenerate them.
-- `unsafe` is allowed only in `crates/zerorouter-adapter-kit/src/abi.rs`.
+- `unsafe` is allowed only in `crates/nullrouter-adapter-kit/src/abi.rs`.

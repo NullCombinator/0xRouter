@@ -8,13 +8,13 @@ requests, read files, or hold secrets.
 This page covers provider plugins only. 0router's other plugin kind, the harness adapter,
 may be sandboxed code and has its own rules (constitution Principle I).
 
-Install a plugin with `zerorouter plugins install <id>` (community set) or by copying it
-into `$ZEROROUTER_HOME/plugins/` (default `~/.0router/plugins/`). Only `*.toml` files at
+Install a plugin with `nullrouter plugins install <id>` (community set) or by copying it
+into `$NULLROUTER_HOME/plugins/` (default `~/.0router/plugins/`). Only `*.toml` files at
 the top level are read. Check it first:
 
 ```bash
-zerorouter validate my-provider.toml     # OK my-provider.toml, or one line per error
-zerorouter check                         # load everything and print the load report
+nullrouter validate my-provider.toml     # OK my-provider.toml, or one line per error
+nullrouter check                         # load everything and print the load report
 ```
 
 A running server sees a copied file at its next start, or at the next reload that a
@@ -76,7 +76,7 @@ kind = "embedding"
 dimensions = 1024
 ```
 
-The secret is never in the plugin: the operator adds it with `zerorouter accounts add acme
+The secret is never in the plugin: the operator adds it with `nullrouter accounts add acme
 main`, and the core places it in the `[auth]` header only when it sends a request.
 
 ## Endpoints
@@ -139,7 +139,7 @@ headers = ["request-id", "retry-after", "anthropic-ratelimit-*"]
 
 `to_upstream` governs cross-style attempts; on a same-style attempt a declared `merge`
 rule still applies to its header. `to_client` applies to both. What a cross-style attempt
-leaves out is listed in its request record (`zerorouter records show <id>`).
+leaves out is listed in its request record (`nullrouter records show <id>`).
 
 The **floor** is never forwarded, in either direction, whatever a plugin declares:
 credential headers (`authorization`, `x-api-key`, `cookie`, …), any secret-like name, every
@@ -184,7 +184,7 @@ rejected, and the error lists the allowed values.
 | `auth.hooks`, `transport.auth.hooks` | `cline_headers`, `kimi_headers`, `kilocode_org` |
 | `transport.format` | `openai`, `openai-responses`, `claude`, `gemini`, `gemini-cli`, `vertex`, `antigravity`, `kiro`, `cursor`, `commandcode`, `ollama`, `grok-web`, `perplexity-web` |
 | `[transport.executor_params]` | `cli_version`, `client_version`, `api_client`, `client_identifier`, `token_auth`, `no_auth`, `auth_type`, `copilot` |
-| `[oauth.params]` | the core's known OAuth parameters (`zerorouter validate` prints the list) |
+| `[oauth.params]` | the core's known OAuth parameters (`nullrouter validate` prints the list) |
 
 ## What is rejected
 
@@ -217,9 +217,9 @@ elevenlabs. The other providers 9router knows ship inside the binary as the **co
 set**, generated from 9router, and are installed on request:
 
 ```bash
-zerorouter plugins list --community   # every community plugin: fits, unsupported, installed
-zerorouter plugins install groq       # gate + fit check, then copy to plugins/groq.toml
-zerorouter plugins uninstall groq
+nullrouter plugins list --community   # every community plugin: fits, unsupported, installed
+nullrouter plugins install groq       # gate + fit check, then copy to plugins/groq.toml
+nullrouter plugins uninstall groq
 ```
 
 The self-hosted ones (`ollama-local`, `comfyui`, `selfhosted-tts`, …) point at

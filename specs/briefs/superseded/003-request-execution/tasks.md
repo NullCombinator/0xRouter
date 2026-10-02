@@ -30,9 +30,9 @@ tested on its own.
 
 Cargo workspace at the repo root ([plan § Project Structure](plan.md#project-structure)):
 
-- `crates/zerorouter-server/`: the new library (`src/`, `tests/parity/`, `tests/e2e/`, `benches/`)
-- `crates/zerorouter-registry/`: two additive changes only (T004)
-- `crates/zerorouter-cli/`: new subcommands `serve`, `reload`, `obs`
+- `crates/nullrouter-server/`: the new library (`src/`, `tests/parity/`, `tests/e2e/`, `benches/`)
+- `crates/nullrouter-registry/`: two additive changes only (T004)
+- `crates/nullrouter-cli/`: new subcommands `serve`, `reload`, `obs`
 - `tools/gen-bundled/`: Node generator (dev only)
 - `tests/fixtures/9router/`: generated parity oracle, shared across crates (never hand-edit)
 
@@ -63,27 +63,27 @@ ability to import 9router modules.
   - `futures-util = "0.3"`, `bytes = "1"`, `memchr = "2"`, `sha2 = "0.11"`, `http = "1"`
   - `tracing = "0.1"`, `tracing-subscriber = { version = "0.3", features = ["env-filter"] }`
   - add `"raw_value"` to the existing `serde_json` features
-  - `zerorouter-server = { path = "crates/zerorouter-server" }`
+  - `nullrouter-server = { path = "crates/nullrouter-server" }`
 
   Keep `rust-version = "1.85"`. If a resolved version needs a newer MSRV, pin the last
   compatible version and note it in research R1.
-- [ ] T002 Create `crates/zerorouter-server/Cargo.toml` and `src/lib.rs`.
-  - Dependencies: `zerorouter-registry`, the crates from T001, `serde`, `toml`, `indexmap`, `arc-swap`, `thiserror`, `url`.
+- [ ] T002 Create `crates/nullrouter-server/Cargo.toml` and `src/lib.rs`.
+  - Dependencies: `nullrouter-registry`, the crates from T001, `serde`, `toml`, `indexmap`, `arc-swap`, `thiserror`, `url`.
   - Dev-dependencies: `criterion`, `tempfile`, `tokio` (`test-util`).
   - `[[bench]] name = "relay"`, `harness = false`.
   - `[[test]] name = "parity"`, `path = "tests/parity/main.rs"`.
   - `[[test]] name = "e2e"`, `path = "tests/e2e/main.rs"`.
   - `lints.workspace = true`.
   - `lib.rs` declares the modules from the plan's tree, each as an empty file so the crate compiles: `state`, `keys` (`schema`, `load`, `secret`, `executable`), `auth`, `session`, `client_detect`, `select`, `transport`, `outbound`, `upstream`, `relay`, `assemble`, `usage`, `errors`, `count_tokens`, `embeddings`, `models`, `observe`, `http`, `operator`, `timeouts`.
-- [ ] T003 [P] Add the three subcommands `serve`, `reload`, and `obs` to `crates/zerorouter-cli/src/main.rs`.
+- [ ] T003 [P] Add the three subcommands `serve`, `reload`, and `obs` to `crates/nullrouter-cli/src/main.rs`.
   - Each dispatches to an empty `src/cmd/{serve,reload,obs}.rs`.
   - Flags per [contracts/operator-cli.md](contracts/operator-cli.md).
   - Exit codes: 0 ok, 1 errors, 2 usage, 3 no server or bind error.
-  - Add a `zerorouter-server` dependency to `crates/zerorouter-cli/Cargo.toml`.
+  - Add a `nullrouter-server` dependency to `crates/nullrouter-cli/Cargo.toml`.
   - Only `serve` starts a Tokio runtime; `check`, `validate`, `resolve`, `model`, `providers`, `reload`, and `obs` stay runtime-free.
 - [ ] T004 [P] Registry, additive only ([R10](research.md#r10-reload-and-snapshots)):
-  - Add `pub fn load_candidate(home: &OperatorHome) -> Result<Registry, ReloadError>` on `Registry` in `crates/zerorouter-registry/src/registry.rs`. It calls `load::build(home, Mode::Reload)` without swapping.
-  - Derive `serde::Serialize` on `LoadReport` and its member types in `crates/zerorouter-registry/src/load.rs`.
+  - Add `pub fn load_candidate(home: &OperatorHome) -> Result<Registry, ReloadError>` on `Registry` in `crates/nullrouter-registry/src/registry.rs`. It calls `load::build(home, Mode::Reload)` without swapping.
+  - Derive `serde::Serialize` on `LoadReport` and its member types in `crates/nullrouter-registry/src/load.rs`.
   - Add one unit test showing that `load_candidate` on an empty home equals `RegistryHandle::open(...).snapshot()` in provider count.
 - [ ] T005 [P] Create `tools/gen-bundled/resolve-hook.mjs` ([R14](research.md#r14-parity-oracle-extension)):
   - a Node `module.register` hook that maps `@/` to `ref/9router/src/`;
@@ -125,42 +125,42 @@ Every story depends on these.
 
 ### Secrets, timeouts, and error envelopes
 
-- [ ] T010 [P] Implement `Secret` in `crates/zerorouter-server/src/keys/secret.rs` per [data-model § Secret](data-model.md#secret):
+- [ ] T010 [P] Implement `Secret` in `crates/nullrouter-server/src/keys/secret.rs` per [data-model § Secret](data-model.md#secret):
   - inner `Box<str>`;
   - `Debug` prints `Secret(***)`;
   - **no** `Display` and **no** `Serialize`;
   - `pub(crate) fn expose(&self) -> &str`;
   - add a unit test showing `format!("{:?}")` never contains the value.
-- [ ] T011 [P] Implement `crates/zerorouter-server/src/timeouts.rs` ([R7](research.md#r7-timeouts-fr-017)):
+- [ ] T011 [P] Implement `crates/nullrouter-server/src/timeouts.rs` ([R7](research.md#r7-timeouts-fr-017)):
   - `env_ms(raw: Option<&str>, default) -> u64` with JS `parseInt` semantics: optional leading whitespace and sign, then leading digits. The result is used only if finite and greater than 0.
   - `Timeouts { connect_default, stall_default }` read once at `serve` start.
   - `connect_for(&EffectiveTransport)`: transport `timeout_ms` first, else the env value, else 60 000.
   - `stall_for(&EffectiveTransport)`: transport `stall_timeout_ms` first, else the env value, else 360 000.
-- [ ] T012 [P] Implement `crates/zerorouter-server/src/errors.rs`:
+- [ ] T012 [P] Implement `crates/nullrouter-server/src/errors.rs`:
   - `ERROR_TYPES` (status → type and code) exactly as in 9router's `open-sse/config/errorConfig.js`;
   - `DEFAULT_ERROR_MESSAGES`;
   - `ZrError { status, error_type, message }`, with a renderer for each client format per [contracts/http-api.md § Error envelopes](contracts/http-api.md#error-envelopes). OpenAI clients get `{"error":{"message","type","code"}}`; Anthropic clients get `{"type":"error","error":{"type","message"}}`, with the type mapping in that table;
-  - the response header `x-zerorouter-error`;
+  - the response header `x-nullrouter-error`;
   - `upstream_error_body(status, body_bytes) -> Bytes`, porting `parseUpstreamError` + `formatProviderError` + `buildErrorBody` (the message is `[<status>]: <msg>`; non-strings are JSON-stringified; empty values fall back to the default message);
   - no function in this module takes a `Secret`.
-- [ ] T013 Parity: create the harness `crates/zerorouter-server/tests/parity/main.rs`. It holds a fixture loader that checks the ref-SHA header matches `plugins/bundled` and fails with a regenerate hint otherwise. Add these modules:
+- [ ] T013 Parity: create the harness `crates/nullrouter-server/tests/parity/main.rs`. It holds a fixture loader that checks the ref-SHA header matches `plugins/bundled` and fails with a regenerate hint otherwise. Add these modules:
   - `parity/timeouts.rs`, checking T011 against `timeouts.json`;
   - `parity/upstream_errors.rs`, checking T012 against `upstream-errors.json`: `client_body` byte-for-byte after JSON normalization, plus `Content-Type` and `Access-Control-Allow-Origin` headers (SC-008, not native).
 
 ### Keys file and executable rule
 
-- [ ] T014 Implement the executable rule in `crates/zerorouter-server/src/keys/executable.rs` ([R2](research.md#r2-which-providers-are-executable-fr-013)):
+- [ ] T014 Implement the executable rule in `crates/nullrouter-server/src/keys/executable.rs` ([R2](research.md#r2-which-providers-are-executable-fr-013)):
   - a static `SPECIALIZED: &[&str]` holding the 30 canonical ids listed in R2. Aliases are resolved by the registry first; note that `mimo-free` has no `mmf` alias in 0router;
   - `fn chat_executable(&ProviderEntity) -> Result<(), NotExecutable>` and `fn embeddings_executable(...)`;
   - `NotExecutable` reasons: `oauth`, `no-auth free provider`, `web-cookie`, `specialized executor`, `no openai or claude transport`;
   - parity module `tests/parity/executable.rs` compares both sets against `executable-providers.json`.
-- [ ] T015 Implement the `keys.toml` schema in `crates/zerorouter-server/src/keys/schema.rs` per [contracts/keys-file.md](contracts/keys-file.md):
+- [ ] T015 Implement the `keys.toml` schema in `crates/nullrouter-server/src/keys/schema.rs` per [contracts/keys-file.md](contracts/keys-file.md):
   - `deny_unknown_fields` everywhere;
   - `schema = 1` is required;
   - `SecretSource = Literal(String) | Env { env: String }`, and the `{ env }` table accepts only `env`;
   - `[[access_key]] { agent, key, active = true }`;
   - `[[connection]] { provider, name, api_key, active = true, account_id? }`.
-- [ ] T016 Implement the loader in `crates/zerorouter-server/src/keys/load.rs`: `fn load(home, &Registry) -> Result<Keys, Vec<KeysError>>`, collecting **all** errors in the 002 `file:line:col path: rule` form, using `toml::de::DeTable` spans as `zerorouter-registry/src/load.rs` does. Rules:
+- [ ] T016 Implement the loader in `crates/nullrouter-server/src/keys/load.rs`: `fn load(home, &Registry) -> Result<Keys, Vec<KeysError>>`, collecting **all** errors in the 002 `file:line:col path: rule` form, using `toml::de::DeTable` spans as `nullrouter-registry/src/load.rs` does. Rules:
   - A missing file gives an empty `Keys` plus a warning flag.
   - FR-007: if any secret is a literal and `mode & 0o077 != 0`, fail with `keys.toml: holds literal secrets but is readable by group/others (mode 0NNN); chmod 600 or use { env = "..." }`.
   - `agent` must match `[A-Za-z0-9._-]{1,64}` and be unique.
@@ -172,48 +172,48 @@ Every story depends on these.
   - **No error string may contain a secret value.**
 
   Build `Keys { access_keys, access_by_digest: HashMap<[u8;32], usize>, connections: Vec<Arc<Connection>>, by_provider }` per [data-model § Keys](data-model.md#keys-snapshot).
-- [ ] T017 [P] Unit tests in `crates/zerorouter-server/src/keys/load.rs` (`#[cfg(test)]`, using `tempfile`), one for each rule in T016 and each example error line in [contracts/keys-file.md § Errors](contracts/keys-file.md#errors). Also assert that no error `Display` output contains any of the literal or env secret values used.
+- [ ] T017 [P] Unit tests in `crates/nullrouter-server/src/keys/load.rs` (`#[cfg(test)]`, using `tempfile`), one for each rule in T016 and each example error line in [contracts/keys-file.md § Errors](contracts/keys-file.md#errors). Also assert that no error `Display` output contains any of the literal or env secret values used.
 
 ### State, auth, and observations
 
-- [ ] T018 Implement `crates/zerorouter-server/src/state.rs` ([R10](research.md#r10-reload-and-snapshots)):
+- [ ] T018 Implement `crates/nullrouter-server/src/state.rs` ([R10](research.md#r10-reload-and-snapshots)):
   - `State { registry: Arc<Registry>, keys: Arc<Keys>, generation: u64 }`;
   - `Server { state: ArcSwap<State>, reload_lock: tokio::sync::Mutex<()>, … }`;
   - `async fn startup(home)`: run `Registry::load_candidate` then `keys::load` inside `spawn_blocking`. Any error is fatal: return it;
   - `async fn reload()`: the same two builds under `reload_lock`. On success, `store` generation+1 and return `(LoadReport, KeysSummary)`; on any error, keep the old state and return all errors.
-- [ ] T019 [P] Implement `crates/zerorouter-server/src/auth.rs` ([R5](research.md#r5-access-keys-and-agent-identity)):
+- [ ] T019 [P] Implement `crates/nullrouter-server/src/auth.rs` ([R5](research.md#r5-access-keys-and-agent-identity)):
   - `extract(headers) -> Option<&str>`: `Authorization: Bearer <key>` (case-sensitive `Bearer `) first, then `x-api-key`;
   - `authenticate(&Keys, headers) -> Result<AgentName, AuthError>` via SHA-256 digest lookup;
   - `MissingKey` → 401 `missing_access_key` "Missing API key"; unknown or inactive → 401 `invalid_access_key` "Invalid API key";
   - add unit tests.
-- [ ] T020 [P] Implement `crates/zerorouter-server/src/observe.rs` per [data-model § Observation](data-model.md#observation):
+- [ ] T020 [P] Implement `crates/nullrouter-server/src/observe.rs` per [data-model § Observation](data-model.md#observation):
   - `Observation` (`Serialize`, every field listed there), `Outcome` (every variant in the table), and `Usage { input, output, cache_read, cache_write: Option<u64> }` (`None` serializes as `null`);
   - `ObservationBuilder` with a `finish(self, …)` that records exactly once, and a `Drop` impl that records `cancelled_by_client` when `finish` never ran;
   - `ObservationStore { Mutex<VecDeque>, cap }`: "`push` pops the front when full", and the cap is at least 1;
   - upstream-header capture drops `set-cookie` and hop-by-hop headers;
   - raw error body: "the first 8 KiB, lossy UTF-8";
   - unit tests for the cap, exactly-once recording, and header filtering.
-- [ ] T021 Implement the router skeleton in `crates/zerorouter-server/src/http.rs`:
+- [ ] T021 Implement the router skeleton in `crates/nullrouter-server/src/http.rs`:
   - the routes from [contracts/http-api.md § Endpoints](contracts/http-api.md#endpoints), each returning 501 for now;
   - unknown paths → 404, wrong method → 405, both in the OpenAI error shape;
   - a request-scoped prelude that runs, in order: load `Arc<State>` once, start the `ObservationBuilder`, authenticate (rejection order row 1; record `rejected{error_type}` without an agent), enforce the 32 MiB body limit (413 `request_too_large`), and parse the top level as `IndexMap<String, Box<RawValue>>` (400 `invalid_json` "Invalid JSON body"; a non-object top level is also `invalid_json`), and read `model` (400 `missing_model` "Missing model");
   - the client format is fixed per endpoint: `openai` for chat and embeddings, `claude` for messages and count_tokens;
   - error bodies are rendered by T012 in the client's format;
   - **the operator channel is never mounted here** (FR-028).
-- [ ] T022 Implement `zerorouter-cli serve` in `crates/zerorouter-cli/src/cmd/serve.rs`:
-  - resolve `--listen`/`ZEROROUTER_LISTEN` (default `127.0.0.1:20129`), `--observations-cap`/`ZEROROUTER_OBSERVATIONS_CAP` (default 10 000), and `ZEROROUTER_HOME`;
+- [ ] T022 Implement `nullrouter-cli serve` in `crates/nullrouter-cli/src/cmd/serve.rs`:
+  - resolve `--listen`/`NULLROUTER_LISTEN` (default `127.0.0.1:20129`), `--observations-cap`/`NULLROUTER_OBSERVATIONS_CAP` (default 10 000), and `NULLROUTER_HOME`;
   - install `tracing-subscriber` with an env filter, default `info`, writing to stderr;
   - call `Server::startup` (exit 1 on errors, printing each);
-  - bind (exit 3 on failure) and print the one-line banner from [contracts/operator-cli.md](contracts/operator-cli.md#zerorouter-cli-serve);
+  - bind (exit 3 on failure) and print the one-line banner from [contracts/operator-cli.md](contracts/operator-cli.md#nullrouter-cli-serve);
   - warn when `keys.toml` is absent;
   - on SIGINT or SIGTERM, shut down gracefully with a 10 s drain.
-- [ ] T023 Create the e2e harness in `crates/zerorouter-server/tests/e2e/main.rs` and `tests/e2e/mock.rs`:
-  - an in-process `Server` on `127.0.0.1:0` with a temp `ZEROROUTER_HOME`;
+- [ ] T023 Create the e2e harness in `crates/nullrouter-server/tests/e2e/main.rs` and `tests/e2e/mock.rs`:
+  - an in-process `Server` on `127.0.0.1:0` with a temp `NULLROUTER_HOME`;
   - a user plugin set that points chosen bundled provider ids at the mock via `plugin_decisions = "replace"` copies whose `base_url` is rewritten to the mock address. Other fields stay as bundled, so the headers stay 9router-faithful;
   - a scripted `axum` mock upstream that records every request (method, URL, headers, body bytes) and replays a script: status, headers, and a body as a sequence of `(delay, bytes)` chunks, plus `stall` and `break` steps;
   - it exposes "connection closed at" timestamps;
-  - helpers for writing `keys.toml` with sentinel secrets `zr-sentinel-access-…` and `zr-sentinel-provider-…`.
-- [ ] T024 E2E foundation tests in `crates/zerorouter-server/tests/e2e/foundation.rs`:
+  - helpers for writing `keys.toml` with sentinel secrets `nr-sentinel-access-…` and `nr-sentinel-provider-…`.
+- [ ] T024 E2E foundation tests in `crates/nullrouter-server/tests/e2e/foundation.rs`:
   - no key → 401 "Missing API key";
   - a wrong key or an inactive key → 401 "Invalid API key";
   - invalid JSON → 400;
@@ -222,7 +222,7 @@ Every story depends on these.
   - each rejection in both client formats (the OpenAI and Anthropic envelopes);
   - **the mock received zero requests** (SC-009);
   - every rejection has exactly one observation with outcome `rejected`, and auth rejections have no agent.
-- [ ] T025 Run `cargo test -p zerorouter-server && cargo clippy --workspace --all-targets`. Everything must be green.
+- [ ] T025 Run `cargo test -p nullrouter-server && cargo clippy --workspace --all-targets`. Everything must be green.
 
 **Checkpoint**: The server starts, authenticates, rejects malformed requests in both
 client formats, records observations, and loads `keys.toml` with every validation rule.
@@ -241,9 +241,9 @@ User stories can start.
 - native-pair (Claude Code → `anthropic`) headers are forwarded;
 - count_tokens is answered.
 
-**Independent Test**: `cargo test -p zerorouter-server --test parity` for the executor,
+**Independent Test**: `cargo test -p nullrouter-server --test parity` for the executor,
 transport, client-detect, non-sse, stream-errors, sse-to-json, and count-tokens fixtures,
-plus `cargo test -p zerorouter-server --test e2e us1 cancel`. Quickstart step 4 is the
+plus `cargo test -p nullrouter-server --test e2e us1 cancel`. Quickstart step 4 is the
 live check.
 
 ### Oracle fixtures for User Story 1
@@ -275,22 +275,22 @@ live check.
 
 ### Tests for User Story 1 ⚠️ write first, confirm they fail
 
-- [ ] T034 [P] [US1] Write `crates/zerorouter-server/tests/parity/executor_requests.rs`. For every fixture row, build the `EffectiveTransport` and `OutboundRequest` with a `Connection { api_key: "<KEY>", account_id: Some("<ACCT>") }`, not a native pair, and compare:
+- [ ] T034 [P] [US1] Write `crates/nullrouter-server/tests/parity/executor_requests.rs`. For every fixture row, build the `EffectiveTransport` and `OutboundRequest` with a `Connection { api_key: "<KEY>", account_id: Some("<ACCT>") }`, not a native pair, and compare:
   - the URL, exactly;
   - the lowercase-merged header view against `wire_headers`, exactly (SC-001);
   - that `<KEY>` appears only in the auth header.
-- [ ] T035 [P] [US1] Write `crates/zerorouter-server/tests/parity/transport_choice.rs` (FR-014) and `tests/parity/client_detect.rs` (FR-015a detection) against their fixtures.
-- [ ] T036 [P] [US1] Write `crates/zerorouter-server/tests/parity/non_sse.rs` (FR-020b), `tests/parity/stream_errors.rs` (byte-exact, FR-018a), `tests/parity/sse_to_json.rs` (JSON-equal, FR-019), and `tests/parity/count_tokens.rs` (SC-011) against their fixtures.
-- [ ] T037 [P] [US1] Write unit tests for the body rewrite in `crates/zerorouter-server/src/outbound.rs` ([R8](research.md#r8-outbound-body)):
+- [ ] T035 [P] [US1] Write `crates/nullrouter-server/tests/parity/transport_choice.rs` (FR-014) and `tests/parity/client_detect.rs` (FR-015a detection) against their fixtures.
+- [ ] T036 [P] [US1] Write `crates/nullrouter-server/tests/parity/non_sse.rs` (FR-020b), `tests/parity/stream_errors.rs` (byte-exact, FR-018a), `tests/parity/sse_to_json.rs` (JSON-equal, FR-019), and `tests/parity/count_tokens.rs` (SC-011) against their fixtures.
+- [ ] T037 [P] [US1] Write unit tests for the body rewrite in `crates/nullrouter-server/src/outbound.rs` ([R8](research.md#r8-outbound-body)):
   - only `model` is replaced;
   - `stream: true` is added or overwritten only for forced streaming;
   - nested bytes are kept exactly: `1.0` stays `1.0`, `"é"` stays escaped, and key order and duplicate nested whitespace are unchanged;
   - top-level key order is preserved.
-- [ ] T038 [P] [US1] Write unit tests for the native-pair header overlay in `crates/zerorouter-server/src/outbound.rs`, per the formula in [contracts/outbound-parity.md § Headers (native pair)](contracts/outbound-parity.md#headers-native-pair):
+- [ ] T038 [P] [US1] Write unit tests for the native-pair header overlay in `crates/nullrouter-server/src/outbound.rs`, per the formula in [contracts/outbound-parity.md § Headers (native pair)](contracts/outbound-parity.md#headers-native-pair):
   - client `anthropic-beta` and `anthropic-version` replace the declared values;
   - `authorization`, `x-api-key`, `host`, `content-length`, `accept-encoding`, the hop-by-hop headers, and names listed in `Connection` are dropped;
   - the connection's `x-api-key` is re-applied last.
-- [ ] T039 [US1] Write e2e tests in `crates/zerorouter-server/tests/e2e/us1.rs`, one per US1 acceptance scenario 1–8, using the mock:
+- [ ] T039 [US1] Write e2e tests in `crates/nullrouter-server/tests/e2e/us1.rs`, one per US1 acceptance scenario 1–8, using the mock:
   - **(1)** OpenAI streaming to `deepseek/<model>`: the mock receives the URL and headers from T026's row, the key, and the upstream id. The client receives each event before the mock sends the next (the mock waits 200 ms between events; assert arrival timestamps).
   - **(2)** Anthropic to `anthropic/<model>`, not native: the declared `anthropic-version` and `Anthropic-Beta` are sent.
   - **(3)** Non-streaming: status and body are returned unchanged.
@@ -310,17 +310,17 @@ live check.
   - a mid-stream break → the bytes so far, then exactly one closing frame equal to T030's bytes, for both client formats;
   - a stall with `STREAM_STALL_TIMEOUT_MS=300` → the closing frame, and the mock sees the connection closed;
   - count_tokens: not native → `{"input_tokens":N}` and the mock untouched; native to `anthropic` → forwarded to `…/v1/messages/count_tokens`; invalid JSON → 400.
-- [ ] T040 [P] [US1] Write `crates/zerorouter-server/tests/e2e/cancel.rs` (SC-004, FR-021): 50 runs of starting a stream, reading two events, and dropping the client. Assert that the mock observes the connection closed within 1 s in 50 of 50 runs, and that each run's observation is `cancelled_by_client` with its TTFT set.
+- [ ] T040 [P] [US1] Write `crates/nullrouter-server/tests/e2e/cancel.rs` (SC-004, FR-021): 50 runs of starting a stream, reading two events, and dropping the client. Assert that the mock observes the connection closed within 1 s in 50 of 50 runs, and that each run's observation is `cancelled_by_client` with its TTFT set.
 
 ### Implementation for User Story 1
 
-- [ ] T041 [US1] Implement `crates/zerorouter-server/src/transport.rs`: `EffectiveTransport` per [data-model § EffectiveTransport](data-model.md#effectivetransport), and `choose(provider, model_info, client_format) -> Result<EffectiveTransport, ZrError>` porting [R3](research.md#r3-transport-and-target-format-choice-fr-014):
+- [ ] T041 [US1] Implement `crates/nullrouter-server/src/transport.rs`: `EffectiveTransport` per [data-model § EffectiveTransport](data-model.md#effectivetransport), and `choose(provider, model_info, client_format) -> Result<EffectiveTransport, ZrError>` porting [R3](research.md#r3-transport-and-target-format-choice-fr-014):
   - "the first entry in `transports[]` whose `format` equals the client format";
   - the `supported_formats` gate;
   - the fallback chain for `targetFormat`;
   - a mismatch gives 400 `format_mismatch` with the message from [contracts/http-api.md](contracts/http-api.md#selection-and-rejection-order).
-- [ ] T042 [US1] Implement `crates/zerorouter-server/src/client_detect.rs`: `ClientTool` and `detect(headers, body) -> Option<ClientTool>` in 9router's order ([R6](research.md#r6-outbound-url-and-headers-fr-015-fr-015a)); `NATIVE_PAIRS`; and `is_native_pair(tool, provider_id)`, which normalizes `anthropic-compatible*` to `anthropic`.
-- [ ] T043 [US1] Implement `crates/zerorouter-server/src/outbound.rs` per [contracts/outbound-parity.md](contracts/outbound-parity.md):
+- [ ] T042 [US1] Implement `crates/nullrouter-server/src/client_detect.rs`: `ClientTool` and `detect(headers, body) -> Option<ClientTool>` in 9router's order ([R6](research.md#r6-outbound-url-and-headers-fr-015-fr-015a)); `NATIVE_PAIRS`; and `is_native_pair(tool, provider_id)`, which normalizes `anthropic-compatible*` to `anthropic`.
+- [ ] T043 [US1] Implement `crates/nullrouter-server/src/outbound.rs` per [contracts/outbound-parity.md](contracts/outbound-parity.md):
   - the URL (base, suffix, `{accountId}`);
   - the ordered header build (Content-Type → declared headers → auth descriptor or format fallback → `anthropic-version` only when the exact lowercase key is absent, **keeping** the separately-cased declared header so the wire value merges → `Accept: text/event-stream` when streaming);
   - the native-pair overlay;
@@ -328,18 +328,18 @@ live check.
   - the auth `HeaderValue` is `set_sensitive(true)`, and `Secret::expose` is called only here.
 
   Output is `OutboundRequest` per [data-model](data-model.md#outboundrequest).
-- [ ] T044 [US1] Implement the direct-target half of `crates/zerorouter-server/src/select.rs`: `select(&State, &ClientRequest) -> Result<ExecutionTarget, ZrError>`. It is pure: no I/O and no clock. It follows the rejection order rows 6–10 of [contracts/http-api.md](contracts/http-api.md#selection-and-rejection-order):
+- [ ] T044 [US1] Implement the direct-target half of `crates/nullrouter-server/src/select.rs`: `select(&State, &ClientRequest) -> Result<ExecutionTarget, ZrError>`. It is pure: no I/O and no clock. It follows the rejection order rows 6–10 of [contracts/http-api.md](contracts/http-api.md#selection-and-rejection-order):
   - registry `resolve` → 404 `target_not_found`;
   - `chat_executable` → 400 `provider_not_supported`;
   - the first active connection in declaration order → 404 `no_usable_connection` "No active credentials for provider: <provider>";
   - `transport::choose`.
 
   Return `Rejection` for unified targets for now (US2 fills it in).
-- [ ] T045 [US1] Implement `crates/zerorouter-server/src/upstream.rs`:
+- [ ] T045 [US1] Implement `crates/nullrouter-server/src/upstream.rs`:
   - a shared `reqwest::Client` (rustls, pooled, no automatic decompression beyond reqwest's defaults, no redirects);
   - `send(OutboundRequest, &CancellationToken) -> Result<reqwest::Response, UpstreamFailure>`, which `select!`s `tokio::time::timeout(connect, send())` against `token.cancelled()`;
   - `UpstreamFailure::{Timeout, Unreachable(kind: dns|connect|tls|io), Cancelled}` mapped to 504 `upstream_timeout` / 502 `upstream_unreachable` per [contracts/http-api.md](contracts/http-api.md#error-envelopes). Messages name the provider, never the URL query or the key.
-- [ ] T046 [US1] Implement `crates/zerorouter-server/src/relay.rs` ([R9](research.md#r9-relay-cancellation-and-the-sse-question-fr-018-fr-018a-fr-021)):
+- [ ] T046 [US1] Implement `crates/nullrouter-server/src/relay.rs` ([R9](research.md#r9-relay-cancellation-and-the-sse-question-fr-018-fr-018a-fr-021)):
   - an incremental SSE event framer over `Bytes` using `memchr` (`\n\n`, `\r\n\r\n`, `\r\r`) that yields each complete event's **original bytes** zero-copy as soon as it completes, and flushes a trailing partial event at end of stream;
   - a stall `timeout` per upstream `next()`;
   - a `CancelOnDrop` guard that cancels the request's `CancellationToken` and lets the `ObservationBuilder` drop record `cancelled_by_client`;
@@ -347,33 +347,33 @@ live check.
   - a side channel: TTFT at the first complete event, plus an optional per-event callback for usage (a no-op until US3);
   - the response is `axum::body::Body::from_stream(relay)`, **not** `Sse`;
   - headers: non-native → the `SSE_HEADERS_CORS` equivalent (`Connection: keep-alive` on HTTP/1.1 only); native → the upstream headers minus `set-cookie`, `content-length`, and hop-by-hop headers.
-- [ ] T047 [US1] Implement `crates/zerorouter-server/src/assemble.rs`: port `parseSSEToOpenAIResponse` plus the `reasoning_content` strip (FR-019):
+- [ ] T047 [US1] Implement `crates/nullrouter-server/src/assemble.rs`: port `parseSSEToOpenAIResponse` plus the `reasoning_content` strip (FR-019):
   - an in-band error → its `status` if within 400–599, else 502, via `errors::upstream_error_body`;
   - no chunks → 502 "Invalid SSE response for non-streaming request";
   - the upstream is not `text/event-stream` → return `None`, and the caller relays as non-streaming (the 9router `null` path);
   - reads use the stall timeout.
-- [ ] T048 [US1] Implement the non-streaming and error response paths in `crates/zerorouter-server/src/http.rs`:
+- [ ] T048 [US1] Implement the non-streaming and error response paths in `crates/nullrouter-server/src/http.rs`:
   - **non-2xx upstream**: native → status, filtered headers, and the body unchanged; otherwise → `errors::upstream_error_body`, `Content-Type: application/json`, and `Access-Control-Allow-Origin: *`;
   - **2xx non-SSE on a streaming request (FR-020b)**: native → unchanged; otherwise → the ported non-SSE short error (`{"error":{"message":"[<status>]: <short>"}}`);
   - the observation keeps "the first 8 KiB" of every upstream error body (FR-020c) and all upstream headers except `set-cookie` and hop-by-hop headers (FR-022);
   - **2xx JSON non-streaming**: relay the body as a stream (no full buffering), with a stall timeout per chunk ([R7](research.md#r7-timeouts-fr-017)); TTFT is when the body is fully received.
-- [ ] T049 [US1] Implement `crates/zerorouter-server/src/count_tokens.rs`:
+- [ ] T049 [US1] Implement `crates/nullrouter-server/src/count_tokens.rs`:
   - port `estimateAnthropicInputTokens` (`countValueChars` / `countMessageChars`, `ceil(chars/4)`);
   - the handler: if Claude Code → `anthropic` is a native pair, build the outbound to `<messages base_url>/count_tokens` with the native header overlay and the model rewrite, and relay as non-streaming (no fallback on failure). Otherwise answer `200 {"input_tokens":N}` with JSON plus CORS headers, without resolving the target;
   - the observation outcome is `estimated_locally` when answered locally.
-- [ ] T050 [US1] Wire `/v1/chat/completions` and `/v1/messages` in `crates/zerorouter-server/src/http.rs`, end to end:
+- [ ] T050 [US1] Wire `/v1/chat/completions` and `/v1/messages` in `crates/nullrouter-server/src/http.rs`, end to end:
   1. prelude (T021) → `select` → detect client and native pair;
   2. `stream_mode` per [data-model § ClientRequest](data-model.md#clientrequest), using 9router's `body.stream != false` default and the Accept rule;
   3. `outbound::build` → `upstream::send` → branch to relay (T046), assemble (T047), or non-streaming/error (T048).
 
   One `ObservationBuilder` spans the request, and the relay stream holds the `Arc<State>` until the end. Log one `tracing` line at completion (agent, provider, connection name, upstream model, status, TTFT, duration), never keys, bodies, or headers.
-- [ ] T051 [US1] Write the Criterion bench `crates/zerorouter-server/benches/relay.rs` (SC-003, [R17](research.md#r17-performance)):
+- [ ] T051 [US1] Write the Criterion bench `crates/nullrouter-server/benches/relay.rs` (SC-003, [R17](research.md#r17-performance)):
   - (a) the event framer over a 200-event recorded stream;
   - (b) `select` + `outbound::build` for `anthropic` and `minimax`;
   - (c) end-to-end TTFT through 0router against the in-process mock, compared with direct to the mock (median delta under 5 ms).
 
   Save the baseline with `--save-baseline slice-003`.
-- [ ] T052 [US1] Run `cargo test -p zerorouter-server --test parity --test e2e` and `cargo bench -p zerorouter-server --bench relay`. All US1 tests must be green, and the TTFT delta median under 5 ms.
+- [ ] T052 [US1] Run `cargo test -p nullrouter-server --test parity --test e2e` and `cargo bench -p nullrouter-server --bench relay`. All US1 tests must be green, and the TTFT delta median under 5 ms.
 
 **Checkpoint**: A direct-target chat request works end to end in both formats, streamed,
 non-streamed, and forced-stream, with 9router-faithful outbound requests and
@@ -386,30 +386,30 @@ cancellation. MVP.
 **Goal**: A bare unified-model target runs on its first member with an active connection.
 `/v1/models` lists every usable target.
 
-**Independent Test**: `cargo test -p zerorouter-server --test e2e us2`. Quickstart step 3
+**Independent Test**: `cargo test -p nullrouter-server --test e2e us2`. Quickstart step 3
 (the listing).
 
 ### Tests for User Story 2 ⚠️ write first, confirm they fail
 
-- [ ] T053 [P] [US2] Unit tests for the unified half of `crates/zerorouter-server/src/select.rs`:
+- [ ] T053 [P] [US2] Unit tests for the unified half of `crates/nullrouter-server/src/select.rs`:
   - first member active → that member and its upstream id;
   - first member without a connection → the second member;
   - a first member whose provider is not executable is skipped as "no usable connection";
   - no member usable → 404 `no_usable_connection` "No active credentials for any member of unified model: <name>";
   - the selected member's format mismatches → 400 `format_mismatch`, and it does **not** move to the next member;
   - a bare name that is not unified → 404 `target_not_found` (002 FR-014a).
-- [ ] T054 [P] [US2] Write e2e tests in `crates/zerorouter-server/tests/e2e/us2.rs` for acceptance scenarios 1–6. Two mocks back two providers of a two-member unified model declared in `config.toml`. Assert which mock received the request, and that `/v1/models` (scenario 5) contains exactly the expected ids and `kind` values, with no connection names and no keys.
+- [ ] T054 [P] [US2] Write e2e tests in `crates/nullrouter-server/tests/e2e/us2.rs` for acceptance scenarios 1–6. Two mocks back two providers of a two-member unified model declared in `config.toml`. Assert which mock received the request, and that `/v1/models` (scenario 5) contains exactly the expected ids and `kind` values, with no connection names and no keys.
 
 ### Implementation for User Story 2
 
-- [ ] T055 [US2] Complete `crates/zerorouter-server/src/select.rs` for `Resolution::Unified`. "The member MUST be the first member, in declaration order, whose provider has at least one active connection" (FR-011); the member must also pass `chat_executable`. Then apply the transport choice once, with no fallback (FR-012). Set `ExecutionTarget.unified = Some((name, member_index))`, and record the unified name in the observation.
-- [ ] T056 [US2] Implement `crates/zerorouter-server/src/models.rs` and route `GET /v1/models` per [contracts/http-api.md § Model listing](contracts/http-api.md#model-listing-fr-029):
+- [ ] T055 [US2] Complete `crates/nullrouter-server/src/select.rs` for `Resolution::Unified`. "The member MUST be the first member, in declaration order, whose provider has at least one active connection" (FR-011); the member must also pass `chat_executable`. Then apply the transport choice once, with no fallback (FR-012). Set `ExecutionTarget.unified = Some((name, member_index))`, and record the unified name in the observation.
+- [ ] T056 [US2] Implement `crates/nullrouter-server/src/models.rs` and route `GET /v1/models` per [contracts/http-api.md § Model listing](contracts/http-api.md#model-listing-fr-029):
   - unified models first, in declaration order, if at least one member has an active connection;
   - then the catalogued models of every provider with an active connection, as `<provider>/<model>`, in provider-id then catalog order;
   - `kind` is omitted when undeclared;
-  - `owned_by` is `zerorouter` for unified models, else the provider id;
+  - `owned_by` is `nullrouter` for unified models, else the provider id;
   - auth is required.
-- [ ] T057 [US2] Run `cargo test -p zerorouter-server`. US1 and US2 must be green.
+- [ ] T057 [US2] Run `cargo test -p nullrouter-server`. US1 and US2 must be green.
 
 **Checkpoint**: Unified models execute end to end through the placeholder selection,
 isolated in `select.rs`.
@@ -424,7 +424,7 @@ isolated in `select.rs`.
 - Observations are queryable through the CLI with p50/p95 summaries, over an owner-only
   operator channel.
 
-**Independent Test**: `cargo test -p zerorouter-server --test parity usage` and
+**Independent Test**: `cargo test -p nullrouter-server --test parity usage` and
 `--test e2e us3`. Quickstart step 5.
 
 ### Oracle fixtures for User Story 3
@@ -440,19 +440,19 @@ isolated in `select.rs`.
 
 ### Tests for User Story 3 ⚠️ write first, confirm they fail
 
-- [ ] T059 [P] [US3] Write `crates/zerorouter-server/tests/parity/usage.rs` against `usage.json` (SC-005: 100% of counts match, 100% of absent fields are `None`, never 0).
-- [ ] T060 [P] [US3] Unit tests for the percentiles and filters in `crates/zerorouter-server/src/observe.rs`:
+- [ ] T059 [P] [US3] Write `crates/nullrouter-server/tests/parity/usage.rs` against `usage.json` (SC-005: 100% of counts match, 100% of absent fields are `None`, never 0).
+- [ ] T060 [P] [US3] Unit tests for the percentiles and filters in `crates/nullrouter-server/src/observe.rs`:
   - nearest-rank p50/p95 over 1, 2, 20, and 101 values;
   - records without a TTFT are excluded from TTFT percentiles;
   - count_tokens records are excluded from latency summaries unless `include_count_tokens` is set;
   - each filter (`provider` by id or alias, `unified`, `agent`, `session`, `endpoint`, `since`, `until`);
   - `limit` applies to the list, never to the summary.
-- [ ] T061 [P] [US3] Write e2e tests in `crates/zerorouter-server/tests/e2e/us3.rs` for acceptance scenarios 1–5:
+- [ ] T061 [P] [US3] Write e2e tests in `crates/nullrouter-server/tests/e2e/us3.rs` for acceptance scenarios 1–5:
   - the mocks report fixed usage (with and without cache fields) and delay their first event by 100 ms and 300 ms;
   - query through the operator socket and assert counts, statuses, token figures, and TTFT within ±50 ms;
   - failed, rejected, and cancelled requests have their outcome and `None` tokens;
   - an OpenAI stream without `stream_options.include_usage` records `None` tokens ([R11](research.md#r11-usage-extraction-fr-023)).
-- [ ] T062 [P] [US3] Write the operator-channel test in `crates/zerorouter-server/tests/e2e/operator.rs`:
+- [ ] T062 [P] [US3] Write the operator-channel test in `crates/nullrouter-server/tests/e2e/operator.rs`:
   - the socket file is mode 0600 and its directory is 0700;
   - the `status` and `observations` ops follow [contracts/operator-cli.md § protocol](contracts/operator-cli.md#operator-channel-protocol);
   - no path on the TCP listener reaches the operator ops (FR-028): try `/reload`, `/observations`, `/_operator`, and the op JSON posted to every client route;
@@ -460,28 +460,28 @@ isolated in `select.rs`.
 
 ### Implementation for User Story 3
 
-- [ ] T063 [US3] Implement `crates/zerorouter-server/src/usage.rs`: port `extractUsage` (the Anthropic `message_start` and `message_delta` branches and the OpenAI `usage.prompt_tokens` branch, including `prompt_cache_hit_tokens`) and `mergeUsage` (per-field max, finite numbers only), keeping per-field presence. Map the result to `observe::Usage` per the [R11 table](research.md#r11-usage-extraction-fr-023). Parse from borrowed `data:` slices, with no `serde_json::Value` on the relay path.
+- [ ] T063 [US3] Implement `crates/nullrouter-server/src/usage.rs`: port `extractUsage` (the Anthropic `message_start` and `message_delta` branches and the OpenAI `usage.prompt_tokens` branch, including `prompt_cache_hit_tokens`) and `mergeUsage` (per-field max, finite numbers only), keeping per-field presence. Map the result to `observe::Usage` per the [R11 table](research.md#r11-usage-extraction-fr-023). Parse from borrowed `data:` slices, with no `serde_json::Value` on the relay path.
 - [ ] T064 [US3] Hook usage into the three response paths:
-  - the relay side channel in `crates/zerorouter-server/src/relay.rs`: parse only events that can carry usage, and stop parsing once the stream's format rules say no more can come;
+  - the relay side channel in `crates/nullrouter-server/src/relay.rs`: parse only events that can carry usage, and stop parsing once the stream's format rules say no more can come;
   - `assemble.rs`: the assembled `usage`;
   - the non-streaming path in `http.rs`: incrementally scan the relayed body copy, capped at 8 MiB, for the top-level `usage` object.
 
   Recording stays after the final write (FR-024).
-- [ ] T065 [US3] Implement query and summary in `crates/zerorouter-server/src/observe.rs`: `ObservationFilter` and `ObservationSummary` per [data-model](data-model.md#observationfilter-and-observationsummary). Clone under the lock, then filter and sort outside it. Include the token sums with `reported` counts.
-- [ ] T066 [US3] Implement `crates/zerorouter-server/src/operator.rs`:
-  - a Tokio `UnixListener` at `$ZEROROUTER_HOME/run/operator.sock`; create the directory at 0700 and set the socket to 0600;
+- [ ] T065 [US3] Implement query and summary in `crates/nullrouter-server/src/observe.rs`: `ObservationFilter` and `ObservationSummary` per [data-model](data-model.md#observationfilter-and-observationsummary). Clone under the lock, then filter and sort outside it. Include the token sums with `reported` counts.
+- [ ] T066 [US3] Implement `crates/nullrouter-server/src/operator.rs`:
+  - a Tokio `UnixListener` at `$NULLROUTER_HOME/run/operator.sock`; create the directory at 0700 and set the socket to 0600;
   - at start, remove an existing socket file only if connecting to it fails; otherwise exit 3 "another server owns the socket";
   - peer-uid check via `UnixStream::peer_cred()` against the server's uid, closing on mismatch;
   - NDJSON, one request per connection;
   - ops `status` and `observations` (`reload` comes in US5);
   - start it from `serve` (T022).
-- [ ] T067 [US3] Implement `zerorouter-cli obs` in `crates/zerorouter-cli/src/cmd/obs.rs`:
+- [ ] T067 [US3] Implement `nullrouter-cli obs` in `crates/nullrouter-cli/src/cmd/obs.rs`:
   - a blocking `std::os::unix::net::UnixStream` client;
   - parse `--since`/`--until` as RFC 3339 or relative (`15m`, `2h`, `1d`);
-  - render the summary line, the tokens line, and the table exactly as in [contracts/operator-cli.md § obs](contracts/operator-cli.md#zerorouter-cli-obs), with `—` for "not reported";
+  - render the summary line, the tokens line, and the table exactly as in [contracts/operator-cli.md § obs](contracts/operator-cli.md#nullrouter-cli-obs), with `—` for "not reported";
   - `--json` prints the raw response;
   - exit 1 for an unknown provider or unified filter; exit 3 when no server is running.
-- [ ] T068 [US3] Run `cargo test -p zerorouter-server && cargo test -p zerorouter-cli`. Everything must be green.
+- [ ] T068 [US3] Run `cargo test -p nullrouter-server && cargo test -p nullrouter-cli`. Everything must be green.
 
 **Checkpoint**: Every request's latency and cache usage are visible per provider and per
 unified model through the CLI.
@@ -493,7 +493,7 @@ unified model through the CLI.
 **Goal**: `/v1/embeddings` executes on the OpenAI-compatible embeddings providers exactly
 as 9router's adapter builds requests.
 
-**Independent Test**: `cargo test -p zerorouter-server --test parity embeddings` and
+**Independent Test**: `cargo test -p nullrouter-server --test parity embeddings` and
 `--test e2e us4`.
 
 ### Oracle fixtures for User Story 4
@@ -509,8 +509,8 @@ as 9router's adapter builds requests.
 
 ### Tests for User Story 4 ⚠️ write first, confirm they fail
 
-- [ ] T070 [P] [US4] Write `crates/zerorouter-server/tests/parity/embeddings.rs` against `embeddings.json`: the URL, the lowercase header view, and the body, all exact.
-- [ ] T071 [P] [US4] Write e2e tests in `crates/zerorouter-server/tests/e2e/us4.rs` for acceptance scenarios 1–3:
+- [ ] T070 [P] [US4] Write `crates/nullrouter-server/tests/parity/embeddings.rs` against `embeddings.json`: the URL, the lowercase header view, and the body, all exact.
+- [ ] T071 [P] [US4] Write e2e tests in `crates/nullrouter-server/tests/e2e/us4.rs` for acceptance scenarios 1–3:
   - an embeddings request to `openai/text-embedding-3-small` through the mock;
   - a chat model or a non-embeddings provider → 400 `not_embeddings`;
   - the observation has a duration and `usage.input` from `usage.prompt_tokens`;
@@ -518,15 +518,15 @@ as 9router's adapter builds requests.
 
 ### Implementation for User Story 4
 
-- [ ] T072 [US4] Implement `crates/zerorouter-server/src/embeddings.rs`:
+- [ ] T072 [US4] Implement `crates/nullrouter-server/src/embeddings.rs`:
   - the URL is `capabilities.embedding.endpoint.base_url`;
   - the headers are `Content-Type: application/json`, then `Authorization: Bearer <key>`, then the declared endpoint headers;
   - the body is `{model, input, encoding_format?, dimensions?}`, where `dimensions` is kept only when "finite, > 0" as a Number;
   - the check is: the provider passes `embeddings_executable`, and the model `kind == embedding`, or the model is uncatalogued on an allow-uncatalogued provider. Otherwise 400 `not_embeddings`.
 
-  If the 002 registry does not expose `capabilities.embedding.endpoint` publicly, add a read-only accessor in `crates/zerorouter-registry/src/registry.rs` (additive).
-- [ ] T073 [US4] Route `POST /v1/embeddings` in `crates/zerorouter-server/src/http.rs`: prelude → `select`, with the embeddings variant of row 8 → build → `upstream::send` with the connect timeout → the non-streaming path (T048) → usage (T064).
-- [ ] T074 [US4] Run `cargo test -p zerorouter-server`. Everything must be green.
+  If the 002 registry does not expose `capabilities.embedding.endpoint` publicly, add a read-only accessor in `crates/nullrouter-registry/src/registry.rs` (additive).
+- [ ] T073 [US4] Route `POST /v1/embeddings` in `crates/nullrouter-server/src/http.rs`: prelude → `select`, with the embeddings variant of row 8 → build → `upstream::send` with the connect timeout → the non-streaming path (T048) → usage (T064).
+- [ ] T074 [US4] Run `cargo test -p nullrouter-server`. Everything must be green.
 
 **Checkpoint**: A second model type executes through the same path.
 
@@ -540,7 +540,7 @@ as 9router's adapter builds requests.
 - per-agent and per-session identity;
 - zero leakage of any key.
 
-**Independent Test**: `cargo test -p zerorouter-server --test e2e us5 reload secrets` and
+**Independent Test**: `cargo test -p nullrouter-server --test e2e us5 reload secrets` and
 `--test parity sessions`. Quickstart steps 2 and 6.
 
 ### Oracle fixtures for User Story 5
@@ -559,8 +559,8 @@ as 9router's adapter builds requests.
 
 ### Tests for User Story 5 ⚠️ write first, confirm they fail
 
-- [ ] T076 [P] [US5] Write `crates/zerorouter-server/tests/parity/sessions.rs` against `sessions.json` (SC-010: 100% match, including `null` where 9router falls back).
-- [ ] T077 [P] [US5] Write e2e tests in `crates/zerorouter-server/tests/e2e/us5.rs` for acceptance scenarios 1, 2, 5, 6, and 7:
+- [ ] T076 [P] [US5] Write `crates/nullrouter-server/tests/parity/sessions.rs` against `sessions.json` (SC-010: 100% match, including `null` where 9router falls back).
+- [ ] T077 [P] [US5] Write e2e tests in `crates/nullrouter-server/tests/e2e/us5.rs` for acceptance scenarios 1, 2, 5, 6, and 7:
   - two active accounts → the first is used;
   - the first inactive → the second;
   - an unknown provider, a specialized executor, or `mimo-free` (no-auth) in `keys.toml` → startup fails with the named error;
@@ -568,7 +568,7 @@ as 9router's adapter builds requests.
   - two Claude Code sessions under one key → the same agent and different sessions;
   - no carrier → session `None`;
   - the same session under two keys → two identities (FR-005b).
-- [ ] T078 [P] [US5] Write `crates/zerorouter-server/tests/e2e/reload.rs` (acceptance scenario 3, FR-010, FR-027):
+- [ ] T078 [P] [US5] Write `crates/nullrouter-server/tests/e2e/reload.rs` (acceptance scenario 3, FR-010, FR-027):
   1. Start a slow stream on connection A.
   2. Rewrite `keys.toml` to put connection B first, then reload through the operator socket.
   3. Assert the in-flight stream completes on A with generation N in its observation, and that new requests use B with generation N+1.
@@ -577,25 +577,25 @@ as 9router's adapter builds requests.
   6. Remove a provider and its connection in the same edit: the reload succeeds.
 
   Also run 200 reloads concurrent with 50 streaming requests, with no torn state.
-- [ ] T079 [P] [US5] Write `crates/zerorouter-server/tests/e2e/secrets.rs` (SC-006):
+- [ ] T079 [P] [US5] Write `crates/nullrouter-server/tests/e2e/secrets.rs` (SC-006):
   1. Run a representative request mix: every outcome variant, both formats, native and not, embeddings, count_tokens, and reload with errors, using sentinel keys.
-  2. Capture all observations (`--json`), the `tracing` output (a test subscriber writer), `zerorouter-cli check`/`reload`/`obs` output, every client response body and header, and every mock-received request.
+  2. Capture all observations (`--json`), the `tracing` output (a test subscriber writer), `nullrouter-cli check`/`reload`/`obs` output, every client response body and header, and every mock-received request.
   3. Assert zero occurrences of any access key anywhere.
   4. Assert zero occurrences of any provider key anywhere except the auth header of that provider's own mock-received requests.
   5. Assert `keys.toml` errors never echo values.
 
 ### Implementation for User Story 5
 
-- [ ] T080 [US5] Implement `crates/zerorouter-server/src/session.rs`: port the client-supplied carriers of `sessionManager.js` in FR-005a order with the non-kiro rules ([R5](research.md#r5-access-keys-and-agent-identity)):
+- [ ] T080 [US5] Implement `crates/nullrouter-server/src/session.rs`: port the client-supplied carriers of `sessionManager.js` in FR-005a order with the non-kiro rules ([R5](research.md#r5-access-keys-and-agent-identity)):
   - the Claude `metadata.user_id` `_session_<uuid>` regex, else JSON `session_id`; and `x-claude-code-session-id`. Both are recorded as `claude:<id>`;
   - the header list, then `x-client-request-id`, then the body fields;
   - `normalizeSessionId`: a string, trimmed, non-empty, **"at most 256 characters"**;
   - read-only access to the parsed body (`RawValue` lookups, never re-serialized into the outbound request).
 
   Set `AgentIdentity { agent, session }` in the request prelude (T021) and in the observation.
-- [ ] T081 [US5] Add the `reload` op to `crates/zerorouter-server/src/operator.rs`, calling `Server::reload` (T018). The response is `{"ok":true,"report":…,"keys":{…}}` or `{"ok":false,"errors":[…]}`.
-- [ ] T082 [US5] Implement `zerorouter-cli reload` in `crates/zerorouter-cli/src/cmd/reload.rs`: print the load report as `check` does, plus the keys summary; print every error and exit 1 on rejection; exit 3 when no server is running.
-- [ ] T083 [US5] Extend `zerorouter-cli check` in `crates/zerorouter-cli/src/cmd/check.rs` to validate `keys.toml` against the loaded registry, when present. Print the connection and access-key counts per provider, never values; keys errors exit 1.
+- [ ] T081 [US5] Add the `reload` op to `crates/nullrouter-server/src/operator.rs`, calling `Server::reload` (T018). The response is `{"ok":true,"report":…,"keys":{…}}` or `{"ok":false,"errors":[…]}`.
+- [ ] T082 [US5] Implement `nullrouter-cli reload` in `crates/nullrouter-cli/src/cmd/reload.rs`: print the load report as `check` does, plus the keys summary; print every error and exit 1 on rejection; exit 3 when no server is running.
+- [ ] T083 [US5] Extend `nullrouter-cli check` in `crates/nullrouter-cli/src/cmd/check.rs` to validate `keys.toml` against the loaded registry, when present. Print the connection and access-key counts per provider, never values; keys errors exit 1.
 - [ ] T084 [US5] Run `cargo test --workspace`. Everything must be green, including the 002 suites.
 
 **Checkpoint**: All five stories pass independently, and no key leaks anywhere.
@@ -610,20 +610,20 @@ as 9router's adapter builds requests.
   - the native-pair behaviour;
   - the `stream_options.include_usage` note for OpenAI stream usage;
   - SC-002: usable by an operator with only the docs.
-- [ ] T087 [P] Update the `CLAUDE.md` workspace table: add `crates/zerorouter-server`, and list the new CLI commands on the `zerorouter-cli` line.
-- [ ] T088 [P] Update the `zerorouter-registry` contract doc `specs/002-provider-model-registry/contracts/registry-api.md` with an "Additions in 003" note listing `Registry::load_candidate`, `LoadReport: Serialize`, and any embeddings accessor from T072.
-- [ ] T089 Run `/rust-parity-audit` on `crates/zerorouter-server/src/outbound.rs`, `relay.rs`, `session.rs`, `errors.rs`, and `usage.rs`. Judge parity on 9router's request path (chatCore → DefaultExecutor), not on helpers alone. Write the findings to `specs/003-request-execution/parity-audit.md` and fix every High and Medium finding.
-- [ ] T090 Run the security review: invoke the `security-auditor` agent over `crates/zerorouter-server/src/{keys,auth,outbound,operator,http}.rs`. Cover:
+- [ ] T087 [P] Update the `CLAUDE.md` workspace table: add `crates/nullrouter-server`, and list the new CLI commands on the `nullrouter-cli` line.
+- [ ] T088 [P] Update the `nullrouter-registry` contract doc `specs/002-provider-model-registry/contracts/registry-api.md` with an "Additions in 003" note listing `Registry::load_candidate`, `LoadReport: Serialize`, and any embeddings accessor from T072.
+- [ ] T089 Run `/rust-parity-audit` on `crates/nullrouter-server/src/outbound.rs`, `relay.rs`, `session.rs`, `errors.rs`, and `usage.rs`. Judge parity on 9router's request path (chatCore → DefaultExecutor), not on helpers alone. Write the findings to `specs/003-request-execution/parity-audit.md` and fix every High and Medium finding.
+- [ ] T090 Run the security review: invoke the `security-auditor` agent over `crates/nullrouter-server/src/{keys,auth,outbound,operator,http}.rs`. Cover:
   - secret flow;
   - the operator-channel boundary (FR-028);
   - that the header overlay cannot smuggle the access key;
   - SSRF: `account_id` substitution cannot change the host.
 
   Record the findings in `parity-audit.md` under "Security" and fix any High findings.
-- [ ] T091 [P] Write a concurrency test in `crates/zerorouter-server/tests/e2e/concurrency.rs` (SC-007): 100 concurrent streaming requests through one connection. The mock releases event *k* to all streams only after it has sent event *k−1* to all of them. Assert that every stream receives every event, and that no stream's event *k* arrives after another stream's event *k+1*. That would mean a request was serialized behind another.
-- [ ] T092 [P] Add the named deviation tests. There must be one test per [R15](research.md#r15-deliberate-deviations-from-9router) row D1–D12, each with a doc comment stating the 9router and 0router behaviour. Add any that are missing to `crates/zerorouter-server/tests/e2e/deviations.rs`, reusing the existing scenarios.
+- [ ] T091 [P] Write a concurrency test in `crates/nullrouter-server/tests/e2e/concurrency.rs` (SC-007): 100 concurrent streaming requests through one connection. The mock releases event *k* to all streams only after it has sent event *k−1* to all of them. Assert that every stream receives every event, and that no stream's event *k* arrives after another stream's event *k+1*. That would mean a request was serialized behind another.
+- [ ] T092 [P] Add the named deviation tests. There must be one test per [R15](research.md#r15-deliberate-deviations-from-9router) row D1–D12, each with a doc comment stating the 9router and 0router behaviour. Add any that are missing to `crates/nullrouter-server/tests/e2e/deviations.rs`, reusing the existing scenarios.
 - [ ] T093 Run the quickstart §1 automated block and §2–§3 locally with mocks. Then run §4 against real providers, **asking the user first**, because it uses their keys and network. Record any doc corrections in `quickstart.md`.
-- [ ] T094 Run `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`. Then run `cargo bench -p zerorouter-server --bench relay -- --baseline slice-003`: no regression beyond noise.
+- [ ] T094 Run `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`. Then run `cargo bench -p nullrouter-server --bench relay -- --baseline slice-003`: no regression beyond noise.
 - [ ] T095 Regenerate and check the oracle: `node tools/gen-bundled/generate.mjs`, then `git status tests/fixtures/ plugins/` is clean, which means the generator is deterministic.
 - [ ] T096 Save the slice-003 decisions to agentmemory, in both the main and team instances (`memory_save`):
   - the executable rule and its set sizes;

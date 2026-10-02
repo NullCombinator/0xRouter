@@ -1,4 +1,4 @@
-# Contract: `$ZEROROUTER_HOME/keys.toml`
+# Contract: `$NULLROUTER_HOME/keys.toml`
 
 **Feature**: [spec.md](../spec.md) FR-004a, FR-006–FR-010 | **Research**:
 [R4](../research.md#r4-accounts-and-access-keys-file-secrets-validation-fr-004a-fr-006fr-010)
@@ -10,11 +10,11 @@ schema = 1
 
 [[access_key]]
 agent  = "laptop"
-key    = { env = "ZR_KEY_LAPTOP" }   # or a literal string (then the file must be 0600)
+key    = { env = "NR_KEY_LAPTOP" }   # or a literal string (then the file must be 0600)
 
 [[access_key]]
 agent  = "ci"
-key    = "zr-2c1f…"                  # literal, at least 16 characters
+key    = "nr-2c1f…"                  # literal, at least 16 characters
 active = false                       # default true
 
 [[connection]]

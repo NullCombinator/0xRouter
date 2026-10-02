@@ -1098,6 +1098,113 @@ dependencies = [
 ]
 
 [[package]]
+name = "nullrouter-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "nullrouter-engine",
+ "nullrouter-registry",
+ "nullrouter-server",
+ "reqwest",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "nullrouter-engine"
+version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "arc-swap",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "criterion",
+ "futures-util",
+ "getrandom 0.3.4",
+ "httpdate",
+ "indexmap",
+ "nullrouter-engine",
+ "nullrouter-registry",
+ "nullrouter-wire",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "ulid",
+]
+
+[[package]]
+name = "nullrouter-registry"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "criterion",
+ "indexmap",
+ "nullrouter-registry",
+ "regex-lite",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "tempfile",
+ "thiserror",
+ "toml",
+ "url",
+]
+
+[[package]]
+name = "nullrouter-server"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "bytes",
+ "criterion",
+ "futures-util",
+ "nullrouter-engine",
+ "nullrouter-registry",
+ "nullrouter-wire",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "nullrouter-wire"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "criterion",
+ "indexmap",
+ "memchr",
+ "nullrouter-registry",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2508,113 +2615,6 @@ name = "zeroize"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
-
-[[package]]
-name = "zerorouter-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "reqwest",
- "serde_json",
- "tempfile",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "zerorouter-engine",
- "zerorouter-registry",
- "zerorouter-server",
-]
-
-[[package]]
-name = "zerorouter-engine"
-version = "0.1.0"
-dependencies = [
- "aho-corasick",
- "arc-swap",
- "axum",
- "base64 0.22.1",
- "bytes",
- "criterion",
- "futures-util",
- "getrandom 0.3.4",
- "httpdate",
- "indexmap",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-util",
- "toml",
- "tracing",
- "tracing-subscriber",
- "ulid",
- "zerorouter-engine",
- "zerorouter-registry",
- "zerorouter-wire",
-]
-
-[[package]]
-name = "zerorouter-registry"
-version = "0.1.0"
-dependencies = [
- "arc-swap",
- "criterion",
- "indexmap",
- "regex-lite",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "tempfile",
- "thiserror",
- "toml",
- "url",
- "zerorouter-registry",
-]
-
-[[package]]
-name = "zerorouter-server"
-version = "0.1.0"
-dependencies = [
- "axum",
- "bytes",
- "criterion",
- "futures-util",
- "reqwest",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-util",
- "toml",
- "tracing",
- "tracing-subscriber",
- "url",
- "zerorouter-engine",
- "zerorouter-registry",
- "zerorouter-wire",
-]
-
-[[package]]
-name = "zerorouter-wire"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "bytes",
- "criterion",
- "indexmap",
- "memchr",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "toml",
- "zerorouter-registry",
-]
 
 [[package]]
 name = "zerotrie"

@@ -2,7 +2,7 @@
 
 **Feature**: [spec.md](../spec.md) | **Data model**: [data-model.md](../data-model.md)
 
-**Listener**: `--listen` / `ZEROROUTER_LISTEN`, default `127.0.0.1:20129`. HTTP/1.1 and
+**Listener**: `--listen` / `NULLROUTER_LISTEN`, default `127.0.0.1:20129`. HTTP/1.1 and
 h2c.
 
 **No operator routes**: none exist on this listener (FR-028).
@@ -57,7 +57,7 @@ Notes on the table:
 ## Error envelopes
 
 **0router-originated errors (FR-003)** are in the client's wire format. Every one also
-carries the response header `x-zerorouter-error: <error_type>`.
+carries the response header `x-nullrouter-error: <error_type>`.
 
 - OpenAI clients:
   `{"error":{"message":"…","type":"<9router ERROR_TYPES[status].type>","code":"<error_type>"}}`
@@ -166,7 +166,7 @@ carries the response header `x-zerorouter-error: <error_type>`.
 
 ```json
 {"object":"list","data":[
-  {"id":"sonnet","object":"model","owned_by":"zerorouter","kind":"llm"},
+  {"id":"sonnet","object":"model","owned_by":"nullrouter","kind":"llm"},
   {"id":"anthropic/claude-sonnet-4-5","object":"model","owned_by":"anthropic","kind":"llm"}
 ]}
 ```

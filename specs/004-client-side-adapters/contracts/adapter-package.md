@@ -27,13 +27,13 @@ under a single top-level directory.
 
 ```toml
 [package]
-name = "zr-adapter-claude-code"
+name = "nr-adapter-claude-code"
 version = "0.3.0"
 edition = "2024"
 license = "MIT"                  # optional; also description, authors, repository
 
 [dependencies]
-zerorouter-adapter-kit = "1"
+nullrouter-adapter-kit = "1"
 ```
 
 The kit resolves from the builder's local registry, not from crates.io
@@ -62,7 +62,7 @@ The fields and rules are in [data-model.md](../data-model.md#adaptermanifest-ada
 
 Refusal output is one line per reason: `refused: <code> at <location>: <message>`. Codes are
 stable, and tests match them against golden `.expected` files in
-`crates/zerorouter-adapters/tests/gate/invalid/`.
+`crates/nullrouter-adapters/tests/gate/invalid/`.
 
 | Code | Refused when |
 |---|---|
@@ -74,7 +74,7 @@ stable, and tests match them against golden `.expected` files in
 | `harness_invalid` | A malformed harness name, or one that is built in or reserved |
 | `style_unknown` | `style` isn't a loaded client style |
 | `selector_invalid` | Selector syntax, count or depth out of bounds |
-| `foreign_dependency` | Any dependency other than `zerorouter-adapter-kit`, in any dependency table |
+| `foreign_dependency` | Any dependency other than `nullrouter-adapter-kit`, in any dependency table |
 | `dependency_source` | The kit dependency has `path`, `git`, `registry` or `features` |
 | `build_script` | A `build` key, or a `build.rs` file |
 | `proc_macro` | `[lib] proc-macro`, or `proc-macro = true` anywhere |
@@ -94,7 +94,7 @@ Several reasons in one submission produce several lines. The gate never stops at
 
 1. `source_fp` is computed over the gated tree, and the tree is stored under
    `adapters/<harness>/<version-id>/source/`.
-2. The builder job (`zerorouter-builder`, JSON on stdin):
+2. The builder job (`nullrouter-builder`, JSON on stdin):
 
    ```json
    {"source_dir": "…/source", "out_dir": "…", "kit": "1", "abi": 1}

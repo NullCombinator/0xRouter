@@ -4,7 +4,7 @@ Phase 1 output. Entities from the spec's Key Entities, with fields, validation a
 Slice 002 entities (`Registry`, `ProviderEntity`, `UnifiedModel`, `Resolution`) are reused
 and extended, not redefined. Research references: [research.md](research.md).
 
-## Load-time entities (`zerorouter-registry`)
+## Load-time entities (`nullrouter-registry`)
 
 ### ApiStyle
 
@@ -50,9 +50,9 @@ reason }] }`. A plugin with any unsupported part contributes nothing to the snap
 
 Embedded file from `plugins/community/`: `id`, source text, precomputed `FitVerdict`
 (recomputed at install and at every load). Installed = copied into
-`$ZEROROUTER_HOME/plugins/`.
+`$NULLROUTER_HOME/plugins/`.
 
-## Operator state (`zerorouter-engine`, files in `$ZEROROUTER_HOME`)
+## Operator state (`nullrouter-engine`, files in `$NULLROUTER_HOME`)
 
 ### ProviderAccount (`accounts.toml`)
 
@@ -84,7 +84,7 @@ host withholds the secret until the operator re-confirms (slice 002 FR-012a rule
 `[server] listen` (default `127.0.0.1:20129`), `[pipeline] break_behaviour` (default
 `restart`), `allow_private_endpoints` (default `false`).
 
-## Runtime entities (`zerorouter-engine`)
+## Runtime entities (`nullrouter-engine`)
 
 ### Agent
 
@@ -147,7 +147,7 @@ not reported). Plus `input_semantics` (`includes_cache` \| `excludes_cache`) and
 | `ttft_ms` | `Option<f64>` | streamed or chunked responses |
 | `total_ms` | `Option<f64>` | set at completion |
 | `usage` | `Usage` | summed over segments |
-| `job` | `Option<{ zerorouter_job_id, upstream id }>` | video |
+| `job` | `Option<{ nullrouter_job_id, upstream id }>` | video |
 
 **Record state machine**:
 
@@ -168,9 +168,9 @@ by id, by provider, by unified model, newest first, with a limit.
 
 ### JobMap
 
-`zerorouter job id → (provider, account, upstream job id, record id)`. In memory.
+`nullrouter job id → (provider, account, upstream job id, record id)`. In memory.
 
-## Stream state (`zerorouter-wire`, per client response)
+## Stream state (`nullrouter-wire`, per client response)
 
 ### ClientStreamState
 

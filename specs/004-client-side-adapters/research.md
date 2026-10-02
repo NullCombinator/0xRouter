@@ -29,7 +29,7 @@ after them (spec Assumptions).
   wasmtime 45 needs rustc 1.93, and 1.93.1 is installed. wasmtime 46 and later need 1.94 or
   newer, and 49 needs 1.96.
 - **Workspace MSRV rises from 1.85 to 1.93.** Only the crates that link the sandbox need it, but
-  the `zerorouter` binary links them all.
+  the `nullrouter` binary links them all.
 - **Guest target: `wasm32-unknown-unknown`**, not WASI. The guest has no imports beyond the kit's
   host ABI (R2), so it has no system interface to misuse.
 - **Source tooling: `syn` 2 (`full`, `visit`) and `prettyplease` 0.2** for the gate (R7) and the
@@ -148,7 +148,7 @@ The limits are starting values, set in `config.toml` `[adapters]`.
 
 ## R4. hermes (built-in)
 
-**Decision**: hermes is a core module (`zerorouter-adapters/src/builtin/hermes.rs`). It uses the
+**Decision**: hermes is a core module (`nullrouter-adapters/src/builtin/hermes.rs`). It uses the
 same edit list, records and selectors as a WASM adapter, but runs natively and is not
 guardrailed (FR-015 covers third-party adapters). Its tests assert that it never touches tool
 calls, definitions or results. hermes talks openai-chat.
@@ -213,7 +213,7 @@ view of the manifest honest, and keeps the guardrail's search bounded.
 
 Spec FR-015–FR-017, clarifications Q1–Q3.
 
-**Decision**: a pure function in `zerorouter-adapters/src/guard.rs`, run on every third-party
+**Decision**: a pure function in `nullrouter-adapters/src/guard.rs`, run on every third-party
 adapter output that has at least one edit. It uses slice 003's style codecs, so it works for any
 client style:
 
@@ -262,7 +262,7 @@ benchmarks this.
 
 ## R7. Validation gate for adapter source
 
-**Decision**: the gate runs in the core (`zerorouter-adapters/src/gate.rs`) on the unpacked
+**Decision**: the gate runs in the core (`nullrouter-adapters/src/gate.rs`) on the unpacked
 source tree, before anything is built. It collects every reason it finds, not just the first
 (FR-011).
 
@@ -279,7 +279,7 @@ source tree, before anything is built. It collects every reason it finds, not ju
   - a `.rs` file over 64 KiB.
 - **`Cargo.toml`**:
   - Required: `[package]` with `name`, `version` and `edition`.
-  - `[dependencies]` must contain exactly `zerorouter-adapter-kit` with a plain version
+  - `[dependencies]` must contain exactly `nullrouter-adapter-kit` with a plain version
     requirement.
   - Refused: `path`, `git` or `registry` keys; `build-dependencies`; `dev-dependencies`;
     `build`; `links`; `[lib] proc-macro`; `[patch]`; `[replace]`; `[workspace]`; `[features]`
@@ -309,7 +309,7 @@ where they are enforced.
 ## R8. The builder
 
 **Decision**:
-- **What it is.** A separate binary, `zerorouter-builder`, in its own crate, shipped as an
+- **What it is.** A separate binary, `nullrouter-builder`, in its own crate, shipped as an
   optional component (FR-013). The core never links it.
 - **How it's invoked (user-visible, in operation).** On demand, as a child process: one JSON
   job on stdin, a JSON result on stdout. There is no daemon. "Next to the core" means same
@@ -341,12 +341,12 @@ where they are enforced.
   to reverse.
   - The builder binary embeds the kit's packaged `.crate` and the pinned `Cargo.lock` from this
     repository at its own build time.
-  - `zerorouter-builder setup` unpacks the kit into `$ZEROROUTER_HOME/builder/vendor/`, with its
+  - `nullrouter-builder setup` unpacks the kit into `$NULLROUTER_HOME/builder/vendor/`, with its
     `.cargo-checksum.json`. It fetches `serde` and `serde_json` at the locked versions, the only
     network use, run once by the operator. It then points `crates-io` at that directory.
-  - Adapter packages keep writing `zerorouter-adapter-kit = "1"`, so a future crates.io release
+  - Adapter packages keep writing `nullrouter-adapter-kit = "1"`, so a future crates.io release
     needs no change to any package.
-  - Authors build with `zerorouter-builder`. In this repository, `adapters/community/` carries a
+  - Authors build with `nullrouter-builder`. In this repository, `adapters/community/` carries a
     `.cargo/config.toml` that patches the kit to the workspace path, for host-side
     `cargo test`. It sits outside every package, so the gate never sees it and the builder never
     reads it.
@@ -369,7 +369,7 @@ where they are enforced.
 
 **Decision**:
 - The kit exports `KIT_ABI: u32`. A module imports `zr_abi_version` and embeds its ABI in a
-  custom section, `zr.abi`.
+  custom section, `nr.abi`.
 - The core supports **the current ABI and the previous one**, with a translation shim for the
   previous.
 - **At startup**, the core finds approved versions whose ABI it no longer supports:
@@ -379,7 +379,7 @@ where they are enforced.
   - On success, the new module and `build.json` are stored, and the version serves.
   - On failure, bound keys work as plain clients, and an alert gives the builder's error.
 - **(User-visible.)** While a rebuild runs at startup, bound keys work as plain clients, and
-  each record says "adapter rebuilding after upgrade". `zerorouter adapters rebuild` lets an
+  each record says "adapter rebuilding after upgrade". `nullrouter adapters rebuild` lets an
   operator rebuild before swapping binaries, so this window can be avoided.
 
 **Rationale**: supporting two ABI versions makes incompatibility rare. A rebuild of the same
@@ -389,7 +389,7 @@ to it by hash.
 ## R10. Review pipeline
 
 **Decision**:
-- **Scrambler** (`zerorouter-adapters/src/scramble.rs`):
+- **Scrambler** (`nullrouter-adapters/src/scramble.rs`):
   - Parse with `syn`. That drops `//` and `/* */` comments. Also strip `#[doc]` attributes,
     which carry `///` and `//!`.
   - Rename every identifier *defined in the adapter* (items, fields, variants, bindings,
@@ -430,7 +430,7 @@ to it by hash.
 ## R11. Store, states and hot apply
 
 **Decision**:
-- **Location.** `$ZEROROUTER_HOME/adapters/`:
+- **Location.** `$NULLROUTER_HOME/adapters/`:
   - `index.toml`: harnesses, versions, states, active pointer, review settings;
   - `<harness>/<version-id>/source/`, `module.wasm`, `build.json`, `review.json`,
     `decision.json`;
@@ -558,9 +558,9 @@ plus `dedupeTools`:
 ## R16. Test strategy
 
 **Decision**:
-- **Gate corpus**: `crates/zerorouter-adapters/tests/gate/invalid/*/`. One directory per
+- **Gate corpus**: `crates/nullrouter-adapters/tests/gate/invalid/*/`. One directory per
   refusal reason, with a golden `.expected` message, plus multi-reason cases (SC-004).
-- **Hostile corpus**: `crates/zerorouter-adapters/tests/hostile/*/`. Each is built by the real
+- **Hostile corpus**: `crates/nullrouter-adapters/tests/hostile/*/`. Each is built by the real
   builder in CI when the toolchain is present, and precompiled `.wasm` fixtures are checked in
   for engine tests.
   - The kit's ABI has no network, file or environment access, so those attempts are written as

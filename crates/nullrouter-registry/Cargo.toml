@@ -1,0 +1,40 @@
+[package]
+name = "nullrouter-registry"
+version = "0.1.0"
+description = "Provider entities, unified models, and model lookup for 0router"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[dependencies]
+serde.workspace = true
+toml.workspace = true
+serde_path_to_error.workspace = true
+thiserror.workspace = true
+arc-swap.workspace = true
+url.workspace = true
+regex-lite.workspace = true
+indexmap.workspace = true
+
+[features]
+# `parity_set()`: bundled + community with the fit check off, for slice 002's parity tests.
+parity = []
+
+[dev-dependencies]
+# The parity tests need `parity_set()`.
+nullrouter-registry = { path = ".", features = ["parity"] }
+serde_json.workspace = true
+criterion.workspace = true
+tempfile.workspace = true
+
+[[bench]]
+name = "resolve"
+harness = false
+
+[lints]
+workspace = true
+
+[[test]]
+name = "parity"
+path = "tests/parity/main.rs"

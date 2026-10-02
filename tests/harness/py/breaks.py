@@ -1,6 +1,6 @@
 """Mid-stream breaks (T090, US4): every SDK's stream parser takes a restarted answer and
-an answer ended by the error event. ZR_MODEL_CUT names a model whose first stream for a
-body is cut after "w0 w1 w2 "; ZR_KEY_STRICT is a key whose break behaviour is error_event."""
+an answer ended by the error event. NR_MODEL_CUT names a model whose first stream for a
+body is cut after "w0 w1 w2 "; NR_KEY_STRICT is a key whose break behaviour is error_event."""
 import os
 
 import anthropic
@@ -9,7 +9,7 @@ from google import genai
 from google.genai import errors, types
 
 NOTE = "— connection lost, answer restarted —"
-base, model = os.environ["ZR_BASE"], os.environ["ZR_MODEL_CUT"]
+base, model = os.environ["NR_BASE"], os.environ["NR_MODEL_CUT"]
 ask = "Say hello."
 
 
@@ -50,12 +50,12 @@ def styles(key):
 
 
 # Restart: the cut words, the note, then the new answer, and the parser finishes cleanly.
-for name, _, call in styles(os.environ["ZR_KEY"]):
+for name, _, call in styles(os.environ["NR_KEY"]):
     text = call(f"py-restart-{name}")
     assert text.startswith("w0 w1 w2") and NOTE in text and text.endswith("Hello"), f"{name}: {text!r}"
 
 # Error event: the SDK raises its own API error, or ends the stream; never a parse error.
-for name, api_error, call in styles(os.environ["ZR_KEY_STRICT"]):
+for name, api_error, call in styles(os.environ["NR_KEY_STRICT"]):
     try:
         text = call(f"py-error-{name}")
     except api_error:

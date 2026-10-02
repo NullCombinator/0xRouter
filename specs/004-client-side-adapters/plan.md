@@ -53,13 +53,13 @@ wasmtime 45. Adapters are built with the builder's pinned 1.93.1 toolchain, for
 slice 003's set. The kit has only `serde` and `serde_json`. Dev: `criterion`.
 
 **Storage**: Files only, all mode 0600 and written atomically.
-- `$ZEROROUTER_HOME/adapters/`:
+- `$NULLROUTER_HOME/adapters/`:
   - `index.toml`;
   - per version: source tree, `module.wasm`, `build.json`, `review.json`, `decision.json`;
   - `alerts.toml`.
 - `keys.toml` gains `harness`.
 - `config.toml` gains `[adapters]`.
-- The builder has its own home: `$ZEROROUTER_HOME/builder/`, holding the toolchain and the
+- The builder has its own home: `$NULLROUTER_HOME/builder/`, holding the toolchain and the
   vendored kit.
 
 ([data-model.md](data-model.md), [contracts/operator-cli.md](contracts/operator-cli.md))
@@ -183,20 +183,20 @@ specs/004-client-side-adapters/
 Cargo.toml                          # members gain 4 crates; rust-version 1.93;
                                     #   exclude = ["adapters"]
 crates/
-├── zerorouter-adapter-kit/         # new; guest library, compiled into every adapter
+├── nullrouter-adapter-kit/         # new; guest library, compiled into every adapter
 │   └── src/
 │       ├── lib.rs                  # KIT_ABI, Adapter trait, export! macro_rules
 │       ├── edit.rs                 # Edit, Kind, Reason (closed), Path
 │       ├── context.rs              # AttemptContext, Direction
 │       └── abi.rs                  # zr_alloc, input/output framing (the only unsafe)
-├── zerorouter-sandbox/             # new; wasmtime host, no adapter logic
+├── nullrouter-sandbox/             # new; wasmtime host, no adapter logic
 │   ├── src/
 │   │   ├── engine.rs               # Engine config, pooling, epoch ticker
 │   │   ├── module.rs               # load: hash check, import/export check, InstancePre
 │   │   ├── call.rs                 # per-call instance, limits, async yield, output decode
 │   │   └── abi.rs                  # host side of the kit ABI, prior-ABI shim
 │   └── benches/sandbox.rs
-├── zerorouter-adapters/            # new
+├── nullrouter-adapters/            # new
 │   ├── src/
 │   │   ├── runner.rs               # AdapterRunner enum, per-attempt and per-event entry
 │   │   ├── selector.rs             # selector parse, subtree extraction
@@ -213,15 +213,15 @@ crates/
 │   ├── tests/                      # gate/invalid/, hostile/ (sources + checked-in .wasm),
 │   │                               #   guard/ (per style), fixtures/, scramble, tamper, store
 │   └── benches/adapters.rs
-├── zerorouter-builder/             # new binary; never linked into the core
+├── nullrouter-builder/             # new binary; never linked into the core
 │   └── src/main.rs                 # setup (embedded kit .crate + Cargo.lock → local
 │                                   #   registry); build: job in, double build, result out
-├── zerorouter-engine/              # extended
+├── nullrouter-engine/              # extended
 │   └── src/                        # keys.rs +harness; records.rs +AdapterRun;
 │                                   #   attempt.rs calls the runner; state.rs +AdapterIndex
-├── zerorouter-server/              # extended
+├── nullrouter-server/              # extended
 │   └── src/                        # relay.rs per-event response hook; operator.rs +ops
-└── zerorouter-cli/                 # extended
+└── nullrouter-cli/                 # extended
     └── src/cmd/                    # + adapters, alerts, catalogue; keys --harness
 adapters/
 └── community/
@@ -243,7 +243,7 @@ tests/
 - **The kit is a workspace member,** so it is tested on the host. It is not published to
   crates.io in this slice: the builder embeds the packaged kit and serves it from a local
   registry ([R8](research.md#r8-the-builder), Kit source).
-- **Test corpora live in the crate that tests them** (`crates/zerorouter-adapters/tests/`),
+- **Test corpora live in the crate that tests them** (`crates/nullrouter-adapters/tests/`),
   following slices 002 and 003.
 - **`adapters/` sits outside the workspace (`exclude`).** The gate refuses a `[workspace]`
   table in an adapter's `Cargo.toml`, so the Claude Code adapter must be buildable exactly as
@@ -253,7 +253,7 @@ tests/
 
 | Choice | Why | Simpler alternative rejected because |
 |---|---|---|
-| `zerorouter-adapter-kit` allows `unsafe` (overrides the workspace `forbid`) | The WASM ABI needs `#[no_mangle]` exports and raw pointer reads for input and output | No safe way exists to export a core-module function. The code runs only inside the sandbox, and adapters themselves still build with `-F unsafe_code` (the lint doesn't fire on expansions of an external `macro_rules!`; a builder test asserts it) |
+| `nullrouter-adapter-kit` allows `unsafe` (overrides the workspace `forbid`) | The WASM ABI needs `#[no_mangle]` exports and raw pointer reads for input and output | No safe way exists to export a core-module function. The code runs only inside the sandbox, and adapters themselves still build with `-F unsafe_code` (the lint doesn't fire on expansions of an external `macro_rules!`; a builder test asserts it) |
 | MSRV 1.85 → 1.93 | wasmtime 45 is the newest release the installed toolchain builds | wasmi is 5–20× slower and risks SC-010. Older wasmtime versions lose security fixes |
 | Four new crates | The builder must be separate. The kit is a guest library. The sandbox keeps wasmtime out of the logic crate | Folding them in would link a compiler path or wasmtime into crates that don't need it |
 | The previous kit ABI stays supported | Most upgrades then need no rebuild, so no plain-client window | Current ABI only would force a rebuild, and a plain-client window, on every kit change |

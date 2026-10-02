@@ -239,6 +239,6 @@ data = { type = "error", sequence_number = "{sequence.number}", code = "{error.t
 match = { type = "error", code = "{error.type?}", message = "{error.message}" }
 
 [errors]
-body = { error = { message = "{error.message}", type = "{error.type}", code = "{error.code}", zerorouter = "{error.details}" } }
+body = { error = { message = "{error.message}", type = "{error.type}", code = "{error.code}", nullrouter = "{error.details}" } }
 type_map = { 400 = "invalid_request_error", 401 = "invalid_request_error", 403 = "invalid_request_error", 404 = "invalid_request_error", 429 = "rate_limit_exceeded", 500 = "server_error", 502 = "server_error", 503 = "server_error" }
 stream_event = { event = "response.failed", data = { type = "response.failed", response = { status = "failed", error = { code = "{error.type}", message = "{error.message}" } } } }
