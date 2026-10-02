@@ -35,7 +35,11 @@ pub enum Step {
 
 impl Step {
     pub fn json(status: u16, body: serde_json::Value) -> Self {
-        Self::Reply { status, headers: vec![("content-type".into(), "application/json".into())], body: body.to_string().into() }
+        Self::Reply {
+            status,
+            headers: vec![("content-type".into(), "application/json".into())],
+            body: body.to_string().into(),
+        }
     }
 
     /// A `429` with `retry-after: <secs>`.
@@ -257,12 +261,20 @@ async fn handle(State(inner): State<Arc<Inner>>, req: Request) -> Response {
     let (parts, body) = req.into_parts();
     let body = axum::body::to_bytes(body, usize::MAX).await.unwrap_or_default();
     let path_and_query = parts.uri.path_and_query().map_or_else(|| parts.uri.path().to_owned(), |p| p.to_string());
-    let received = Received { method: parts.method, path_and_query: path_and_query.clone(), headers: parts.headers, body, at: Instant::now() };
+    let received = Received {
+        method: parts.method,
+        path_and_query: path_and_query.clone(),
+        headers: parts.headers,
+        body,
+        at: Instant::now(),
+    };
     let responder = lock(&inner.responder).clone();
     let step = next_step(&inner, parts.uri.path()).or_else(|| responder.map(|f| f(&received)));
     lock(&inner.received).push(received);
     let Some(step) = step else {
-        return head(404, &[]).body(Body::from(format!("mock upstream: no step scripted for {path_and_query}"))).expect("response");
+        return head(404, &[])
+            .body(Body::from(format!("mock upstream: no step scripted for {path_and_query}")))
+            .expect("response");
     };
     match step {
         Step::Reply { status, headers, body } => head(status, &headers).body(Body::from(body)).expect("response"),
@@ -272,22 +284,26 @@ async fn handle(State(inner): State<Arc<Inner>>, req: Request) -> Response {
         }
         Step::Stream { status, headers, frames, every, cut } => {
             let watch = Watch { inner: inner.clone(), finished: false };
-            let s = stream::unfold((frames.into_iter(), watch, false), move |(mut it, mut watch, started)| async move {
-                if started && !every.is_zero() {
-                    tokio::time::sleep(every).await;
-                }
-                match it.next() {
-                    Some(f) => Some((Ok::<Bytes, std::io::Error>(f), (it, watch, true))),
-                    None if cut => {
-                        watch.finished = true;
-                        Some((Err(std::io::Error::new(std::io::ErrorKind::ConnectionReset, "scripted cut")), (it, watch, true)))
+            let s =
+                stream::unfold((frames.into_iter(), watch, false), move |(mut it, mut watch, started)| async move {
+                    if started && !every.is_zero() {
+                        tokio::time::sleep(every).await;
                     }
-                    None => {
-                        watch.finish();
-                        None
+                    match it.next() {
+                        Some(f) => Some((Ok::<Bytes, std::io::Error>(f), (it, watch, true))),
+                        None if cut => {
+                            watch.finished = true;
+                            Some((
+                                Err(std::io::Error::new(std::io::ErrorKind::ConnectionReset, "scripted cut")),
+                                (it, watch, true),
+                            ))
+                        }
+                        None => {
+                            watch.finish();
+                            None
+                        }
                     }
-                }
-            });
+                });
             head(status, &headers).body(Body::from_stream(s)).expect("response")
         }
         Step::StallAfter { frames, hold } => {
@@ -302,7 +318,9 @@ async fn handle(State(inner): State<Arc<Inner>>, req: Request) -> Response {
                     }
                 }
             });
-            head(200, &[("content-type".into(), "text/event-stream".into())]).body(Body::from_stream(s)).expect("response")
+            head(200, &[("content-type".into(), "text/event-stream".into())])
+                .body(Body::from_stream(s))
+                .expect("response")
         }
     }
 }
@@ -315,8 +333,13 @@ mod tests {
     #[tokio::test]
     async fn scripts_replies_counts_connections_and_sees_disconnects() {
         let m = MockUpstream::start().await;
-        m.on("/v1/messages", [Step::rate_limited(3, json!({ "error": "slow down" })), Step::json(200, json!({ "ok": true }))]);
-        let Step::Stream { status, headers, frames, cut, .. } = Step::sse(&[(None, json!({ "a": 1 })), (None, json!({ "a": 2 }))], true).cut_after(1) else {
+        m.on(
+            "/v1/messages",
+            [Step::rate_limited(3, json!({ "error": "slow down" })), Step::json(200, json!({ "ok": true }))],
+        );
+        let Step::Stream { status, headers, frames, cut, .. } =
+            Step::sse(&[(None, json!({ "a": 1 })), (None, json!({ "a": 2 }))], true).cut_after(1)
+        else {
             unreachable!()
         };
         m.push([Step::Stream { status, headers, frames, every: Duration::from_millis(20), cut }]);
@@ -326,7 +349,10 @@ mod tests {
         assert_eq!(r.status(), 429);
         assert_eq!(r.headers()["retry-after"], "3");
         let r = c.post(m.url("/v1/messages")).send().await.unwrap();
-        assert_eq!(serde_json::from_slice::<serde_json::Value>(&r.bytes().await.unwrap()).unwrap(), json!({ "ok": true }));
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&r.bytes().await.unwrap()).unwrap(),
+            json!({ "ok": true })
+        );
         assert_eq!(m.connections(), 1, "sequential requests reuse one connection");
 
         let mut r = c.get(m.url("/stream")).send().await.unwrap();

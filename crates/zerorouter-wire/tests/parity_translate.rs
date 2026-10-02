@@ -32,9 +32,11 @@ fn translate_request(f: &Fixture) -> Value {
 /// as in the oracle).
 fn translate_stream(f: &Fixture) -> Value {
     let d = &f.data;
-    let (wire, client) = (bundled(style_id(d["wire"].as_str().unwrap())), bundled(style_id(d["client"].as_str().unwrap())));
+    let (wire, client) =
+        (bundled(style_id(d["wire"].as_str().unwrap())), bundled(style_id(d["client"].as_str().unwrap())));
     let mut reader = StreamReader::new(&wire).unwrap();
-    let mut writer = StreamWriter::new(&client, &serde_json::json!({"stream": true}), "req-1", "", 1_700_000_000).unwrap();
+    let mut writer =
+        StreamWriter::new(&client, &serde_json::json!({"stream": true}), "req-1", "", 1_700_000_000).unwrap();
     let mut text = String::new();
     for ev in d["upstream"].as_array().unwrap() {
         let frame = match ev {

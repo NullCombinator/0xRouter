@@ -123,7 +123,8 @@ mod tests {
         assert!(c.allow_private_endpoints);
         assert_eq!(c.server.listen, "0.0.0.0:8080");
         assert_eq!(c.pipeline.break_behaviour, BreakBehaviour::ErrorEvent);
-        let err = toml::from_str::<OperatorConfig>("[pipeline]\nbreak_behaviour = \"retry\"\n").unwrap_err().to_string();
+        let err =
+            toml::from_str::<OperatorConfig>("[pipeline]\nbreak_behaviour = \"retry\"\n").unwrap_err().to_string();
         assert!(err.contains("unknown break behaviour \"retry\""), "{err}");
     }
 }

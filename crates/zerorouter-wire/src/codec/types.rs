@@ -123,14 +123,22 @@ impl TypeCodec {
             job: d
                 .job
                 .as_ref()
-                .map(|j| Ok::<_, CodecError>(JobTpl { status: tpl(&j.status, &format!("{at}.job.status"))?, status_map: j.status_map.clone() }))
+                .map(|j| {
+                    Ok::<_, CodecError>(JobTpl {
+                        status: tpl(&j.status, &format!("{at}.job.status"))?,
+                        status_map: j.status_map.clone(),
+                    })
+                })
                 .transpose()?,
             variants: d
                 .variants
                 .iter()
                 .map(|(n, v)| {
                     let at = format!("{at}.variants.{n}");
-                    Ok((n.clone(), (tpl(&v.request, &format!("{at}.request"))?, tpl(&v.response, &format!("{at}.response"))?)))
+                    Ok((
+                        n.clone(),
+                        (tpl(&v.request, &format!("{at}.request"))?, tpl(&v.response, &format!("{at}.response"))?),
+                    ))
                 })
                 .collect::<Result<_, CodecError>>()?,
         })
@@ -150,7 +158,8 @@ impl TypeCodec {
     }
 
     pub fn decode_request(&self, body: &Value) -> Result<TypeValue, CodecError> {
-        decode(&self.request, body).ok_or_else(|| CodecError::decode(self.ty.as_str(), "the body doesn't have the style's shape"))
+        decode(&self.request, body)
+            .ok_or_else(|| CodecError::decode(self.ty.as_str(), "the body doesn't have the style's shape"))
     }
 
     /// Decodes a provider answer in this style. `content_type` is the upstream header.
@@ -159,7 +168,8 @@ impl TypeCodec {
             return Ok(binary_value(name, raw, content_type));
         }
         let v: Value = serde_json::from_slice(raw).map_err(|e| CodecError::decode("response", e.to_string()))?;
-        decode(&self.response, &v).ok_or_else(|| CodecError::decode("response", "the answer doesn't have the wire's shape"))
+        decode(&self.response, &v)
+            .ok_or_else(|| CodecError::decode("response", "the answer doesn't have the wire's shape"))
     }
 
     pub fn encode_request(&self, ir: &TypeValue, ctx: &dyn Lookup) -> Value {
@@ -209,7 +219,8 @@ impl TypeCodec {
 /// Removes empty objects and arrays, bottom up: a Gemini operation with no error has no
 /// `error` key at all.
 fn prune(v: &mut Value) {
-    let empty = |v: &Value| matches!(v, Value::Object(o) if o.is_empty()) || matches!(v, Value::Array(a) if a.is_empty());
+    let empty =
+        |v: &Value| matches!(v, Value::Object(o) if o.is_empty()) || matches!(v, Value::Array(a) if a.is_empty());
     match v {
         Value::Object(o) => {
             o.values_mut().for_each(prune);
@@ -236,7 +247,11 @@ pub fn job_status(word: &str, done: Option<bool>) -> JobStatus {
 
 /// Decodes an inline endpoint's response mapping (IR field → path). A path with `[*]`
 /// yields items.
-pub fn decode_mapped(map: &[(String, FieldPath)], raw: &[u8], content_type: Option<&str>) -> Result<TypeValue, CodecError> {
+pub fn decode_mapped(
+    map: &[(String, FieldPath)],
+    raw: &[u8],
+    content_type: Option<&str>,
+) -> Result<TypeValue, CodecError> {
     if map.is_empty() {
         return Ok(binary_value("output.audio", raw, content_type));
     }
@@ -379,8 +394,11 @@ fn spread(each: &Template, scope: &Scope<'_>) -> Option<Vec<Bindings>> {
     if scope.item.is_some() {
         return None;
     }
-    let lists: Vec<(&str, &Vec<Value>)> =
-        each.holes().into_iter().filter_map(|n| scope.ir.scalars.get(n).and_then(Value::as_array).map(|a| (n, a))).collect();
+    let lists: Vec<(&str, &Vec<Value>)> = each
+        .holes()
+        .into_iter()
+        .filter_map(|n| scope.ir.scalars.get(n).and_then(Value::as_array).map(|a| (n, a)))
+        .collect();
     let [(name, list)] = lists.as_slice() else { return None };
     Some(list.iter().map(|v| Bindings::new().with(name, v.clone())).collect())
 }
@@ -409,7 +427,11 @@ mod tests {
 
     #[test]
     fn decoding_ignores_literals_and_keeps_usage_scalar() {
-        let v = decode(&t(OPENAI_EMB), &json!({"data": [{"embedding": [1.0], "index": 0}], "model": "x", "usage": {"prompt_tokens": 3}})).unwrap();
+        let v = decode(
+            &t(OPENAI_EMB),
+            &json!({"data": [{"embedding": [1.0], "index": 0}], "model": "x", "usage": {"prompt_tokens": 3}}),
+        )
+        .unwrap();
         assert_eq!(v.usage("input"), Some(3));
         assert_eq!(v.items[0].get("output.embedding"), Some(&json!([1.0])));
     }
@@ -418,7 +440,9 @@ mod tests {
     fn a_scalar_list_spreads_into_a_for_each() {
         let openai_req = t(r#"{ model = "{model}", input = "{input.text}" }"#);
         let ir = decode(&openai_req, &json!({"model": "u", "input": ["a", "b"]})).unwrap();
-        let gemini = t(r#"{ requests = [{ model = "models/{model.upstream_id}", content = { parts = [{ text = "{input.text}" }] } }] }"#);
+        let gemini = t(
+            r#"{ requests = [{ model = "models/{model.upstream_id}", content = { parts = [{ text = "{input.text}" }] } }] }"#,
+        );
         let out = encode(&gemini, &ir, &Bindings::new().with("model.upstream_id", "e1"));
         assert_eq!(out["requests"][1], json!({"model": "models/e1", "content": {"parts": [{"text": "b"}]}}));
         let single = decode(&openai_req, &json!({"model": "u", "input": "a"})).unwrap();
@@ -434,12 +458,23 @@ mod tests {
 
     #[test]
     fn binary_and_mapped_responses() {
-        let d = TypeDecl { encoding: BodyEncoding::Json, request: toml::Value::Table(Default::default()), response: toml::Value::String("{output.audio}".into()), vector: None, job: None, usage: None, variants: Default::default() };
+        let d = TypeDecl {
+            encoding: BodyEncoding::Json,
+            request: toml::Value::Table(Default::default()),
+            response: toml::Value::String("{output.audio}".into()),
+            vector: None,
+            job: None,
+            usage: None,
+            variants: Default::default(),
+        };
         let c = TypeCodec::compile(ModelType::Tts, &d).unwrap();
         let ir = c.decode_response(b"ID3", Some("audio/mpeg")).unwrap();
         assert_eq!(c.encode_response(&ir, &Bindings::new()), (b"ID3".to_vec(), "audio/mpeg".into()));
 
-        let map = vec![("text".to_owned(), FieldPath::parse("text").unwrap()), ("language".to_owned(), FieldPath::parse("language_code").unwrap())];
+        let map = vec![
+            ("text".to_owned(), FieldPath::parse("text").unwrap()),
+            ("language".to_owned(), FieldPath::parse("language_code").unwrap()),
+        ];
         let v = decode_mapped(&map, br#"{"text": "hi", "language_code": "en"}"#, None).unwrap();
         assert_eq!(v.str("output.text").as_deref(), Some("hi"));
         assert_eq!(v.str("output.language").as_deref(), Some("en"));

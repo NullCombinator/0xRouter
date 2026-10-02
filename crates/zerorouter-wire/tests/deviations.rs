@@ -45,7 +45,9 @@ fn no_claude_code_system_prompt() {
         let body = match client {
             "openai-chat" => chat_body(),
             "openai-responses" => json!({ "model": "m", "instructions": "be brief", "input": "hi" }),
-            _ => json!({ "systemInstruction": { "parts": [{ "text": "be brief" }] }, "contents": [{ "role": "user", "parts": [{ "text": "hi" }] }] }),
+            _ => {
+                json!({ "systemInstruction": { "parts": [{ "text": "be brief" }] }, "contents": [{ "role": "user", "parts": [{ "text": "hi" }] }] })
+            }
         };
         let out = translate(client, "anthropic-messages", &body).unwrap();
         let mut got = Vec::new();
@@ -83,7 +85,8 @@ fn response_format_goes_to_the_native_field_or_the_target_is_skipped() {
 #[test]
 fn no_fingerprint_tools() {
     let mut body = chat_body();
-    body["tools"] = json!([{ "type": "function", "function": { "name": "get_weather", "parameters": { "type": "object" } } }]);
+    body["tools"] =
+        json!([{ "type": "function", "function": { "name": "get_weather", "parameters": { "type": "object" } } }]);
     for wire in WIRES {
         let out = translate("openai-chat", wire, &body).unwrap();
         let mut names = Vec::new();
@@ -166,7 +169,10 @@ fn signed_thinking_is_dropped_across_vendors_and_kept_within_one() {
         assert!(!out.to_string().contains("sig-anthropic"), "{wire}: a foreign signature crossed: {out}");
         let mut got = Vec::new();
         strings(&out, &mut got);
-        assert!(!got.iter().any(|s| s.contains("adding") && s.contains('4')), "{wire}: thinking was merged into the answer: {out}");
+        assert!(
+            !got.iter().any(|s| s.contains("adding") && s.contains('4')),
+            "{wire}: thinking was merged into the answer: {out}"
+        );
     }
     let same = translate("anthropic-messages", "anthropic-messages", &body).unwrap();
     assert_eq!(same["messages"][1]["content"][0]["signature"], "sig-anthropic");
@@ -187,7 +193,10 @@ fn gemini_client_tools_are_translated() {
     let msgs = chat["messages"].as_array().unwrap();
     let call = &msgs[1]["tool_calls"][0];
     assert_eq!(call["function"]["name"], "get_weather");
-    assert_eq!(serde_json::from_str::<Value>(call["function"]["arguments"].as_str().unwrap()).unwrap(), json!({ "city": "Oslo" }));
+    assert_eq!(
+        serde_json::from_str::<Value>(call["function"]["arguments"].as_str().unwrap()).unwrap(),
+        json!({ "city": "Oslo" })
+    );
     assert_eq!(msgs[2]["role"], "tool");
     assert_eq!(msgs[2]["tool_call_id"], call["id"], "the result is paired with its call");
 
@@ -206,7 +215,9 @@ fn non_stream_second_hop_is_written_in_the_clients_style() {
     });
     let wire = bundled("anthropic-messages");
 
-    let ForClient::Rebuilt { body, .. } = response::for_client(&bundled("openai-responses"), &wire, &claude, 1_700_000_000).unwrap() else {
+    let ForClient::Rebuilt { body, .. } =
+        response::for_client(&bundled("openai-responses"), &wire, &claude, 1_700_000_000).unwrap()
+    else {
         panic!("across styles the body is rebuilt")
     };
     assert_eq!(body["object"], "response", "{body}");
@@ -214,7 +225,9 @@ fn non_stream_second_hop_is_written_in_the_clients_style() {
     assert_eq!(body["output"][0]["content"][0]["text"], "hello");
     assert_eq!(body["usage"]["input_tokens"], 5);
 
-    let ForClient::Rebuilt { body, .. } = response::for_client(&bundled("gemini"), &wire, &claude, 1_700_000_000).unwrap() else {
+    let ForClient::Rebuilt { body, .. } =
+        response::for_client(&bundled("gemini"), &wire, &claude, 1_700_000_000).unwrap()
+    else {
         panic!("across styles the body is rebuilt")
     };
     assert!(body.get("choices").is_none(), "not an OpenAI Chat body: {body}");

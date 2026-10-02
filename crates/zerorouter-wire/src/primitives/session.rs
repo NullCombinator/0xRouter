@@ -21,7 +21,11 @@ fn normalize(v: &str) -> Option<String> {
 
 /// The client's session id from the first carrier that holds a usable one, in the style's
 /// order. `header` looks a header up by name, case-insensitively.
-pub fn extract<'h>(carriers: &[SessionCarrier], header: impl Fn(&str) -> Option<&'h str>, body: &Value) -> Option<String> {
+pub fn extract<'h>(
+    carriers: &[SessionCarrier],
+    header: impl Fn(&str) -> Option<&'h str>,
+    body: &Value,
+) -> Option<String> {
     carriers.iter().find_map(|c| {
         if let Some(h) = &c.header {
             normalize(header(h)?)
@@ -66,7 +70,9 @@ pub fn derive(d: SessionDerive, input: &str, client: Option<&str>) -> String {
     let client = client.and_then(normalize);
     match d {
         SessionDerive::SesSha256Hex32 => client.unwrap_or_else(|| ses_sha256_hex32(input)),
-        SessionDerive::SesTimeBase62 => client.filter(|c| is_opencode_session(c)).unwrap_or_else(|| ses_time_base62(input)),
+        SessionDerive::SesTimeBase62 => {
+            client.filter(|c| is_opencode_session(c)).unwrap_or_else(|| ses_time_base62(input))
+        }
     }
 }
 

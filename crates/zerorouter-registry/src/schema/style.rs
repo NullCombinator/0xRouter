@@ -260,7 +260,10 @@ pub enum ParamDecl {
         form: String,
     },
     /// A parameter the wire requires: `default` is sent when the client gave none.
-    Default { path: String, default: u64 },
+    Default {
+        path: String,
+        default: u64,
+    },
 }
 
 impl ParamDecl {
@@ -471,9 +474,11 @@ stream_event = { data = "{error.body}" }
 
     #[test]
     fn rejects_unknown_keys_and_values() {
-        let err = toml::from_str::<StyleFile>(&MINI.replace("tool_arguments = \"fragments\"", "tool_arguments = \"fragments\"\nextra = 1"))
-            .unwrap_err()
-            .to_string();
+        let err = toml::from_str::<StyleFile>(
+            &MINI.replace("tool_arguments = \"fragments\"", "tool_arguments = \"fragments\"\nextra = 1"),
+        )
+        .unwrap_err()
+        .to_string();
         assert!(err.contains("unknown field `extra`"), "{err}");
         let err = toml::from_str::<StyleFile>(&MINI.replace("sse_data_done", "xml")).unwrap_err().to_string();
         assert!(err.contains("unknown framing \"xml\""), "{err}");

@@ -144,7 +144,10 @@ impl<'s> StreamReader<'s> {
                 }
                 self.whole_arguments(b, whole && implicit, out);
             }
-            StreamOn::BlockStop | StreamOn::BlockStopText | StreamOn::BlockStopThinking | StreamOn::BlockStopToolCall => {
+            StreamOn::BlockStop
+            | StreamOn::BlockStopText
+            | StreamOn::BlockStopThinking
+            | StreamOn::BlockStopToolCall => {
                 self.close(out);
             }
             StreamOn::Usage => {}

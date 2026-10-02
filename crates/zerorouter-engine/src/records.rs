@@ -53,7 +53,9 @@ impl Usage {
     pub fn add(&mut self, other: &Usage) {
         let uncached = |u: &Usage| {
             u.input.map(|i| match u.input_semantics {
-                InputSemantics::IncludesCache => i.saturating_sub(u.cache_read.unwrap_or(0) + u.cache_write.unwrap_or(0)),
+                InputSemantics::IncludesCache => {
+                    i.saturating_sub(u.cache_read.unwrap_or(0) + u.cache_write.unwrap_or(0))
+                }
                 InputSemantics::ExcludesCache => i,
             })
         };
@@ -203,7 +205,11 @@ impl RequestRecord {
     }
 
     fn providers(&self) -> BTreeSet<&str> {
-        self.attempts.iter().map(|a| a.provider.as_str()).chain(self.served_by.as_ref().map(|s| s.provider.as_str())).collect()
+        self.attempts
+            .iter()
+            .map(|a| a.provider.as_str())
+            .chain(self.served_by.as_ref().map(|s| s.provider.as_str()))
+            .collect()
     }
 }
 
@@ -330,7 +336,9 @@ impl RecordStore {
     pub fn query(&self, q: &Query) -> Vec<RequestRecord> {
         let ring = self.lock();
         let limit = q.limit.unwrap_or(usize::MAX);
-        let set = |map: &HashMap<String, BTreeSet<u64>>, key: &Option<String>| key.as_ref().map(|k| map.get(k).cloned().unwrap_or_default());
+        let set = |map: &HashMap<String, BTreeSet<u64>>, key: &Option<String>| {
+            key.as_ref().map(|k| map.get(k).cloned().unwrap_or_default())
+        };
         let seqs: Vec<u64> = match (set(&ring.by_provider, &q.provider), set(&ring.by_unified, &q.unified_model)) {
             (Some(a), Some(b)) => a.iter().rev().filter(|s| b.contains(s)).take(limit).copied().collect(),
             (Some(s), None) | (None, Some(s)) => s.iter().rev().take(limit).copied().collect(),
@@ -391,8 +399,17 @@ mod tests {
         let store = RecordStore::default();
         store.insert(rec(0, "a", None));
         assert!(store.update("rq_0", |r| {
-            r.attempts[0].outcome = Some(AttemptOutcome::Failed { status: Some(503), class: ErrorClass::Transient, reason: "overloaded".into() });
-            r.attempts.push(Attempt { provider: "b".into(), n: 2, kind: AttemptKind::NextMember, ..r.attempts[0].clone() });
+            r.attempts[0].outcome = Some(AttemptOutcome::Failed {
+                status: Some(503),
+                class: ErrorClass::Transient,
+                reason: "overloaded".into(),
+            });
+            r.attempts.push(Attempt {
+                provider: "b".into(),
+                n: 2,
+                kind: AttemptKind::NextMember,
+                ..r.attempts[0].clone()
+            });
             r.served_by = Some(ServedBy { provider: "b".into(), account: None, model: "m".into() });
             r.outcome = Outcome::Succeeded;
         }));
@@ -400,21 +417,29 @@ mod tests {
         assert_eq!(by_b[0].outcome, Outcome::Succeeded);
         assert!(!store.update("rq_missing", |_| {}));
         let json = serde_json::to_value(&by_b[0]).unwrap();
-        assert_eq!(json["attempts"][0]["outcome"], serde_json::json!({ "state": "failed", "status": 503, "class": "transient", "reason": "overloaded" }));
+        assert_eq!(
+            json["attempts"][0]["outcome"],
+            serde_json::json!({ "state": "failed", "status": 503, "class": "transient", "reason": "overloaded" })
+        );
     }
 
     #[test]
     fn dropped_fields_are_recorded_as_paths_only() {
         let mut r = rec(0, "a", None);
-        r.attempts[0].dropped = vec![Dropped { path: "messages[0].x_opt".into(), reason: "no place in openai-chat".into() }];
+        r.attempts[0].dropped =
+            vec![Dropped { path: "messages[0].x_opt".into(), reason: "no place in openai-chat".into() }];
         let json = serde_json::to_value(&r).unwrap();
-        assert_eq!(json["attempts"][0]["dropped"], serde_json::json!([{ "path": "messages[0].x_opt", "reason": "no place in openai-chat" }]));
+        assert_eq!(
+            json["attempts"][0]["dropped"],
+            serde_json::json!([{ "path": "messages[0].x_opt", "reason": "no place in openai-chat" }])
+        );
         assert_eq!(serde_json::to_value(rec(1, "a", None)).unwrap()["attempts"][0]["dropped"], serde_json::json!([]));
     }
 
     #[test]
     fn usage_sums_across_semantics() {
-        let ir = zerorouter_wire::ir::Usage { input: Some(70), output: Some(5), cache_read: Some(30), ..Default::default() };
+        let ir =
+            zerorouter_wire::ir::Usage { input: Some(70), output: Some(5), cache_read: Some(30), ..Default::default() };
         let mut total = Usage::reported(&ir, InputSemantics::IncludesCache);
         assert_eq!(total.input, Some(100));
         let second = Usage::reported(&ir, InputSemantics::ExcludesCache);

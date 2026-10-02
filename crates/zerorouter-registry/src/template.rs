@@ -26,7 +26,10 @@ pub enum Template {
     /// A string mixing literals and placeholders.
     Interp(Vec<Piece>),
     /// A whole-string placeholder.
-    Hole { name: String, optional: bool },
+    Hole {
+        name: String,
+        optional: bool,
+    },
     Array(Vec<Template>),
     Object(Vec<(String, Template)>),
 }
@@ -158,9 +161,9 @@ fn parse_at(v: &toml::Value, at: &str) -> Result<Template, TemplateError> {
         toml::Value::Array(items) => Template::Array(
             items.iter().enumerate().map(|(i, t)| parse_at(t, &format!("{at}[{i}]"))).collect::<Result<_, _>>()?,
         ),
-        toml::Value::Table(t) => {
-            Template::Object(t.iter().map(|(k, v)| Ok((k.clone(), parse_at(v, &join(at, k))?))).collect::<Result<_, _>>()?)
-        }
+        toml::Value::Table(t) => Template::Object(
+            t.iter().map(|(k, v)| Ok((k.clone(), parse_at(v, &join(at, k))?))).collect::<Result<_, _>>()?,
+        ),
         toml::Value::Datetime(_) => {
             return Err(TemplateError { at: at.to_owned(), rule: "dates are not allowed in templates".into() });
         }
@@ -212,7 +215,11 @@ pub fn parse_str(s: &str) -> Result<Template, String> {
         [] => Ok(Template::Str(String::new())),
         [Piece::Lit(l)] => Ok(Template::Str(l.clone())),
         [Piece::Hole(n)] if n == "null" => {
-            if optional_whole.is_some() { Err("{null?} is not a placeholder".into()) } else { Ok(Template::Null) }
+            if optional_whole.is_some() {
+                Err("{null?} is not a placeholder".into())
+            } else {
+                Ok(Template::Null)
+            }
         }
         [Piece::Hole(n)] => Ok(Template::Hole { name: n.clone(), optional: optional_whole.is_some() }),
         _ if optional_whole.is_some() => Err("an optional placeholder `{p?}` must be the whole string".into()),

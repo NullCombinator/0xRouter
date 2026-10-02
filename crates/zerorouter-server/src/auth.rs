@@ -47,7 +47,12 @@ pub fn presented(carriers: &[KeyCarrier], headers: &HeaderMap, query: Option<&st
 }
 
 /// The agent key the request presents, or why it's refused.
-pub fn check<'k>(keys: &'k Keys, carriers: &[KeyCarrier], headers: &HeaderMap, query: Option<&str>) -> Result<&'k AgentKey, Refusal> {
+pub fn check<'k>(
+    keys: &'k Keys,
+    carriers: &[KeyCarrier],
+    headers: &HeaderMap,
+    query: Option<&str>,
+) -> Result<&'k AgentKey, Refusal> {
     let key = presented(carriers, headers, query).ok_or(Refusal::Missing)?;
     keys.lookup(&key).ok_or(Refusal::Unknown)
 }

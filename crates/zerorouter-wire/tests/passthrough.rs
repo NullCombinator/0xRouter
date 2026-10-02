@@ -49,7 +49,8 @@ fn same_style_forwards_the_body_with_named_edits_only() {
     let req = request::decode(&m, &body).unwrap();
     assert_eq!(req.opaque.len(), 1, "the document block is opaque to mini");
 
-    let out = request::forward(&body, &m, &Edits { model: Some("up-1"), stream: Some(true), include_usage: true }).unwrap();
+    let out =
+        request::forward(&body, &m, &Edits { model: Some("up-1"), stream: Some(true), include_usage: true }).unwrap();
     let mut expected = body.clone();
     expected["model"] = json!("up-1");
     expected["stream"] = json!(true);

@@ -6,7 +6,8 @@ use zerorouter_engine::classify::{self, backoff_ms};
 
 fn oracle() -> Value {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/9router/classify/cases.json");
-    let v: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("run tools/gen-bundled/generate.mjs")).unwrap();
+    let v: Value =
+        serde_json::from_str(&std::fs::read_to_string(path).expect("run tools/gen-bundled/generate.mjs")).unwrap();
     v["data"].clone()
 }
 

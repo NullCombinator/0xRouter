@@ -372,7 +372,9 @@ mod tests {
     fn render_keeps_types_and_omits_optional() {
         let ctx = Bindings::new().with("block.index", 2).with("delta.text", "hi").with("id", "abc");
         let got = render(
-            &t(r#"{ index = "{block.index}", delta = { text = "{delta.text}" }, x = "{usage.input?}", id = "msg_{id}", n = "{null}" }"#),
+            &t(
+                r#"{ index = "{block.index}", delta = { text = "{delta.text}" }, x = "{usage.input?}", id = "msg_{id}", n = "{null}" }"#,
+            ),
             &ctx,
         );
         assert_eq!(got, json!({ "index": 2, "delta": { "text": "hi" }, "id": "msg_abc", "n": null }));
@@ -381,7 +383,9 @@ mod tests {
 
     #[test]
     fn match_extracts_and_ignores_extra_keys() {
-        let tpl = t(r#"{ type = "content_block_delta", index = "{block.index}", delta = { type = "text_delta", text = "{delta.text}" } }"#);
+        let tpl = t(
+            r#"{ type = "content_block_delta", index = "{block.index}", delta = { type = "text_delta", text = "{delta.text}" } }"#,
+        );
         let v = json!({ "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "yo" }, "extra": 1 });
         let b = match_value(&tpl, &v).unwrap();
         assert_eq!(b.get("block.index"), Some(&json!(0)));
@@ -392,7 +396,8 @@ mod tests {
 
     #[test]
     fn unmatched_keys_are_reported_at_any_depth_but_not_under_a_placeholder() {
-        let tpl = t(r#"{ type = "function", function = { name = "{n}", parameters = "{p}" }, list = [{ id = "{i}" }] }"#);
+        let tpl =
+            t(r#"{ type = "function", function = { name = "{n}", parameters = "{p}" }, list = [{ id = "{i}" }] }"#);
         let v = json!({
             "type": "function", "x_top": 1,
             "function": { "name": "f", "strict": true, "parameters": { "anything": { "goes": 1 } } },
@@ -407,13 +412,22 @@ mod tests {
     fn null_literal_means_absent_or_null_and_required_holes_must_be_present() {
         let tpl = t(r#"{ choices = [{ delta = { content = "{delta.text}" }, finish_reason = "{null}" }] }"#);
         assert!(match_value(&tpl, &json!({ "choices": [{ "delta": { "content": "a" } }] })).is_some());
-        assert!(match_value(&tpl, &json!({ "choices": [{ "delta": { "content": "a" }, "finish_reason": null }] })).is_some());
-        assert!(match_value(&tpl, &json!({ "choices": [{ "delta": { "content": "a" }, "finish_reason": "stop" }] })).is_none());
+        assert!(
+            match_value(&tpl, &json!({ "choices": [{ "delta": { "content": "a" }, "finish_reason": null }] }))
+                .is_some()
+        );
+        assert!(
+            match_value(&tpl, &json!({ "choices": [{ "delta": { "content": "a" }, "finish_reason": "stop" }] }))
+                .is_none()
+        );
         assert!(match_value(&tpl, &json!({ "choices": [{ "delta": { "content": null } }] })).is_none());
         let opt = t(r#"{ a = "{x?}" }"#);
         assert_eq!(match_value(&opt, &json!({})), Some(Bindings::new()));
         let nested = t(r#"{ usage = { n = "{u.n?}", d = { c = "{u.c?}" } }, k = { kind = "x", v = "{v?}" } }"#);
-        assert!(match_value(&nested, &json!({ "usage": { "n": 1 }, "k": { "kind": "x" } })).is_some(), "an all-optional object may be absent");
+        assert!(
+            match_value(&nested, &json!({ "usage": { "n": 1 }, "k": { "kind": "x" } })).is_some(),
+            "an all-optional object may be absent"
+        );
         assert!(match_value(&nested, &json!({ "usage": { "n": 1 } })).is_none(), "an object with a literal may not");
     }
 
@@ -435,7 +449,9 @@ mod tests {
 
     #[test]
     fn render_then_match_round_trips() {
-        let tpl = t(r#"{ id = "chatcmpl-{response.id}", model = "{response.model}", choices = [{ index = 0, finish_reason = "{response.finish}" }] }"#);
+        let tpl = t(
+            r#"{ id = "chatcmpl-{response.id}", model = "{response.model}", choices = [{ index = 0, finish_reason = "{response.finish}" }] }"#,
+        );
         let ctx = Bindings::new().with("response.id", "x1").with("response.model", "m").with("response.finish", "stop");
         assert_eq!(match_value(&tpl, &render(&tpl, &ctx)), Some(ctx));
     }

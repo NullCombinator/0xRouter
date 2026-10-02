@@ -19,9 +19,7 @@ use zerorouter_registry::schema::{
 use zerorouter_registry::template::{FieldPath, PathSeg, Template};
 
 use super::{CodecError, Dropped, PartTpl, Style, TextStyle};
-use crate::ir::{
-    Media, MediaSource, Message, Opaque, Part, Request, ResultContent, Role, Tool, ToolChoice,
-};
+use crate::ir::{Media, MediaSource, Message, Opaque, Part, Request, ResultContent, Role, Tool, ToolChoice};
 use crate::primitives::{forms, media, repairs};
 use crate::template::{Bindings, match_value, render, select_one, set_path, take_path, unmatched_keys};
 
@@ -77,7 +75,8 @@ struct Declared(BTreeMap<String, Option<Declared>>);
 impl Declared {
     /// Adds `p` up to its first index or `[*]`, which then takes the whole value.
     fn add(&mut self, p: &FieldPath) {
-        let keys: Vec<&str> = p.0.iter().map_while(|s| if let PathSeg::Key(k) = s { Some(k.as_str()) } else { None }).collect();
+        let keys: Vec<&str> =
+            p.0.iter().map_while(|s| if let PathSeg::Key(k) = s { Some(k.as_str()) } else { None }).collect();
         let mut node = self;
         for (i, k) in keys.iter().enumerate() {
             let slot = node.0.entry((*k).to_owned()).or_insert_with(|| Some(Declared::default()));
@@ -428,14 +427,15 @@ impl<'a> Decoder<'a> {
         if let Some(v) = select_one(&tt.path, body) {
             let at = tt.path.to_string();
             let mut defs: Vec<(String, Value)> = Vec::new();
-            let mut unwrap = |d: &mut Self, w: &Template, at: String, el: &Value| {
-                match match_value(w, el).as_ref().and_then(|b| b.get("tools.list")) {
-                    Some(Value::Array(list)) => {
-                        d.leftovers(w, el, &at);
-                        defs.extend(list.iter().enumerate().map(|(i, t)| (format!("{at}.list[{i}]"), t.clone())));
-                    }
-                    _ => d.keep(at, el),
+            let mut unwrap = |d: &mut Self, w: &Template, at: String, el: &Value| match match_value(w, el)
+                .as_ref()
+                .and_then(|b| b.get("tools.list"))
+            {
+                Some(Value::Array(list)) => {
+                    d.leftovers(w, el, &at);
+                    defs.extend(list.iter().enumerate().map(|(i, t)| (format!("{at}.list[{i}]"), t.clone())));
                 }
+                _ => d.keep(at, el),
             };
             match (&tt.wrap, v) {
                 // A one-element list template wraps each element (gemini `functionDeclarations`).
@@ -463,7 +463,11 @@ impl<'a> Decoder<'a> {
         let Some(c) = &tt.choice else { return };
         self.used(&c.path);
         let Some(v) = select_one(&c.path, body) else { return };
-        let fixed = [(Some(&c.auto), ToolChoice::Auto), (Some(&c.required), ToolChoice::Required), (c.none.as_ref(), ToolChoice::None)];
+        let fixed = [
+            (Some(&c.auto), ToolChoice::Auto),
+            (Some(&c.required), ToolChoice::Required),
+            (c.none.as_ref(), ToolChoice::None),
+        ];
         let choice = fixed
             .into_iter()
             .find_map(|(tpl, ch)| Some((ch, tpl.filter(|tpl| match_value(tpl, v).is_some())?)))
@@ -553,7 +557,8 @@ pub fn forward(body: &Value, wire: &Style, edits: &Edits) -> Result<Value, Codec
         set_path(&mut out, p, Value::Bool(s));
     }
     if edits.include_usage {
-        let switches = t.events.iter().filter(|e| e.on == Some(StreamOn::Usage)).filter_map(|e| e.when_request.as_ref());
+        let switches =
+            t.events.iter().filter(|e| e.on == Some(StreamOn::Usage)).filter_map(|e| e.when_request.as_ref());
         for p in switches {
             set_path(&mut out, p, Value::Bool(true));
         }
@@ -717,7 +722,9 @@ impl<'a> Encoder<'a> {
         Ok(match parts.as_slice() {
             [] if has_fields => Value::Null,
             [] if self.t.layout.content_form == ContentForm::StringWhenTextOnly => Value::String(String::new()),
-            [Part::Text { text, cache_control: None }] if self.t.layout.content_form == ContentForm::StringWhenTextOnly => {
+            [Part::Text { text, cache_control: None }]
+                if self.t.layout.content_form == ContentForm::StringWhenTextOnly =>
+            {
                 Value::String(text.clone())
             }
             ps => Value::Array(ps.iter().map(|p| self.part(p, role)).collect::<Result<_, _>>()?),
@@ -821,7 +828,10 @@ impl<'a> Encoder<'a> {
             Part::Image { media: m, .. } | Part::Audio { media: m, .. } => {
                 if let Some(codec) = tpl.codec {
                     let v = media::encode(codec, m).ok_or_else(|| {
-                        CodecError::carry(kind_name(kind), format!("the wire's {} codec can't carry inline data", codec.as_str()))
+                        CodecError::carry(
+                            kind_name(kind),
+                            format!("the wire's {} codec can't carry inline data", codec.as_str()),
+                        )
                     })?;
                     b.set("media", v);
                 }
@@ -896,7 +906,9 @@ impl<'a> Encoder<'a> {
                     ));
                 }
             },
-            (ToolResultContent::String | ToolResultContent::StringOrParts, ResultContent::Text(s)) => Value::String(s.clone()),
+            (ToolResultContent::String | ToolResultContent::StringOrParts, ResultContent::Text(s)) => {
+                Value::String(s.clone())
+            }
             (ToolResultContent::String | ToolResultContent::StringOrParts, ResultContent::Json(v)) => {
                 Value::String(json_text(v))
             }
@@ -915,7 +927,9 @@ impl<'a> Encoder<'a> {
                 ps.insert(0, self.part(&Part::text("Error:"), role)?);
                 Value::Array(ps)
             }
-            Value::Object(mut o) if o.len() == 1 && o.contains_key("result") => serde_json::json!({ "error": o.remove("result") }),
+            Value::Object(mut o) if o.len() == 1 && o.contains_key("result") => {
+                serde_json::json!({ "error": o.remove("result") })
+            }
             v => serde_json::json!({ "error": v }),
         })
     }

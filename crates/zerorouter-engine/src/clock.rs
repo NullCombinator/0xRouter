@@ -18,7 +18,13 @@ pub fn now_rfc3339() -> String {
 pub fn parse_rfc3339(s: &str) -> Option<SystemTime> {
     let b = s.as_bytes();
     let num = |r: std::ops::Range<usize>| s.get(r)?.parse::<i64>().ok();
-    if b.len() < 20 || b[4] != b'-' || b[7] != b'-' || !matches!(b[10], b'T' | b't' | b' ') || b[13] != b':' || b[16] != b':' {
+    if b.len() < 20
+        || b[4] != b'-'
+        || b[7] != b'-'
+        || !matches!(b[10], b'T' | b't' | b' ')
+        || b[13] != b':'
+        || b[16] != b':'
+    {
         return None;
     }
     let (y, mo, d, h, mi, sec) = (num(0..4)?, num(5..7)?, num(8..10)?, num(11..13)?, num(14..16)?, num(17..19)?);

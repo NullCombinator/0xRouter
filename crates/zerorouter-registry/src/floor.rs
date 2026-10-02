@@ -96,7 +96,9 @@ impl Floor {
             .iter()
             .find(|n| n.starts_with(&prefix))
             .cloned()
-            .or_else(|| (CORE_PREFIX.starts_with(&prefix) || prefix.starts_with(CORE_PREFIX)).then(|| CORE_PREFIX.into()))
+            .or_else(|| {
+                (CORE_PREFIX.starts_with(&prefix) || prefix.starts_with(CORE_PREFIX)).then(|| CORE_PREFIX.into())
+            })
             .or_else(|| check_map_key(&prefix).map(|t| format!("names containing `{t}`")));
         match hit {
             Some(n) => PatternRisk::Warning(format!("`{pattern}` could match floor header {n}; it is never forwarded")),

@@ -72,7 +72,9 @@ pub fn json(status: u16, body: &Value, request_id: &str) -> Response {
 pub fn as_received(status: u16, content_type: Option<&str>, body: Bytes, request_id: &str) -> Response {
     let mut resp = Response::new(Body::from(body));
     *resp.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::OK);
-    let ct = content_type.and_then(|c| HeaderValue::from_str(c).ok()).unwrap_or(HeaderValue::from_static("application/json"));
+    let ct = content_type
+        .and_then(|c| HeaderValue::from_str(c).ok())
+        .unwrap_or(HeaderValue::from_static("application/json"));
     resp.headers_mut().insert(header::CONTENT_TYPE, ct);
     stamp(&mut resp, request_id);
     resp

@@ -73,13 +73,37 @@ pub struct Message {
 /// One content part. `cache_control` is carried as received (not prompt content).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Part {
-    Text { text: String, cache_control: Option<Value> },
-    Image { media: Media, cache_control: Option<Value> },
-    Audio { media: Media, cache_control: Option<Value> },
-    ToolCall { id: String, name: String, arguments: Value, cache_control: Option<Value> },
-    ToolResult { id: String, name: Option<String>, content: ResultContent, is_error: bool, cache_control: Option<Value> },
+    Text {
+        text: String,
+        cache_control: Option<Value>,
+    },
+    Image {
+        media: Media,
+        cache_control: Option<Value>,
+    },
+    Audio {
+        media: Media,
+        cache_control: Option<Value>,
+    },
+    ToolCall {
+        id: String,
+        name: String,
+        arguments: Value,
+        cache_control: Option<Value>,
+    },
+    ToolResult {
+        id: String,
+        name: Option<String>,
+        content: ResultContent,
+        is_error: bool,
+        cache_control: Option<Value>,
+    },
     /// `vendor` is the style that signed it; a signature is only valid on that wire.
-    Thinking { text: String, signature: Option<String>, vendor: Option<String> },
+    Thinking {
+        text: String,
+        signature: Option<String>,
+        vendor: Option<String>,
+    },
 }
 
 impl Part {

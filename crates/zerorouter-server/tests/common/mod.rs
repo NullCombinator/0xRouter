@@ -100,14 +100,20 @@ pub fn chat_whole_text(text: &str) -> Step {
 /// A streamed chat completion saying "Hello" in two deltas, then usage.
 pub fn chat_stream() -> Step {
     let chunk = |delta: Value, finish: Value| {
-        (None, json!({"id": "up-1", "object": "chat.completion.chunk", "created": 1, "model": "m1", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}))
+        (
+            None,
+            json!({"id": "up-1", "object": "chat.completion.chunk", "created": 1, "model": "m1", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}),
+        )
     };
     Step::sse(
         &[
             chunk(json!({"role": "assistant", "content": "Hel"}), Value::Null),
             chunk(json!({"content": "lo"}), Value::Null),
             chunk(json!({}), json!("stop")),
-            (None, json!({"id": "up-1", "object": "chat.completion.chunk", "created": 1, "model": "m1", "choices": [], "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}})),
+            (
+                None,
+                json!({"id": "up-1", "object": "chat.completion.chunk", "created": 1, "model": "m1", "choices": [], "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}}),
+            ),
         ],
         true,
     )
@@ -177,12 +183,27 @@ pub fn reply_by_wire(r: &Received) -> Step {
         let ev = |name: &'static str, v: Value| (Some(name), v);
         return Step::sse(
             &[
-                ev("message_start", json!({"type": "message_start", "message": {"id": "msg_up", "type": "message", "role": "assistant", "model": "m-messages", "content": [], "stop_reason": null, "usage": {"input_tokens": 5, "output_tokens": 1}}})),
-                ev("content_block_start", json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})),
-                ev("content_block_delta", json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hel"}})),
-                ev("content_block_delta", json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "lo"}})),
+                ev(
+                    "message_start",
+                    json!({"type": "message_start", "message": {"id": "msg_up", "type": "message", "role": "assistant", "model": "m-messages", "content": [], "stop_reason": null, "usage": {"input_tokens": 5, "output_tokens": 1}}}),
+                ),
+                ev(
+                    "content_block_start",
+                    json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+                ),
+                ev(
+                    "content_block_delta",
+                    json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hel"}}),
+                ),
+                ev(
+                    "content_block_delta",
+                    json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "lo"}}),
+                ),
                 ev("content_block_stop", json!({"type": "content_block_stop", "index": 0})),
-                ev("message_delta", json!({"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"output_tokens": 2}})),
+                ev(
+                    "message_delta",
+                    json!({"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"output_tokens": 2}}),
+                ),
                 ev("message_stop", json!({"type": "message_stop"})),
             ],
             false,
@@ -200,13 +221,34 @@ pub fn reply_by_wire(r: &Received) -> Step {
         return Step::sse(
             &[
                 ev("response.created", json!({"type": "response.created", "sequence_number": 0, "response": started})),
-                ev("response.output_item.added", json!({"type": "response.output_item.added", "sequence_number": 1, "output_index": 0, "item": {"type": "message", "id": "msg_up", "status": "in_progress", "role": "assistant", "content": []}})),
-                ev("response.content_part.added", json!({"type": "response.content_part.added", "sequence_number": 2, "item_id": "msg_up", "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": "", "annotations": []}})),
-                ev("response.output_text.delta", json!({"type": "response.output_text.delta", "sequence_number": 3, "item_id": "msg_up", "output_index": 0, "content_index": 0, "delta": "Hel"})),
-                ev("response.output_text.delta", json!({"type": "response.output_text.delta", "sequence_number": 4, "item_id": "msg_up", "output_index": 0, "content_index": 0, "delta": "lo"})),
-                ev("response.output_text.done", json!({"type": "response.output_text.done", "sequence_number": 5, "item_id": "msg_up", "output_index": 0, "content_index": 0, "text": "Hello"})),
-                ev("response.content_part.done", json!({"type": "response.content_part.done", "sequence_number": 6, "item_id": "msg_up", "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": "Hello", "annotations": []}})),
-                ev("response.output_item.done", json!({"type": "response.output_item.done", "sequence_number": 7, "output_index": 0, "item": item})),
+                ev(
+                    "response.output_item.added",
+                    json!({"type": "response.output_item.added", "sequence_number": 1, "output_index": 0, "item": {"type": "message", "id": "msg_up", "status": "in_progress", "role": "assistant", "content": []}}),
+                ),
+                ev(
+                    "response.content_part.added",
+                    json!({"type": "response.content_part.added", "sequence_number": 2, "item_id": "msg_up", "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": "", "annotations": []}}),
+                ),
+                ev(
+                    "response.output_text.delta",
+                    json!({"type": "response.output_text.delta", "sequence_number": 3, "item_id": "msg_up", "output_index": 0, "content_index": 0, "delta": "Hel"}),
+                ),
+                ev(
+                    "response.output_text.delta",
+                    json!({"type": "response.output_text.delta", "sequence_number": 4, "item_id": "msg_up", "output_index": 0, "content_index": 0, "delta": "lo"}),
+                ),
+                ev(
+                    "response.output_text.done",
+                    json!({"type": "response.output_text.done", "sequence_number": 5, "item_id": "msg_up", "output_index": 0, "content_index": 0, "text": "Hello"}),
+                ),
+                ev(
+                    "response.content_part.done",
+                    json!({"type": "response.content_part.done", "sequence_number": 6, "item_id": "msg_up", "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": "Hello", "annotations": []}}),
+                ),
+                ev(
+                    "response.output_item.done",
+                    json!({"type": "response.output_item.done", "sequence_number": 7, "output_index": 0, "item": item}),
+                ),
                 ev("response.completed", json!({"type": "response.completed", "sequence_number": 8, "response": done})),
             ],
             false,

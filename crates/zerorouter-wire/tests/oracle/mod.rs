@@ -35,7 +35,8 @@ pub fn style_id(format: &str) -> &'static str {
 pub fn bundled(id: &str) -> Style {
     let path = root().join(format!("styles/bundled/{id}.toml"));
     let src = std::fs::read_to_string(&path).unwrap();
-    let parsed = validate_style(&src, &path.display().to_string()).unwrap_or_else(|e| panic!("{id} fails the style gate: {e:#?}"));
+    let parsed = validate_style(&src, &path.display().to_string())
+        .unwrap_or_else(|e| panic!("{id} fails the style gate: {e:#?}"));
     Style::compile(&parsed).unwrap()
 }
 
@@ -95,8 +96,10 @@ impl Deviations {
     /// The style-subject rows whose fixture is a translate case.
     pub fn load() -> Self {
         let path = root().join("tests/parity/deviations.toml");
-        let file: File = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap_or_else(|e| panic!("deviations.toml: {e}"));
-        let rows: Vec<Row> = file.deviation.into_iter().filter(|r| r.style.as_deref().is_some_and(|s| s.contains("-to-"))).collect();
+        let file: File =
+            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap_or_else(|e| panic!("deviations.toml: {e}"));
+        let rows: Vec<Row> =
+            file.deviation.into_iter().filter(|r| r.style.as_deref().is_some_and(|s| s.contains("-to-"))).collect();
         for r in &rows {
             assert!(r.provider.is_none(), "{r:?}: set exactly one of provider or style");
             assert!(!r.reason.trim().is_empty(), "{r:?}: a deviation needs a reason");
@@ -113,7 +116,10 @@ impl Deviations {
         for (path, g, w) in diff(got, want) {
             let hit = self.rows.iter().position(|r| {
                 let (rf, rt) = r.style.as_deref().unwrap().split_once("-to-").unwrap();
-                (rf == "*" || rf == from) && (rt == "*" || rt == to) && r.fixture.strip_suffix('*').map_or(r.fixture == case, |p| case.starts_with(p)) && matches(&r.field, &path)
+                (rf == "*" || rf == from)
+                    && (rt == "*" || rt == to)
+                    && r.fixture.strip_suffix('*').map_or(r.fixture == case, |p| case.starts_with(p))
+                    && matches(&r.field, &path)
             });
             match hit {
                 Some(i) => self.used.borrow_mut()[i] = true,
@@ -130,7 +136,9 @@ impl Deviations {
             .iter()
             .zip(used.iter())
             .filter(|(_, u)| !**u)
-            .map(|(r, _)| format!("{} {} `{}` ({}) no longer differs", r.style.as_deref().unwrap(), r.fixture, r.field, r.reason))
+            .map(|(r, _)| {
+                format!("{} {} `{}` ({}) no longer differs", r.style.as_deref().unwrap(), r.fixture, r.field, r.reason)
+            })
             .collect()
     }
 }
@@ -160,7 +168,12 @@ pub fn diff<'a>(got: &'a Value, want: &'a Value) -> Vec<(String, Option<&'a Valu
     out
 }
 
-fn walk<'a>(at: String, g: Option<&'a Value>, w: Option<&'a Value>, out: &mut Vec<(String, Option<&'a Value>, Option<&'a Value>)>) {
+fn walk<'a>(
+    at: String,
+    g: Option<&'a Value>,
+    w: Option<&'a Value>,
+    out: &mut Vec<(String, Option<&'a Value>, Option<&'a Value>)>,
+) {
     let join = |k: &str| if at.is_empty() { k.to_owned() } else { format!("{at}.{k}") };
     match (g, w) {
         (Some(Value::Object(a)), Some(Value::Object(b))) => {

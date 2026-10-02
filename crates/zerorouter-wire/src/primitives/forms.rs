@@ -96,7 +96,9 @@ pub fn decode_response_format(form: ResponseFormatForm, v: &Value) -> Option<Res
             let mime = v.get("responseMimeType")?.as_str()?;
             let schema = v.get("responseSchema").or_else(|| v.get("responseJsonSchema"));
             Some(match (mime, schema) {
-                ("application/json", Some(s)) => ResponseFormat::JsonSchema { name: None, schema: s.clone(), strict: None },
+                ("application/json", Some(s)) => {
+                    ResponseFormat::JsonSchema { name: None, schema: s.clone(), strict: None }
+                }
                 ("application/json", None) => ResponseFormat::JsonObject,
                 _ => ResponseFormat::Text,
             })
@@ -147,7 +149,10 @@ mod tests {
         let t = Thinking { enabled: true, budget_tokens: Some(2000), effort: None };
         assert_eq!(encode_thinking(ThinkingForm::Effort, &t), Some(json!("low")));
         let t = Thinking { enabled: true, budget_tokens: None, effort: Some("high".into()) };
-        assert_eq!(encode_thinking(ThinkingForm::BudgetTokens, &t), Some(json!({ "type": "enabled", "budget_tokens": 24576 })));
+        assert_eq!(
+            encode_thinking(ThinkingForm::BudgetTokens, &t),
+            Some(json!({ "type": "enabled", "budget_tokens": 24576 }))
+        );
         for form in [ThinkingForm::BudgetTokens, ThinkingForm::GeminiThinkingConfig] {
             let t = Thinking { enabled: true, budget_tokens: Some(4000), effort: None };
             assert_eq!(decode_thinking(form, &encode_thinking(form, &t).unwrap()), Some(t));
@@ -157,7 +162,11 @@ mod tests {
 
     #[test]
     fn response_formats_round_trip() {
-        let rf = ResponseFormat::JsonSchema { name: Some("r".into()), schema: json!({ "type": "object" }), strict: Some(true) };
+        let rf = ResponseFormat::JsonSchema {
+            name: Some("r".into()),
+            schema: json!({ "type": "object" }),
+            strict: Some(true),
+        };
         for form in [ResponseFormatForm::ChatResponseFormat, ResponseFormatForm::ResponsesTextFormat] {
             for rf in [&rf, &ResponseFormat::JsonObject, &ResponseFormat::Text] {
                 assert_eq!(decode_response_format(form, &encode_response_format(form, rf)).as_ref(), Some(rf));

@@ -49,11 +49,16 @@ impl Pattern {
             let seg = match part.find('{') {
                 None => Seg { prefix: (*part).to_owned(), hole: None, suffix: String::new() },
                 Some(open) => {
-                    let close = part.find('}').filter(|c| *c > open).ok_or_else(|| format!("route path `{path}`: unclosed `{{`"))?;
+                    let close = part
+                        .find('}')
+                        .filter(|c| *c > open)
+                        .ok_or_else(|| format!("route path `{path}`: unclosed `{{`"))?;
                     let name = &part[open + 1..close];
                     let hole = match name.strip_suffix('*') {
                         Some(n) if i + 1 == parts.len() => Hole::Rest(n.to_owned()),
-                        Some(_) => return Err(format!("route path `{path}`: `{{{name}}}` must be in the last segment")),
+                        Some(_) => {
+                            return Err(format!("route path `{path}`: `{{{name}}}` must be in the last segment"));
+                        }
                         None => Hole::One(name.to_owned()),
                     };
                     let suffix = &part[close + 1..];
@@ -194,7 +199,9 @@ impl RouteTable {
 
 /// The first candidate whose body discriminator holds (a candidate without one always holds).
 pub fn pick<'a, 't>(candidates: &'a [Matched<'t>], body: &Value) -> Option<&'a Matched<'t>> {
-    candidates.iter().find(|m| m.entry.route.discriminator.as_ref().is_none_or(|d| !has_body_rule(d) || body_rule_holds(d, body)))
+    candidates
+        .iter()
+        .find(|m| m.entry.route.discriminator.as_ref().is_none_or(|d| !has_body_rule(d) || body_rule_holds(d, body)))
 }
 
 /// Whether any candidate needs the body to be chosen.
@@ -223,10 +230,16 @@ pub(crate) mod tests {
         assert_eq!(caps("/v1/videos/{id}", "/v1/videos/a/b"), None);
         assert_eq!(caps("/v1/videos/{id}", "/v1/videos/"), None);
         assert_eq!(caps("/v1/videos/{id}/content", "/v1/videos/abc/content"), c(&[("id", "abc")]));
-        assert_eq!(caps("/v1/models/{model*}", "/v1/models/openrouter/openai/gpt-5"), c(&[("model", "openrouter/openai/gpt-5")]));
+        assert_eq!(
+            caps("/v1/models/{model*}", "/v1/models/openrouter/openai/gpt-5"),
+            c(&[("model", "openrouter/openai/gpt-5")])
+        );
         assert_eq!(caps("/v1/models/{model*}", "/v1/models"), None);
         let generate = "/v1beta/models/{model*}:generateContent";
-        assert_eq!(caps(generate, "/v1beta/models/openrouter/google/gemini-2.5:generateContent"), c(&[("model", "openrouter/google/gemini-2.5")]));
+        assert_eq!(
+            caps(generate, "/v1beta/models/openrouter/google/gemini-2.5:generateContent"),
+            c(&[("model", "openrouter/google/gemini-2.5")])
+        );
         assert_eq!(caps(generate, "/v1beta/models/x:streamGenerateContent"), None);
         assert_eq!(caps(generate, "/v1beta/models/:generateContent"), None);
         assert_eq!(caps("/v1/models/{model*}", "/v1/models/a%2Fb%20c"), c(&[("model", "a/b c")]));
@@ -279,7 +292,10 @@ discriminator = { header_present = "anthropic-version" }
         assert!(t.candidates(&Method::POST, "/v1/models", &h).is_empty());
         assert!(t.candidates(&Method::GET, "/nope", &h).is_empty());
 
-        let rule = MatchRule { path_equals: Some(vec!["generationConfig.responseModalities[0]".into(), "IMAGE".into()]), ..Default::default() };
+        let rule = MatchRule {
+            path_equals: Some(vec!["generationConfig.responseModalities[0]".into(), "IMAGE".into()]),
+            ..Default::default()
+        };
         assert!(body_rule_holds(&rule, &json!({ "generationConfig": { "responseModalities": ["IMAGE"] } })));
         assert!(!body_rule_holds(&rule, &json!({})));
     }

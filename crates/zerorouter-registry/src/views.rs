@@ -152,11 +152,14 @@ impl Registry {
 /// contracts/provider-schema-v2.md, read backwards). `None` format means an unmapped wire.
 fn from_endpoint(p: &ProviderEntity, e: &Endpoint) -> Transport {
     let format = e.wire.as_deref().and_then(WireFormat::from_wire);
-    let retry = e.retry.iter().map(|(code, r)| {
-        (code.clone(), RetryPolicy::Policy { attempts: r.retries, delay_ms: Some(r.delay_ms) })
-    });
+    let retry = e
+        .retry
+        .iter()
+        .map(|(code, r)| (code.clone(), RetryPolicy::Policy { attempts: r.retries, delay_ms: Some(r.delay_ms) }));
     let auth = match &e.auth {
-        Some(a) => Some(TransportAuth { header: Some(a.header.clone()), scheme: Some(a.scheme), ..TransportAuth::default() }),
+        Some(a) => {
+            Some(TransportAuth { header: Some(a.header.clone()), scheme: Some(a.scheme), ..TransportAuth::default() })
+        }
         None => p.auth.as_ref().filter(|a| a.header.is_some() || a.scheme.is_some()).map(|a| TransportAuth {
             header: a.header.clone(),
             scheme: a.scheme,

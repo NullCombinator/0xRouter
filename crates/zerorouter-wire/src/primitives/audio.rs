@@ -35,7 +35,11 @@ mod tests {
         let mut c = AudioCollector::default();
         let whole = STANDARD.encode(b"RIFF-wave-bytes");
         let (a, b) = whole.split_at(5);
-        for d in [json!({"choices": [{"delta": {"audio": {"data": a}}}]}), json!({"choices": [{"delta": {"content": "hi"}}]}), json!({"choices": [{"delta": {"audio": {"data": b}}}]})] {
+        for d in [
+            json!({"choices": [{"delta": {"audio": {"data": a}}}]}),
+            json!({"choices": [{"delta": {"content": "hi"}}]}),
+            json!({"choices": [{"delta": {"audio": {"data": b}}}]}),
+        ] {
             c.push(&d);
         }
         assert_eq!(c.finish().unwrap(), b"RIFF-wave-bytes");

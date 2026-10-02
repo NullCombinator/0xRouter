@@ -3,12 +3,12 @@
 
 use std::collections::BTreeMap;
 
+use serde_json::Value;
 use zerorouter_registry::schema::{
     BlockModel, FinishReason, Framing, InputSemantics, MediaCodec, ModelType, PartKind, Repair, RouteOp, StreamOn,
     StyleFile, TextLayout, ToolArgumentsMode, UsageDecl,
 };
 use zerorouter_registry::template::{FieldPath, Template};
-use serde_json::Value;
 
 use super::CodecError;
 use crate::ir::Role;
@@ -154,7 +154,9 @@ impl Style {
 
     /// The non-text codec for `t`.
     pub fn type_codec(&self, t: ModelType) -> Result<&super::types::TypeCodec, CodecError> {
-        self.types.get(&t).ok_or_else(|| CodecError::Missing { style: self.id.clone(), what: "codec for this model type" })
+        self.types
+            .get(&t)
+            .ok_or_else(|| CodecError::Missing { style: self.id.clone(), what: "codec for this model type" })
     }
 
     /// The style's error type for an HTTP status: exact, else the class's `x00`, else 500's.
@@ -175,7 +177,8 @@ impl TextStyle {
             let at = format!("text.parts.{kind}");
             let data = tpl(&d.data, &at)?;
             let matcher = d.match_.as_ref().map(|m| tpl(m, &at)).transpose()?.unwrap_or_else(|| data.clone());
-            let roles = d.roles.iter().map(|(r, v)| Ok((r.clone(), tpl(v, &at)?))).collect::<Result<_, CodecError>>()?;
+            let roles =
+                d.roles.iter().map(|(r, v)| Ok((r.clone(), tpl(v, &at)?))).collect::<Result<_, CodecError>>()?;
             parts.insert(*kind, PartTpl { data, matcher, roles, codec: d.codec });
         }
         let tools = match &t.tools {

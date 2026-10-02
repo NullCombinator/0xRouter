@@ -35,7 +35,11 @@ async fn every_failure_kind_falls_back_account_then_member() {
         let r = s.engine.records.get(&id).unwrap();
         assert_eq!(
             trail(&r),
-            [t("alpha", "main", AttemptKind::Initial), t("alpha", "backup", AttemptKind::NextAccount), t("beta", "main", AttemptKind::NextMember)],
+            [
+                t("alpha", "main", AttemptKind::Initial),
+                t("alpha", "backup", AttemptKind::NextAccount),
+                t("beta", "main", AttemptKind::NextMember)
+            ],
             "{code}"
         );
         assert_eq!(r.unified_model.as_deref(), Some("u"));
@@ -52,7 +56,10 @@ async fn when_everything_fails_the_client_gets_503_with_every_attempt() {
     assert_eq!(f.status, 503);
     assert!(f.message.starts_with(&format!("0router: no provider could serve u (record {id})")), "{}", f.message);
     let lines: Vec<_> = f.tried.iter().map(|t| (t.provider.as_str(), t.account.as_deref(), t.status)).collect();
-    assert_eq!(lines, [("alpha", Some("main"), Some(500)), ("alpha", Some("backup"), Some(502)), ("beta", Some("main"), Some(503))]);
+    assert_eq!(
+        lines,
+        [("alpha", Some("main"), Some(500)), ("alpha", Some("backup"), Some(502)), ("beta", Some("main"), Some(503))]
+    );
     assert!(f.message.contains("alpha/backup m1: 502"), "{}", f.message);
     let ra = f.retry_after.expect("retry-after from the earliest cooldown");
     assert!((1..=30).contains(&ra), "{ra}");
@@ -82,7 +89,10 @@ async fn a_request_error_comes_back_at_once_with_the_upstream_message_first() {
 }
 
 fn serde_step(status: u16, message: &str) -> zerorouter_engine::testkit::Step {
-    zerorouter_engine::testkit::Step::json(status, json!({"error": {"message": message, "type": "invalid_request_error"}}))
+    zerorouter_engine::testkit::Step::json(
+        status,
+        json!({"error": {"message": message, "type": "invalid_request_error"}}),
+    )
 }
 
 #[tokio::test]
@@ -99,7 +109,9 @@ async fn a_member_without_an_account_is_a_skipped_attempt() {
     let r = s.engine.records.get(&id).unwrap();
     assert_eq!(r.attempts[0].kind, AttemptKind::Skipped);
     assert_eq!(r.attempts[0].provider, "gamma");
-    let Some(AttemptOutcome::Skipped { reason }) = &r.attempts[0].outcome else { panic!("{:?}", r.attempts[0].outcome) };
+    let Some(AttemptOutcome::Skipped { reason }) = &r.attempts[0].outcome else {
+        panic!("{:?}", r.attempts[0].outcome)
+    };
     assert!(reason.contains("no enabled account"), "{reason}");
     assert_eq!(paths(&s), ["/alpha/chat/completions"]);
 }
@@ -119,7 +131,9 @@ async fn a_member_that_cant_carry_the_request_is_skipped() {
     assert!(s.engine.text(s.engine.snapshot(), req).await.is_ok());
     let r = s.engine.records.get(&id).unwrap();
     assert_eq!((r.attempts[0].provider.as_str(), r.attempts[0].kind), ("msgs", AttemptKind::Skipped));
-    let Some(AttemptOutcome::Skipped { reason }) = &r.attempts[0].outcome else { panic!("{:?}", r.attempts[0].outcome) };
+    let Some(AttemptOutcome::Skipped { reason }) = &r.attempts[0].outcome else {
+        panic!("{:?}", r.attempts[0].outcome)
+    };
     assert!(reason.contains("response format"), "{reason}");
     assert_eq!(paths(&s), ["/alpha/chat/completions"], "nothing reached the member that can't carry it");
 }

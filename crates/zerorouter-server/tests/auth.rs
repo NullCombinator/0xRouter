@@ -73,7 +73,11 @@ async fn missing_unknown_and_revoked_keys_are_refused_in_every_style() {
     let c = reqwest::Client::new();
     let mut failures = Vec::new();
     for st in STYLES {
-        let cases = [("no key", None), ("unknown key", Some("zr-not-a-real-key-000000000000")), ("revoked key", Some(s.revoked.as_str()))];
+        let cases = [
+            ("no key", None),
+            ("unknown key", Some("zr-not-a-real-key-000000000000")),
+            ("revoked key", Some(s.revoked.as_str())),
+        ];
         for (case, key) in cases {
             let mut r = c.post(format!("{}{}", s.base, st.path)).body((st.body)().to_string());
             for (k, v) in st.extra {

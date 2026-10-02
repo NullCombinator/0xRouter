@@ -28,7 +28,9 @@ fn default(status: Option<u16>, verdict: classify::Verdict, indicated: Option<Du
 #[test]
 fn the_default_budgets_follow_r7() {
     let up = |s: u16| (Some(s), classify::upstream(s, "boom"));
-    for (status, verdict) in [up(502), (None, classify::transport(ErrorClass::Network)), (None, classify::transport(ErrorClass::Timeout))] {
+    for (status, verdict) in
+        [up(502), (None, classify::transport(ErrorClass::Network)), (None, classify::transport(ErrorClass::Timeout))]
+    {
         assert_eq!(default(status, verdict, None), b(3, 3), "{status:?} {verdict:?}");
     }
     let (s, v) = up(503);
@@ -50,7 +52,10 @@ fn the_default_budgets_follow_r7() {
 #[test]
 fn a_rate_limit_waits_only_when_the_provider_says_briefly() {
     let v = classify::upstream(429, "slow down");
-    assert_eq!(default(Some(429), v, Some(Duration::from_millis(1500))), Budget { retries: 1, delay: Duration::from_millis(1500) });
+    assert_eq!(
+        default(Some(429), v, Some(Duration::from_millis(1500))),
+        Budget { retries: 1, delay: Duration::from_millis(1500) }
+    );
     assert_eq!(default(Some(429), v, Some(Duration::from_secs(5))), b(1, 5));
     assert_eq!(default(Some(429), v, Some(Duration::from_secs(6))), b(0, 0), "a longer wait moves on at once");
     assert_eq!(default(Some(429), v, None), b(1, 2));
@@ -91,7 +96,15 @@ async fn the_loop_retries_the_same_account_by_the_override_then_answers() {
     }
     let r = s.engine.records.get(&id).unwrap();
     let kinds: Vec<_> = r.attempts.iter().map(|a| a.kind).collect();
-    assert_eq!(kinds, [AttemptKind::Initial, AttemptKind::SameAccountRetry, AttemptKind::SameAccountRetry, AttemptKind::SameAccountRetry]);
+    assert_eq!(
+        kinds,
+        [
+            AttemptKind::Initial,
+            AttemptKind::SameAccountRetry,
+            AttemptKind::SameAccountRetry,
+            AttemptKind::SameAccountRetry
+        ]
+    );
 }
 
 #[tokio::test]
@@ -131,7 +144,8 @@ async fn a_short_retry_after_is_waited_out_on_the_same_account() {
 
 #[tokio::test]
 async fn a_long_retry_after_moves_on_at_once() {
-    let s = setup(|m| vec![("alpha", chat_plugin(m, "alpha", ""))], &[("alpha", "main"), ("alpha", "backup")], "").await;
+    let s =
+        setup(|m| vec![("alpha", chat_plugin(m, "alpha", ""))], &[("alpha", "main"), ("alpha", "backup")], "").await;
     s.mock.push([Step::rate_limited(30, json!({"error": {"message": "slow down"}})), ok()]);
     let (id, res) = send(&s, "alpha/m1").await;
     assert!(res.is_ok());

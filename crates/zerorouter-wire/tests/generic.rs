@@ -60,7 +60,9 @@ fn request_round_trips_in_its_own_style() {
     assert_eq!(req.system, vec![Part::text("be brief")]);
     assert_eq!(req.params.thinking.as_ref().and_then(|t| t.budget_tokens), Some(2000));
     assert_eq!(req.extra.get("metadata"), Some(&json!({ "user_id": "u" })));
-    assert!(matches!(&req.messages[2].parts[0], Part::ToolResult { content: ResultContent::Text(t), .. } if t == "rain"));
+    assert!(
+        matches!(&req.messages[2].parts[0], Part::ToolResult { content: ResultContent::Text(t), .. } if t == "rain")
+    );
     assert_eq!(request::encode(&req, &s, "mini").unwrap().body, body);
 }
 
@@ -182,7 +184,10 @@ fn stream_of_text_and_tool_call_translates_through_the_ir() {
     let mut w = StreamWriter::new(&m, &json!({}), "x1", "m1", 0).unwrap();
     let mut client: String = events.iter().map(|e| w.write(e)).collect();
     client.push_str(&w.end());
-    assert!(client.starts_with("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x1\""), "{client}");
+    assert!(
+        client.starts_with("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_x1\""),
+        "{client}"
+    );
     let names: Vec<&str> = client.lines().filter_map(|l| l.strip_prefix("event: ")).collect();
     assert_eq!(
         names,
@@ -200,13 +205,20 @@ fn stream_of_text_and_tool_call_translates_through_the_ir() {
             "message_stop",
         ]
     );
-    assert!(client.contains(r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":4}}"#), "{client}");
+    assert!(
+        client.contains(r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":4}}"#),
+        "{client}"
+    );
     let back = frames(&m, &client);
-    let text: String = back.iter().filter_map(|e| if let Event::TextDelta(t) = e { Some(t.as_str()) } else { None }).collect();
+    let text: String =
+        back.iter().filter_map(|e| if let Event::TextDelta(t) = e { Some(t.as_str()) } else { None }).collect();
     assert_eq!(text, "Hello");
     assert!(back.contains(&Event::BlockStart(BlockKind::ToolCall { id: "c1".into(), name: "f".into() })));
     assert!(back.contains(&Event::Finish(FinishReason::ToolCalls)));
-    assert_eq!(w.response().content[1], Part::ToolCall { id: "c1".into(), name: "f".into(), arguments: json!({ "a": 1 }), cache_control: None });
+    assert_eq!(
+        w.response().content[1],
+        Part::ToolCall { id: "c1".into(), name: "f".into(), arguments: json!({ "a": 1 }), cache_control: None }
+    );
 }
 
 #[test]
@@ -226,7 +238,11 @@ fn chat_writer_adds_usage_only_when_asked_and_ends_with_done() {
     assert!(!plain.contains("\"usage\""), "{plain}");
     assert!(plain.ends_with("data: [DONE]\n\n"));
     let with_usage = run(json!({ "stream_options": { "include_usage": true } }));
-    assert!(with_usage.contains(r#""usage":{"completion_tokens":1,"prompt_tokens":5}"#) || with_usage.contains(r#""usage":{"prompt_tokens":5,"completion_tokens":1}"#), "{with_usage}");
+    assert!(
+        with_usage.contains(r#""usage":{"completion_tokens":1,"prompt_tokens":5}"#)
+            || with_usage.contains(r#""usage":{"prompt_tokens":5,"completion_tokens":1}"#),
+        "{with_usage}"
+    );
     assert!(with_usage.contains("\"id\":\"chatcmpl-abc\""));
 }
 

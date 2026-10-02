@@ -78,7 +78,11 @@ mod tests {
 
     #[test]
     fn renders_in_the_style_shape() {
-        let f = zerorouter_registry::validate::validate_style(include_str!("../tests/fixtures/mini-style.toml"), "mini-style.toml").unwrap();
+        let f = zerorouter_registry::validate::validate_style(
+            include_str!("../tests/fixtures/mini-style.toml"),
+            "mini-style.toml",
+        )
+        .unwrap();
         let s = Style::compile(&f).unwrap();
         let v = body(&s, 401, "0router: unknown access key", json!({ "record_id": "rq_1" }));
         assert_eq!(
@@ -102,7 +106,11 @@ mod tests {
             reason: reason.into(),
             retries,
         };
-        let tried = [t(Some("main"), Some(503), "overloaded", 3), t(Some("backup"), None, "cooling down for 4 s", 0), t(None, Some(502), "network error", 1)];
+        let tried = [
+            t(Some("main"), Some(503), "overloaded", 3),
+            t(Some("backup"), None, "cooling down for 4 s", 0),
+            t(None, Some(502), "network error", 1),
+        ];
         assert_eq!(
             message("0router: no provider could serve m1", "rq_1", &tried),
             "0router: no provider could serve m1 (record rq_1)\nacme/main m1: 503 overloaded after 3 retries\nacme/backup m1: cooling down for 4 s\nacme m1: 502 network error after 1 retry"

@@ -83,9 +83,16 @@ pub mod placeholders {
         "response.model",
     ]);
     /// Inline provider endpoint bodies (contracts/provider-schema-v2.md).
-    pub const PROVIDER_BODY: PlaceholderSet =
-        PlaceholderSet(&["model.upstream_id", "input.*", "params.*", "output.*"]);
-    pub const JOB: PlaceholderSet = PlaceholderSet(&["job.id", "job.status", "job.error", "job.created", "job.model", "job.done", "job.content_url"]);
+    pub const PROVIDER_BODY: PlaceholderSet = PlaceholderSet(&["model.upstream_id", "input.*", "params.*", "output.*"]);
+    pub const JOB: PlaceholderSet = PlaceholderSet(&[
+        "job.id",
+        "job.status",
+        "job.error",
+        "job.created",
+        "job.model",
+        "job.done",
+        "job.content_url",
+    ]);
 }
 
 /// IR request parameters a style may locate.
@@ -143,8 +150,10 @@ pub fn check_route_collisions(styles: &[(&str, &str, &StyleFile)]) -> Vec<Valida
         if defaults == 1 && disjoint {
             continue;
         }
-        let names: Vec<String> =
-            members.iter().map(|&(f, r)| format!("{}:routes[{r}] {}", styles[f].0, styles[f].2.routes[r].path)).collect();
+        let names: Vec<String> = members
+            .iter()
+            .map(|&(f, r)| format!("{}:routes[{r}] {}", styles[f].0, styles[f].2.routes[r].path))
+            .collect();
         for &(f, r) in &members {
             let (file, src, _) = styles[f];
             out.push(positioned(
@@ -228,7 +237,9 @@ fn semantic_errors(s: &StyleFile) -> Found {
             err(base.key("vector"), "only the embeddings codec has a vector encoding".into());
         }
         match (&c.job, t) {
-            (Some(j), ModelType::Video) => check_template(&j.status, placeholders::JOB, &base.key("job").key("status"), &mut err),
+            (Some(j), ModelType::Video) => {
+                check_template(&j.status, placeholders::JOB, &base.key("job").key("status"), &mut err)
+            }
             (Some(_), _) => err(base.key("job"), "only the video codec runs asynchronous jobs".into()),
             _ => {}
         }
@@ -489,7 +500,9 @@ fn check_text(t: &TextCodec, base: &FieldPath, err: &mut impl FnMut(FieldPath, S
             }
             (_, ParamDecl::Form { .. }) => err(pb.key("form"), format!("`{name}` takes a plain field path")),
             ("max_tokens", ParamDecl::Default { .. }) => {}
-            (_, ParamDecl::Default { .. }) => err(pb.key("default"), format!("only `max_tokens` takes a default, not `{name}`")),
+            (_, ParamDecl::Default { .. }) => {
+                err(pb.key("default"), format!("only `max_tokens` takes a default, not `{name}`"))
+            }
             _ => {}
         }
     }
@@ -531,10 +544,7 @@ fn check_finish(t: &TextCodec, base: &FieldPath, err: &mut impl FnMut(FieldPath,
     }
     for (reason, style) in &t.finish_out {
         if !t.finish.contains_key(style) {
-            err(
-                base.key(style.as_str()),
-                format!("finish_out.{reason} = {style:?} is not a reason in the finish map"),
-            );
+            err(base.key(style.as_str()), format!("finish_out.{reason} = {style:?} is not a reason in the finish map"));
         }
     }
 }
@@ -641,9 +651,7 @@ fn check_template(v: &toml::Value, set: PlaceholderSet, base: &FieldPath, err: &
 fn check_reversible(v: &toml::Value, base: &FieldPath, err: &mut impl FnMut(FieldPath, String)) {
     fn go(t: &Template) -> bool {
         match t {
-            Template::Interp(pieces) => {
-                pieces.windows(2).all(|w| !matches!(w, [Piece::Hole(_), Piece::Hole(_)]))
-            }
+            Template::Interp(pieces) => pieces.windows(2).all(|w| !matches!(w, [Piece::Hole(_), Piece::Hole(_)])),
             Template::Array(items) => items.iter().all(go),
             Template::Object(fields) => fields.iter().all(|(_, t)| go(t)),
             _ => true,
@@ -795,18 +803,30 @@ stream_event = { data = "{error.body}" }
 
     #[test]
     fn corpus_cases() {
-        fails(&BASE.replace("{part.text}", "{request.api_key}"), "text.parts.text.data.text: unknown placeholder {request.api_key}");
+        fails(
+            &BASE.replace("{part.text}", "{request.api_key}"),
+            "text.parts.text.data.text: unknown placeholder {request.api_key}",
+        );
         fails(&BASE.replace("{part.text}", "{a+b}"), "expressions are not allowed");
         fails(&BASE.replace("/v1/models/{model*}", "/v1/{model*}/x"), "must be in the last path segment");
         fails(&BASE.replace("[text.parts.text]", "[text.parts.textx]"), "unknown part kind");
-        fails(&BASE.replace("content_filter = \"content_filter\"\n", ""), "finish map is not total: no unique style reason for IR content_filter");
+        fails(
+            &BASE.replace("content_filter = \"content_filter\"\n", ""),
+            "finish map is not total: no unique style reason for IR content_filter",
+        );
         fails(&BASE.replace("message = \"{error.message}\"", "message = \"x\""), "must place {error.message}");
         fails(&BASE.replace("503 = \"api_error\" ", ""), "type_map must cover 503");
         fails(&BASE.replace("scheme = \"bearer\"", "scheme = \"basic\""), "unknown key scheme \"basic\"");
-        fails(&BASE.replace("header = \"authorization\", scheme = \"bearer\"", "query = \"key\", scheme = \"bearer\""), "scheme must be \"raw\"");
+        fails(
+            &BASE.replace("header = \"authorization\", scheme = \"bearer\"", "query = \"key\", scheme = \"bearer\""),
+            "scheme must be \"raw\"",
+        );
         fails(&BASE.replace("sse_data_done", "xml"), "unknown framing");
         fails(&format!("{BASE}\n[session]\ncarriers = [{{ extractor = \"guess\" }}]\n"), "unknown session extractor");
-        fails(&BASE.replace("type = \"text\"\nmodel = { body", "type = \"image\"\nmodel = { body"), "route type image has no [image] codec section");
+        fails(
+            &BASE.replace("type = \"text\"\nmodel = { body", "type = \"image\"\nmodel = { body"),
+            "route type image has no [image] codec section",
+        );
         fails(&format!("{BASE}\n[forwarding]\nx = 1\n"), "a style file may not declare forwarding");
         fails(
             &BASE.replace(

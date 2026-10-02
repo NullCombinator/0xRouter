@@ -16,7 +16,9 @@ pub fn encode(codec: MediaCodec, m: &Media) -> Option<Value> {
             json!({ "type": "base64", "media_type": mime, "data": d })
         }
         (MediaCodec::AnthropicSource, MediaSource::Url(u)) => json!({ "type": "url", "url": u }),
-        (MediaCodec::GeminiInlineData, MediaSource::Base64(d)) => json!({ "inlineData": { "mimeType": mime, "data": d } }),
+        (MediaCodec::GeminiInlineData, MediaSource::Base64(d)) => {
+            json!({ "inlineData": { "mimeType": mime, "data": d } })
+        }
         (MediaCodec::GeminiInlineData, MediaSource::Url(u)) => match &m.mime {
             Some(mime) => json!({ "fileData": { "mimeType": mime, "fileUri": u } }),
             None => json!({ "fileData": { "fileUri": u } }),

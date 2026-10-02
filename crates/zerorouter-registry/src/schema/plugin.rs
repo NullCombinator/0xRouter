@@ -110,7 +110,10 @@ pub struct ProviderEntity {
     pub source: PluginSource,
 }
 
-fn auth_headers<'a>(auth: Option<&'a AuthDecl>, endpoints: &'a BTreeMap<ModelType, Endpoints>) -> impl Iterator<Item = &'a str> {
+fn auth_headers<'a>(
+    auth: Option<&'a AuthDecl>,
+    endpoints: &'a BTreeMap<ModelType, Endpoints>,
+) -> impl Iterator<Item = &'a str> {
     let per_endpoint = endpoints.values().flat_map(|e| &e.0).filter_map(|e| Some(e.auth.as_ref()?.header.as_str()));
     auth.and_then(|a| a.header.as_deref()).into_iter().chain(per_endpoint)
 }

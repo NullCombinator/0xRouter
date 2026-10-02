@@ -15,7 +15,11 @@ fn json_body(v: &Value) -> String {
 
 /// The `data:` payloads of an SSE body, `[DONE]` left out.
 fn data_lines(text: &str) -> Vec<Value> {
-    text.lines().filter_map(|l| l.strip_prefix("data: ")).filter(|d| *d != "[DONE]").map(|d| serde_json::from_str(d).unwrap()).collect()
+    text.lines()
+        .filter_map(|l| l.strip_prefix("data: "))
+        .filter(|d| *d != "[DONE]")
+        .map(|d| serde_json::from_str(d).unwrap())
+        .collect()
 }
 
 #[tokio::test]
@@ -61,7 +65,8 @@ async fn anthropic_client_streams_from_a_chat_provider() {
     let events: Vec<&str> = text.lines().filter_map(|l| l.strip_prefix("event: ")).collect();
     assert_eq!(events.first(), Some(&"message_start"), "{text}");
     assert_eq!(events.last(), Some(&"message_stop"), "{text}");
-    let deltas: String = data_lines(&text).iter().filter_map(|d| d["delta"]["text"].as_str().map(str::to_owned)).collect();
+    let deltas: String =
+        data_lines(&text).iter().filter_map(|d| d["delta"]["text"].as_str().map(str::to_owned)).collect();
     assert_eq!(deltas, "Hello");
 
     let rec = s.engine.records.query(&Query::default()).into_iter().find(|r| r.id == id).unwrap();
@@ -92,8 +97,13 @@ async fn gemini_client_takes_the_model_from_the_path() {
     assert_eq!(parts, "Hello", "{text}");
     assert_eq!(s.mock.received()[0].json()["model"], "m1");
 
-    let r = c.post(format!("{}/v1beta/models/mockco/m1:generateContent", s.base)).header("x-goog-api-key", &s.key).body(json_body(&body))
-.send().await.unwrap();
+    let r = c
+        .post(format!("{}/v1beta/models/mockco/m1:generateContent", s.base))
+        .header("x-goog-api-key", &s.key)
+        .body(json_body(&body))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 200);
     let whole: Value = serde_json::from_slice(&r.bytes().await.unwrap()).unwrap();
     assert_eq!(whole["candidates"][0]["content"]["parts"][0]["text"], "hi there", "{whole}");
@@ -106,18 +116,35 @@ async fn errors_come_back_in_the_clients_style() {
     s.mock.push([Step::json(400, json!({"error": {"message": "bad field"}}))]);
     let c = reqwest::Client::new();
     let url = format!("{}/v1/messages", s.base);
-    let r = c.post(&url).header("x-api-key", &s.key).body(json_body(&json!({"model": "mockco/m1", "max_tokens": 8, "messages": [{"role": "user", "content": "hi"}]})))
-.send().await.unwrap();
+    let r = c
+        .post(&url)
+        .header("x-api-key", &s.key)
+        .body(json_body(
+            &json!({"model": "mockco/m1", "max_tokens": 8, "messages": [{"role": "user", "content": "hi"}]}),
+        ))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 400);
     let body: Value = serde_json::from_slice(&r.bytes().await.unwrap()).unwrap();
     assert_eq!(body["type"], "error");
     assert!(body["error"]["message"].as_str().unwrap().starts_with("bad field (record "), "{body}");
 
-    let r = c.post(&url).header("x-api-key", &s.key).body(json_body(&json!({"model": "nope/x", "max_tokens": 8, "messages": [{"role": "user", "content": "hi"}]})))
-.send().await.unwrap();
+    let r = c
+        .post(&url)
+        .header("x-api-key", &s.key)
+        .body(json_body(&json!({"model": "nope/x", "max_tokens": 8, "messages": [{"role": "user", "content": "hi"}]})))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 404);
-    let r = c.post(&url).header("x-api-key", &s.key).body(json_body(&json!({"max_tokens": 8, "messages": []})))
-.send().await.unwrap();
+    let r = c
+        .post(&url)
+        .header("x-api-key", &s.key)
+        .body(json_body(&json!({"max_tokens": 8, "messages": []})))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 400);
     let r = c.post(&url).header("x-api-key", &s.key).body("{not json").send().await.unwrap();
     assert_eq!(r.status(), 400);

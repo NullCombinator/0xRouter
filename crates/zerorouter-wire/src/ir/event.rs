@@ -3,13 +3,16 @@
 
 use serde_json::Value;
 
-use super::response::Usage;
 use super::FinishReason;
+use super::response::Usage;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     /// Response metadata, before any content.
-    Preamble { id: Option<String>, model: Option<String> },
+    Preamble {
+        id: Option<String>,
+        model: Option<String>,
+    },
     BlockStart(BlockKind),
     TextDelta(String),
     ThinkingDelta(String),

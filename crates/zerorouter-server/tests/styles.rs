@@ -14,7 +14,14 @@ use zerorouter_server::relay::REQUEST_ID;
 const STYLES: [&str; 4] = ["openai-chat", "anthropic-messages", "openai-responses", "gemini"];
 const MODELS: [&str; 3] = ["multi/m-chat", "multi/m-messages", "multi/m-responses"];
 
-fn request(c: &reqwest::Client, base: &str, key: &str, style: &str, model: &str, stream: bool) -> reqwest::RequestBuilder {
+fn request(
+    c: &reqwest::Client,
+    base: &str,
+    key: &str,
+    style: &str,
+    model: &str,
+    stream: bool,
+) -> reqwest::RequestBuilder {
     match style {
         "openai-chat" => {
             let mut b = json!({"model": model, "stream": stream, "messages": [{"role": "user", "content": "hi"}]});
@@ -54,7 +61,11 @@ fn frames(text: &str) -> Vec<(Option<String>, Value)> {
                 data += d;
             }
         }
-        let v = if data == "[DONE]" { Value::Null } else { serde_json::from_str(&data).unwrap_or_else(|e| panic!("{e}: {data}")) };
+        let v = if data == "[DONE]" {
+            Value::Null
+        } else {
+            serde_json::from_str(&data).unwrap_or_else(|e| panic!("{e}: {data}"))
+        };
         out.push((name, v));
     }
     out
@@ -63,21 +74,37 @@ fn frames(text: &str) -> Vec<(Option<String>, Value)> {
 /// Text and `(input, output)` usage from a whole answer.
 fn whole(style: &str, b: &Value) -> (String, (Value, Value)) {
     match style {
-        "openai-chat" => (b["choices"][0]["message"]["content"].as_str().unwrap_or_default().into(), (b["usage"]["prompt_tokens"].clone(), b["usage"]["completion_tokens"].clone())),
+        "openai-chat" => (
+            b["choices"][0]["message"]["content"].as_str().unwrap_or_default().into(),
+            (b["usage"]["prompt_tokens"].clone(), b["usage"]["completion_tokens"].clone()),
+        ),
         "anthropic-messages" => {
             assert_eq!(b["type"], "message");
             assert_eq!(b["stop_reason"], "end_turn");
-            (b["content"][0]["text"].as_str().unwrap_or_default().into(), (b["usage"]["input_tokens"].clone(), b["usage"]["output_tokens"].clone()))
+            (
+                b["content"][0]["text"].as_str().unwrap_or_default().into(),
+                (b["usage"]["input_tokens"].clone(), b["usage"]["output_tokens"].clone()),
+            )
         }
         "openai-responses" => {
             assert_eq!(b["status"], "completed");
-            let text = b["output"].as_array().unwrap().iter().filter(|i| i["type"] == "message").flat_map(|i| i["content"].as_array().unwrap().iter()).filter_map(|p| p["text"].as_str()).collect();
+            let text = b["output"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|i| i["type"] == "message")
+                .flat_map(|i| i["content"].as_array().unwrap().iter())
+                .filter_map(|p| p["text"].as_str())
+                .collect();
             (text, (b["usage"]["input_tokens"].clone(), b["usage"]["output_tokens"].clone()))
         }
         "gemini" => {
             assert_eq!(b["candidates"][0]["finishReason"], "STOP");
             let u = &b["usageMetadata"];
-            (b["candidates"][0]["content"]["parts"][0]["text"].as_str().unwrap_or_default().into(), (u["promptTokenCount"].clone(), u["candidatesTokenCount"].clone()))
+            (
+                b["candidates"][0]["content"]["parts"][0]["text"].as_str().unwrap_or_default().into(),
+                (u["promptTokenCount"].clone(), u["candidatesTokenCount"].clone()),
+            )
         }
         _ => unreachable!(),
     }
@@ -155,7 +182,10 @@ fn streamed(style: &str, text: &str) -> (String, (Value, Value)) {
             for (_, d) in &fs {
                 out += d["candidates"][0]["content"]["parts"][0]["text"].as_str().unwrap_or_default();
                 if d["usageMetadata"].is_object() {
-                    usage = (d["usageMetadata"]["promptTokenCount"].clone(), d["usageMetadata"]["candidatesTokenCount"].clone());
+                    usage = (
+                        d["usageMetadata"]["promptTokenCount"].clone(),
+                        d["usageMetadata"]["candidatesTokenCount"].clone(),
+                    );
                 }
             }
             assert!(fs.iter().any(|(_, d)| d["candidates"][0]["finishReason"] == "STOP"), "{text}");
@@ -184,11 +214,7 @@ async fn every_style_over_every_wire_streamed_and_whole() {
                     continue;
                 }
                 let got = std::panic::catch_unwind(|| {
-                    if stream {
-                        streamed(style, &body)
-                    } else {
-                        whole(style, &serde_json::from_str(&body).unwrap())
-                    }
+                    if stream { streamed(style, &body) } else { whole(style, &serde_json::from_str(&body).unwrap()) }
                 });
                 match got {
                     Ok((text, usage)) if text == "Hello" && usage == (json!(5), json!(2)) => {}

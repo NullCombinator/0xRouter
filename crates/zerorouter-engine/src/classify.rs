@@ -108,7 +108,12 @@ pub const MAX_INDICATED_WAIT: Duration = Duration::from_secs(5);
 
 /// The same-account budget for a failure. `status` is `None` for a transport failure
 /// (counted as 502); `indicated` is the provider's `retry-after` or reset wait, if any.
-pub fn budget(status: Option<u16>, verdict: &Verdict, indicated: Option<Duration>, overrides: &BTreeMap<String, RetryOverride>) -> Budget {
+pub fn budget(
+    status: Option<u16>,
+    verdict: &Verdict,
+    indicated: Option<Duration>,
+    overrides: &BTreeMap<String, RetryOverride>,
+) -> Budget {
     let s = status.unwrap_or(502);
     if let Some(o) = overrides.get(&s.to_string()) {
         return Budget { retries: o.retries, delay: Duration::from_millis(o.delay_ms) };
@@ -150,11 +155,18 @@ pub fn indicated_wait(headers: &reqwest::header::HeaderMap, now: std::time::Syst
             return Some(at.duration_since(now).unwrap_or_default());
         }
     }
-    let spans = ["x-ratelimit-reset-requests", "x-ratelimit-reset-tokens"].into_iter().filter_map(|n| get(n).and_then(go_duration));
-    let times = ["anthropic-ratelimit-requests-reset", "anthropic-ratelimit-tokens-reset", "anthropic-ratelimit-input-tokens-reset", "anthropic-ratelimit-output-tokens-reset"]
+    let spans = ["x-ratelimit-reset-requests", "x-ratelimit-reset-tokens"]
         .into_iter()
-        .filter_map(|n| get(n).and_then(crate::clock::parse_rfc3339))
-        .map(|at| at.duration_since(now).unwrap_or_default());
+        .filter_map(|n| get(n).and_then(go_duration));
+    let times = [
+        "anthropic-ratelimit-requests-reset",
+        "anthropic-ratelimit-tokens-reset",
+        "anthropic-ratelimit-input-tokens-reset",
+        "anthropic-ratelimit-output-tokens-reset",
+    ]
+    .into_iter()
+    .filter_map(|n| get(n).and_then(crate::clock::parse_rfc3339))
+    .map(|at| at.duration_since(now).unwrap_or_default());
     spans.chain(times).max()
 }
 
@@ -171,7 +183,8 @@ fn go_duration(s: &str) -> Option<Duration> {
             rest = &rest[1..];
             continue;
         }
-        let (unit, scale) = [("ms", 0.001), ("h", 3600.0), ("m", 60.0), ("s", 1.0)].into_iter().find(|(u, _)| rest.starts_with(u))?;
+        let (unit, scale) =
+            [("ms", 0.001), ("h", 3600.0), ("m", 60.0), ("s", 1.0)].into_iter().find(|(u, _)| rest.starts_with(u))?;
         total += num.parse::<f64>().ok()? * scale;
         num.clear();
         rest = &rest[unit.len()..];
@@ -197,10 +210,19 @@ mod tests {
             m
         };
         assert_eq!(indicated_wait(&h(&[("retry-after", "3")]), now), Some(Duration::from_secs(3)));
-        assert_eq!(indicated_wait(&h(&[("retry-after", "Tue, 14 Nov 2023 22:13:30 GMT")]), now), Some(Duration::from_secs(10)));
-        assert_eq!(indicated_wait(&h(&[("x-ratelimit-reset-requests", "1m2.5s")]), now), Some(Duration::from_millis(62_500)));
+        assert_eq!(
+            indicated_wait(&h(&[("retry-after", "Tue, 14 Nov 2023 22:13:30 GMT")]), now),
+            Some(Duration::from_secs(10))
+        );
+        assert_eq!(
+            indicated_wait(&h(&[("x-ratelimit-reset-requests", "1m2.5s")]), now),
+            Some(Duration::from_millis(62_500))
+        );
         assert_eq!(indicated_wait(&h(&[("x-ratelimit-reset-tokens", "250ms")]), now), Some(Duration::from_millis(250)));
-        assert_eq!(indicated_wait(&h(&[("anthropic-ratelimit-requests-reset", "2023-11-14T22:13:25Z")]), now), Some(Duration::from_secs(5)));
+        assert_eq!(
+            indicated_wait(&h(&[("anthropic-ratelimit-requests-reset", "2023-11-14T22:13:25Z")]), now),
+            Some(Duration::from_secs(5))
+        );
         assert_eq!(indicated_wait(&h(&[("retry-after", "soon")]), SystemTime::now()), None);
         assert_eq!(go_duration("3"), None);
     }

@@ -28,7 +28,11 @@ fn lookup_matches_9router() {
         if let Some(ty) = row["type"].as_str()
             && not_carried(&reg.provider(alias).unwrap().id, ty)
         {
-            assert_ne!(info.kind.map(|k| k.as_str()), Some(ty), "{alias}/{model}: {ty} is carried now; drop it from NOT_CARRIED");
+            assert_ne!(
+                info.kind.map(|k| k.as_str()),
+                Some(ty),
+                "{alias}/{model}: {ty} is carried now; drop it from NOT_CARRIED"
+            );
             continue;
         }
         let got = json!({

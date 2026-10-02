@@ -33,7 +33,10 @@ pub fn encode(form: EmbeddingVector, v: &[f32]) -> Value {
 
 /// Re-encodes `v` into `form` when it isn't already there; leaves it alone if unreadable.
 pub fn convert(form: EmbeddingVector, v: &Value) -> Value {
-    let already = matches!((form, v), (EmbeddingVector::Float, Value::Array(_)) | (EmbeddingVector::Base64F32le, Value::String(_)));
+    let already = matches!(
+        (form, v),
+        (EmbeddingVector::Float, Value::Array(_)) | (EmbeddingVector::Base64F32le, Value::String(_))
+    );
     if already {
         return v.clone();
     }

@@ -30,7 +30,8 @@ fn composed_transports_match_9router() {
             diffs.extend(differs);
         } else {
             let (g, w) = (header_order(&got), header_order(&want));
-            let (g, w): (Vec<_>, Vec<_>) = (g.iter().filter(|h| w.contains(h)).collect(), w.iter().filter(|h| g.contains(h)).collect());
+            let (g, w): (Vec<_>, Vec<_>) =
+                (g.iter().filter(|h| w.contains(h)).collect(), w.iter().filter(|h| g.contains(h)).collect());
             if g != w {
                 diffs.push(format!("{id}: header order {g:?} != {w:?}"));
             }
@@ -64,13 +65,20 @@ fn tts_tables_match_9router() {
         let tts = tts.unwrap_or_else(|| panic!("{table}: {provider} has no tts section"));
         let got: Vec<&str> = match entry["kind"].as_str().unwrap() {
             // Schema 2 lists a type's models at the top level, by `kind`.
-            "models" if !entity.endpoints.is_empty() => {
-                entity.models.iter().flatten().filter(|m| m.kind.is_some_and(|k| k.as_str() == "tts")).map(|m| m.id.as_str()).collect()
-            }
+            "models" if !entity.endpoints.is_empty() => entity
+                .models
+                .iter()
+                .flatten()
+                .filter(|m| m.kind.is_some_and(|k| k.as_str() == "tts"))
+                .map(|m| m.id.as_str())
+                .collect(),
             "models" => tts.models.iter().flatten().map(|m| m.id.as_str()).collect(),
-            "voices" if !entity.endpoints.is_empty() => {
-                entity.endpoints[&zerorouter_registry::schema::ModelType::Tts].0.iter().flat_map(|e| &e.voices).map(String::as_str).collect()
-            }
+            "voices" if !entity.endpoints.is_empty() => entity.endpoints[&zerorouter_registry::schema::ModelType::Tts]
+                .0
+                .iter()
+                .flat_map(|e| &e.voices)
+                .map(String::as_str)
+                .collect(),
             "voices" => tts.voices.iter().flatten().map(|v| v.id.as_str()).collect(),
             k => panic!("{table}: unknown kind {k}"),
         };

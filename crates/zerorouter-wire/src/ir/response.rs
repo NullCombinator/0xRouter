@@ -1,8 +1,8 @@
 //! The non-stream response IR.
 
+use super::FinishReason;
 use super::event::{BlockKind, Event};
 use super::request::Part;
-use super::FinishReason;
 
 /// A complete answer: the same content a stream carries, as final parts.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -18,7 +18,10 @@ pub struct Response {
 impl Response {
     /// All text parts joined.
     pub fn text(&self) -> String {
-        self.content.iter().filter_map(|p| if let Part::Text { text, .. } = p { Some(text.as_str()) } else { None }).collect()
+        self.content
+            .iter()
+            .filter_map(|p| if let Part::Text { text, .. } = p { Some(text.as_str()) } else { None })
+            .collect()
     }
 
     /// The stream events that carry this answer, for a client already streaming when a
@@ -27,7 +30,9 @@ impl Response {
         let mut out = vec![Event::Preamble { id: self.id.clone(), model: self.model.clone() }];
         for p in &self.content {
             match p {
-                Part::Text { text, .. } => out.extend([Event::BlockStart(BlockKind::Text), Event::TextDelta(text.clone())]),
+                Part::Text { text, .. } => {
+                    out.extend([Event::BlockStart(BlockKind::Text), Event::TextDelta(text.clone())])
+                }
                 Part::Thinking { text, signature, .. } => {
                     out.extend([Event::BlockStart(BlockKind::Thinking), Event::ThinkingDelta(text.clone())]);
                     out.extend(signature.clone().map(Event::Signature));

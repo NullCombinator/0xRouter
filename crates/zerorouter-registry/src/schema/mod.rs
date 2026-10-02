@@ -19,8 +19,8 @@ pub use capability::{CapabilitySection, ModelRoute, SectionEndpoint, SectionLimi
 pub use config::{
     Decision, MemberDecl, OperatorConfig, PipelineSettings, ProviderSettings, ServerSettings, UnifiedModelDecl,
 };
-pub use enums::{AuthHook, AuthKind, AuthScheme, CapabilityKind, Category, ContentKind, ModelKind, Quirk, WireFormat};
 pub use endpoint::{Continuation, Endpoint, EndpointAuth, Endpoints, ErrorRule, ErrorRules, RetryOverride, TokenCount};
+pub use enums::{AuthHook, AuthKind, AuthScheme, CapabilityKind, Category, ContentKind, ModelKind, Quirk, WireFormat};
 pub use forwarding::{ForwardHeader, Forwarding, ToClient, ToUpstream};
 pub use model::Model;
 pub(crate) use oauth::oauth_urls;

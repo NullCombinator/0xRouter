@@ -42,14 +42,13 @@ pub fn client_headers(
     floor: &Floor,
     redactor: &Redactor,
 ) -> Vec<(HeaderName, HeaderValue, ForwardMerge)> {
-    let rules: Vec<&ForwardHeader> = rules
-        .iter()
-        .filter(|r| r.from_styles.is_empty() || r.from_styles.iter().any(|s| s == client_style))
-        .collect();
+    let rules: Vec<&ForwardHeader> =
+        rules.iter().filter(|r| r.from_styles.is_empty() || r.from_styles.iter().any(|s| s == client_style)).collect();
     let safe = headers.iter().filter(|(n, v)| passes_floor(n, v, floor, redactor));
     if same_style {
         safe.map(|(n, v)| {
-            let merge = rules.iter().find(|r| name_matches(&r.name, n.as_str())).map_or(ForwardMerge::Replace, |r| r.merge);
+            let merge =
+                rules.iter().find(|r| name_matches(&r.name, n.as_str())).map_or(ForwardMerge::Replace, |r| r.merge);
             (n.clone(), v.clone(), merge)
         })
         .collect()
@@ -57,7 +56,11 @@ pub fn client_headers(
         let safe: Vec<_> = safe.collect();
         rules
             .iter()
-            .flat_map(|r| safe.iter().filter(|(n, _)| name_matches(&r.name, n.as_str())).map(|(n, v)| ((*n).clone(), (*v).clone(), r.merge)))
+            .flat_map(|r| {
+                safe.iter()
+                    .filter(|(n, _)| name_matches(&r.name, n.as_str()))
+                    .map(|(n, v)| ((*n).clone(), (*v).clone(), r.merge))
+            })
             .collect()
     }
 }
@@ -120,7 +123,10 @@ mod tests {
         let cross = client_headers(&rules, false, "anthropic-messages", &h, &floor, &redactor);
         assert_eq!(cross.len(), 1, "cross-style keeps the declared list only");
         assert_eq!(cross[0].0, "anthropic-beta");
-        assert!(client_headers(&rules, false, "openai-chat", &h, &floor, &redactor).is_empty(), "from_styles limits the rule");
+        assert!(
+            client_headers(&rules, false, "openai-chat", &h, &floor, &redactor).is_empty(),
+            "from_styles limits the rule"
+        );
     }
 
     #[test]

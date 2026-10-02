@@ -21,8 +21,16 @@ struct Call {
 fn calls() -> Vec<Call> {
     let msgs = json!([{"role": "user", "content": "hi"}]);
     vec![
-        Call { path: "/v1/chat/completions", carrier: "authorization", body: json!({"model": "mockco/m1", "messages": msgs}) },
-        Call { path: "/v1/messages", carrier: "x-api-key", body: json!({"model": "mockco/m1", "max_tokens": 64, "messages": msgs}) },
+        Call {
+            path: "/v1/chat/completions",
+            carrier: "authorization",
+            body: json!({"model": "mockco/m1", "messages": msgs}),
+        },
+        Call {
+            path: "/v1/messages",
+            carrier: "x-api-key",
+            body: json!({"model": "mockco/m1", "max_tokens": 64, "messages": msgs}),
+        },
         Call { path: "/v1/responses", carrier: "authorization", body: json!({"model": "mockco/m1", "input": "hi"}) },
         Call {
             path: "/v1beta/models/mockco/m1:generateContent",
@@ -55,13 +63,22 @@ async fn when_every_attempt_fails_each_style_gets_503_with_the_attempts() {
         let id = r.headers()[REQUEST_ID].to_str().unwrap().to_owned();
         let body: Value = serde_json::from_slice(&r.bytes().await.unwrap()).unwrap();
         let message = body["error"]["message"].as_str().unwrap_or_else(|| panic!("{}: {body}", c.path));
-        assert!(message.starts_with(&format!("0router: no provider could serve mockco/m1 (record {id})")), "{}: {message}", c.path);
+        assert!(
+            message.starts_with(&format!("0router: no provider could serve mockco/m1 (record {id})")),
+            "{}: {message}",
+            c.path
+        );
         assert!(message.contains("\nmockco/main m1: 401 "), "{}: {message}", c.path);
         // Messages puts the details at the top; the others inside `error` (client-surface.md).
         let details = if c.path == "/v1/messages" { &body["zerorouter"] } else { &body["error"]["zerorouter"] };
         assert_eq!(details["record_id"], id.as_str(), "{}: {body}", c.path);
         let a = &details["attempts"][0];
-        assert_eq!((a["provider"].as_str(), a["account"].as_str(), a["status"].as_u64()), (Some("mockco"), Some("main"), Some(401)), "{}", c.path);
+        assert_eq!(
+            (a["provider"].as_str(), a["account"].as_str(), a["status"].as_u64()),
+            (Some("mockco"), Some("main"), Some(401)),
+            "{}",
+            c.path
+        );
         assert_eq!(a["class"], "auth");
         assert_eq!(s.engine.records.get(&id).unwrap().outcome, Outcome::Failed);
     }
@@ -86,8 +103,15 @@ async fn a_started_stream_gets_keepalives_and_one_preamble_across_a_retry() {
     // The first answer opens, says nothing and drops: a break before output.
     let open = json!({"id": "c0", "object": "chat.completion.chunk", "model": "m1", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]});
     let Step::Stream { status, headers, frames, .. } = Step::sse(&[(None, open)], false) else { unreachable!() };
-    s.mock.on("/alpha", [Step::Stream { status, headers, frames, every: Duration::from_millis(20), cut: true }, chat_stream()]);
-    let c = Call { path: "/v1/messages", carrier: "x-api-key", body: json!({"model": "alpha/m1", "max_tokens": 64, "stream": true, "messages": [{"role": "user", "content": "hi"}]}) };
+    s.mock.on(
+        "/alpha",
+        [Step::Stream { status, headers, frames, every: Duration::from_millis(20), cut: true }, chat_stream()],
+    );
+    let c = Call {
+        path: "/v1/messages",
+        carrier: "x-api-key",
+        body: json!({"model": "alpha/m1", "max_tokens": 64, "stream": true, "messages": [{"role": "user", "content": "hi"}]}),
+    };
     let r = post(&s.base, &s.key, &c).send().await.unwrap();
     assert_eq!(r.status(), 200);
     let text = r.text().await.unwrap();
@@ -102,7 +126,11 @@ async fn a_started_stream_gets_keepalives_and_one_preamble_across_a_retry() {
 async fn a_client_that_leaves_during_a_backoff_cancels_it() {
     let s = server_with(alpha(1500)).await;
     s.mock.on("/alpha", [Step::json(503, json!({"error": {"message": "busy"}})), chat_stream()]);
-    let c = Call { path: "/v1/messages", carrier: "x-api-key", body: json!({"model": "alpha/m1", "max_tokens": 64, "stream": true, "messages": [{"role": "user", "content": "hi"}]}) };
+    let c = Call {
+        path: "/v1/messages",
+        carrier: "x-api-key",
+        body: json!({"model": "alpha/m1", "max_tokens": 64, "stream": true, "messages": [{"role": "user", "content": "hi"}]}),
+    };
     let gone = post(&s.base, &s.key, &c).timeout(Duration::from_millis(300)).send().await;
     assert!(gone.is_err(), "the client gave up during the backoff");
     tokio::time::sleep(Duration::from_millis(2000)).await;

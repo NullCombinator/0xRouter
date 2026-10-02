@@ -45,7 +45,11 @@ pub fn messages_plugin(mock: &MockUpstream, id: &str) -> String {
 
 /// `plugins`: `(id, TOML)`; `accounts`: `(provider, account name)` in operator order;
 /// `config`: extra `config.toml` (unified models).
-pub async fn setup(plugins: impl FnOnce(&MockUpstream) -> Vec<(&'static str, String)>, accounts: &[(&str, &str)], config: &str) -> Setup {
+pub async fn setup(
+    plugins: impl FnOnce(&MockUpstream) -> Vec<(&'static str, String)>,
+    accounts: &[(&str, &str)],
+    config: &str,
+) -> Setup {
     let mock = MockUpstream::start().await;
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("config.toml"), format!("allow_private_endpoints = true\n{config}")).unwrap();
@@ -55,7 +59,9 @@ pub async fn setup(plugins: impl FnOnce(&MockUpstream) -> Vec<(&'static str, Str
     }
     let mut file = String::from("schema = 1\n");
     for (provider, name) in accounts {
-        file += &format!("[[account]]\nprovider = \"{provider}\"\nname = \"{name}\"\nsecret = \"{SECRET}-{provider}-{name}\"\n");
+        file += &format!(
+            "[[account]]\nprovider = \"{provider}\"\nname = \"{name}\"\nsecret = \"{SECRET}-{provider}-{name}\"\n"
+        );
     }
     zerorouter_engine::files::write_private(&dir.path().join(zerorouter_engine::accounts::FILE), &file).unwrap();
     let (engine, report) = Engine::open(OperatorHome::new(dir.path())).unwrap();
@@ -73,7 +79,14 @@ pub fn chat_body(target: &str, stream: bool) -> Value {
     json!({"model": target, "stream": stream, "messages": [{"role": "user", "content": "hi"}]})
 }
 
-pub fn request(s: &Setup, client: &str, target: &str, body: Value, agent: &str, cancel: CancellationToken) -> TextRequest {
+pub fn request(
+    s: &Setup,
+    client: &str,
+    target: &str,
+    body: Value,
+    agent: &str,
+    cancel: CancellationToken,
+) -> TextRequest {
     let st = s.engine.snapshot();
     let client = st.style(client).unwrap().clone();
     let ir = request::decode(&client, &body).unwrap();
@@ -120,14 +133,20 @@ pub fn err(status: u16) -> Step {
 
 pub fn chat_chunks() -> Step {
     let chunk = |delta: Value, finish: Value| {
-        (None, json!({"id": "c1", "object": "chat.completion.chunk", "model": "m1", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}))
+        (
+            None,
+            json!({"id": "c1", "object": "chat.completion.chunk", "model": "m1", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}),
+        )
     };
     Step::sse(
         &[
             chunk(json!({"role": "assistant", "content": "Hel"}), Value::Null),
             chunk(json!({"content": "lo"}), Value::Null),
             chunk(json!({}), json!("stop")),
-            (None, json!({"id": "c1", "object": "chat.completion.chunk", "model": "m1", "choices": [], "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}})),
+            (
+                None,
+                json!({"id": "c1", "object": "chat.completion.chunk", "model": "m1", "choices": [], "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}}),
+            ),
         ],
         true,
     )
@@ -172,7 +191,12 @@ pub fn accounts_hit(s: &Setup) -> Vec<String> {
         .received()
         .iter()
         .map(|r| {
-            let auth = r.headers.get("authorization").or_else(|| r.headers.get("x-api-key")).and_then(|v| v.to_str().ok()).unwrap_or("");
+            let auth = r
+                .headers
+                .get("authorization")
+                .or_else(|| r.headers.get("x-api-key"))
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
             auth.rsplit(&format!("{SECRET}-")[..]).next().unwrap_or("").to_owned()
         })
         .collect()

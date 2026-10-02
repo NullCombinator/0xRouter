@@ -87,14 +87,20 @@ fn request(s: &Setup, client: &str, target: &str, body: Value, cancel: Cancellat
 
 fn chat_chunks() -> Step {
     let chunk = |delta: Value, finish: Value| {
-        (None, json!({"id": "c1", "object": "chat.completion.chunk", "model": "m1", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}))
+        (
+            None,
+            json!({"id": "c1", "object": "chat.completion.chunk", "model": "m1", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}),
+        )
     };
     Step::sse(
         &[
             chunk(json!({"role": "assistant", "content": "Hel"}), Value::Null),
             chunk(json!({"content": "lo"}), Value::Null),
             chunk(json!({}), json!("stop")),
-            (None, json!({"id": "c1", "object": "chat.completion.chunk", "model": "m1", "choices": [], "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}})),
+            (
+                None,
+                json!({"id": "c1", "object": "chat.completion.chunk", "model": "m1", "choices": [], "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7}}),
+            ),
         ],
         true,
     )
@@ -129,7 +135,9 @@ async fn same_style_whole_answer_is_the_clients_body_edited() {
     let body = json!({"model": "mockco/m1", "messages": [{"role": "user", "content": "hi"}], "seed": 7, "x_unknown": {"kept": true}});
     let req = request(&s, "openai-chat", "mockco/m1", body, CancellationToken::new());
     let id = req.id.clone();
-    let Answer::Whole { status, answer, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("whole") };
+    let Answer::Whole { status, answer, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else {
+        panic!("whole")
+    };
     assert_eq!(status, 200);
     assert!(matches!(*answer, ForClient::AsReceived { read: Some(_) }), "{answer:?}");
 
@@ -157,10 +165,15 @@ async fn cross_style_stream_turns_into_events_with_usage() {
     let body = json!({"model": "mockco/m1", "max_tokens": 64, "stream": true, "messages": [{"role": "user", "content": "hi"}], "metadata": {"user_id": "u"}});
     let req = request(&s, "anthropic-messages", "mockco/m1", body, CancellationToken::new());
     let id = req.id.clone();
-    let Answer::Events { mut rx, forced } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("events") };
+    let Answer::Events { mut rx, forced } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else {
+        panic!("events")
+    };
     assert!(!forced);
     let events = drain(&mut rx).await;
-    let text: String = events.iter().filter_map(|e| if let Piece::Event(Event::TextDelta(t)) = e { Some(t.as_str()) } else { None }).collect();
+    let text: String = events
+        .iter()
+        .filter_map(|e| if let Piece::Event(Event::TextDelta(t)) = e { Some(t.as_str()) } else { None })
+        .collect();
     assert_eq!(text, "Hello");
 
     let b = s.mock.received()[0].json();
@@ -183,7 +196,9 @@ async fn a_forced_stream_is_collected_for_a_whole_client() {
     let body = json!({"model": "forced/m9", "messages": [{"role": "user", "content": "hi"}]});
     let req = request(&s, "openai-chat", "forced/m9", body.clone(), CancellationToken::new());
     let client = req.client.clone();
-    let Answer::Events { rx, forced } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("events") };
+    let Answer::Events { rx, forced } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else {
+        panic!("events")
+    };
     assert!(forced);
     let b = s.mock.received()[0].json();
     assert_eq!(b["stream"], true, "force_stream makes the upstream request a stream");
@@ -228,7 +243,9 @@ async fn cancelling_stops_the_upstream_stream_and_the_record_says_so() {
     let body = json!({"model": "mockco/m1", "stream": true, "messages": [{"role": "user", "content": "hi"}]});
     let req = request(&s, "openai-chat", "mockco/m1", body, cancel.clone());
     let id = req.id.clone();
-    let Answer::Events { mut rx, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("events") };
+    let Answer::Events { mut rx, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else {
+        panic!("events")
+    };
     let first = rx.recv().await.unwrap();
     assert!(matches!(first, Piece::Frame(..)), "a native stream relays frames: {first:?}");
     cancel.cancel();
@@ -264,10 +281,16 @@ async fn a_native_stream_relays_the_providers_frames_unchanged() {
     let body = json!({"model": "mockco/m1", "stream": true, "messages": [{"role": "user", "content": "hi"}]});
     let req = request(&s, "openai-chat", "mockco/m1", body, CancellationToken::new());
     let id = req.id.clone();
-    let Answer::Events { mut rx, forced: false } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("events") };
+    let Answer::Events { mut rx, forced: false } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else {
+        panic!("events")
+    };
     let got = frames(drain(&mut rx).await);
     assert_eq!(got.len(), 4, "{got:#?}");
-    assert_eq!(got[0]["choices"][0]["delta"], json!({"role": "assistant", "content": "Hel"}), "the provider's chunk as sent");
+    assert_eq!(
+        got[0]["choices"][0]["delta"],
+        json!({"role": "assistant", "content": "Hel"}),
+        "the provider's chunk as sent"
+    );
     assert_eq!(got[0]["object"], "chat.completion.chunk");
     assert_eq!(got[3], "[DONE]");
     assert!(got.iter().all(|v| v.get("usage").is_none()));
@@ -277,7 +300,9 @@ async fn a_native_stream_relays_the_providers_frames_unchanged() {
     // The client asked: the usage chunk goes through too.
     let body = json!({"model": "mockco/m1", "stream": true, "stream_options": {"include_usage": true}, "messages": [{"role": "user", "content": "hi"}]});
     let req = request(&s, "openai-chat", "mockco/m1", body, CancellationToken::new());
-    let Answer::Events { mut rx, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("events") };
+    let Answer::Events { mut rx, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else {
+        panic!("events")
+    };
     let got = frames(drain(&mut rx).await);
     assert_eq!(got.len(), 5);
     assert_eq!(got[3]["usage"]["prompt_tokens"], 5);

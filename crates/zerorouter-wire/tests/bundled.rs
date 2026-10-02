@@ -37,7 +37,12 @@ fn conversation() -> Request {
             role: Role::Assistant,
             parts: vec![
                 Part::text("checking"),
-                Part::ToolCall { id: "c1".into(), name: "get_weather".into(), arguments: json!({ "city": "Oslo" }), cache_control: None },
+                Part::ToolCall {
+                    id: "c1".into(),
+                    name: "get_weather".into(),
+                    arguments: json!({ "city": "Oslo" }),
+                    cache_control: None,
+                },
             ],
         },
         Message {
@@ -90,8 +95,14 @@ fn part(p: &Part) -> Value {
 fn result_text(c: &ResultContent) -> String {
     match c {
         ResultContent::Text(t) => t.clone(),
-        ResultContent::Parts(ps) => ps.iter().filter_map(|p| if let Part::Text { text, .. } = p { Some(text.as_str()) } else { None }).collect(),
-        ResultContent::Json(v) => v.get("content").or_else(|| v.get("result")).and_then(Value::as_str).map_or_else(|| v.to_string(), str::to_owned),
+        ResultContent::Parts(ps) => {
+            ps.iter().filter_map(|p| if let Part::Text { text, .. } = p { Some(text.as_str()) } else { None }).collect()
+        }
+        ResultContent::Json(v) => v
+            .get("content")
+            .or_else(|| v.get("result"))
+            .and_then(Value::as_str)
+            .map_or_else(|| v.to_string(), str::to_owned),
     }
 }
 
@@ -102,7 +113,12 @@ fn a_conversation_survives_every_style_pair() {
         let sa = bundled(a);
         let body = request::encode(&conversation(), &sa, "ir").unwrap_or_else(|e| panic!("encode into {a}: {e}")).body;
         let read = request::decode(&sa, &body).unwrap_or_else(|e| panic!("decode {a}: {e}\n{body:#}"));
-        assert!(read.opaque.is_empty() && read.unplaced.is_empty(), "{a}: {:?} {:?}\n{body:#}", read.opaque, read.unplaced);
+        assert!(
+            read.opaque.is_empty() && read.unplaced.is_empty(),
+            "{a}: {:?} {:?}\n{body:#}",
+            read.opaque,
+            read.unplaced
+        );
         assert_eq!(seen(&read), want, "{a}\n{body:#}");
         assert_eq!(read.tools.len(), 1, "{a}");
         assert_eq!(read.tool_choice, Some(ToolChoice::Auto), "{a}");
@@ -184,11 +200,13 @@ fn a_stream_survives_every_style() {
         let joined = |f: fn(&Event) -> Option<&str>| back.iter().filter_map(f).collect::<String>();
         assert_eq!(joined(|e| if let Event::TextDelta(t) = e { Some(t) } else { None }), "Hello", "{a}\n{bytes}");
         assert_eq!(joined(|e| if let Event::ThinkingDelta(t) = e { Some(t) } else { None }), "hmm", "{a}\n{bytes}");
-        let args: Value = serde_json::from_str(&joined(|e| if let Event::ToolArguments(t) = e { Some(t) } else { None }))
-            .unwrap_or_else(|e| panic!("{a}: arguments: {e}\n{bytes}"));
+        let args: Value =
+            serde_json::from_str(&joined(|e| if let Event::ToolArguments(t) = e { Some(t) } else { None }))
+                .unwrap_or_else(|e| panic!("{a}: arguments: {e}\n{bytes}"));
         assert_eq!(args, json!({ "a": 1 }), "{a}");
         assert!(
-            back.iter().any(|e| matches!(e, Event::BlockStart(BlockKind::ToolCall { id, name }) if id == "c1" && name == "f")),
+            back.iter()
+                .any(|e| matches!(e, Event::BlockStart(BlockKind::ToolCall { id, name }) if id == "c1" && name == "f")),
             "{a}: {back:#?}"
         );
         let finish = back.iter().rev().find_map(|e| if let Event::Finish(f) = e { Some(*f) } else { None });

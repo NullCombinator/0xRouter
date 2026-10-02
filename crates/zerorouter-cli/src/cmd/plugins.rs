@@ -16,8 +16,12 @@ pub(crate) enum Command {
         community: bool,
     },
     /// Install a community plugin. Exit 3 if this core can't support it.
-    Install { id: String },
-    Uninstall { id: String },
+    Install {
+        id: String,
+    },
+    Uninstall {
+        id: String,
+    },
 }
 
 /// Exit code for a plugin this core can't support.

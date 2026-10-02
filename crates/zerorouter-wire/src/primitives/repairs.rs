@@ -39,7 +39,8 @@ fn ensure_tool_call_ids(req: &mut Request) {
                     id.retain(valid_id_char);
                     if id.is_empty() {
                         let n: String = name.chars().filter(|c| valid_id_char(*c)).collect();
-                        *id = if n.is_empty() { format!("call_msg{i}_tc{j}") } else { format!("call_msg{i}_tc{j}_{n}") };
+                        *id =
+                            if n.is_empty() { format!("call_msg{i}_tc{j}") } else { format!("call_msg{i}_tc{j}_{n}") };
                     }
                     open.push((id.clone(), name.clone()));
                     j += 1;
@@ -138,14 +139,60 @@ fn sanitize_function_names(req: &mut Request) {
 
 /// 9router `UNSUPPORTED_SCHEMA_CONSTRAINTS` (`translator/formats/gemini.js`).
 const UNSUPPORTED: &[&str] = &[
-    "minLength", "maxLength", "exclusiveMinimum", "exclusiveMaximum", "minItems", "maxItems", "format",
-    "multipleOf", "uniqueItems", "contains", "unevaluatedProperties", "unevaluatedItems", "contentSchema",
-    "prefixItems", "additionalItems", "default", "examples", "$schema", "$defs", "definitions", "const", "$ref",
-    "$comment", "deprecated", "readOnly", "writeOnly", "additionalProperties", "propertyNames",
-    "patternProperties", "enumDescriptions", "anyOf", "oneOf", "allOf", "not", "dependencies",
-    "dependentSchemas", "dependentRequired", "title", "optional", "if", "then", "else", "contentMediaType",
-    "contentEncoding", "cornerRadius", "fillColor", "fontFamily", "fontSize", "fontWeight", "gap", "padding",
-    "strokeColor", "strokeThickness", "textColor",
+    "minLength",
+    "maxLength",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "minItems",
+    "maxItems",
+    "format",
+    "multipleOf",
+    "uniqueItems",
+    "contains",
+    "unevaluatedProperties",
+    "unevaluatedItems",
+    "contentSchema",
+    "prefixItems",
+    "additionalItems",
+    "default",
+    "examples",
+    "$schema",
+    "$defs",
+    "definitions",
+    "const",
+    "$ref",
+    "$comment",
+    "deprecated",
+    "readOnly",
+    "writeOnly",
+    "additionalProperties",
+    "propertyNames",
+    "patternProperties",
+    "enumDescriptions",
+    "anyOf",
+    "oneOf",
+    "allOf",
+    "not",
+    "dependencies",
+    "dependentSchemas",
+    "dependentRequired",
+    "title",
+    "optional",
+    "if",
+    "then",
+    "else",
+    "contentMediaType",
+    "contentEncoding",
+    "cornerRadius",
+    "fillColor",
+    "fontFamily",
+    "fontSize",
+    "fontWeight",
+    "gap",
+    "padding",
+    "strokeColor",
+    "strokeThickness",
+    "textColor",
 ];
 
 /// Reduces a JSON schema to what gemini accepts: `allOf` merged, `anyOf`/`oneOf` flattened
@@ -272,11 +319,14 @@ mod tests {
             cache_control: None,
         };
         sanitize_schema(&mut t.parameters);
-        assert_eq!(t.parameters, json!({
-            "type": "object",
-            "properties": { "format": { "type": "string" }, "v": { "type": "integer", "minimum": 0 } },
-            "required": ["format"]
-        }));
+        assert_eq!(
+            t.parameters,
+            json!({
+                "type": "object",
+                "properties": { "format": { "type": "string" }, "v": { "type": "integer", "minimum": 0 } },
+                "required": ["format"]
+            })
+        );
         assert_eq!(gemini_function_name(&t.name), "_1_bad_name_");
     }
 }

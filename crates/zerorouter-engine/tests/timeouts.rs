@@ -28,7 +28,12 @@ fn frame(delta: &str) -> axum::body::Bytes {
 #[tokio::test]
 async fn no_headers_in_time_counts_as_a_502_and_is_retried() {
     let s = setup(
-        |m| vec![("alpha", chat_plugin(m, "alpha", "timeout_ms = 200\nretry = { 502 = { retries = 1, delay_ms = 10 } }"))],
+        |m| {
+            vec![(
+                "alpha",
+                chat_plugin(m, "alpha", "timeout_ms = 200\nretry = { 502 = { retries = 1, delay_ms = 10 } }"),
+            )]
+        },
         &[("alpha", "main")],
         "",
     )
@@ -46,7 +51,12 @@ async fn no_headers_in_time_counts_as_a_502_and_is_retried() {
 #[tokio::test]
 async fn a_quiet_stream_before_output_is_an_ordinary_retry() {
     let s = setup(
-        |m| vec![("alpha", chat_plugin(m, "alpha", "stall_timeout_ms = 200\nretry = { 502 = { retries = 1, delay_ms = 10 } }"))],
+        |m| {
+            vec![(
+                "alpha",
+                chat_plugin(m, "alpha", "stall_timeout_ms = 200\nretry = { 502 = { retries = 1, delay_ms = 10 } }"),
+            )]
+        },
         &[("alpha", "main")],
         "",
     )
@@ -54,7 +64,9 @@ async fn a_quiet_stream_before_output_is_an_ordinary_retry() {
     s.mock.push([Step::StallAfter { frames: vec![], hold: Duration::from_secs(5) }, chat_chunks()]);
     let req = request(&s, "openai-chat", "alpha/m1", chat_body("alpha/m1", true), "ak_test", CancellationToken::new());
     let id = req.id.clone();
-    let Answer::Events { mut rx, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("events") };
+    let Answer::Events { mut rx, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else {
+        panic!("events")
+    };
     let pieces = drain(&mut rx).await;
     assert!(!pieces.iter().any(|p| matches!(p, Piece::Event(Event::Error(_)))), "the client never hears of it");
     let r = settled(&s, &id).await;
@@ -65,11 +77,14 @@ async fn a_quiet_stream_before_output_is_an_ordinary_retry() {
 #[tokio::test]
 async fn a_quiet_stream_after_output_is_a_break() {
     let config = "[pipeline]\nbreak_behaviour = \"error_event\"\n";
-    let s = setup(|m| vec![("alpha", chat_plugin(m, "alpha", "stall_timeout_ms = 200"))], &[("alpha", "main")], config).await;
+    let s = setup(|m| vec![("alpha", chat_plugin(m, "alpha", "stall_timeout_ms = 200"))], &[("alpha", "main")], config)
+        .await;
     s.mock.push([Step::StallAfter { frames: vec![frame("Hel")], hold: Duration::from_secs(5) }]);
     let req = request(&s, "openai-chat", "alpha/m1", chat_body("alpha/m1", true), "ak_test", CancellationToken::new());
     let id = req.id.clone();
-    let Answer::Events { mut rx, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("events") };
+    let Answer::Events { mut rx, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else {
+        panic!("events")
+    };
     let pieces = drain(&mut rx).await;
     assert!(matches!(pieces.last(), Some(Piece::Event(Event::Error(_)))), "{pieces:?}");
     let r = settled(&s, &id).await;
@@ -94,7 +109,9 @@ async fn a_forced_stream_that_goes_quiet_fails_the_whole_answer() {
     let req = request(&s, "openai-chat", "forced/m1", body.clone(), "ak_test", CancellationToken::new());
     let client = req.client.clone();
     let id = req.id.clone();
-    let Answer::Events { rx, forced: true } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("forced events") };
+    let Answer::Events { rx, forced: true } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else {
+        panic!("forced events")
+    };
     let err = attempt::collect(&client, &body, rx).await.expect_err("a break, not half an answer");
     assert!(err.message.contains(&id), "{}", err.message);
     assert_eq!(class(&settled(&s, &id).await.attempts[0].outcome), Some(ErrorClass::Stall));

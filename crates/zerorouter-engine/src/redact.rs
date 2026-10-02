@@ -34,7 +34,10 @@ impl Redactor {
         let patterns: Vec<String> =
             secrets.into_iter().filter(|s| s.len() >= MIN_SECRET_LEN).map(|s| s.with_exposed(str::to_owned)).collect();
         let secrets = (!patterns.is_empty()).then(|| {
-            AhoCorasick::builder().match_kind(MatchKind::LeftmostLongest).build(&patterns).expect("literal patterns build")
+            AhoCorasick::builder()
+                .match_kind(MatchKind::LeftmostLongest)
+                .build(&patterns)
+                .expect("literal patterns build")
         });
         Self { secrets }
     }
@@ -156,7 +159,11 @@ mod tests {
     use std::sync::Mutex;
 
     fn redactor() -> Redactor {
-        let s = [SecretString::new("sk-ant-SENTINEL-1"), SecretString::new("short"), SecretString::new("sk-ant-SENTINEL-12")];
+        let s = [
+            SecretString::new("sk-ant-SENTINEL-1"),
+            SecretString::new("short"),
+            SecretString::new("sk-ant-SENTINEL-12"),
+        ];
         Redactor::new(&s)
     }
 
@@ -169,10 +176,7 @@ mod tests {
         assert_eq!(r.redact(&format!("Bearer {key}.")), "Bearer ***.");
         assert_eq!(r.redact("0r-tooshort"), "0r-tooshort");
         assert!(matches!(r.redact("nothing here"), Cow::Borrowed(_)));
-        assert_eq!(
-            r.redact_url("https://h/v1?alt=sse&key=AIzaXYZ&x=1"),
-            "https://h/v1?alt=sse&key=***&x=1"
-        );
+        assert_eq!(r.redact_url("https://h/v1?alt=sse&key=AIzaXYZ&x=1"), "https://h/v1?alt=sse&key=***&x=1");
         assert_eq!(Redactor::default().redact("sk-ant-SENTINEL-1"), "sk-ant-SENTINEL-1");
     }
 
@@ -200,7 +204,10 @@ mod tests {
     fn log_lines_go_through_the_current_redactor() {
         let current = Arc::new(ArcSwap::from_pointee(Redactor::default()));
         let sink = Sink::default();
-        let sub = tracing_subscriber::fmt().with_writer(RedactWriter::new(current.clone(), sink.clone())).with_ansi(false).finish();
+        let sub = tracing_subscriber::fmt()
+            .with_writer(RedactWriter::new(current.clone(), sink.clone()))
+            .with_ansi(false)
+            .finish();
         tracing::subscriber::with_default(sub, || {
             tracing::warn!("upstream said sk-ant-SENTINEL-1");
             current.store(Arc::new(redactor()));

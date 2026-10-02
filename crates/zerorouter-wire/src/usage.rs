@@ -15,7 +15,8 @@ use crate::template::{Bindings, select_one};
 /// cache count can't undo it.
 pub fn read(sel: &UsageSel, body: Option<&Value>, b: &Bindings) -> Usage {
     let mut u = body.map_or_else(Usage::default, |v| {
-        let get = |p: &Option<zerorouter_registry::template::FieldPath>| p.as_ref().and_then(|p| select_one(p, v)?.as_u64());
+        let get =
+            |p: &Option<zerorouter_registry::template::FieldPath>| p.as_ref().and_then(|p| select_one(p, v)?.as_u64());
         Usage {
             input: get(&sel.input),
             output: get(&sel.output),
@@ -70,7 +71,14 @@ mod tests {
     #[test]
     fn includes_cache_round_trips() {
         let b = Bindings::new().with("usage.input", 100).with("usage.cache_read", 30).with("usage.output", 5);
-        let sel = |semantics| UsageSel { input: None, output: None, cache_read: None, cache_write: None, reasoning: None, semantics };
+        let sel = |semantics| UsageSel {
+            input: None,
+            output: None,
+            cache_read: None,
+            cache_write: None,
+            reasoning: None,
+            semantics,
+        };
         let u = read(&sel(InputSemantics::IncludesCache), None, &b);
         assert_eq!(u, read(&sel(InputSemantics::IncludesCache), Some(&serde_json::json!({})), &b));
         assert_eq!((u.input, u.cache_read), (Some(70), Some(30)));

@@ -44,7 +44,8 @@ pub struct AgentId {
 
 impl AgentId {
     pub fn new(key: impl Into<String>, session: Option<&str>) -> Self {
-        let session = session.map(str::trim).filter(|s| !s.is_empty()).map(|s| s.chars().take(MAX_SESSION_CHARS).collect());
+        let session =
+            session.map(str::trim).filter(|s| !s.is_empty()).map(|s| s.chars().take(MAX_SESSION_CHARS).collect());
         Self { key: key.into(), session }
     }
 }
@@ -147,7 +148,11 @@ impl Keys {
     }
 
     /// Issues a key; the returned string is the only time the key exists outside a client.
-    pub fn issue(&mut self, name: &str, break_behaviour: Option<BreakBehaviour>) -> Result<(String, &AgentKey), KeyError> {
+    pub fn issue(
+        &mut self,
+        name: &str,
+        break_behaviour: Option<BreakBehaviour>,
+    ) -> Result<(String, &AgentKey), KeyError> {
         let name = name.trim();
         if name.is_empty() {
             return Err(KeyError::EmptyName);
@@ -170,7 +175,10 @@ impl Keys {
     }
 
     fn find_mut(&mut self, name_or_id: &str) -> Result<&mut AgentKey, KeyError> {
-        self.list.iter_mut().find(|k| k.id == name_or_id || k.name == name_or_id).ok_or_else(|| KeyError::NotFound(name_or_id.to_owned()))
+        self.list
+            .iter_mut()
+            .find(|k| k.id == name_or_id || k.name == name_or_id)
+            .ok_or_else(|| KeyError::NotFound(name_or_id.to_owned()))
     }
 
     pub fn revoke(&mut self, name_or_id: &str) -> Result<(), KeyError> {
