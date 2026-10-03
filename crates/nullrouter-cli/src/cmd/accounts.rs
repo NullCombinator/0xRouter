@@ -5,7 +5,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Subcommand;
+use nullrouter_cli::signin::{self, SignIn};
 use nullrouter_engine::accounts::{self, Account, Accounts, SecretSource};
+use nullrouter_engine::clock::rfc3339;
+use nullrouter_engine::signin::SignInHttp;
+use nullrouter_engine::tokens::TokenStore;
 use nullrouter_registry::{OperatorHome, SecretString};
 use nullrouter_server::operator;
 use serde_json::{Value, json};
@@ -21,9 +25,26 @@ pub(crate) enum Command {
         #[arg(long, value_name = "N")]
         order: Option<i64>,
     },
+    /// Sign in to a provider's account in the browser (or on another device) and add it.
+    Signin {
+        provider: String,
+        name: String,
+        /// Don't open a browser; paste the address or code.
+        #[arg(long)]
+        paste: bool,
+        /// Don't open a browser; only print the link.
+        #[arg(long)]
+        no_browser: bool,
+        /// Answer the terms question with yes (the warning is still printed).
+        #[arg(long)]
+        accept_terms_risk: bool,
+    },
     /// List accounts, optionally for one provider.
     List {
         provider: Option<String>,
+        /// Also show sign-in email, tier, token expiry and last refresh.
+        #[arg(long)]
+        long: bool,
     },
     Remove {
         provider: String,
@@ -62,11 +83,85 @@ fn secret_from_stdin() -> Result<String, ExitCode> {
     Ok(s)
 }
 
+/// `accounts signin`: resolves the provider, reads stdin lines on a thread, and turns
+/// Ctrl-C into cancellation (exit 5, nothing written).
+fn sign_in(
+    home: &OperatorHome,
+    provider: &str,
+    name: &str,
+    browser: bool,
+    accept_terms_risk: bool,
+    as_json: bool,
+) -> Result<ExitCode, ExitCode> {
+    if !accounts::valid_name(name) {
+        return Err(fail(accounts::AccountError::BadName(name.into())));
+    }
+    let reg = crate::open(Some(home.path().to_owned()))?.snapshot();
+    let entity = reg.provider(provider).map_err(fail)?;
+    let http = SignInHttp::new(reg.runtime().allow_private_endpoints);
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(fail)?;
+
+    let (tx, mut input) = tokio::sync::mpsc::unbounded_channel();
+    // A plain thread: a blocking stdin read must not hold the runtime open at exit.
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lines() {
+            if line.ok().is_none_or(|l| tx.send(l).is_err()) {
+                break;
+            }
+        }
+    });
+    let open: &dyn Fn(&str) = &signin::open_browser;
+    let job = SignIn { home, provider: entity, name, http: &http, accept_terms_risk, browser: browser.then_some(open) };
+    // With --json, stdout carries only the result.
+    let mut out: Box<dyn std::io::Write> =
+        if as_json { Box::new(std::io::stderr()) } else { Box::new(std::io::stdout()) };
+    let result = rt.block_on(async {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let on_ctrl_c = cancel.clone();
+        tokio::spawn(async move {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                on_ctrl_c.cancel();
+            }
+        });
+        job.run(&mut input, &mut out, &cancel).await
+    });
+    match result {
+        Ok(done) if as_json => {
+            println!(
+                "{}",
+                json!({
+                    "provider": done.provider,
+                    "name": done.name,
+                    "email": done.email,
+                    "tier": done.tier,
+                    "replaced": done.replaced.is_some(),
+                    "status": done.status,
+                })
+            );
+            Ok(ExitCode::SUCCESS)
+        }
+        Ok(done) => {
+            println!("{}", done.line());
+            Ok(ExitCode::SUCCESS)
+        }
+        Err(e) => {
+            eprintln!("{}", e.message);
+            Err(ExitCode::from(e.code))
+        }
+    }
+}
+
 pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
     let mut list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
     let (provider, name) = match cmd {
-        Command::List { provider } => return Ok(print_list(&home, &list, provider.as_deref(), as_json)),
+        Command::List { provider, long } => {
+            return Ok(print_list(&home, &list, provider.as_deref(), long, as_json));
+        }
+        Command::Signin { provider, name, paste, no_browser, accept_terms_risk } => {
+            let browser = !paste && !no_browser && signin::has_display();
+            return sign_in(&home, &provider, &name, browser, accept_terms_risk, as_json);
+        }
         Command::Add { provider, name, env, order } => {
             if !accounts::valid_name(&name) {
                 return Err(fail(accounts::AccountError::BadName(name)));
@@ -139,19 +234,35 @@ fn state(a: &Account, live: &Value) -> String {
     if rests.is_empty() { "active".into() } else { format!("cooling {}", rests.join(", ")) }
 }
 
-fn print_list(home: &OperatorHome, list: &Accounts, provider: Option<&str>, as_json: bool) -> ExitCode {
+fn print_list(home: &OperatorHome, list: &Accounts, provider: Option<&str>, long: bool, as_json: bool) -> ExitCode {
     // Cooldowns live in the running server; without one, every account is at rest.
     let live = operator::call(home, &json!({"op": "accounts.state"})).unwrap_or(Value::Null);
+    // Sign-in accounts show their access token's last four, as keys do (research R5).
+    let tokens = TokenStore::load(home.path()).unwrap_or_else(|e| {
+        eprintln!("warning: {e}");
+        TokenStore::default()
+    });
     let rows: Vec<_> = list
         .iter()
         .filter(|a| provider.is_none_or(|p| a.provider == p))
         .map(|a| {
+            let t = tokens.get(&a.provider, &a.name).filter(|_| a.is_signin());
+            let secret = match t {
+                Some(t) => t.shown_token(),
+                None if a.is_signin() => "…".to_owned(),
+                None => a.shown_secret(),
+            };
             json!({
                 "provider": a.provider,
                 "name": a.name,
+                "kind": if a.is_signin() { "signin" } else { "key" },
                 "order": a.order,
-                "secret": a.shown_secret(),
+                "secret": secret,
                 "state": state(a, &live),
+                "email": t.and_then(|t| t.claims.email.clone()),
+                "tier": t.and_then(|t| t.claims.tier.clone()),
+                "expires_at": t.map(|t| rfc3339(t.expires_at)),
+                "last_refresh_at": t.and_then(|t| t.last_refresh_at.map(rfc3339)),
             })
         })
         .collect();
@@ -159,14 +270,26 @@ fn print_list(home: &OperatorHome, list: &Accounts, provider: Option<&str>, as_j
         println!("{:#}", json!(rows));
     } else {
         for r in &rows {
-            println!(
-                "{:<20} {:<20} {:>5} {:<24} {}",
-                r["provider"].as_str().unwrap_or_default(),
-                r["name"].as_str().unwrap_or_default(),
+            let text = |k: &str| r[k].as_str().unwrap_or("-").to_owned();
+            let mut line = format!(
+                "{:<20} {:<20} {:<6} {:>5} {:<24} {}",
+                text("provider"),
+                text("name"),
+                text("kind"),
                 r["order"],
-                r["secret"].as_str().unwrap_or_default(),
-                r["state"].as_str().unwrap_or_default()
+                text("secret"),
+                text("state")
             );
+            if long && r["kind"] == "signin" {
+                line = format!(
+                    "{line}\n    email {}  tier {}  expires {}  refreshed {}",
+                    text("email"),
+                    text("tier"),
+                    text("expires_at"),
+                    text("last_refresh_at")
+                );
+            }
+            println!("{line}");
         }
     }
     ExitCode::SUCCESS

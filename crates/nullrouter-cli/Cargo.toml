@@ -14,13 +14,18 @@ nullrouter-registry.workspace = true
 nullrouter-engine.workspace = true
 nullrouter-server.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
 reqwest.workspace = true
+url.workspace = true
 nullrouter-engine = { workspace = true, features = ["testkit"] }
+
+[lib]
+path = "src/lib.rs"
 
 [[bin]]
 name = "nullrouter"

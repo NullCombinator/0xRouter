@@ -110,3 +110,64 @@ fn keys_are_printed_once_and_stored_as_digests() {
     assert!(nr(dir.path(), &["keys", "revoke", &k.id], "").status.success());
     assert!(Keys::load(&file).unwrap().lookup(&key).is_none(), "a revoked key no longer authenticates");
 }
+
+/// T028: sign-in accounts in `accounts list`: `kind`, the access token's last four, and
+/// `--long` (email, tier, expiry, last refresh). No token in full, in text or JSON.
+#[test]
+fn accounts_list_shows_sign_in_accounts() {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    use nullrouter_engine::tokens::{self, Claims, TokenEntry};
+    use nullrouter_registry::SecretString;
+
+    const ACCESS: &str = "xai-access-SENTINEL-Zt1c";
+    const REFRESH: &str = "xai-refresh-SENTINEL-r9r9";
+    let dir = tempfile::tempdir().unwrap();
+    let out = nr(dir.path(), &["accounts", "add", "anthropic", "api"], &format!("{SECRET}\n"));
+    assert!(out.status.success());
+    let mut list = Accounts::load(&dir.path().join(accounts::FILE)).unwrap();
+    list.add(accounts::Account::signin("xai", "main", 0)).unwrap();
+    list.save().unwrap();
+    let at = |s: u64| UNIX_EPOCH + Duration::from_secs(s);
+    tokens::update(dir.path(), "xai", "main", |slot| {
+        *slot = Some(TokenEntry {
+            provider: "xai".into(),
+            name: "main".into(),
+            access_token: SecretString::new(ACCESS),
+            refresh_token: Some(SecretString::new(REFRESH)),
+            expires_at: at(1_790_000_000),
+            scope: "openid".into(),
+            claims: Claims { email: Some("alice@example.com".into()), user_id: None, tier: Some("SuperGrok".into()) },
+            hosts: ["api.x.ai".to_owned()].into(),
+            signed_in_at: at(1_789_990_000),
+            last_refresh_at: Some(at(1_789_995_000)),
+            state: None,
+            state_since: None,
+            state_reason: None,
+        });
+    })
+    .unwrap();
+
+    let text = String::from_utf8(nr(dir.path(), &["accounts", "list"], "").stdout).unwrap();
+    let row = |p: &str| text.lines().find(|l| l.starts_with(p)).unwrap().split_whitespace().collect::<Vec<_>>();
+    assert_eq!(row("anthropic")[..5], ["anthropic", "api", "key", "0", "…0003"], "{text}");
+    assert_eq!(row("xai")[..5], ["xai", "main", "signin", "0", "…Zt1c"], "{text}");
+    assert!(!text.contains("alice"), "email only with --long: {text}");
+
+    let long = String::from_utf8(nr(dir.path(), &["accounts", "list", "--long"], "").stdout).unwrap();
+    for want in ["alice@example.com", "SuperGrok", "2026-09-21T14:13:20Z", "2026-09-21T12:50:00Z"] {
+        assert!(long.contains(want), "{want}: {long}");
+    }
+
+    let json = String::from_utf8(nr(dir.path(), &["--json", "accounts", "list", "xai"], "").stdout).unwrap();
+    let rows: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(rows.as_array().unwrap().len(), 1);
+    let r = &rows[0];
+    assert_eq!((r["kind"].as_str(), r["secret"].as_str()), (Some("signin"), Some("…Zt1c")));
+    assert_eq!((r["email"].as_str(), r["tier"].as_str()), (Some("alice@example.com"), Some("SuperGrok")));
+    assert_eq!(r["expires_at"], "2026-09-21T14:13:20Z");
+    assert_eq!(r["last_refresh_at"], "2026-09-21T12:50:00Z");
+    for out in [&text, &long, &json] {
+        assert!(!out.contains(ACCESS) && !out.contains(REFRESH) && !out.contains(SECRET), "no token in full");
+    }
+}
