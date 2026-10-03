@@ -1,12 +1,24 @@
-use std::path::PathBuf;
+//! `nullrouter check`: the registry report, plus the sign-in files (spec 005 T092): token
+//! entries without a sign-in account, sign-in accounts without tokens, and file modes.
+//! Names and modes only; a token is never printed.
+
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use nullrouter_engine::accounts::{self, Accounts};
+use nullrouter_engine::files::FileError;
+use nullrouter_engine::identity;
+use nullrouter_engine::quota::history;
+use nullrouter_engine::tokens::{self, TokenStore};
 use serde_json::json;
 
 pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, ExitCode> {
     let handle = crate::open(home)?;
     let reg = handle.snapshot();
     let r = reg.report();
+    let s = signin_report(handle.home().path());
+    let pair = |(p, n): &(String, String)| json!({ "provider": p, "name": n });
 
     if as_json {
         let out = json!({
@@ -22,6 +34,19 @@ pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, Exit
             })).collect::<Vec<_>>(),
             "dropped_unified_models": r.dropped_unified_models.iter()
                 .map(|d| json!({ "name": d.name, "provider": d.provider })).collect::<Vec<_>>(),
+            "signin": {
+                "errors": s.errors,
+                "tokens_without_account": s.orphan_tokens.iter().map(pair).collect::<Vec<_>>(),
+                "accounts_without_tokens": s.tokenless.iter().map(|a| {
+                    let mut v = pair(a);
+                    v["fix"] = json!(signin_command(&a.0, &a.1));
+                    v
+                }).collect::<Vec<_>>(),
+                "file_modes": s.modes.iter().map(|m| json!({
+                    "path": m.path, "mode": format!("{:o}", m.mode), "expected": format!("{:o}", m.expected),
+                    "error": m.fatal,
+                })).collect::<Vec<_>>(),
+            },
         });
         println!("{out:#}");
     } else {
@@ -51,7 +76,144 @@ pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, Exit
         for d in &r.dropped_unified_models {
             println!("dropped unified model {}: member provider {} was skipped", d.name, d.provider);
         }
+        for e in &s.errors {
+            println!("error: {e}");
+        }
+        for m in &s.modes {
+            println!("{}: {}", if m.fatal { "error" } else { "warning" }, m.line());
+        }
+        for (p, n) in &s.orphan_tokens {
+            println!("warning: tokens.toml has tokens for {p}/{n}, which is not a sign-in account; they are ignored");
+        }
+        for (p, n) in &s.tokenless {
+            println!("warning: sign-in account {p}/{n} has no tokens and can't serve; run `{}`", signin_command(p, n));
+        }
     }
-    let errors = !r.skipped.is_empty() || !r.dropped_unified_models.is_empty();
+    let errors = !r.skipped.is_empty()
+        || !r.dropped_unified_models.is_empty()
+        || !s.errors.is_empty()
+        || s.modes.iter().any(|m| m.fatal);
     Ok(ExitCode::from(u8::from(errors)))
+}
+
+/// The sign-in files' findings (spec 005 T092). Built from names and modes only: no token
+/// is ever read into the report.
+#[derive(Default)]
+struct SigninReport {
+    /// Files `serve` refuses to start with.
+    errors: Vec<String>,
+    /// `tokens.toml` entries with no matching sign-in account: ignored.
+    orphan_tokens: Vec<(String, String)>,
+    /// Sign-in accounts with no token entry: they can't serve.
+    tokenless: Vec<(String, String)>,
+    /// Paths whose mode isn't 0600 (files) or 0700 (directories).
+    modes: Vec<ModeFinding>,
+}
+
+struct ModeFinding {
+    path: PathBuf,
+    mode: u32,
+    expected: u32,
+    /// `serve` refuses to start with it.
+    fatal: bool,
+}
+
+impl ModeFinding {
+    fn line(&self) -> String {
+        let (want, fix) = if self.expected == 0o700 { ("0700", "chmod 700") } else { ("0600", "chmod 600") };
+        let tail = if self.fatal { "; `serve` refuses to start" } else { "" };
+        format!(
+            "{} has mode {:o}, expected {want}; run `{fix} {}`{tail}",
+            self.path.display(),
+            self.mode,
+            self.path.display()
+        )
+    }
+}
+
+fn mode_of(path: &Path) -> Option<(u32, bool)> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    Some((meta.permissions().mode() & 0o777, meta.is_dir()))
+}
+
+/// A file error with any quoted source line removed: a TOML parse error shows the line,
+/// and in `tokens.toml` that line may hold a token.
+fn without_source(e: &FileError) -> String {
+    e.to_string()
+        .lines()
+        .filter(|l| {
+            let t = l.trim_start();
+            let gutter = t.trim_start_matches(|c: char| c.is_ascii_digit()).trim_start();
+            !gutter.starts_with('|')
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn signin_report(home: &Path) -> SigninReport {
+    let mut r = SigninReport::default();
+
+    let check_mode = |path: PathBuf, fatal: bool, r: &mut SigninReport| {
+        if let Some((mode, is_dir)) = mode_of(&path) {
+            let expected = if is_dir { 0o700 } else { 0o600 };
+            if mode != expected {
+                r.modes.push(ModeFinding { path, mode, expected, fatal: fatal && mode & 0o077 != 0 });
+            }
+        }
+    };
+    // `serve` refuses a tokens.toml readable by others (as accounts.toml).
+    check_mode(tokens::path(home), true, &mut r);
+    check_mode(home.join(tokens::LOCK), false, &mut r);
+    check_mode(home.join(identity::INSTALL_ID_FILE), false, &mut r);
+    let quota = home.join(history::DIR);
+    if quota.is_dir() {
+        let mut stack = vec![quota];
+        while let Some(dir) = stack.pop() {
+            check_mode(dir.clone(), false, &mut r);
+            let Ok(read) = std::fs::read_dir(&dir) else { continue };
+            let mut children: Vec<PathBuf> = read.filter_map(|e| e.ok().map(|e| e.path())).collect();
+            children.sort();
+            // Popped last-first, so push in reverse: the walk reports in path order.
+            for child in children.into_iter().rev() {
+                match std::fs::symlink_metadata(&child) {
+                    Ok(m) if m.is_dir() => stack.push(child),
+                    Ok(_) => check_mode(child, false, &mut r),
+                    Err(_) => {}
+                }
+            }
+        }
+    }
+
+    let list = match Accounts::load(&home.join(accounts::FILE)) {
+        Ok(l) => Some(l),
+        Err(e) => {
+            r.errors.push(format!("{}; `serve` refuses to start", without_source(&e)));
+            None
+        }
+    };
+    let store = match TokenStore::load(home) {
+        Ok(s) => Some(s),
+        Err(FileError::NotPrivate { .. }) => None, // already reported above
+        Err(e) => {
+            r.errors.push(format!("{}; `serve` refuses to start", without_source(&e)));
+            None
+        }
+    };
+    if let (Some(list), Some(store)) = (list, store) {
+        for e in &store.entries {
+            if !list.get(&e.provider, &e.name).is_some_and(accounts::Account::is_signin) {
+                r.orphan_tokens.push((e.provider.clone(), e.name.clone()));
+            }
+        }
+        for a in list.iter().filter(|a| a.is_signin()) {
+            if store.get(&a.provider, &a.name).is_none() {
+                r.tokenless.push((a.provider.clone(), a.name.clone()));
+            }
+        }
+    }
+    r
+}
+
+fn signin_command(provider: &str, name: &str) -> String {
+    format!("nullrouter accounts signin {provider} {name}")
 }
