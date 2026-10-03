@@ -52,6 +52,127 @@ x-grok-agent-id = "{install.id}"
 [forwarding.to_client]
 headers = ["retry-after", "x-ratelimit-*"]
 
+
+# Grok Build credits (research R11, R12): the billing read, as 9router's grok-cli.js reads it
+# (`config.x` before `x`, protobuf-JSON `{ val = n }` numbers); when it reports no window,
+# the gRPC-web credits RPC on grok.com (core decoder `grpc_web_ratio`).
+[quota]
+accounts = "signin"
+request = { url = "https://cli-chat-proxy.grok.com/v1/billing?format=credits", headers = { Accept = "application/json", x-xai-token-auth = "xai-grok-cli", x-grok-client-mode = "headless" } }
+
+[[quota.window]]
+path = "."
+name = "monthly included"
+unit = "credits"
+limit = "config.monthlyLimit | config.monthly_limit | monthlyLimit | monthly_limit"
+used = "config.includedUsed | config.included_used | includedUsed | included_used | config.totalUsed | config.total_used | totalUsed | total_used"
+resets_at = "config.billingPeriodEnd | config.billing_period_end | config.currentPeriod.end | config.resetAt | config.resetsAt | config.periodEnd | billingPeriodEnd | billing_period_end | resetAt | resetsAt | periodEnd"
+unwrap_val = true
+
+[[quota.window]]
+path = "."
+name = "on-demand"
+unit = "credits"
+limit = "config.onDemandCap | onDemandCap"
+used = "config.onDemandUsed | onDemandUsed"
+resets_at = "config.billingPeriodEnd | config.billing_period_end | config.currentPeriod.end | config.resetAt | config.resetsAt | config.periodEnd | billingPeriodEnd | billing_period_end | resetAt | resetsAt | periodEnd"
+unwrap_val = true
+
+[[quota.window]]
+path = "."
+name = "prepaid"
+unit = "credits"
+limit = "config.prepaidBalance | prepaidBalance"
+remaining = "config.prepaidBalance | prepaidBalance"
+unwrap_val = true
+
+[[quota.window]]
+path = "."
+name = "weekly SuperGrok"
+unit = "percent"
+used = "config.creditUsagePercent | config.credit_usage_percent | creditUsagePercent"
+resets_at = "config.billingPeriodEnd | config.billing_period_end | config.currentPeriod.end | config.resetAt | config.resetsAt | config.periodEnd | billingPeriodEnd | billing_period_end | resetAt | resetsAt | periodEnd"
+unwrap_val = true
+
+[[quota.window]]
+path = "credits"
+name = "credits"
+unit = "credits"
+limit = "total | limit | cap | allocation | amount"
+used = "used | spent | consumed"
+remaining = "remaining | balance | left"
+resets_at = "resetAt | resetsAt | end"
+unwrap_val = true
+
+[[quota.window]]
+path = "creditBalance"
+name = "credits"
+unit = "credits"
+limit = "total | limit | cap | allocation | amount"
+used = "used | spent | consumed"
+remaining = "remaining | balance | left"
+resets_at = "resetAt | resetsAt | end"
+unwrap_val = true
+
+[[quota.window]]
+path = "usage"
+name = "credits"
+unit = "credits"
+limit = "total | limit | cap | allocation | amount"
+used = "used | spent | consumed"
+remaining = "remaining | balance | left"
+resets_at = "resetAt | resetsAt | end"
+unwrap_val = true
+
+[[quota.window]]
+path = "config.credits"
+name = "credits"
+unit = "credits"
+limit = "total | limit | cap | allocation | amount"
+used = "used | spent | consumed"
+remaining = "remaining | balance | left"
+resets_at = "resetAt | resetsAt | end"
+unwrap_val = true
+
+[[quota.window]]
+path = "config.includedCredits"
+name = "credits"
+unit = "credits"
+limit = "total | limit | cap | allocation | amount"
+used = "used | spent | consumed"
+remaining = "remaining | balance | left"
+resets_at = "resetAt | resetsAt | end"
+unwrap_val = true
+
+[[quota.window]]
+path = "config.subscriptionCredits"
+name = "credits"
+unit = "credits"
+limit = "total | limit | cap | allocation | amount"
+used = "used | spent | consumed"
+remaining = "remaining | balance | left"
+resets_at = "resetAt | resetsAt | end"
+unwrap_val = true
+
+[quota.fallback]
+request = { url = "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig", method = "POST", body = "grpc_web_empty", headers = { Accept = "application/grpc-web+proto", content-type = "application/grpc-web+proto", x-grpc-web = "1" } }
+decoder = "grpc_web_ratio"
+name = "weekly SuperGrok"
+unit = "percent"
+
+# The live model list (research R14): read with the first active sign-in account at start
+# and every 6 h; listed models join the [[models]] below, which stay the list on failure.
+[models_live]
+url = "https://cli-chat-proxy.grok.com/v1/models"
+headers = { Accept = "application/json", x-xai-token-auth = "xai-grok-cli", x-grok-client-mode = "headless" }
+list = "data | models | results | ."
+id = "id | model_id | modelId | model | slug | name"
+name = "display_name | displayName | name"
+context = "context_length | contextLength | context_window | contextWindow"
+max_output = "max_output_tokens | maxOutputTokens"
+type = "text"
+refresh = "6h"
+
 [[models]]
 id = "grok-build"
 name = "Grok Build"

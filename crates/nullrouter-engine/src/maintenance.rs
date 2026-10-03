@@ -9,8 +9,11 @@
 //! current account set on every wake, so a reload drops removed accounts (cancelling their
 //! running jobs) and keeps the last-run times of the others.
 //!
-//! Adding a job kind (US4: quota polls, live model lists) is a [`JobKind`] variant with an
-//! arm in [`JobKind::due`] and [`JobKind::run`]; the queue itself doesn't change.
+//! Adding a job kind is a [`JobKind`] variant with an arm in [`JobKind::due`] and
+//! [`JobKind::run`]; the queue itself doesn't change. Quota polls and live model lists keep
+//! their own schedules (the engine's [`QuotaBoard`](crate::quota::poll::QuotaBoard) and
+//! [`LiveModels`](crate::models_live::LiveModels)), so their due times include jitter and the
+//! one retry after a failure.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -21,7 +24,9 @@ use nullrouter_registry::schema::SignInDecl;
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 
-use crate::accounts::Account;
+use crate::accounts::{Account, out_of_service};
+use crate::models_live;
+use crate::quota::poll;
 use crate::signin::refresh::{self, Timing};
 use crate::state::{Engine, EngineState};
 use crate::tokens::TokenView;
@@ -38,11 +43,16 @@ pub const MIN_GAP: Duration = Duration::from_millis(500);
 pub enum JobKind {
     /// Refresh a sign-in account's tokens ahead of expiry (research R9).
     Refresh,
+    /// Poll an account's provider-reported quota (research R11).
+    QuotaPoll,
+    /// Read a provider's live model list (research R14). The key's account is empty: the
+    /// first active sign-in account is chosen when the job runs.
+    ModelsLive,
 }
 
 impl JobKind {
     /// Every kind the queue asks.
-    pub const ALL: [JobKind; 1] = [JobKind::Refresh];
+    pub const ALL: [JobKind; 3] = [JobKind::Refresh, JobKind::QuotaPoll, JobKind::ModelsLive];
 
     /// Each key of this kind and when it's next due.
     pub fn due(self, engine: &Engine, st: &EngineState) -> Vec<(JobKey, SystemTime)> {
@@ -62,6 +72,30 @@ impl JobKind {
                     })
                     .collect()
             }
+            Self::QuotaPoll => {
+                let scale = engine.quota.timing().scale;
+                st.accounts
+                    .iter()
+                    .filter(|a| !a.disabled && out_of_service(a, &st.tokens).is_none())
+                    .filter(|a| st.registry.provider(&a.provider).is_ok_and(|p| poll::reported(p, a).is_some()))
+                    .map(|a| {
+                        let at = engine.quota.due(&a.provider, &a.name, a.poll_interval().mul_f64(scale));
+                        (JobKey::new(self, &a.provider, &a.name), at)
+                    })
+                    .collect()
+            }
+            Self::ModelsLive => {
+                let timing = engine.quota.timing();
+                st.registry
+                    .providers()
+                    .filter_map(|p| {
+                        let decl = p.models_live.as_ref()?;
+                        models_live::first_signed_in(st, p)?;
+                        let at = st.live_models.due(&p.id, decl.refresh.mul_f64(timing.scale), timing.retry_after);
+                        Some((JobKey::new(self, &p.id, ""), at))
+                    })
+                    .collect()
+            }
         }
     }
 
@@ -70,6 +104,12 @@ impl JobKind {
         match self {
             Self::Refresh => {
                 engine.refresh_account(&key.provider, &key.account).await;
+            }
+            Self::QuotaPoll => {
+                engine.poll_quota(&key.provider, &key.account).await;
+            }
+            Self::ModelsLive => {
+                let _ = engine.fetch_live_models(&key.provider).await;
             }
         }
     }

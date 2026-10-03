@@ -2,7 +2,8 @@
 //!
 //! Listed: every unified model, and every direct `provider/model` of every type on a
 //! provider the operator can reach (an enabled account, or no auth needed) through an
-//! endpoint of that type. The OpenAI shape is the default; `anthropic-messages` and
+//! endpoint of that type, the static `[[models]]` joined by a provider's live list
+//! (`[models_live]`). The OpenAI shape is the default; `anthropic-messages` and
 //! `gemini` answer in theirs. Each entry carries its type in `nullrouter.type`.
 
 use std::collections::BTreeSet;
@@ -55,6 +56,14 @@ pub fn listed(st: &EngineState) -> Vec<Listed> {
                 let display_name = reg.model(&p.id, m.id()).map_or_else(|_| m.id().to_owned(), |i| i.name.into_owned());
                 out.push(Listed { id, display_name, owned_by: p.id.clone(), ty });
             }
+        }
+        // The live list (`[models_live]`, research R14) adds what the static list lacks.
+        for m in st.live_models.models(&p.id) {
+            let id = format!("{}/{}", p.id, m.id);
+            if reg.endpoints(&p.id, m.ty).is_empty() || !seen.insert(id.clone()) {
+                continue;
+            }
+            out.push(Listed { id, display_name: m.name, owned_by: p.id.clone(), ty: m.ty });
         }
     }
     out

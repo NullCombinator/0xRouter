@@ -493,6 +493,16 @@ fn token_rejected(c: &Candidate<'_>, f: &Fail) -> bool {
     }
 }
 
+/// Whether `f` refused a sign-in account (FR-004b, research R10), with the provider's
+/// reason: a response matching the plugin's `[[signin.refused]]` rules, or, once the token
+/// was refreshed for this request (`refreshed`), a fresh token rejected again. A 403 that
+/// reads as model access, not as a rejected token, is neither.
+fn refusal(c: &Candidate<'_>, f: &Fail, refreshed: bool) -> Option<String> {
+    let status = f.status.filter(|_| !f.after_output)?;
+    let ruled = c.provider.signin.as_ref().is_some_and(|d| d.refuses(status, &f.message));
+    (ruled || refreshed && token_rejected(c, f)).then(|| f.message.clone())
+}
+
 fn class_name(class: ErrorClass) -> Option<String> {
     serde_json::to_value(class).ok().and_then(|v| v.as_str().map(str::to_owned))
 }
@@ -784,11 +794,34 @@ impl Run {
                 Ended::Failed(f) => f,
             };
             let (p, a, m) = cooldown_key(c);
-            self.end_attempt(
-                AttemptOutcome::Failed { status: f.status, class: f.verdict.class, reason: f.reason.clone() },
-                f.usage,
-            );
+            let refused = signin.and_then(|_| refusal(c, &f, refreshed));
+            let class = if refused.is_some() { ErrorClass::Refused } else { f.verdict.class };
+            self.end_attempt(AttemptOutcome::Failed { status: f.status, class, reason: f.reason.clone() }, f.usage);
             self.carry(f.usage);
+            // A refused account goes out of service and the request falls back, as for any
+            // non-serving account; no cooldown: the state keeps it out.
+            if let (Some(a), Some(sent), Some(why)) = (signin, sent.as_deref(), refused) {
+                self.engine.refuse(&a.provider, &a.name, &why, sent).await;
+                let w = accounts::Withheld::Refused {
+                    provider: a.provider.clone(),
+                    name: a.name.clone(),
+                    reason: crate::signin::refresh::short(&st.redactor.redact(&why)),
+                };
+                tried.push(Tried {
+                    provider: c.provider.id.clone(),
+                    account: account.clone(),
+                    model: c.upstream_id.clone(),
+                    status: f.status,
+                    class: class_name(ErrorClass::Refused),
+                    reason: w.to_string(),
+                    retries,
+                });
+                if !self.keepalive().await {
+                    self.end_request(Outcome::Cancelled, None);
+                    return Err(Failure::new(499, "0router: the client went away"));
+                }
+                return Ok(false);
+            }
             if let (Some(a), Some(sent), false) = (signin, sent.as_deref(), refreshed)
                 && token_rejected(c, &f)
             {
@@ -907,7 +940,11 @@ impl Run {
             .account
             .map(|a| accounts::release(a, c.provider, &st.tokens))
             .transpose()
-            .map_err(|w| (format!("0router: {w}"), w.class()))?;
+            // An out-of-service account reads as the plan's skip does (research R10).
+            .map_err(|w| match w.class() {
+                Some(class) => (w.to_string(), Some(class)),
+                None => (format!("0router: {w}"), None),
+            })?;
         let token = released.as_ref().and_then(accounts::Released::token);
         let signin = match (token, &c.provider.signin) {
             (Some(view), Some(decl)) => {

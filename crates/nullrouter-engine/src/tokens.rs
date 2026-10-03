@@ -256,6 +256,61 @@ pub fn update<R>(
     Ok(out)
 }
 
+/// Takes `provider/name` out of service in `home/tokens.toml` (research R10): `state` with
+/// the time and the (already redacted) reason. Only while the stored access token is
+/// `token`, when given: a token replaced meanwhile (a new sign-in) is not marked. Returns
+/// the entry as written, `None` when nothing was. Blocking.
+pub fn persist_state(
+    home: &Path,
+    provider: &str,
+    name: &str,
+    state: PersistedState,
+    reason: &str,
+    at: SystemTime,
+    token: Option<&SecretString>,
+) -> Result<Option<TokenEntry>, FileError> {
+    if TokenStore::load(home)?.get(provider, name).is_none() {
+        return Ok(None);
+    }
+    update(home, provider, name, |slot| {
+        let e = slot.as_mut()?;
+        if token.is_some_and(|t| !t.with_exposed(|t| e.access_token.matches(t))) {
+            return None;
+        }
+        e.state = Some(state);
+        e.state_since = Some(at);
+        e.state_reason = Some(reason.to_owned());
+        Some(dup_entry(e))
+    })
+}
+
+/// `accounts enable`: clears a `refused` state so the account is tried again. `true` when
+/// there was one. Leaves `needs_sign_in` alone: only a sign-in clears it. Blocking.
+pub fn clear_refused(home: &Path, provider: &str, name: &str) -> Result<bool, FileError> {
+    let refused = |s: &TokenStore| s.get(provider, name).is_some_and(|e| e.state == Some(PersistedState::Refused));
+    if !refused(&TokenStore::load(home)?) {
+        return Ok(false);
+    }
+    update(home, provider, name, |slot| match slot {
+        Some(e) if e.state == Some(PersistedState::Refused) => {
+            e.state = None;
+            e.state_since = None;
+            e.state_reason = None;
+            true
+        }
+        _ => false,
+    })
+}
+
+/// `accounts remove`: deletes the account's tokens under the lock. `true` when it had
+/// some. Blocking.
+pub fn remove(home: &Path, provider: &str, name: &str) -> Result<bool, FileError> {
+    if TokenStore::load(home)?.get(provider, name).is_none() {
+        return Ok(false);
+    }
+    update(home, provider, name, |slot| slot.take().is_some())
+}
+
 /// A sign-in account's service state (data-model § Account state machine).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccountState {
@@ -293,6 +348,64 @@ impl AccountState {
     /// Whether requests may use the account.
     pub fn serves(&self) -> bool {
         matches!(self, Self::Active)
+    }
+
+    /// The state's name on the operator socket and in JSON listings.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Refreshing { .. } => "refreshing",
+            Self::NeedsSignIn { .. } => "needs_sign_in",
+            Self::Refused { .. } => "refused",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    /// When the account entered the state, for the states that keep it.
+    pub fn since(&self) -> Option<SystemTime> {
+        match self {
+            Self::Refreshing { since, .. } | Self::NeedsSignIn { since, .. } | Self::Refused { since, .. } => {
+                Some(*since)
+            }
+            Self::Active | Self::Disabled => None,
+        }
+    }
+
+    /// The provider's reason (redacted), for `needs_sign_in` and `refused`.
+    pub fn reason(&self) -> Option<&str> {
+        match self {
+            Self::NeedsSignIn { reason, .. } | Self::Refused { reason, .. } => Some(reason),
+            _ => None,
+        }
+    }
+}
+
+/// One `warn` line when an account's state changes kind (research R10). Counter updates
+/// inside `refreshing` are not changes.
+fn log_change(provider: &str, name: &str, old: &AccountState, new: &AccountState) {
+    if std::mem::discriminant(old) == std::mem::discriminant(new) {
+        return;
+    }
+    let (p, n) = (provider, name);
+    match new {
+        AccountState::Active => tracing::warn!(provider = p, account = n, "sign-in account is back in service"),
+        AccountState::Refreshing { .. } => tracing::warn!(
+            provider = p,
+            account = n,
+            "sign-in account token expired and its refresh is failing; retrying with backoff"
+        ),
+        AccountState::NeedsSignIn { reason, .. } => tracing::warn!(
+            provider = p,
+            account = n,
+            "sign-in account needs sign-in ({reason}): run nullrouter accounts signin {p} {n}"
+        ),
+        AccountState::Refused { reason, .. } => tracing::warn!(
+            provider = p,
+            account = n,
+            "sign-in account refused by the provider ({reason}): run nullrouter accounts signin {p} {n}, \
+             or nullrouter accounts enable {p} {n} to retry"
+        ),
+        AccountState::Disabled => {}
     }
 }
 
@@ -400,7 +513,9 @@ impl TokenCells {
             let key = (entry.provider.clone(), entry.name.clone());
             let cell = match old.get(&key) {
                 Some(cell) => {
-                    let view = TokenView::succeeding(entry, Some(&cell.load()));
+                    let old = cell.load();
+                    let view = TokenView::succeeding(entry, Some(&old));
+                    log_change(&key.0, &key.1, &old.state, &view.state);
                     cell.store(Arc::new(view));
                     cell.clone()
                 }
@@ -434,7 +549,9 @@ impl TokenCells {
     pub fn replace(&self, entry: TokenEntry) {
         let key = (entry.provider.clone(), entry.name.clone());
         if let Some(cell) = self.cell(&key.0, &key.1) {
-            let view = TokenView::succeeding(entry, Some(&cell.load()));
+            let old = cell.load();
+            let view = TokenView::succeeding(entry, Some(&old));
+            log_change(&key.0, &key.1, &old.state, &view.state);
             cell.store(Arc::new(view));
             return;
         }
@@ -449,7 +566,7 @@ impl TokenCells {
     /// Sets an account's in-memory state; `false` when it has no tokens.
     pub fn set_state(&self, provider: &str, name: &str, state: AccountState) -> bool {
         let Some(cell) = self.cell(provider, name) else { return false };
-        cell.rcu(|v| {
+        let old = cell.rcu(|v| {
             Arc::new(TokenView {
                 entry: dup_entry(&v.entry),
                 state: state.clone(),
@@ -459,6 +576,7 @@ impl TokenCells {
                     .map(|p| TokenPair { access: dup(&p.access), refresh: p.refresh.as_ref().map(dup) }),
             })
         });
+        log_change(provider, name, &old.state, &state);
         true
     }
 
@@ -664,5 +782,52 @@ pub(crate) mod tests {
         a.disabled = true;
         assert_eq!(cells.state(&a), AccountState::Disabled);
         assert!(!cells.set_state("xai", "nobody", AccountState::Active));
+    }
+
+    #[test]
+    fn out_of_service_states_persist_and_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let at = SystemTime::UNIX_EPOCH + Duration::from_secs(1_790_000_000);
+        assert!(persist_state(home, "xai", "main", PersistedState::Refused, "x", at, None).unwrap().is_none());
+        assert!(!path(home).exists(), "no tokens: nothing written");
+        put(home, entry("xai", "main", "gen-1-access", &[]));
+
+        let other = SecretString::new("gen-0-access");
+        let stale = persist_state(home, "xai", "main", PersistedState::Refused, "x", at, Some(&other)).unwrap();
+        assert!(stale.is_none(), "a replaced token is not marked");
+        let mine = SecretString::new("gen-1-access");
+        let e = persist_state(home, "xai", "main", PersistedState::Refused, "only Claude Code", at, Some(&mine))
+            .unwrap()
+            .unwrap();
+        assert_eq!(e.state, Some(PersistedState::Refused));
+        let cells = TokenCells::load(home).unwrap();
+        let v = cells.get("xai", "main").unwrap();
+        assert_eq!(
+            v.state,
+            AccountState::Refused { since: at, reason: "only Claude Code".into() },
+            "survives a restart"
+        );
+        assert_eq!(
+            (v.state.name(), v.state.since(), v.state.reason()),
+            ("refused", Some(at), Some("only Claude Code"))
+        );
+
+        assert!(clear_refused(home, "xai", "main").unwrap());
+        assert!(!clear_refused(home, "xai", "main").unwrap(), "only once");
+        assert!(cells.reload_if_changed(home).unwrap());
+        assert_eq!(cells.get("xai", "main").unwrap().state, AccountState::Active);
+
+        persist_state(home, "xai", "main", PersistedState::NeedsSignIn, "invalid_grant", at, None).unwrap();
+        assert!(!clear_refused(home, "xai", "main").unwrap(), "enable doesn't clear needs sign-in");
+        assert_eq!(
+            TokenStore::load(home).unwrap().get("xai", "main").unwrap().state,
+            Some(PersistedState::NeedsSignIn)
+        );
+
+        assert!(remove(home, "xai", "main").unwrap());
+        assert!(!remove(home, "xai", "main").unwrap());
+        assert!(TokenStore::load(home).unwrap().entries.is_empty());
+        assert!(!clear_refused(home, "nobody", "x").unwrap());
     }
 }

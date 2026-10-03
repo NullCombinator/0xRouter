@@ -7,7 +7,8 @@
 //! | `{"op":"reload"}` | `{"ok":true,"generation":N}`, or the error with the old snapshot kept |
 //! | `{"op":"records.list","provider"?,"unified_model"?,"limit"?}` | `{"ok":true,"records":[…]}` |
 //! | `{"op":"records.get","id":"rq_…"}` | `{"ok":true,"record":{…}}` |
-//! | `{"op":"accounts.state"}` | `{"ok":true,"accounts":[…]}` |
+//! | `{"op":"accounts.state"}` | `{"ok":true,"accounts":[…]}`: per account `kind`, `state`, `state_since`, `state_reason`, `expires_at`, cooldowns |
+//! | `{"op":"quota.list"}`, `{"op":"quota.poll"}` | see [`crate::quota`] |
 
 use std::future::Future;
 use std::io::{BufRead, BufReader, Write};
@@ -123,10 +124,25 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
                         .filter(|(p, n, _, _)| *p == a.provider && *n == a.name)
                         .map(|(_, _, m, left)| json!({"model": m, "remaining_ms": left.as_millis() as u64}))
                         .collect();
+                    // Sign-in states (research R10); tokens never cross the socket.
+                    let state = engine.tokens.state(a);
+                    let time = nullrouter_engine::clock::rfc3339;
+                    let expires_at = a
+                        .is_signin()
+                        .then(|| engine.tokens.get(&a.provider, &a.name))
+                        .flatten()
+                        .map(|v| time(v.entry.expires_at));
+                    // `needs_sign_in` without tokens has no time.
+                    let since = state.since().filter(|t| *t > std::time::UNIX_EPOCH).map(time);
                     json!({
                         "provider": a.provider,
                         "name": a.name,
+                        "kind": if a.is_signin() { "signin" } else { "key" },
                         "disabled": a.disabled,
+                        "state": state.name(),
+                        "state_since": since,
+                        "state_reason": state.reason(),
+                        "expires_at": expires_at,
                         "level": engine.cooldowns.level(&a.provider, &a.name),
                         "cooling": cooling,
                     })
@@ -134,6 +150,8 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
                 .collect();
             json!({"ok": true, "accounts": accounts})
         }
+        Some("quota.list") => crate::quota::list(engine, req),
+        Some("quota.poll") => crate::quota::poll_now(engine, req).await,
         Some(op) => json!({"ok": false, "error": format!("unknown op {op:?}")}),
         None => json!({"ok": false, "error": "the request names no op"}),
     }

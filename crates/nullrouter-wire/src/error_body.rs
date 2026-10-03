@@ -34,13 +34,36 @@ pub struct Tried {
     pub retries: u32,
 }
 
+/// The command that brings an out-of-service sign-in account back.
+const SIGNIN_COMMAND: &str = "run nullrouter accounts signin";
+
 impl Tried {
-    /// `provider/account model: [status ]reason[ after N retries]`.
+    /// `provider/account model: [status ]reason[ after N retries]`. An out-of-service
+    /// sign-in account (class `needs_sign_in` or `refused`) reads as
+    /// `provider/account: needs sign-in — run nullrouter accounts signin provider account`
+    /// (research R10, FR-016).
     pub fn line(&self) -> String {
         let who = match &self.account {
             Some(a) => format!("{}/{a}", self.provider),
             None => self.provider.clone(),
         };
+        if let (Some(a), Some(class)) = (&self.account, self.class.as_deref()) {
+            let state = match class {
+                "needs_sign_in" => Some("needs sign-in".to_owned()),
+                // `refused by provider: <reason>; run …` → `refused by provider (<reason>)`.
+                "refused" => Some(match self.reason.split_once("; run ").map(|(r, _)| r) {
+                    Some(r) => match r.split_once(": ") {
+                        Some((head, why)) => format!("{head} ({why})"),
+                        None => r.to_owned(),
+                    },
+                    None => "refused by provider".to_owned(),
+                }),
+                _ => None,
+            };
+            if let Some(state) = state {
+                return format!("{who}: {state} — {SIGNIN_COMMAND} {} {a}", self.provider);
+            }
+        }
         let status = self.status.map(|s| format!("{s} ")).unwrap_or_default();
         let retries = match self.retries {
             0 => String::new(),
@@ -116,5 +139,35 @@ mod tests {
             "0router: no provider could serve m1 (record rq_1)\nacme/main m1: 503 overloaded after 3 retries\nacme/backup m1: cooling down for 4 s\nacme m1: 502 network error after 1 retry"
         );
         assert_eq!(details("rq_1", &tried[..1])["attempts"][0]["retries"], 3);
+    }
+
+    #[test]
+    fn out_of_service_accounts_name_the_command() {
+        let t = |class: &str, reason: &str, status| Tried {
+            provider: "xai".into(),
+            account: Some("main".into()),
+            model: "grok-4".into(),
+            status,
+            class: Some(class.into()),
+            reason: reason.into(),
+            retries: 0,
+        };
+        assert_eq!(
+            t("needs_sign_in", "needs sign-in: run nullrouter accounts signin xai main", None).line(),
+            "xai/main: needs sign-in — run nullrouter accounts signin xai main"
+        );
+        assert_eq!(
+            t(
+                "refused",
+                "refused by provider: only for Claude Code; run nullrouter accounts signin xai main",
+                Some(403)
+            )
+            .line(),
+            "xai/main: refused by provider (only for Claude Code) — run nullrouter accounts signin xai main"
+        );
+        assert_eq!(
+            t("token_refreshing", "token expired, refresh retrying", None).line(),
+            "xai/main grok-4: token expired, refresh retrying"
+        );
     }
 }

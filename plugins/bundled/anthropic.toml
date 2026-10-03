@@ -53,6 +53,41 @@ anthropic-beta = "oauth-2025-04-20"
 User-Agent = "claude-cli/2.1.280 (external, sdk-cli)"
 X-App = "cli"
 
+# Subscription quota (research R11, R12): sign-in accounts only; an API-key account shows
+# "quota not reported". Windows as 9router's claude.js reads them; percent used.
+[quota]
+accounts = "signin"
+request = { url = "https://api.anthropic.com/api/oauth/usage", headers = { anthropic-beta = "oauth-2025-04-20", anthropic-version = "2023-06-01" } }
+
+[[quota.window]]
+path = "five_hour"
+name = "5-hour"
+unit = "percent"
+used = "utilization"
+resets_at = "resets_at"
+
+[[quota.window]]
+path = "seven_day"
+name = "weekly"
+unit = "percent"
+used = "utilization"
+resets_at = "resets_at"
+
+[[quota.window]]
+path = "seven_day_*"
+name = "weekly {1}"
+unit = "percent"
+used = "utilization"
+resets_at = "resets_at"
+
+[[quota.window]]
+path = "limits[*]"
+where = { kind = "weekly_scoped" }
+name = "weekly {scope.model.display_name|lower}"
+unit = "percent"
+used = "percent"
+resets_at = "resets_at"
+
 [forwarding.to_upstream]
 headers = [
   { name = "anthropic-beta", merge = "append_csv", from_styles = ["anthropic-messages"] },

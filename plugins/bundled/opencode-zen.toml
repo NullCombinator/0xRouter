@@ -48,6 +48,33 @@ headers = [
   { name = "x-opencode-client", merge = "replace" },
 ]
 
+
+# Usage windows (research R11): API-key accounts, percent used, as 9router's opencode-go.js.
+[quota]
+accounts = "key"
+request = { url = "https://opencode.ai/zen/v1/usage" }
+
+[[quota.window]]
+path = "usage.rolling"
+name = "rolling"
+unit = "percent"
+used = "percent"
+resets_at = "resetsAt"
+
+[[quota.window]]
+path = "usage.weekly"
+name = "weekly"
+unit = "percent"
+used = "percent"
+resets_at = "resetsAt"
+
+[[quota.window]]
+path = "usage.monthly"
+name = "monthly"
+unit = "percent"
+used = "percent"
+resets_at = "resetsAt"
+
 [[models]]
 id = "claude-fable-5"
 name = "Claude Fable 5"

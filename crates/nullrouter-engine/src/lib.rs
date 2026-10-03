@@ -17,6 +17,7 @@ pub mod inband;
 pub mod jobs;
 pub mod keys;
 pub mod maintenance;
+pub mod models_live;
 pub mod plan;
 pub mod quota;
 pub mod records;

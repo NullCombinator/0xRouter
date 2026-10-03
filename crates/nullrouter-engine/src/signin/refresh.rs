@@ -16,6 +16,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
+use nullrouter_registry::SecretString;
 use nullrouter_registry::schema::{ProviderEntity, SignInDecl};
 
 use super::classify::{RefreshClass, classify};
@@ -276,14 +277,7 @@ impl Engine {
     /// Marks the account `Refreshing` (its token has expired and refreshing failed).
     fn mark_refreshing(&self, key: &Key, now: SystemTime) {
         let (since, attempts) = self.refresher.failures().get(key).map_or((now, 1), |f| (f.since, f.attempts));
-        let Some(view) = self.tokens.get(&key.0, &key.1) else { return };
-        if !matches!(view.state, AccountState::Refreshing { .. }) {
-            tracing::warn!(
-                provider = %key.0,
-                account = %key.1,
-                "sign-in account token expired and its refresh is failing; retrying with backoff"
-            );
-        }
+        // The cell logs the change (one `warn` line).
         self.tokens.set_state(&key.0, &key.1, AccountState::Refreshing { since, attempts });
     }
 
@@ -332,7 +326,7 @@ impl Engine {
                 match classify(&e) {
                     RefreshClass::Permanent => {
                         self.refresher.cleared(key);
-                        self.needs_sign_in(key, &e, now).await;
+                        self.needs_sign_in(key, &e).await;
                         Refreshed::Permanent(reason)
                     }
                     RefreshClass::Transient => {
@@ -356,38 +350,59 @@ impl Engine {
 
     /// Persists `needs_sign_in` with the time and the provider's error code (research R10),
     /// then swaps the cell.
-    async fn needs_sign_in(self: &Arc<Self>, key: &Key, e: &SignInError, now: SystemTime) {
+    async fn needs_sign_in(self: &Arc<Self>, key: &Key, e: &SignInError) {
         let code = match e {
             SignInError::Rejected { code, .. } => code.clone(),
             other => other.to_string(),
         };
-        let reason = self.snapshot().redactor.redact(&code).into_owned();
+        self.take_out_of_service(&key.0, &key.1, PersistedState::NeedsSignIn, &code, None).await;
+    }
+
+    /// The provider refused a fresh token's request (FR-004b): persists `refused` with the
+    /// provider's reason, unless the account's token is no longer `sent`'s.
+    pub async fn refuse(self: &Arc<Self>, provider: &str, name: &str, reason: &str, sent: &TokenView) {
+        let token = sent.entry.access_token.with_exposed(|t| SecretString::new(t));
+        self.take_out_of_service(provider, name, PersistedState::Refused, reason, Some(token)).await;
+    }
+
+    /// Writes `state` to `tokens.toml` under the lock, then swaps the cell, which logs the
+    /// change. When the write fails the state is still set in memory.
+    async fn take_out_of_service(
+        self: &Arc<Self>,
+        provider: &str,
+        name: &str,
+        state: PersistedState,
+        reason: &str,
+        token: Option<SecretString>,
+    ) {
+        let reason = short(&self.snapshot().redactor.redact(reason));
+        let now = SystemTime::now();
         let this = self.clone();
-        let key = key.clone();
+        let (p, n) = (provider.to_owned(), name.to_owned());
         let _ = tokio::task::spawn_blocking(move || {
-            let (p, n) = (key.0.as_str(), key.1.as_str());
-            let written = tokens::update(this.home().path(), p, n, |slot| {
-                let e = slot.as_mut()?;
-                e.state = Some(PersistedState::NeedsSignIn);
-                e.state_since = Some(now);
-                e.state_reason = Some(reason.clone());
-                Some(dup_entry(e))
-            });
-            match written {
+            match tokens::persist_state(this.home().path(), &p, &n, state, &reason, now, token.as_ref()) {
                 Ok(Some(entry)) => this.tokens.replace(entry),
                 Ok(None) => {}
                 Err(err) => {
-                    tracing::error!("needs-sign-in state not saved: {err}");
-                    this.tokens.set_state(p, n, AccountState::NeedsSignIn { since: now, reason: reason.clone() });
+                    tracing::error!("{p}/{n}: account state not saved: {err}");
+                    let st = match state {
+                        PersistedState::NeedsSignIn => AccountState::NeedsSignIn { since: now, reason },
+                        PersistedState::Refused => AccountState::Refused { since: now, reason },
+                    };
+                    this.tokens.set_state(&p, &n, st);
                 }
             }
-            tracing::warn!(
-                provider = p,
-                account = n,
-                "sign-in account needs sign-in ({reason}): run nullrouter accounts signin {p} {n}"
-            );
         })
         .await;
+    }
+}
+
+/// A reason kept with a state: one line, at most 200 characters.
+pub(crate) fn short(reason: &str) -> String {
+    let line = reason.split_whitespace().collect::<Vec<_>>().join(" ");
+    match line.char_indices().nth(200) {
+        Some((i, _)) => format!("{}…", &line[..i]),
+        None => line,
     }
 }
 

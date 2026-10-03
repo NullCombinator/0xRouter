@@ -8,13 +8,15 @@
 //! encoder, 0router's window names map one-to-one onto 9router's, and the extractor (T070) and
 //! gRPC-web decoder (T071) read every fixture as 9router does, bar the listed deviations.
 //!
-//! Ignored until built: the live model list (T076).
+//! The bundled plugins' `[quota]` and `[models_live]` sections are what is held to 9router
+//! (T074, T076).
 
 use std::collections::BTreeMap;
 
+use nullrouter_engine::models_live;
 use nullrouter_engine::quota::{self, QuotaWindow, extract, grpc_web};
 use nullrouter_engine::testkit::mock_quota::samples;
-use nullrouter_registry::schema::{QuotaDecl, ResetsFormat};
+use nullrouter_registry::schema::{ModelType, QuotaDecl, ResetsFormat};
 use serde_json::Value;
 
 fn fixture(name: &str) -> Value {
@@ -183,135 +185,20 @@ fn quota_requests_match_the_research_table() {
 }
 // ── The extractor and decoder against 9router ────────────────────────────────
 
-/// The `[quota]` sections the bundled plugins declare (T074 copies these; until then the test
-/// holds them). anthropic follows contracts/signin-quota-schema.md; grok-cli mirrors
-/// `parseGrokCliBilling`'s reads (`config.x` before `x`), with the gRPC-web fallback.
-const ANTHROPIC_QUOTA: &str = r#"
-[quota]
-accounts = "signin"
-request = { url = "https://api.anthropic.com/api/oauth/usage", headers = { anthropic-beta = "oauth-2025-04-20" } }
-
-[[quota.window]]
-path = "five_hour"
-name = "5-hour"
-unit = "percent"
-used = "utilization"
-resets_at = "resets_at"
-
-[[quota.window]]
-path = "seven_day"
-name = "weekly"
-unit = "percent"
-used = "utilization"
-resets_at = "resets_at"
-
-[[quota.window]]
-path = "seven_day_*"
-name = "weekly {1}"
-unit = "percent"
-used = "utilization"
-resets_at = "resets_at"
-
-[[quota.window]]
-path = "limits[*]"
-where = { kind = "weekly_scoped" }
-name = "weekly {scope.model.display_name|lower}"
-unit = "percent"
-used = "percent"
-resets_at = "resets_at"
-"#;
-
-const GROK_PERIOD_END: &str = "config.billingPeriodEnd | config.billing_period_end | config.currentPeriod.end | \
-    config.resetAt | config.resetsAt | config.periodEnd | billingPeriodEnd | billing_period_end | resetAt | \
-    resetsAt | periodEnd";
-
-fn grok_quota() -> String {
-    let mut s = format!(
-        r#"
-[quota]
-accounts = "signin"
-request = {{ url = "https://cli-chat-proxy.grok.com/v1/billing?format=credits" }}
-
-[[quota.window]]
-path = "."
-name = "monthly included"
-unit = "credits"
-limit = "config.monthlyLimit | config.monthly_limit | monthlyLimit | monthly_limit"
-used = "config.includedUsed | config.included_used | includedUsed | included_used | config.totalUsed | config.total_used | totalUsed | total_used"
-resets_at = "{GROK_PERIOD_END}"
-unwrap_val = true
-
-[[quota.window]]
-path = "."
-name = "on-demand"
-unit = "credits"
-limit = "config.onDemandCap | onDemandCap"
-used = "config.onDemandUsed | onDemandUsed"
-resets_at = "{GROK_PERIOD_END}"
-unwrap_val = true
-
-[[quota.window]]
-path = "."
-name = "prepaid"
-unit = "credits"
-limit = "config.prepaidBalance | prepaidBalance"
-remaining = "config.prepaidBalance | prepaidBalance"
-unwrap_val = true
-
-[[quota.window]]
-path = "."
-name = "weekly SuperGrok"
-unit = "percent"
-used = "config.creditUsagePercent | config.credit_usage_percent | creditUsagePercent"
-resets_at = "{GROK_PERIOD_END}"
-unwrap_val = true
-"#
-    );
-    for bag in
-        ["credits", "creditBalance", "usage", "config.credits", "config.includedCredits", "config.subscriptionCredits"]
-    {
-        s.push_str(&format!(
-            r#"
-[[quota.window]]
-path = "{bag}"
-name = "credits"
-unit = "credits"
-limit = "total | limit | cap | allocation | amount"
-used = "used | spent | consumed"
-remaining = "remaining | balance | left"
-resets_at = "resetAt | resetsAt | end"
-unwrap_val = true
-"#
-        ));
-    }
-    s.push_str(
-        r#"
-[quota.fallback]
-request = { url = "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig", method = "POST", body = "grpc_web_empty", headers = { content-type = "application/grpc-web+proto", x-grpc-web = "1" } }
-decoder = "grpc_web_ratio"
-name = "weekly SuperGrok"
-unit = "percent"
-"#,
-    );
-    s
-}
-
-fn opencode_quota(url: &str) -> String {
-    let mut s = format!("[quota]\naccounts = \"key\"\nrequest = {{ url = \"{url}\" }}\n");
-    for p in ["rolling", "weekly", "monthly"] {
-        s.push_str(&format!(
-            "\n[[quota.window]]\npath = \"usage.{p}\"\nname = \"{p}\"\nunit = \"percent\"\nused = \"percent\"\nresets_at = \"resetsAt\"\n"
-        ));
-    }
-    s
-}
-
-fn decl(toml_text: &str) -> QuotaDecl {
+/// The `[quota]` section `plugins/bundled/<id>.toml` declares: the bundled plugins are what
+/// these tests hold to 9router. anthropic follows contracts/signin-quota-schema.md; grok-cli
+/// mirrors `parseGrokCliBilling`'s reads (`config.x` before `x`), with the gRPC-web fallback.
+fn plugin_quota(id: &str) -> QuotaDecl {
     #[derive(serde::Deserialize)]
     struct Doc {
         quota: QuotaDecl,
     }
-    toml::from_str::<Doc>(toml_text).unwrap().quota
+    toml::from_str::<Doc>(&bundled(id)).unwrap_or_else(|e| panic!("{id}: {e}")).quota
+}
+
+fn bundled(id: &str) -> String {
+    let path = format!("{}/../../plugins/bundled/{id}.toml", env!("CARGO_MANIFEST_DIR"));
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
 }
 
 /// What a poll reads from one response: `None` for no response (network failure).
@@ -451,12 +338,12 @@ fn grpc_web_frames_decode_like_9router() {
 #[test]
 fn extracted_windows_match_9router() {
     assert_eq!(windows().len(), 40);
-    let claude = decl(ANTHROPIC_QUOTA);
+    let claude = plugin_quota("anthropic");
     for c in fixture("quota-claude.json")["cases"].as_array().unwrap() {
         let ours = poll(&claude, &[answer(&c["input"]["response"])]);
         check(c["name"].as_str().unwrap(), "anthropic", &c["result"], &ours);
     }
-    let grok = decl(&grok_quota());
+    let grok = plugin_quota("grok-cli");
     let g = fixture("quota-grok-cli.json");
     for c in g["parse"].as_array().unwrap() {
         let ours = quota::read(&grok.primary, &serde_json::to_vec(&c["billing"]).unwrap());
@@ -466,8 +353,9 @@ fn extracted_windows_match_9router() {
         let answers: Vec<_> = c["input"]["responses"].as_array().unwrap().iter().map(answer).collect();
         check(c["name"].as_str().unwrap(), "grok-cli", &c["result"], &poll(&grok, &answers));
     }
-    let go = decl(&opencode_quota("https://opencode.ai/zen/go/v1/usage"));
-    let zen = decl(&opencode_quota("https://opencode.ai/zen/v1/usage"));
+    let (go, zen) = (plugin_quota("opencode-go"), plugin_quota("opencode-zen"));
+    assert_eq!(go.primary.request.url, "https://opencode.ai/zen/go/v1/usage");
+    assert_eq!(zen.primary.request.url, "https://opencode.ai/zen/v1/usage");
     for c in fixture("quota-opencode.json")["cases"].as_array().unwrap() {
         let provider = c["provider"].as_str().unwrap();
         let q = if provider == "opencode-go" { &go } else { &zen };
@@ -489,13 +377,53 @@ fn reset_times_parse_like_9router() {
     }
 }
 
-// ── Ignored until the quota tasks land ───────────────────────────────────────
+// ── The live model list (T076) ───────────────────────────────────────────────
 
-/// T076: the grok-cli `[models_live]` paths read `models-grok-cli.json`'s bodies to the same
-/// ids, names, context and max output; a 401 refreshes once and retries with the new token.
+/// T076: the grok-cli `[models_live]` paths read each `models-grok-cli.json` body to 9router's
+/// ids, names, context and max output (grok-build's limits from its static `[[models]]` entry,
+/// as 9router's constants). The flow case (a 401 refreshes once and retries with the new
+/// token) runs against the server in `nullrouter-server/tests/quota_poll.rs`; here, its
+/// request carries the declared headers and its final body reads to 9router's result.
 #[test]
-#[ignore = "T076: live model list not built yet"]
 fn grok_cli_live_models_match_9router() {
-    assert_eq!(fixture("models-grok-cli.json")["flow"].as_array().unwrap().len(), 1);
-    todo!("T076: read each body through the [models_live] paths");
+    let text = bundled("grok-cli");
+    let entity = nullrouter_registry::validate_user_plugin(&text, std::path::Path::new("grok-cli.toml"))
+        .unwrap_or_else(|e| panic!("{e:#?}"));
+    let decl = entity.models_live.clone().expect("grok-cli declares [models_live]");
+    let fixture = fixture("models-grok-cli.json");
+    let statics = |m| models_live::with_static_limits(&entity, m);
+    let as_9router = |m: &[models_live::LiveModel]| -> Vec<(String, String, Option<u64>, Option<u64>)> {
+        m.iter().map(|m| (m.id.clone(), m.name.clone(), m.context, m.max_output)).collect()
+    };
+    let theirs = |result: &Value| -> Vec<(String, String, Option<u64>, Option<u64>)> {
+        result
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| {
+                (
+                    m["id"].as_str().unwrap().to_owned(),
+                    m["name"].as_str().unwrap().to_owned(),
+                    m["contextLength"].as_u64(),
+                    m["maxOutputTokens"].as_u64(),
+                )
+            })
+            .collect()
+    };
+    let cases = fixture["parse"].as_array().unwrap();
+    assert_eq!(cases.len(), 3);
+    for c in cases {
+        let ours = statics(models_live::parse(&decl, &c["body"]));
+        assert_eq!(as_9router(&ours), theirs(&c["result"]), "{}", c["name"]);
+        assert!(ours.iter().all(|m| m.ty == ModelType::Text));
+    }
+    let flow = &fixture["flow"].as_array().unwrap()[0];
+    let models_req = &flow["requests"][0];
+    assert_eq!(models_req["url"], decl.url.as_str());
+    for (k, v) in &decl.headers {
+        assert_eq!(models_req["headers"][k.to_ascii_lowercase()], v.as_str(), "{k}");
+    }
+    let last = &flow["responses"].as_array().unwrap()[2]["body"];
+    let ours = statics(models_live::parse(&decl, last));
+    assert_eq!(as_9router(&ours), theirs(&flow["result"]["models"]));
 }

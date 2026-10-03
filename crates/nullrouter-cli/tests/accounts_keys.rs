@@ -171,3 +171,156 @@ fn accounts_list_shows_sign_in_accounts() {
         assert!(!out.contains(ACCESS) && !out.contains(REFRESH) && !out.contains(SECRET), "no token in full");
     }
 }
+
+/// Writes tokens for sign-in account `provider/name` (added to `accounts.toml` too), with
+/// a persisted state when given.
+fn signed_in(
+    home: &Path,
+    provider: &str,
+    name: &str,
+    access: &str,
+    state: Option<(nullrouter_engine::tokens::PersistedState, &str)>,
+) {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    use nullrouter_engine::tokens::{self, Claims, TokenEntry};
+    use nullrouter_registry::SecretString;
+
+    let mut list = Accounts::load(&home.join(accounts::FILE)).unwrap();
+    list.add(accounts::Account::signin(provider, name, 0)).unwrap();
+    list.save().unwrap();
+    let at = |s: u64| UNIX_EPOCH + Duration::from_secs(s);
+    tokens::update(home, provider, name, |slot| {
+        *slot = Some(TokenEntry {
+            provider: provider.into(),
+            name: name.into(),
+            access_token: SecretString::new(access),
+            refresh_token: Some(SecretString::new(format!("{access}-refresh"))),
+            expires_at: at(4_102_444_800),
+            scope: String::new(),
+            claims: Claims::default(),
+            hosts: Default::default(),
+            signed_in_at: at(1_790_000_000),
+            last_refresh_at: None,
+            state: state.map(|(s, _)| s),
+            // 2026-10-03T14:02:00Z
+            state_since: state.map(|_| at(1_791_036_120)),
+            state_reason: state.map(|(_, r)| r.to_owned()),
+        });
+    })
+    .unwrap();
+}
+
+/// T059: the `accounts list` state column and hint line (contracts/operator-cli.md
+/// § `accounts list`), read from the files when no server runs; `accounts enable` clears
+/// `refused`.
+#[test]
+fn accounts_list_shows_sign_in_states_and_the_command() {
+    use nullrouter_engine::tokens::{PersistedState, TokenStore};
+
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    assert!(
+        nr(home, &["accounts", "add", "anthropic", "api", "--order", "1"], &format!("{SECRET}\n")).status.success()
+    );
+    signed_in(home, "anthropic", "max", "ant-access-SENTINEL-h3Kq", None);
+    signed_in(home, "xai", "main", "xai-access-SENTINEL-Zt1c", Some((PersistedState::NeedsSignIn, "invalid_grant")));
+    signed_in(
+        home,
+        "grok-cli",
+        "work",
+        "grok-access-SENTINEL-p0Lm",
+        Some((PersistedState::Refused, "not for this client")),
+    );
+
+    let text = String::from_utf8(nr(home, &["accounts", "list"], "").stdout).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    fn cells(l: &str) -> Vec<&str> {
+        l.split("  ").map(str::trim).filter(|c| !c.is_empty()).collect()
+    }
+    assert_eq!(cells(lines[0]), ["provider", "name", "kind", "order", "secret", "state"], "{text}");
+    assert_eq!(cells(lines[1]), ["anthropic", "api", "key", "1", "…0003", "active"], "{text}");
+    assert_eq!(cells(lines[2]), ["anthropic", "max", "signin", "0", "…h3Kq", "active"], "{text}");
+    assert_eq!(
+        cells(lines[3]),
+        ["xai", "main", "signin", "0", "…Zt1c", "needs sign-in since 2026-10-03 14:02 (invalid_grant)"],
+        "{text}"
+    );
+    assert_eq!(
+        cells(lines[4]),
+        [
+            "grok-cli",
+            "work",
+            "signin",
+            "0",
+            "…p0Lm",
+            "refused by provider since 2026-10-03 14:02 (not for this client)"
+        ],
+        "{text}"
+    );
+    assert_eq!(
+        lines[5..],
+        ["  → run: nullrouter accounts signin xai main", "  → run: nullrouter accounts signin grok-cli work"],
+        "{text}"
+    );
+    // The columns line up: the state column starts at the same character in every row.
+    let state_at = |l: &str, s: &str| l.find(s).map(|i| l[..i].chars().count());
+    assert_eq!(state_at(lines[0], "state"), state_at(lines[3], "needs sign-in"), "{text}");
+    assert_eq!(state_at(lines[1], "active"), state_at(lines[4], "refused"), "{text}");
+
+    let json = String::from_utf8(nr(home, &["--json", "accounts", "list", "xai"], "").stdout).unwrap();
+    let rows: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(rows[0]["state"], "needs_sign_in");
+    assert_eq!(rows[0]["state_since"], "2026-10-03T14:02:00Z");
+    assert_eq!(rows[0]["state_reason"], "invalid_grant");
+
+    // `enable` clears `refused`, not `needs sign-in` (only a sign-in does).
+    let out = nr(home, &["accounts", "enable", "grok-cli", "work"], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("grok-cli/work: no longer marked refused"));
+    assert!(nr(home, &["accounts", "enable", "xai", "main"], "").status.success());
+    let store = TokenStore::load(home).unwrap();
+    assert_eq!(store.get("grok-cli", "work").unwrap().state, None);
+    assert_eq!(store.get("xai", "main").unwrap().state, Some(PersistedState::NeedsSignIn));
+    let text = String::from_utf8(nr(home, &["accounts", "list"], "").stdout).unwrap();
+    assert!(text.lines().any(|l| l.starts_with("grok-cli") && l.ends_with("  active")), "{text}");
+    assert!(!text.contains("signin grok-cli work"), "{text}");
+}
+
+/// T064: `accounts remove` deletes the account's tokens under the lock; its quota history
+/// stays (Clarifications Q4).
+#[test]
+fn removing_a_sign_in_account_deletes_its_tokens_and_keeps_its_history() {
+    use nullrouter_engine::tokens::TokenStore;
+
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    signed_in(home, "xai", "main", "xai-access-SENTINEL-gone", None);
+    signed_in(home, "xai", "other", "xai-access-SENTINEL-kept", None);
+    let history = home.join("quota/xai");
+    std::fs::create_dir_all(&history).unwrap();
+    let files = [history.join("main.jsonl"), history.join("main.tally")];
+    for f in &files {
+        std::fs::write(f, "{}\n").unwrap();
+    }
+
+    let out = nr(home, &["accounts", "remove", "xai", "main"], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("xai/main: removed with its tokens"));
+    let store = TokenStore::load(home).unwrap();
+    assert!(store.get("xai", "main").is_none());
+    assert!(store.get("xai", "other").is_some(), "other accounts keep theirs");
+    let text = std::fs::read_to_string(home.join("tokens.toml")).unwrap();
+    assert!(!text.contains("SENTINEL-gone"), "no token remains: {text}");
+    assert_eq!(mode(&home.join("tokens.toml")), 0o600);
+    for f in &files {
+        assert!(f.exists(), "{} is kept", f.display());
+    }
+    assert!(Accounts::load(&home.join(accounts::FILE)).unwrap().get("xai", "main").is_none());
+
+    // A key account has no tokens: nothing else is touched.
+    assert!(nr(home, &["accounts", "add", "anthropic", "api"], &format!("{SECRET}\n")).status.success());
+    let out = nr(home, &["accounts", "remove", "anthropic", "api"], "");
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("anthropic/api: "), "{out:?}");
+    assert!(!String::from_utf8_lossy(&out.stdout).contains("tokens"));
+}

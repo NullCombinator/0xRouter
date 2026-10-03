@@ -151,6 +151,27 @@ fn number(v: &Value, unwrap_val: bool) -> Option<f64> {
     n.is_finite().then_some(n)
 }
 
+/// The first alternative of `path` that resolves below `v` to a non-null value (`.` is `v`).
+pub fn value_at<'a>(v: &'a Value, path: &ValuePath) -> Option<&'a Value> {
+    path.alternatives().find_map(|a| get(v, a))
+}
+
+/// The first alternative of `path` that resolves to a finite number (JSON number or numeric
+/// string).
+pub fn number_at(v: &Value, path: &ValuePath) -> Option<f64> {
+    first_number(v, path, false)
+}
+
+/// The first alternative of `path` that resolves to non-blank text (a string, or a number
+/// written out), trimmed.
+pub fn text_at(v: &Value, path: &ValuePath) -> Option<String> {
+    path.alternatives().find_map(|a| match get(v, a)? {
+        Value::String(s) => Some(s.trim().to_owned()).filter(|s| !s.is_empty()),
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    })
+}
+
 fn first_number(v: &Value, path: &ValuePath, unwrap_val: bool) -> Option<f64> {
     path.alternatives().find_map(|a| get(v, a).and_then(|x| number(x, unwrap_val)))
 }

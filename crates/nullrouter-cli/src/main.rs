@@ -66,8 +66,7 @@ enum Command {
     #[command(subcommand)]
     Plugins(cmd::plugins::Command),
     /// Provider-reported quota and its poll history.
-    #[command(subcommand)]
-    Quota(cmd::quota::Command),
+    Quota(cmd::quota::Args),
 }
 
 /// Opens the registry, or prints the startup errors and exits 1.

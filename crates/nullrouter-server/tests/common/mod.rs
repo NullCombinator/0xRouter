@@ -320,3 +320,111 @@ pub fn reply_by_wire(r: &Received) -> Step {
     }
     if stream { chat_stream() } else { chat_whole_text("Hello") }
 }
+
+/// A server whose provider `p` (model `m1`, openai-chat wire at `/p/chat/completions`)
+/// signs in at a mock identity provider, with sign-in accounts `names` in that order, each
+/// signed in with a fresh grant. `signin_extra` is appended to the `[signin]` section
+/// (e.g. `[[signin.refused]]` rules). The upstream answers "Hello" in every wire until a
+/// test replaces the responder.
+pub struct IdpServer {
+    pub s: Server,
+    pub idp: Arc<nullrouter_engine::testkit::MockIdp>,
+}
+
+pub async fn idp_server(names: &[&str], signin_extra: &str) -> IdpServer {
+    use nullrouter_engine::testkit::MockIdp;
+    use nullrouter_engine::testkit::mock_idp::{CLIENT_ID, DEVICE, TOKEN};
+
+    let mock = MockUpstream::start().await;
+    let idp = Arc::new(MockIdp::start().await);
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    std::fs::write(home.join("config.toml"), "allow_private_endpoints = true\n").unwrap();
+    std::fs::create_dir(home.join("plugins")).unwrap();
+    let plugin = format!(
+        "schema = 2\nid = \"p\"\ncategory = \"apikey\"\n[endpoints.text]\nurl = \"{}\"\nwire = \"openai-chat\"\nretry = {{ 401 = {{ retries = 0 }}, 403 = {{ retries = 0 }}, 400 = {{ retries = 0 }} }}\n[[models]]\nid = \"m1\"\n[signin]\nflow = \"device_code\"\nclient_id = \"{CLIENT_ID}\"\ndevice_url = \"{}\"\ntoken_url = \"{}\"\nrefresh_lead = \"5m\"\n{signin_extra}",
+        mock.url("/p/chat/completions"),
+        idp.url(DEVICE),
+        idp.url(TOKEN)
+    );
+    std::fs::write(home.join("plugins/p.toml"), plugin).unwrap();
+    let mut accounts = String::from("schema = 2\n");
+    for (order, name) in names.iter().enumerate() {
+        accounts += &format!("[[account]]\nprovider = \"p\"\nname = \"{name}\"\nkind = \"signin\"\norder = {order}\n");
+    }
+    nullrouter_engine::files::write_private(&home.join(nullrouter_engine::accounts::FILE), &accounts).unwrap();
+    let keys = write_keys(home);
+    let (engine, report) = Engine::open_parity(OperatorHome::new(home)).unwrap();
+    assert!(report.registry.unsupported.is_empty() && report.registry.skipped.is_empty(), "{report:#?}");
+    for name in names {
+        write_grant(home, &engine, &idp, name, |_| {});
+    }
+    engine.reload_blocking().unwrap();
+    mock.respond(reply_by_wire);
+    IdpServer { s: start(dir, mock, engine, keys).await, idp }
+}
+
+/// Writes a fresh grant from `idp` as `p/name`'s tokens (as `accounts signin` does),
+/// adjusted by `edit`. Reload afterwards.
+pub fn write_grant(
+    home: &std::path::Path,
+    engine: &Engine,
+    idp: &nullrouter_engine::testkit::MockIdp,
+    name: &str,
+    edit: impl FnOnce(&mut nullrouter_engine::tokens::TokenEntry),
+) {
+    use nullrouter_engine::tokens::{self, Claims, TokenEntry};
+    let (access, refresh, expires_in) = idp.grant();
+    let now = std::time::SystemTime::now();
+    let mut e = TokenEntry {
+        provider: "p".into(),
+        name: name.into(),
+        access_token: nullrouter_registry::SecretString::new(access),
+        refresh_token: Some(nullrouter_registry::SecretString::new(refresh)),
+        expires_at: now + expires_in,
+        scope: String::new(),
+        claims: Claims { email: Some(format!("{name}@example.com")), user_id: None, tier: None },
+        hosts: engine.snapshot().registry.provider("p").unwrap().token_hosts(),
+        signed_in_at: now,
+        last_refresh_at: None,
+        state: None,
+        state_since: None,
+        state_reason: None,
+    };
+    edit(&mut e);
+    tokens::update(home, "p", name, |slot| *slot = Some(e)).unwrap();
+}
+
+/// The bearer token a request carried.
+pub fn bearer(r: &Received) -> String {
+    r.headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or("").trim_start_matches("Bearer ").to_owned()
+}
+
+/// One client request per style for `model` (`provider/model`), whole.
+pub fn style_request(base: &str, key: &str, style: &str, model: &str) -> reqwest::RequestBuilder {
+    let msgs = json!([{"role": "user", "content": "hi"}]);
+    let (path, carrier, body) = match style {
+        "openai-chat" => {
+            ("/v1/chat/completions".to_owned(), "authorization", json!({"model": model, "messages": msgs}))
+        }
+        "anthropic-messages" => {
+            ("/v1/messages".to_owned(), "x-api-key", json!({"model": model, "max_tokens": 64, "messages": msgs}))
+        }
+        "openai-responses" => ("/v1/responses".to_owned(), "authorization", json!({"model": model, "input": "hi"})),
+        "gemini" => (
+            format!("/v1beta/models/{model}:generateContent"),
+            "x-goog-api-key",
+            json!({"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}),
+        ),
+        _ => unreachable!(),
+    };
+    let v = if carrier == "authorization" { format!("Bearer {key}") } else { key.to_owned() };
+    reqwest::Client::new()
+        .post(format!("{base}{path}"))
+        .header(carrier, v)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .body(body.to_string())
+}
+
+pub const STYLES: [&str; 4] = ["openai-chat", "anthropic-messages", "openai-responses", "gemini"];

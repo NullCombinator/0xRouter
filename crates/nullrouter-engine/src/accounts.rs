@@ -381,6 +381,19 @@ impl Accounts {
         Ok(())
     }
 
+    /// Sets the account's quota polling interval; `None` returns it to the default. Returns
+    /// the interval the account now polls at (a shorter one is raised to the floor).
+    pub fn set_poll_interval(
+        &mut self,
+        provider: &str,
+        name: &str,
+        every: Option<Duration>,
+    ) -> Result<Duration, AccountError> {
+        let at = self.position(provider, name)?;
+        self.list[at].poll_interval = every;
+        Ok(self.list[at].poll_interval())
+    }
+
     fn position(&self, provider: &str, name: &str) -> Result<usize, AccountError> {
         self.list
             .iter()

@@ -52,7 +52,8 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
         let until_stopped = |mut stopped: tokio::sync::watch::Receiver<bool>| async move {
             let _ = stopped.wait_for(|s| *s).await;
         };
-        // Token refreshes (and later quota polls) run while the server is up (research R13).
+        // Token refreshes, quota polls and live model lists run while the server is up
+        // (research R11, R13, R14).
         let upkeep = maintenance::spawn(engine.clone(), until_stopped(stopped.clone()));
         let ops = tokio::spawn(operator::serve(engine, socket, until_stopped(stopped)));
         tracing::info!("listening on {listen}");

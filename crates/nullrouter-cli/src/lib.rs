@@ -2,6 +2,7 @@
 //! run them in-process against a mock identity provider: the shipped binary resolves the
 //! provider from the operator's registry and calls the same code.
 
+pub mod quota_text;
 pub mod signin;
 
 use nullrouter_registry::OperatorHome;

@@ -15,6 +15,7 @@ use crate::cooldown::Cooldowns;
 use crate::files::FileError;
 use crate::identity::AgentSessions;
 use crate::keys::{self, BreakBehaviour, Keys};
+use crate::models_live::LiveModels;
 use crate::plan::WarmMap;
 use crate::records::RecordStore;
 use crate::redact::{Redactor, SharedRedactor};
@@ -30,6 +31,8 @@ pub struct EngineState {
     pub redactor: Arc<SharedRedactor>,
     /// The engine's live sign-in tokens, shared by every snapshot.
     pub tokens: Arc<TokenCells>,
+    /// Live model lists (`[models_live]`), shared by every snapshot.
+    pub live_models: Arc<LiveModels>,
     /// Every loaded style, compiled once per snapshot, by id.
     pub styles: BTreeMap<String, Arc<Style>>,
     /// The upstream client for this snapshot's `allow_private_endpoints`.
@@ -101,6 +104,10 @@ pub struct Engine {
     pub sessions: AgentSessions,
     /// Token refreshes in flight, their failure backoff and timing (research R9).
     pub refresher: crate::signin::refresh::Refresher,
+    /// Quota polls per account: latest, last failure, schedule (research R11). In memory.
+    pub quota: crate::quota::poll::QuotaBoard,
+    /// Live model lists, shared with every snapshot.
+    pub live_models: Arc<LiveModels>,
     /// Wakes the maintenance task after a reload or a token change.
     pub(crate) changed: tokio::sync::Notify,
     install_id: OnceLock<String>,
@@ -119,6 +126,7 @@ fn assemble(
     mut accounts: Accounts,
     keys: Keys,
     tokens: Arc<TokenCells>,
+    live_models: Arc<LiveModels>,
     generation: u64,
 ) -> (EngineState, StateReport) {
     if accounts.bind_unbound(&registry)
@@ -141,7 +149,7 @@ fn assemble(
         })
         .collect();
     let http = upstream::client(registry.runtime().allow_private_endpoints);
-    (EngineState { registry, accounts, keys, redactor, tokens, styles, http, generation }, report)
+    (EngineState { registry, accounts, keys, redactor, tokens, live_models, styles, http, generation }, report)
 }
 
 impl Engine {
@@ -166,7 +174,8 @@ impl Engine {
         let (accounts, keys) = operator_files(&home)?;
         let tokens = Arc::new(TokenCells::load(home.path())?);
         let registry = open(home)?;
-        let (state, report) = assemble(registry.snapshot(), accounts, keys, tokens.clone(), 1);
+        let live_models = Arc::new(LiveModels::default());
+        let (state, report) = assemble(registry.snapshot(), accounts, keys, tokens.clone(), live_models.clone(), 1);
         let redactor = Arc::new(ArcSwap::new(state.redactor.current()));
         let engine = Self {
             registry,
@@ -179,6 +188,8 @@ impl Engine {
             tokens,
             sessions: AgentSessions::default(),
             refresher: Default::default(),
+            quota: Default::default(),
+            live_models,
             changed: tokio::sync::Notify::new(),
             install_id: OnceLock::new(),
             generation: AtomicU64::new(1),
@@ -212,7 +223,14 @@ impl Engine {
             self.tokens.apply(store, at);
         }
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
-        let (state, report) = assemble(self.registry.snapshot(), accounts, keys, self.tokens.clone(), generation);
+        let (state, report) = assemble(
+            self.registry.snapshot(),
+            accounts,
+            keys,
+            self.tokens.clone(),
+            self.live_models.clone(),
+            generation,
+        );
         self.redactor.store(state.redactor.current());
         self.state.store(Arc::new(state));
         self.changed.notify_one();
