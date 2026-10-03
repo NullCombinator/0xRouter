@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use nullrouter_engine::maintenance;
 use nullrouter_engine::redact::RedactWriter;
 use nullrouter_engine::state::Engine;
 use nullrouter_registry::OperatorHome;
@@ -48,14 +49,17 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
             ExitCode::from(1)
         })?;
         let (stop, stopped) = tokio::sync::watch::channel(false);
-        let ops = tokio::spawn(operator::serve(engine, socket, async move {
-            let mut stopped = stopped;
+        let until_stopped = |mut stopped: tokio::sync::watch::Receiver<bool>| async move {
             let _ = stopped.wait_for(|s| *s).await;
-        }));
+        };
+        // Token refreshes (and later quota polls) run while the server is up (research R13).
+        let upkeep = maintenance::spawn(engine.clone(), until_stopped(stopped.clone()));
+        let ops = tokio::spawn(operator::serve(engine, socket, until_stopped(stopped)));
         tracing::info!("listening on {listen}");
         let served = serve::run(app, listener, serve::signal()).await;
         let _ = stop.send(true);
         let _ = ops.await;
+        let _ = upkeep.await;
         served.map_err(|e| {
             eprintln!("server failed: {e}");
             ExitCode::from(1)

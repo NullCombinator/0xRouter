@@ -55,6 +55,7 @@ use crate::plan::{self, Candidate, Step, Warm};
 use crate::records::{
     Attempt, AttemptKind, AttemptOutcome, BreakHandling, ErrorClass, JobRef, Outcome, ServedBy, Usage,
 };
+use crate::signin::refresh::Refreshed;
 use crate::state::{Engine, EngineState};
 use crate::upstream::{self, RequestParts, SignedIn};
 
@@ -470,6 +471,28 @@ fn inband_fail(ib: inband::InBand, raw: &str, after_output: bool, st: &EngineSta
     }
 }
 
+/// Text in a 403's message that reads as a rejected token rather than a refused model.
+const AUTH_REJECTION: [&str; 6] =
+    ["token", "expired", "unauthenticated", "authentication", "invalid credentials", "invalid_api_key"];
+
+/// Whether `f` rejected a sign-in account's token (research R9): a 401, or a 403 whose
+/// message reads as an auth rejection. Neither when the plugin's `[[signin.refused]]` rules
+/// match (the account is refused, not expired) nor after output.
+fn token_rejected(c: &Candidate<'_>, f: &Fail) -> bool {
+    let Some(status) = f.status.filter(|_| !f.after_output) else { return false };
+    if c.provider.signin.as_ref().is_some_and(|d| d.refuses(status, &f.message)) {
+        return false;
+    }
+    match status {
+        401 => true,
+        403 => {
+            let m = f.message.to_lowercase();
+            f.verdict.class == ErrorClass::Auth && AUTH_REJECTION.iter().any(|t| m.contains(t))
+        }
+        _ => false,
+    }
+}
+
 fn class_name(class: ErrorClass) -> Option<String> {
     serde_json::to_value(class).ok().and_then(|v| v.as_str().map(str::to_owned))
 }
@@ -702,6 +725,9 @@ impl Run {
         let mut kind = kind;
         let mut retries = 0;
         let mut budget = None;
+        // A rejected sign-in token gets one refresh and one retry here (research R9).
+        let mut refreshed = false;
+        let signin = c.account.filter(|a| a.is_signin());
         loop {
             let prefilled;
             let ob = match self.broken.as_ref().map(|b| b.reason.clone()) {
@@ -728,9 +754,21 @@ impl Run {
                     _ => return Err(self.broke_off(c, reason, tried)),
                 },
             };
+            // Use-time freshness: a token about to expire is refreshed before it is sent; a
+            // failed refresh leaves the cell valid or out of service, which `outgoing` reads.
+            if let Some(a) = signin
+                && self.wait(self.engine.fresh_for_use(&a.provider, &a.name)).await.is_none()
+            {
+                self.end_request(Outcome::Cancelled, None);
+                return Err(Failure::new(499, "0router: the client went away"));
+            }
+            let sent = signin.and_then(|a| st.tokens.get(&a.provider, &a.name));
             let out = match self.outgoing(st, c, ob) {
                 Ok(o) => o,
-                Err(reason) => return skip(self, reason, tried),
+                Err((reason, class)) => {
+                    self.skip(&c.provider.id, account.clone(), &c.upstream_id, &reason, class, tried);
+                    return Ok(false);
+                }
             };
             self.start_attempt(c, kind, ob.dropped.clone(), ob.forced.clone());
             let f = match self.once(st, c, wire.as_ref(), out).await {
@@ -751,6 +789,46 @@ impl Run {
                 f.usage,
             );
             self.carry(f.usage);
+            if let (Some(a), Some(sent), false) = (signin, sent.as_deref(), refreshed)
+                && token_rejected(c, &f)
+            {
+                refreshed = true;
+                let Some(r) = self.wait(self.engine.refresh_rejected(&a.provider, &a.name, sent)).await else {
+                    self.end_request(Outcome::Cancelled, None);
+                    return Err(Failure::new(499, "0router: the client went away"));
+                };
+                // The account isn't at fault for the model: no cooldown; the refresher retries.
+                let (class, reason) = match r {
+                    // The client sees only the retried answer; no fallback is counted.
+                    Refreshed::Fresh => {
+                        kind = AttemptKind::SameAccountRetry;
+                        continue;
+                    }
+                    Refreshed::Transient(why) => (
+                        ErrorClass::TokenRefreshing,
+                        format!("{}; the token refresh failed ({why}), retrying", f.reason),
+                    ),
+                    Refreshed::Permanent(_) => (
+                        ErrorClass::NeedsSignIn,
+                        accounts::Withheld::NeedsSignIn { provider: a.provider.clone(), name: a.name.clone() }
+                            .to_string(),
+                    ),
+                };
+                tried.push(Tried {
+                    provider: c.provider.id.clone(),
+                    account: account.clone(),
+                    model: c.upstream_id.clone(),
+                    status: f.status,
+                    class: class_name(class),
+                    reason,
+                    retries,
+                });
+                if !self.keepalive().await {
+                    self.end_request(Outcome::Cancelled, None);
+                    return Err(Failure::new(499, "0router: the client went away"));
+                }
+                return Ok(false);
+            }
             let line = |reason: String, retries| Tried {
                 provider: c.provider.id.clone(),
                 account: account.clone(),
@@ -818,12 +896,18 @@ impl Run {
     /// A sign-in account's token comes from its cell in one atomic load ([`accounts::release`]),
     /// so a refresh never waits for a reload; its request gets the `[signin] auth` placement
     /// and the filled `[identity]` headers (research R6, R7). The body is not touched here.
-    fn outgoing(&self, st: &EngineState, c: &Candidate<'_>, ob: &Outbound) -> Result<upstream::Outgoing, String> {
+    fn outgoing(
+        &self,
+        st: &EngineState,
+        c: &Candidate<'_>,
+        ob: &Outbound,
+    ) -> Result<upstream::Outgoing, (String, Option<ErrorClass>)> {
+        let plain = |e: String| (e, None);
         let released = c
             .account
             .map(|a| accounts::release(a, c.provider, &st.tokens))
             .transpose()
-            .map_err(|w| format!("0router: {w}"))?;
+            .map_err(|w| (format!("0router: {w}"), w.class()))?;
         let token = released.as_ref().and_then(accounts::Released::token);
         let signin = match (token, &c.provider.signin) {
             (Some(view), Some(decl)) => {
@@ -837,7 +921,7 @@ impl Run {
                             turns: identity::user_turns(&self.req.ir),
                             upstream_model: &c.upstream_id,
                             claims: Some(&view.entry.claims),
-                            install_id: self.engine.install_id().map_err(|e| format!("0router: {e}"))?,
+                            install_id: self.engine.install_id().map_err(|e| plain(format!("0router: {e}")))?,
                         };
                         identity::headers(d, &ctx)
                     }
@@ -861,9 +945,9 @@ impl Run {
             body: ob.body.clone(),
             signin,
         };
-        let mut out = upstream::build_request(parts).map_err(|e| format!("0router: {e}"))?;
+        let mut out = upstream::build_request(parts).map_err(|e| plain(format!("0router: {e}")))?;
         upstream::check_ip_host(&out.url, st.registry.runtime().allow_private_endpoints)
-            .map_err(|e| format!("0router: {e}"))?;
+            .map_err(|e| plain(format!("0router: {e}")))?;
         if let Some(s) = &c.provider.session
             && !st.registry.floor().blocks(&s.header)
             && let Ok(name) = HeaderName::from_bytes(s.header.as_bytes())

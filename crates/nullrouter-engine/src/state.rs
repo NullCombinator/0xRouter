@@ -99,6 +99,10 @@ pub struct Engine {
     pub tokens: Arc<TokenCells>,
     /// `{session.id}` for agents that send no session (research R7).
     pub sessions: AgentSessions,
+    /// Token refreshes in flight, their failure backoff and timing (research R9).
+    pub refresher: crate::signin::refresh::Refresher,
+    /// Wakes the maintenance task after a reload or a token change.
+    pub(crate) changed: tokio::sync::Notify,
     install_id: OnceLock<String>,
     generation: AtomicU64,
     reload: Mutex<()>,
@@ -174,6 +178,8 @@ impl Engine {
             jobs: crate::jobs::JobMap::default(),
             tokens,
             sessions: AgentSessions::default(),
+            refresher: Default::default(),
+            changed: tokio::sync::Notify::new(),
             install_id: OnceLock::new(),
             generation: AtomicU64::new(1),
             reload: Mutex::new(()),
@@ -209,6 +215,7 @@ impl Engine {
         let (state, report) = assemble(self.registry.snapshot(), accounts, keys, self.tokens.clone(), generation);
         self.redactor.store(state.redactor.current());
         self.state.store(Arc::new(state));
+        self.changed.notify_one();
         Ok(report)
     }
 
@@ -221,6 +228,7 @@ impl Engine {
         let r = Arc::new(Redactor::for_state(&st.accounts, &self.tokens));
         st.redactor.store(r.clone());
         self.redactor.store(r);
+        self.changed.notify_one();
     }
 
     /// `$NULLROUTER_HOME/install-id`, created on first use (research R7).

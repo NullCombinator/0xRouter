@@ -7,18 +7,25 @@
 //! shape, and token-endpoint error codes with their transient/permanent split. Deliberate
 //! deviations (research R19, and the ones this file names) are asserted as deviations.
 //!
-//! Ignored until built: the refresh call (T050), its classification (T051) and the
-//! maintenance selection (T054). Each ignored test names the API it expects.
+//! Also live since US2: the refresh call (T050), its classification (T051) and the
+//! maintenance queue's selection (T054).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
+use std::time::SystemTime;
+
+use nullrouter_engine::accounts::{Account, SecretSource};
+use nullrouter_engine::maintenance;
+use nullrouter_engine::signin::classify::{RefreshClass, classify};
+use nullrouter_engine::signin::refresh::Timing;
 use nullrouter_engine::signin::{self, Begun, SignInError, SignInHttp, encode_body, pkce};
 use nullrouter_engine::testkit::mock_idp::{AUTHORIZE, DEVICE, DISCOVERY, PROFILE, TOKEN};
 use nullrouter_engine::testkit::{MockIdp, MockUpstream, Step};
+use nullrouter_engine::tokens::{AccountState, TokenEntry, TokenView};
 use nullrouter_registry::schema::{RedirectKind, SignInDecl, SignInFlow, TokenBody};
 use nullrouter_registry::validate::validate_with;
-use nullrouter_registry::{PluginSource, ProviderEntity};
+use nullrouter_registry::{PluginSource, ProviderEntity, SecretString};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -370,13 +377,8 @@ async fn refresh_errors_read_9routers_codes_and_split_like_r10() {
         }
         match (&err, &c["classify"]["code"]) {
             (SignInError::Rejected { code, .. }, Value::String(theirs)) if !theirs.is_empty() => {
-                if name == "error-code-field" {
-                    // Deviation: 9router's classifier also reads `error_code`; 0router reads
-                    // `error` only and reports the status. The class is the same (400).
-                    assert_eq!(code, "HTTP 400", "{name}");
-                } else {
-                    assert_eq!(code, theirs, "{name}");
-                }
+                // `error`, then `error_code`, as 9router's classifier reads them (R10).
+                assert_eq!(code, theirs, "{name}");
             }
             (SignInError::Rejected { code, status: s, .. }, _) => assert_eq!(code, &format!("HTTP {s}"), "{name}"),
             (SignInError::Transport { .. }, _) => assert!(status.is_none(), "{name}"),
@@ -401,62 +403,145 @@ fn closed_port() -> u16 {
     l.local_addr().unwrap().port()
 }
 
+/// 9router's background refresher selects a token within max(lead, 30 min) of expiry; so
+/// does 0router's maintenance queue (research R9), with a ceiling of half the token's
+/// lifetime that a long-lived token never reaches.
 #[test]
-fn refresh_leads_match_and_background_lead_is_a_deviation() {
+fn maintenance_selects_accounts_due_for_refresh() {
     let data = fixture("refresh-schedule.json");
-    let providers = fixture("providers.json");
-    let background = Duration::from_millis(providers["background_refresh_lead_ms"].as_u64().unwrap());
-    for c in data["cases"].as_array().unwrap() {
-        let id = c["provider"].as_str().unwrap();
-        let lead = decl(id).refresh_lead;
+    let cases = data["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 33);
+    let timing = Timing::default();
+    let now = SystemTime::now();
+    let mut checked = 0;
+    for c in cases {
+        let (id, name) = (c["provider"].as_str().unwrap(), c["name"].as_str().unwrap());
+        let d = decl(id);
+        // 0router always knows an expiry: a token response without `expires_in` gets the
+        // default hour (DEFAULT_EXPIRES_IN), so "no expiry" can't occur.
         let Some(minutes) = c["expires_in_minutes"].as_i64() else { continue };
-        if c["auth_type"] != "oauth" || c["has_refresh_token"] == false {
-            assert_eq!(c["selected"], false);
-            continue;
-        }
-        // 9router's background task refreshes at max(lead, 30 min) before expiry; 0router
-        // refreshes at the plugin's lead (research R9). The two agree whenever the lead is the
-        // larger (anthropic's 4 h) and differ for xai and grok-cli between 5 and 30 minutes.
-        let remaining = Duration::from_secs(u64::try_from(minutes.max(0)).unwrap() * 60);
-        let theirs = minutes < 0 || remaining < lead.max(background);
-        assert_eq!(c["selected"].as_bool(), Some(theirs), "{id} {}", c["name"]);
-        let ours = minutes < 0 || remaining < lead;
-        if lead >= background {
-            assert_eq!(ours, theirs, "{id} {}", c["name"]);
-        }
+        let account = match c["auth_type"].as_str().unwrap() {
+            "oauth" => Account::signin(id, "main", 0),
+            _ => Account::key(
+                id,
+                "main",
+                SecretSource::Literal,
+                Some(SecretString::new("sk-key-0000")),
+                0,
+                BTreeSet::new(),
+            ),
+        };
+        let expires_at = if minutes >= 0 {
+            now + Duration::from_secs(minutes.unsigned_abs() * 60)
+        } else {
+            now - Duration::from_secs(minutes.unsigned_abs() * 60)
+        };
+        let view = TokenView {
+            entry: TokenEntry {
+                provider: id.into(),
+                name: "main".into(),
+                access_token: SecretString::new("access-0000"),
+                refresh_token: c["has_refresh_token"].as_bool().unwrap().then(|| SecretString::new("refresh-0000")),
+                expires_at,
+                scope: String::new(),
+                claims: Default::default(),
+                hosts: BTreeSet::new(),
+                // Signed in long ago: the half-lifetime ceiling stays above every lead.
+                signed_in_at: now - Duration::from_secs(12 * 3600),
+                last_refresh_at: None,
+                state: None,
+                state_since: None,
+                state_reason: None,
+            },
+            state: AccountState::Active,
+            previous: None,
+        };
+        let ours = maintenance::refresh_time(&account, Some(&view), Some(&d), &timing).is_some_and(|t| t <= now);
+        assert_eq!(Some(ours), c["selected"].as_bool(), "{id} {name}");
+        checked += 1;
+    }
+    assert_eq!(checked, 30);
+}
+
+/// T050: `signin::refresh::refresh` against the mock identity provider for each
+/// `refresh.json` case: the request fields equal 9router's, and the stored refresh token
+/// rotates or stays as `result`.
+#[tokio::test]
+async fn refresh_call_rotates_like_9router() {
+    let data = fixture("refresh.json");
+    let cases = data["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 6);
+    for c in cases {
+        let name = c["name"].as_str().unwrap();
+        let idp = MockIdp::start().await;
+        let p = at_mock(&idp, c["provider"].as_str().unwrap());
+        let rotates = c["response"].get("refresh_token").is_some();
+        idp.set_rotation(rotates);
+        let (access, refresh_token, _) = idp.grant();
+        let entry = TokenEntry {
+            provider: p.id.clone(),
+            name: "main".into(),
+            access_token: SecretString::new(access),
+            refresh_token: Some(SecretString::new(refresh_token.clone())),
+            expires_at: SystemTime::now(),
+            scope: "s".into(),
+            claims: Default::default(),
+            hosts: BTreeSet::new(),
+            signed_in_at: SystemTime::now(),
+            last_refresh_at: None,
+            state: None,
+            state_since: None,
+            state_reason: None,
+        };
+        let next = signin::refresh::refresh(&http(), &p, &entry).await.unwrap_or_else(|e| panic!("{name}: {e}"));
+
+        let sent = idp.token_requests().pop().unwrap();
+        let call = &c["calls"][0];
+        assert_eq!(call["body"]["encoding"], if sent.json { "json" } else { "form" }, "{name}");
+        let theirs = fields(&call["body"]);
+        assert_eq!(sent.fields.keys().collect::<BTreeSet<_>>(), theirs.keys().collect::<BTreeSet<_>>(), "{name}");
+        assert_eq!(sent.get("grant_type"), Some("refresh_token"), "{name}");
+        assert_eq!(sent.get("client_id"), theirs.get("client_id").map(String::as_str), "{name}");
+        assert_eq!(sent.get("refresh_token"), Some(refresh_token.as_str()), "{name}");
+
+        let kept = next.refresh_token.as_ref().unwrap();
+        assert!(!next.access_token.matches(&entry.access_token.with_exposed(str::to_owned)), "{name}");
+        assert_eq!(!kept.matches(&refresh_token), rotates, "{name}: rotated iff the response carried one");
+        assert!(next.last_refresh_at.is_some() && next.expires_at > SystemTime::now(), "{name}");
     }
 }
 
-// ── Ignored until the refresh and maintenance tasks land ─────────────────────
-
-/// T050: `signin::refresh::refresh(http, &ProviderEntity, &TokenEntry) -> Result<TokenEntry,
-/// SignInError>` against the mock identity provider for each `refresh.json` case: the request
-/// fields equal 9router's, and the stored refresh token rotates or stays as `result`.
-#[test]
-#[ignore = "T050/T051: refresh not built yet"]
-fn refresh_call_rotates_like_9router() {
-    let cases = fixture("refresh.json")["cases"].as_array().unwrap().len();
-    assert_eq!(cases, 6);
-    todo!("T050: run each case through signin::refresh::refresh against MockIdp (set_rotation per case)");
-}
-
-/// T051: `signin::classify::classify(&SignInError) -> RefreshClass { Permanent, Transient }`
-/// for every `refresh-errors.json` case: Permanent for R10's codes and any other
-/// 400/401/403, Transient for 429, 5xx and transport failures.
-#[test]
-#[ignore = "T050/T051: refresh not built yet"]
-fn refresh_failures_classify_per_r10() {
-    let cases = fixture("refresh-errors.json")["cases"].as_array().unwrap().len();
-    assert_eq!(cases, 15);
-    todo!("T051: classify each case's SignInError and compare with r10_permanent()");
-}
-
-/// T054: the maintenance queue picks each sign-in account at `expires_at - refresh_lead`;
-/// replay `refresh-schedule.json` (sign-in accounts only; key accounts never refresh).
-#[test]
-#[ignore = "T054: maintenance task not built yet"]
-fn maintenance_selects_accounts_due_for_refresh() {
-    let cases = fixture("refresh-schedule.json")["cases"].as_array().unwrap().len();
-    assert_eq!(cases, 33);
-    todo!("T054: feed each case to the maintenance queue's due check");
+/// T051: `signin::classify::classify` for every `refresh-errors.json` case: Permanent for
+/// R10's codes and any other 400/401/403, Transient for 429, 5xx and transport failures.
+/// A status R10 doesn't name (404) is transient: an endpoint outage never takes an account
+/// out of service.
+#[tokio::test]
+async fn refresh_failures_classify_per_r10() {
+    let data = fixture("refresh-errors.json");
+    let cases = data["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 15);
+    let mock = MockUpstream::start().await;
+    let body =
+        encode_body(TokenBody::Form, &[("grant_type", "refresh_token"), ("refresh_token", "r"), ("client_id", "c")]);
+    for c in cases {
+        let name = c["name"].as_str().unwrap();
+        let status = c["status"].as_u64();
+        let url = match status {
+            Some(s) => {
+                let s = u16::try_from(s).unwrap();
+                mock.push([match &c["body"] {
+                    Value::String(t) => Step::Reply { status: s, headers: vec![], body: t.clone().into() },
+                    v => Step::json(s, v.clone()),
+                }]);
+                mock.url("/oauth2/token")
+            }
+            None => format!("http://127.0.0.1:{}/oauth2/token", closed_port()),
+        };
+        let err = signin::token_request(&http(), &url, body.clone()).await.unwrap_err();
+        let permanent = classify(&err) == RefreshClass::Permanent;
+        assert_eq!(permanent, r10_permanent(status).unwrap_or(false), "{name}: {err}");
+        if c["classify"]["permanent"] == true {
+            assert!(permanent, "{name}: permanent in 9router, permanent here");
+        }
+    }
 }

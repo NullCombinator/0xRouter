@@ -308,6 +308,14 @@ impl MockIdp {
         self.inner.profile_calls.load(Ordering::SeqCst)
     }
 
+    /// Issues an access token (current lifetime) and a refresh token at once, as a
+    /// completed sign-in would: `(access, refresh, expires_in)`.
+    pub fn grant(&self) -> (String, String, Duration) {
+        let v = mint(&self.inner, true);
+        let s = |k: &str| v[k].as_str().unwrap_or_default().to_owned();
+        (s("access_token"), s("refresh_token"), Duration::from_secs(v["expires_in"].as_u64().unwrap_or(1)))
+    }
+
     /// Plays the browser: opens `authorize_url` (without following the redirect) and
     /// returns where the provider sends the operator, `redirect_uri?code=…&state=…`.
     pub async fn browse(&self, authorize_url: &str) -> String {
@@ -500,6 +508,11 @@ async fn token(idp: &Idp, json_body: bool, body: &[u8], path_and_query: String) 
 }
 
 fn issue(idp: &Idp, with_refresh: bool) -> Response {
+    reply(200, mint(idp, with_refresh))
+}
+
+/// A token response body, its tokens registered as issued.
+fn mint(idp: &Idp, with_refresh: bool) -> Value {
     let n = idp.seq.fetch_add(1, Ordering::SeqCst);
     let lifetime = *lock(&idp.lifetime);
     let access = format!("mock-access-SENTINEL-{n}");
@@ -518,7 +531,7 @@ fn issue(idp: &Idp, with_refresh: bool) -> Response {
     if let Some(claims) = lock(&idp.id_claims).clone() {
         body["id_token"] = json!(unsigned_jwt(&claims));
     }
-    reply(200, body)
+    body
 }
 
 #[cfg(test)]

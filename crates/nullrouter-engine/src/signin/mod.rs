@@ -192,14 +192,18 @@ pub fn encode_body(kind: TokenBody, fields: &[(&str, &str)]) -> (&'static str, S
     }
 }
 
-/// The OAuth error code of a failed response, or `HTTP <status>`.
+/// The OAuth error code of a failed response, or `HTTP <status>`: read from `error` (a
+/// string, or an object's `code` or `type`), then `error_code` (research R10,
+/// `tokenRefresh/providers.js:244`).
 fn error_code(status: u16, body: &[u8]) -> String {
     let v: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
     let code = match &v["error"] {
         Value::String(s) => Some(s.as_str()),
         Value::Object(o) => o.get("code").or_else(|| o.get("type")).and_then(Value::as_str),
         _ => None,
-    };
+    }
+    .filter(|c| !c.is_empty())
+    .or_else(|| v["error_code"].as_str());
     // An error code is a short public token; cap it so an odd provider can't echo much.
     code.filter(|c| !c.is_empty()).map_or_else(|| format!("HTTP {status}"), |c| c.chars().take(80).collect())
 }
@@ -627,5 +631,6 @@ mod tests {
         assert_eq!(error_code(400, br#"{"error":"invalid_grant"}"#), "invalid_grant");
         assert_eq!(error_code(403, br#"{"error":{"type":"permission_error"}}"#), "permission_error");
         assert_eq!(error_code(503, b"<html>"), "HTTP 503");
+        assert_eq!(error_code(400, br#"{"error_code":"invalid_grant"}"#), "invalid_grant");
     }
 }
