@@ -1,0 +1,1 @@
+providers/poll-url-foreign-host.toml:9:1 endpoints.video.poll_url: host cdn.elsewhere.example is not the endpoint's host api.acme.example

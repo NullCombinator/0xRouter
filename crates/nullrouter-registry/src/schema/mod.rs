@@ -26,8 +26,8 @@ pub use config::{
 };
 pub use duration::parse_duration;
 pub use endpoint::{
-    Continuation, Endpoint, EndpointAuth, Endpoints, ErrorRule, ErrorRules, ForceMap, ForcedParam, RetryOverride,
-    TokenCount,
+    Continuation, Endpoint, EndpointAuth, Endpoints, ErrorRule, ErrorRules, ForceMap, ForcedParam, JobMapping,
+    JobState, RetryOverride, TokenCount,
 };
 pub use enums::{AuthHook, AuthKind, AuthScheme, CapabilityKind, Category, ContentKind, ModelKind, Quirk, WireFormat};
 pub use forwarding::{ForwardHeader, Forwarding, ToClient, ToUpstream};

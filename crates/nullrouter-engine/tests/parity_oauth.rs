@@ -24,7 +24,8 @@ use tokio_util::sync::CancellationToken;
 
 fn fixture(name: &str) -> Value {
     let path = format!("{}/../../tests/fixtures/9router/oauth/{name}", env!("CARGO_MANIFEST_DIR"));
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}; run tools/gen-bundled/generate.mjs"));
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}; run tools/gen-bundled/generate.mjs"));
     let v: Value = serde_json::from_str(&text).unwrap();
     assert!(v["source"].as_str().unwrap().starts_with("Generated from ref/9router@"));
     v["data"].clone()
@@ -36,7 +37,9 @@ fn bundled_src(id: &str) -> String {
 
 fn entity(id: &str, src: &str, allow_private: bool) -> ProviderEntity {
     let ctx = nullrouter_registry::bundled_gate_ctx(false, allow_private).unwrap();
-    validate_with(src, PluginSource::Bundled, &format!("{id}.toml"), &ctx).unwrap_or_else(|e| panic!("{id}: {e:#?}")).entity
+    validate_with(src, PluginSource::Bundled, &format!("{id}.toml"), &ctx)
+        .unwrap_or_else(|e| panic!("{id}: {e:#?}"))
+        .entity
 }
 
 fn decl(id: &str) -> SignInDecl {
@@ -127,10 +130,10 @@ fn bundled_signin_declarations_match_9router() {
     // redirect; 0router offers Anthropic's hosted code page first, loopback second.
     let anthropic = decl("anthropic");
     assert!(data["providers"]["anthropic"]["redirect_uri"].is_null());
-    assert_eq!(anthropic.redirect.iter().map(|r| r.kind).collect::<Vec<_>>(), [
-        RedirectKind::CodePage,
-        RedirectKind::Loopback
-    ]);
+    assert_eq!(
+        anthropic.redirect.iter().map(|r| r.kind).collect::<Vec<_>>(),
+        [RedirectKind::CodePage, RedirectKind::Loopback]
+    );
 }
 
 /// Query pairs, decoded, with a 32-hex nonce as 9router's oracle records it.
@@ -304,17 +307,21 @@ fn refresh_requests_use_the_declared_token_url_encoding_and_fields() {
         let (ct, _) = encode_body(d.body, &[]);
         assert_eq!(call["headers"]["content-type"].as_str(), Some(ct), "{name}");
         let f = fields(&call["body"]);
-        assert_eq!(f.keys().map(String::as_str).collect::<BTreeSet<_>>(), BTreeSet::from([
-            "client_id",
-            "grant_type",
-            "refresh_token"
-        ]));
-        assert_eq!((f["grant_type"].as_str(), f["client_id"].as_str()), ("refresh_token", d.client_id.as_str()), "{name}");
+        assert_eq!(
+            f.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+            BTreeSet::from(["client_id", "grant_type", "refresh_token"])
+        );
+        assert_eq!(
+            (f["grant_type"].as_str(), f["client_id"].as_str()),
+            ("refresh_token", d.client_id.as_str()),
+            "{name}"
+        );
         assert_eq!(f["refresh_token"], c["input"]["refresh_token"].as_str().unwrap(), "{name}");
         // Rotation (research R9, providers.js:131): the old refresh token stays when the
         // response has none.
         let kept = c["result"]["refreshToken"].as_str().unwrap();
-        let want = c["response"]["refresh_token"].as_str().unwrap_or_else(|| c["input"]["refresh_token"].as_str().unwrap());
+        let want =
+            c["response"]["refresh_token"].as_str().unwrap_or_else(|| c["input"]["refresh_token"].as_str().unwrap());
         assert_eq!(kept, want, "{name}");
     }
     // Without a refresh token nothing is sent.
@@ -339,7 +346,8 @@ async fn refresh_errors_read_9routers_codes_and_split_like_r10() {
     let cases = data["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 15);
     let mock = MockUpstream::start().await;
-    let body = encode_body(TokenBody::Form, &[("grant_type", "refresh_token"), ("refresh_token", "r"), ("client_id", "c")]);
+    let body =
+        encode_body(TokenBody::Form, &[("grant_type", "refresh_token"), ("refresh_token", "r"), ("client_id", "c")]);
     for c in cases {
         let name = c["name"].as_str().unwrap();
         let status = c["status"].as_u64();

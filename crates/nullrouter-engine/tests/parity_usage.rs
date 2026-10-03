@@ -17,7 +17,8 @@ use serde_json::Value;
 
 fn fixture(name: &str) -> Value {
     let path = format!("{}/../../tests/fixtures/9router/usage/{name}", env!("CARGO_MANIFEST_DIR"));
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}; run tools/gen-bundled/generate.mjs"));
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}; run tools/gen-bundled/generate.mjs"));
     let v: Value = serde_json::from_str(&text).unwrap();
     assert!(v["source"].as_str().unwrap().starts_with("Generated from ref/9router@"));
     v["data"].clone()
@@ -121,15 +122,10 @@ fn window_names_map_one_to_one() {
         }
     }
     let names = |p: &str| by_provider[p].keys().cloned().collect::<Vec<_>>();
-    assert_eq!(names("anthropic"), [
-        "5-hour",
-        "weekly",
-        "weekly fable",
-        "weekly haiku",
-        "weekly opus",
-        "weekly opus 4",
-        "weekly sonnet"
-    ]);
+    assert_eq!(
+        names("anthropic"),
+        ["5-hour", "weekly", "weekly fable", "weekly haiku", "weekly opus", "weekly opus 4", "weekly sonnet"]
+    );
     assert_eq!(names("grok-cli"), ["credits", "monthly included", "on-demand", "prepaid", "weekly SuperGrok"]);
     assert_eq!(names("opencode-go"), ["monthly", "rolling", "weekly"]);
 }
@@ -153,11 +149,14 @@ fn quota_requests_match_the_research_table() {
     let flow = grok["flow"].as_array().unwrap();
     let fallback = flow.iter().find(|c| c["name"] == "grpc-fallback").unwrap();
     let urls: Vec<&str> = fallback["requests"].as_array().unwrap().iter().map(|r| r["url"].as_str().unwrap()).collect();
-    assert_eq!(urls, [
-        "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
-        "https://cli-chat-proxy.grok.com/v1/user?include=subscription",
-        "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig",
-    ]);
+    assert_eq!(
+        urls,
+        [
+            "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+            "https://cli-chat-proxy.grok.com/v1/user?include=subscription",
+            "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig",
+        ]
+    );
     assert_eq!(fallback["requests"][2]["headers"]["content-type"], "application/grpc-web+proto");
     for c in fixture("quota-opencode.json")["cases"].as_array().unwrap() {
         if let Some(r) = c["requests"].as_array().unwrap().first() {

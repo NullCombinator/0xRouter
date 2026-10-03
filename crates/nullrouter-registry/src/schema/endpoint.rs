@@ -53,6 +53,56 @@ pub struct Endpoint {
     /// Request parameters set on every request to this endpoint (research R8).
     #[serde(default)]
     pub force: ForceMap,
+    /// Video only: where a job is polled, with `{id}` for the provider's job id; absent,
+    /// polls go to `{url}/{id}`.
+    pub poll_url: Option<String>,
+    /// Video only: how the provider's job bodies read, when the wire's job shape doesn't.
+    pub job: Option<JobMapping>,
+}
+
+closed_enum!(
+    /// The IR job states a provider's status values map to.
+    JobState, "job state" {
+        Queued = "queued",
+        InProgress = "in_progress",
+        Completed = "completed",
+        Failed = "failed",
+    }
+);
+
+/// `job = { … }` on a video endpoint: field paths into the submit answer and the poll
+/// answer (xAI: `{request_id}`, then `{status, video: {url}, error}`). Data only: every
+/// path is read, nothing is computed.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JobMapping {
+    /// Path of the provider's job id in the submit answer.
+    pub id: String,
+    /// Path of the status value in a poll answer (absent in a submit answer: queued).
+    pub status: String,
+    /// Provider status value → IR state; values not listed read as the common words
+    /// (`pending` queued, `done` completed, `expired` failed, others in progress).
+    #[serde(default)]
+    pub status_map: BTreeMap<String, JobState>,
+    /// Path of the finished video's download URL; the content is fetched from it instead
+    /// of a `{poll}/content` route.
+    pub content_url: Option<String>,
+    /// Path of a failed job's error message.
+    pub error: Option<String>,
+}
+
+impl JobMapping {
+    /// The declared paths, by key.
+    pub fn paths(&self) -> impl Iterator<Item = (&'static str, &str)> {
+        [
+            ("id", Some(&self.id)),
+            ("status", Some(&self.status)),
+            ("content_url", self.content_url.as_ref()),
+            ("error", self.error.as_ref()),
+        ]
+        .into_iter()
+        .filter_map(|(k, v)| v.map(|v| (k, v.as_str())))
+    }
 }
 
 closed_enum!(
@@ -292,6 +342,35 @@ wire = "gemini"
         assert!(err("{ messages = [] }").contains("messages can't be forced"));
         assert!(err("{ store = \"no\" }").contains("store must be a boolean"));
         assert!(err("{ include = [1] }").contains("include must be a list of strings"));
+    }
+
+    #[test]
+    fn a_video_endpoint_declares_its_job_shape() {
+        let d: Doc = toml::from_str(
+            r#"
+[endpoints.video]
+url = "https://api.x.ai/v1/videos/generations"
+wire = "openai-chat"
+poll_url = "https://api.x.ai/v1/videos/{id}"
+job = { id = "request_id", status = "status", status_map = { pending = "queued", done = "completed" }, content_url = "video.url", error = "error.message" }
+"#,
+        )
+        .unwrap();
+        let e = &d.endpoints[&ModelType::Video].0[0];
+        assert_eq!(e.poll_url.as_deref(), Some("https://api.x.ai/v1/videos/{id}"));
+        let job = e.job.as_ref().unwrap();
+        assert_eq!(job.status_map["done"], JobState::Completed);
+        assert_eq!(
+            job.paths().collect::<Vec<_>>(),
+            [("id", "request_id"), ("status", "status"), ("content_url", "video.url"), ("error", "error.message")]
+        );
+        let err = toml::from_str::<Doc>(
+            "[endpoints.video]\nurl = \"https://a.example\"\njob = { id = \"a\", status = \"b\", status_map = { x = \"gone\" } }\n",
+        )
+        .err()
+        .unwrap()
+        .to_string();
+        assert!(err.contains("unknown job state \"gone\"; allowed: queued, in_progress, completed, failed"), "{err}");
     }
 
     #[test]

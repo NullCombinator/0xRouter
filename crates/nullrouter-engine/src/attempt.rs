@@ -1040,8 +1040,14 @@ impl Run {
             if let Some(ib) = inband::body(&c.endpoint.errors.body, &v) {
                 return Ended::Failed(inband_fail(ib, &String::from_utf8_lossy(&raw), false, st));
             }
-            let Some((bindings, status)) = codec.decode_job(&v) else {
-                return in_band("the job answer doesn't have the wire's shape".into());
+            // An endpoint's declared job mapping reads the answer, else the wire's job shape.
+            let decoded = match &c.endpoint.job {
+                Some(m) => crate::jobs::decode_mapped(m, &v, true).map(|j| (j.bindings, j.status)),
+                None => codec.decode_job(&v).ok_or_else(|| "the job answer doesn't have the wire's shape".to_owned()),
+            };
+            let (bindings, status) = match decoded {
+                Ok(d) => d,
+                Err(e) => return in_band(e),
             };
             let Some(upstream_id) = bindings.str("job.id").map(str::to_owned) else {
                 return in_band("the job answer has no id".into());
@@ -1058,6 +1064,7 @@ impl Run {
                 upstream_id: upstream_id.clone(),
                 target: self.req.target.clone(),
                 agent: self.req.agent.key.clone(),
+                content_url: None,
             });
             let job = JobRef { nullrouter_job_id: nullrouter_job_id.clone(), upstream_id };
             self.engine.records.update(&self.req.id, |r| r.job = Some(job));

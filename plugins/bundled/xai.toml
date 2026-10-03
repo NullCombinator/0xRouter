@@ -19,9 +19,14 @@ vision = true
 url = "https://api.x.ai/v1/images/generations"
 wire = "openai-chat"
 
-# Video: xAI's job API (submit to /v1/videos/generations, poll /v1/videos/{request_id}, a
-# download URL instead of a /content route) doesn't fit the slice 003 job model yet; see
-# slice 005 task T099.
+# xAI's video jobs (ref/9router/open-sse/handlers/videoCore.js): submit answers
+# `{request_id}`, the poll answers `{status, video: {url}, error}`, and the finished video
+# is a download URL rather than a /content route.
+[endpoints.video]
+url = "https://api.x.ai/v1/videos/generations"
+wire = "openai-chat"
+poll_url = "https://api.x.ai/v1/videos/{id}"
+job = { id = "request_id", status = "status", status_map = { pending = "queued", processing = "in_progress", done = "completed", failed = "failed", error = "failed", expired = "failed", cancelled = "failed" }, content_url = "video.url", error = "error.message" }
 
 # A public PKCE client (no client secret). Endpoints come from discovery when it stays on
 # x.ai, else the URLs below (ref/9router/src/lib/oauth/services/xai.js:26-47).
@@ -71,6 +76,12 @@ id = "grok-2-image-1212"
 name = "Grok 2 Image"
 params = ["n", "response_format"]
 kind = "image"
+
+[[models]]
+id = "grok-imagine-video"
+name = "Grok Imagine Video"
+params = ["duration", "aspect_ratio", "resolution"]
+kind = "video"
 
 [display]
 name = "xAI (Grok)"

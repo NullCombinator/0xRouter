@@ -189,7 +189,7 @@ fn style_corpus_is_rejected_with_one_positioned_error() {
 fn provider_corpus_is_rejected_with_one_positioned_error() {
     let files: Vec<_> =
         corpus("invalid/providers").into_iter().filter(|p| p.extension().is_some_and(|e| e == "toml")).collect();
-    assert_eq!(files.len(), 25);
+    assert_eq!(files.len(), 28);
     let mut goldens = 0;
     for path in &files {
         let src = fs::read_to_string(path).unwrap();
@@ -207,7 +207,7 @@ fn provider_corpus_is_rejected_with_one_positioned_error() {
             assert_eq!(errors[0].to_string(), want.trim_end_matches('\n'), "{rule}");
         }
     }
-    assert_eq!(goldens, 6, "slice 005 cases carry goldens");
+    assert_eq!(goldens, 8, "slice 005 cases carry goldens");
 }
 
 /// Slice 005: a plugin declaring every new section passes the gate in strict mode as a

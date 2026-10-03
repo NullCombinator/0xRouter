@@ -2,7 +2,7 @@
 //! FR-008; research R6, R7, R8). The plugins are the bundled anthropic, xai and grok-cli
 //! files with their hosts pointed at the mock; every account is a sign-in account.
 //!
-//! xai video is out of scope here: its job API waits for T099.
+//! xai video jobs are covered in `video_jobs.rs`.
 
 mod common;
 

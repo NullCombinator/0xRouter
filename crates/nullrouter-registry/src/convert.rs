@@ -68,6 +68,8 @@ fn endpoint(url: String, wire: Option<&str>) -> Endpoint {
         token_count: None,
         continuation: None,
         force: ForceMap::default(),
+        poll_url: None,
+        job: None,
     }
 }
 

@@ -1,0 +1,14 @@
+# expect: host cdn.elsewhere.example is not the endpoint's host api.acme.example
+schema = 2
+id = "acme"
+category = "apikey"
+
+[endpoints.video]
+url = "https://api.acme.example/v1/videos/generations"
+wire = "openai-chat"
+poll_url = "https://cdn.elsewhere.example/v1/videos/{id}"
+job = { id = "request_id", status = "status", content_url = "video.url" }
+
+[[models]]
+id = "v1"
+kind = "video"

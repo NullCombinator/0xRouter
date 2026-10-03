@@ -1,0 +1,1 @@
+providers/job-each-path.toml:10:84 endpoints.video.job.content_url: reads one value; `[*]` is not allowed

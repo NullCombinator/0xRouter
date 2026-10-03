@@ -1,0 +1,9 @@
+# expect: `poll_url` and `job` apply to video endpoints only
+schema = 2
+id = "acme"
+category = "apikey"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/chat/completions"
+wire = "openai-chat"
+poll_url = "https://api.acme.example/v1/chat/{id}"

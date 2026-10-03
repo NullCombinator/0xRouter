@@ -149,7 +149,7 @@ pub struct SignedIn<'a> {
 }
 
 /// `s` as one path segment: everything but unreserved characters percent-encoded.
-fn segment(s: &str) -> Result<String, BuildError> {
+pub fn segment(s: &str) -> Result<String, BuildError> {
     if s.is_empty() || s == "." || s == ".." {
         return Err(BuildError::BadSegment(s.to_owned()));
     }

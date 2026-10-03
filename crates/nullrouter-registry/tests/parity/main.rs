@@ -19,7 +19,6 @@ mod transport;
 pub(crate) const NOT_CARRIED: &[(&str, &str, &str)] = &[
     ("opencode-zen", "systemone", "systemone sections are unsupported (fit check)"),
     ("openrouter", "systemone", "systemone sections are unsupported (fit check)"),
-    ("xai", "video", "xAI's video job API needs a declarable poll URL and status mapping (slice 005 T099)"),
 ];
 
 pub(crate) fn not_carried(provider: &str, ty: &str) -> bool {

@@ -749,6 +749,39 @@ fn check_endpoint(
     if t != ModelType::Text && (e.continuation.is_some() || e.vision) {
         err(base.clone(), "`continuation` and `vision` apply to text endpoints only".into());
     }
+    check_job(e, t, base, ctx, err);
+}
+
+/// `poll_url` and `job` (video endpoints): the poll URL is an endpoint URL with `{id}`, on
+/// the endpoint's own host; the job paths are plain field paths.
+fn check_job(e: &Endpoint, t: ModelType, base: &FieldPath, ctx: &GateCtx, err: &mut impl FnMut(FieldPath, String)) {
+    if t != ModelType::Video && (e.poll_url.is_some() || e.job.is_some()) {
+        err(base.clone(), "`poll_url` and `job` apply to video endpoints only".into());
+        return;
+    }
+    if let Some(poll) = &e.poll_url {
+        let rule = if poll.contains("{id}") {
+            check_endpoint_url(&poll.replace("{id}", "id"), ctx.allow_private)
+        } else {
+            Err("needs the job's `{id}` in its path".into())
+        };
+        let rule = rule.and_then(|()| match (host_of(poll), host_of(&e.url)) {
+            (Some(h), Some(own)) if h != own => Err(format!("host {h} is not the endpoint's host {own}")),
+            _ => Ok(()),
+        });
+        if let Err(rule) = rule {
+            err(base.key("poll_url"), rule);
+        }
+    }
+    if let Some(job) = &e.job {
+        for (k, path) in job.paths() {
+            match Selector::parse(path) {
+                Ok(p) if p.has_each() => err(base.key("job").key(k), "reads one value; `[*]` is not allowed".into()),
+                Ok(_) => {}
+                Err(rule) => err(base.key("job").key(k), rule),
+            }
+        }
+    }
 }
 
 fn check_forwarding(

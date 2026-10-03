@@ -1,0 +1,14 @@
+# expect: job.content_url: reads one value; `[*]` is not allowed
+schema = 2
+id = "acme"
+category = "apikey"
+
+[endpoints.video]
+url = "https://api.acme.example/v1/videos/generations"
+wire = "openai-chat"
+poll_url = "https://api.acme.example/v1/videos/{id}"
+job = { id = "request_id", status = "status", status_map = { done = "completed" }, content_url = "videos[*].url" }
+
+[[models]]
+id = "v1"
+kind = "video"
