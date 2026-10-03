@@ -1,0 +1,462 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "cases": [
+      {
+        "name": "invalid-grant",
+        "status": 400,
+        "body": {
+          "error": "invalid_grant",
+          "error_description": "Refresh token expired"
+        },
+        "classify": {
+          "status": 400,
+          "code": "invalid_grant",
+          "description": "Refresh token expired",
+          "permanent": true
+        },
+        "refresh": {
+          "xai": {
+            "result": {
+              "error": "invalid_grant"
+            },
+            "unrecoverable": true,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": {
+              "error": "invalid_grant"
+            },
+            "unrecoverable": true,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "invalid-request",
+        "status": 400,
+        "body": {
+          "error": "invalid_request"
+        },
+        "classify": {
+          "status": 400,
+          "code": "invalid_request",
+          "description": "{\"error\":\"invalid_request\"}",
+          "permanent": false
+        },
+        "refresh": {
+          "xai": {
+            "result": {
+              "error": "invalid_grant"
+            },
+            "unrecoverable": true,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": {
+              "error": "invalid_grant"
+            },
+            "unrecoverable": true,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "unauthorized-client",
+        "status": 401,
+        "body": {
+          "error": "unauthorized_client"
+        },
+        "classify": {
+          "status": 401,
+          "code": "unauthorized_client",
+          "description": "{\"error\":\"unauthorized_client\"}",
+          "permanent": false
+        },
+        "refresh": {
+          "xai": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "refresh-token-reused",
+        "status": 400,
+        "body": {
+          "error": "refresh_token_reused"
+        },
+        "classify": {
+          "status": 400,
+          "code": "refresh_token_reused",
+          "description": "{\"error\":\"refresh_token_reused\"}",
+          "permanent": true
+        },
+        "refresh": {
+          "xai": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "refresh-token-expired-nested",
+        "status": 400,
+        "body": {
+          "error": {
+            "code": "refresh_token_expired",
+            "message": "expired"
+          }
+        },
+        "classify": {
+          "status": 400,
+          "code": "refresh_token_expired",
+          "description": "{\"error\":{\"code\":\"refresh_token_expired\",\"message\":\"expired\"}}",
+          "permanent": true
+        },
+        "refresh": {
+          "xai": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "refresh-token-invalidated",
+        "status": 401,
+        "body": {
+          "error": "refresh_token_invalidated"
+        },
+        "classify": {
+          "status": 401,
+          "code": "refresh_token_invalidated",
+          "description": "{\"error\":\"refresh_token_invalidated\"}",
+          "permanent": true
+        },
+        "refresh": {
+          "xai": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "invalid-scope",
+        "status": 400,
+        "body": {
+          "error": "invalid_scope"
+        },
+        "classify": {
+          "status": 400,
+          "code": "invalid_scope",
+          "description": "{\"error\":\"invalid_scope\"}",
+          "permanent": false
+        },
+        "refresh": {
+          "xai": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "access-denied-403",
+        "status": 403,
+        "body": {
+          "error": "access_denied"
+        },
+        "classify": {
+          "status": 403,
+          "code": "access_denied",
+          "description": "{\"error\":\"access_denied\"}",
+          "permanent": false
+        },
+        "refresh": {
+          "xai": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "error-code-field",
+        "status": 400,
+        "body": {
+          "error_code": "invalid_grant"
+        },
+        "classify": {
+          "status": 400,
+          "code": "invalid_grant",
+          "description": "{\"error_code\":\"invalid_grant\"}",
+          "permanent": true
+        },
+        "refresh": {
+          "xai": {
+            "result": {
+              "error": "invalid_grant"
+            },
+            "unrecoverable": true,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": {
+              "error": "invalid_grant"
+            },
+            "unrecoverable": true,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "unauthorized-text",
+        "status": 401,
+        "body": "unauthorized",
+        "classify": {
+          "status": 401,
+          "code": "",
+          "description": "unauthorized",
+          "permanent": false
+        },
+        "refresh": {
+          "xai": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "rate-limited",
+        "status": 429,
+        "body": {
+          "error": "rate_limited"
+        },
+        "classify": {
+          "status": 429,
+          "code": "rate_limited",
+          "description": "{\"error\":\"rate_limited\"}",
+          "permanent": false
+        },
+        "refresh": {
+          "xai": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "server-error",
+        "status": 500,
+        "body": {
+          "error": "server_error"
+        },
+        "classify": {
+          "status": 500,
+          "code": "server_error",
+          "description": "{\"error\":\"server_error\"}",
+          "permanent": false
+        },
+        "refresh": {
+          "xai": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "unavailable-html",
+        "status": 503,
+        "body": "<html>Service Unavailable</html>",
+        "classify": {
+          "status": 503,
+          "code": "",
+          "description": "<html>Service Unavailable</html>",
+          "permanent": false
+        },
+        "refresh": {
+          "xai": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "not-found",
+        "status": 404,
+        "body": {
+          "error": "not_found"
+        },
+        "classify": {
+          "status": 404,
+          "code": "not_found",
+          "description": "{\"error\":\"not_found\"}",
+          "permanent": false
+        },
+        "refresh": {
+          "xai": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      },
+      {
+        "name": "network-down",
+        "status": null,
+        "body": null,
+        "classify": null,
+        "refresh": {
+          "xai": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "grok-cli": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          },
+          "anthropic": {
+            "result": null,
+            "unrecoverable": false,
+            "calls": 1
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,331 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "cases": [
+      {
+        "name": "xai-service",
+        "provider": "xai",
+        "input": {
+          "redirect_uri": "http://127.0.0.1:56121/callback",
+          "state": "state-1",
+          "challenge": "challenge-1"
+        },
+        "base": "https://auth.x.ai/oauth2/authorize",
+        "params": [
+          [
+            "response_type",
+            "code"
+          ],
+          [
+            "client_id",
+            "b1a00492-073a-47ea-816f-4c329264a828"
+          ],
+          [
+            "redirect_uri",
+            "http://127.0.0.1:56121/callback"
+          ],
+          [
+            "scope",
+            "openid profile email offline_access grok-cli:access api:access"
+          ],
+          [
+            "code_challenge",
+            "challenge-1"
+          ],
+          [
+            "code_challenge_method",
+            "S256"
+          ],
+          [
+            "state",
+            "state-1"
+          ],
+          [
+            "nonce",
+            "{random.hex16}"
+          ],
+          [
+            "plan",
+            "generic"
+          ],
+          [
+            "referrer",
+            "cli-proxy-api"
+          ]
+        ],
+        "query": "response_type=code&client_id=b1a00492-073a-47ea-816f-4c329264a828&redirect_uri=http%3A%2F%2F127.0.0.1%3A56121%2Fcallback&scope=openid%20profile%20email%20offline_access%20grok-cli%3Aaccess%20api%3Aaccess&code_challenge=challenge-1&code_challenge_method=S256&state=state-1&nonce={random.hex16}&plan=generic&referrer=cli-proxy-api"
+      },
+      {
+        "name": "xai-dashboard-discovered",
+        "provider": "xai",
+        "input": {
+          "redirect_uri": "http://127.0.0.1:56121/callback",
+          "state": "state-1",
+          "challenge": "challenge-1",
+          "discovery": {
+            "authorization_endpoint": "https://auth.x.ai/oauth2/authorize-from-discovery",
+            "token_endpoint": "https://auth.x.ai/oauth2/token-from-discovery"
+          }
+        },
+        "discovery_request": {
+          "url": "https://auth.x.ai/.well-known/openid-configuration",
+          "method": "GET",
+          "headers": {
+            "accept": "application/json"
+          },
+          "body": null
+        },
+        "base": "https://auth.x.ai/oauth2/authorize-from-discovery",
+        "params": [
+          [
+            "response_type",
+            "code"
+          ],
+          [
+            "client_id",
+            "b1a00492-073a-47ea-816f-4c329264a828"
+          ],
+          [
+            "redirect_uri",
+            "http://127.0.0.1:56121/callback"
+          ],
+          [
+            "scope",
+            "openid profile email offline_access grok-cli:access api:access"
+          ],
+          [
+            "code_challenge",
+            "challenge-1"
+          ],
+          [
+            "code_challenge_method",
+            "S256"
+          ],
+          [
+            "state",
+            "state-1"
+          ],
+          [
+            "nonce",
+            "{random.hex16}"
+          ],
+          [
+            "plan",
+            "generic"
+          ],
+          [
+            "referrer",
+            "cli-proxy-api"
+          ]
+        ],
+        "query": "response_type=code&client_id=b1a00492-073a-47ea-816f-4c329264a828&redirect_uri=http%3A%2F%2F127.0.0.1%3A56121%2Fcallback&scope=openid%20profile%20email%20offline_access%20grok-cli%3Aaccess%20api%3Aaccess&code_challenge=challenge-1&code_challenge_method=S256&state=state-1&nonce={random.hex16}&plan=generic&referrer=cli-proxy-api"
+      },
+      {
+        "name": "anthropic-dashboard",
+        "provider": "anthropic",
+        "input": {
+          "redirect_uri": "http://localhost:54545/callback",
+          "state": "state-1",
+          "challenge": "challenge-1"
+        },
+        "base": "https://claude.ai/oauth/authorize",
+        "params": [
+          [
+            "code",
+            "true"
+          ],
+          [
+            "client_id",
+            "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+          ],
+          [
+            "response_type",
+            "code"
+          ],
+          [
+            "redirect_uri",
+            "http://localhost:54545/callback"
+          ],
+          [
+            "scope",
+            "org:create_api_key user:profile user:inference"
+          ],
+          [
+            "code_challenge",
+            "challenge-1"
+          ],
+          [
+            "code_challenge_method",
+            "S256"
+          ],
+          [
+            "state",
+            "state-1"
+          ]
+        ],
+        "query": "code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A54545%2Fcallback&scope=org%3Acreate_api_key+user%3Aprofile+user%3Ainference&code_challenge=challenge-1&code_challenge_method=S256&state=state-1"
+      },
+      {
+        "name": "xai-generate-auth-data",
+        "provider": "xai",
+        "verifier_len": 128,
+        "state_len": 43,
+        "base": "https://auth.x.ai/oauth2/authorize-from-discovery"
+      },
+      {
+        "name": "anthropic-generate-auth-data",
+        "provider": "anthropic",
+        "verifier_len": 43,
+        "state_len": 43,
+        "base": "https://claude.ai/oauth/authorize"
+      }
+    ],
+    "discovery": [
+      {
+        "kind": "validate",
+        "input": "https://auth.x.ai/oauth2/authorize",
+        "field": "authorization_endpoint",
+        "accepted": "https://auth.x.ai/oauth2/authorize",
+        "error": null
+      },
+      {
+        "kind": "validate",
+        "input": "https://x.ai/oauth2/token",
+        "field": "token_endpoint",
+        "accepted": "https://x.ai/oauth2/token",
+        "error": null
+      },
+      {
+        "kind": "validate",
+        "input": "http://auth.x.ai/oauth2/authorize",
+        "field": "authorization_endpoint",
+        "accepted": null,
+        "error": "xai discovery authorization_endpoint must use https: http://auth.x.ai/oauth2/authorize"
+      },
+      {
+        "kind": "validate",
+        "input": "https://example.com/oauth2/authorize",
+        "field": "authorization_endpoint",
+        "accepted": null,
+        "error": "xai discovery authorization_endpoint host example.com is not on x.ai"
+      },
+      {
+        "kind": "validate",
+        "input": "https://auth.x.ai.example.com/oauth2/token",
+        "field": "token_endpoint",
+        "accepted": null,
+        "error": "xai discovery token_endpoint host auth.x.ai.example.com is not on x.ai"
+      },
+      {
+        "kind": "validate",
+        "input": "",
+        "field": "token_endpoint",
+        "accepted": null,
+        "error": "xai discovery token_endpoint is empty"
+      },
+      {
+        "kind": "validate",
+        "input": "not a url",
+        "field": "token_endpoint",
+        "accepted": null,
+        "error": "xai discovery token_endpoint is invalid: Invalid URL"
+      },
+      {
+        "kind": "discover",
+        "name": "discovered",
+        "response": {
+          "authorization_endpoint": "https://auth.x.ai/oauth2/authorize-from-discovery",
+          "token_endpoint": "https://auth.x.ai/oauth2/token-from-discovery"
+        },
+        "request": {
+          "url": "https://auth.x.ai/.well-known/openid-configuration",
+          "method": "GET",
+          "headers": {
+            "accept": "application/json"
+          },
+          "body": null
+        },
+        "result": {
+          "authorizeUrl": "https://auth.x.ai/oauth2/authorize-from-discovery",
+          "tokenUrl": "https://auth.x.ai/oauth2/token-from-discovery"
+        }
+      },
+      {
+        "kind": "discover",
+        "name": "discovery-404",
+        "response": {
+          "error": "not found"
+        },
+        "request": {
+          "url": "https://auth.x.ai/.well-known/openid-configuration",
+          "method": "GET",
+          "headers": {
+            "accept": "application/json"
+          },
+          "body": null
+        },
+        "result": {
+          "authorizeUrl": "https://auth.x.ai/oauth2/authorize",
+          "tokenUrl": "https://auth.x.ai/oauth2/token"
+        }
+      },
+      {
+        "kind": "discover",
+        "name": "discovery-off-host",
+        "response": {
+          "authorization_endpoint": "https://auth.x.ai/oauth2/authorize-from-discovery",
+          "token_endpoint": "https://evil.example.com/token"
+        },
+        "request": {
+          "url": "https://auth.x.ai/.well-known/openid-configuration",
+          "method": "GET",
+          "headers": {
+            "accept": "application/json"
+          },
+          "body": null
+        },
+        "result": {
+          "authorizeUrl": "https://auth.x.ai/oauth2/authorize",
+          "tokenUrl": "https://auth.x.ai/oauth2/token"
+        }
+      },
+      {
+        "kind": "discover",
+        "name": "discovery-http",
+        "response": {
+          "authorization_endpoint": "http://auth.x.ai/oauth2/authorize",
+          "token_endpoint": "https://auth.x.ai/oauth2/token-from-discovery"
+        },
+        "request": {
+          "url": "https://auth.x.ai/.well-known/openid-configuration",
+          "method": "GET",
+          "headers": {
+            "accept": "application/json"
+          },
+          "body": null
+        },
+        "result": {
+          "authorizeUrl": "https://auth.x.ai/oauth2/authorize",
+          "tokenUrl": "https://auth.x.ai/oauth2/token"
+        }
+      },
+      {
+        "kind": "discover",
+        "name": "discovery-network-down",
+        "response": "network failure",
+        "request": {
+          "url": "https://auth.x.ai/.well-known/openid-configuration",
+          "method": "GET",
+          "headers": {
+            "accept": "application/json"
+          },
+          "body": null
+        },
+        "result": {
+          "authorizeUrl": "https://auth.x.ai/oauth2/authorize",
+          "tokenUrl": "https://auth.x.ai/oauth2/token"
+        }
+      }
+    ]
+  }
+}

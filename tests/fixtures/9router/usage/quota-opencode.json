@@ -1,0 +1,761 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "cases": [
+      {
+        "name": "subscription-usage",
+        "provider": "opencode-go",
+        "input": {
+          "api_key": "sk-test",
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "usage": {
+                  "rolling": {
+                    "status": "ok",
+                    "percent": 13,
+                    "resetsAt": "2026-09-04T14:28:02.617Z"
+                  },
+                  "weekly": {
+                    "status": "ok",
+                    "percent": 5,
+                    "resetsAt": "2026-09-07T00:00:00.617Z"
+                  },
+                  "monthly": {
+                    "status": "ok",
+                    "percent": 2,
+                    "resetsAt": "2026-10-02T12:14:24.617Z"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/go/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-test"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Go",
+          "quotas": {
+            "Rolling": {
+              "used": 13,
+              "total": 100,
+              "remaining": 87,
+              "remainingPercentage": 87,
+              "resetAt": "2026-09-04T14:28:02.617Z",
+              "unlimited": false
+            },
+            "Weekly": {
+              "used": 5,
+              "total": 100,
+              "remaining": 95,
+              "remainingPercentage": 95,
+              "resetAt": "2026-09-07T00:00:00.617Z",
+              "unlimited": false
+            },
+            "Monthly": {
+              "used": 2,
+              "total": 100,
+              "remaining": 98,
+              "remainingPercentage": 98,
+              "resetAt": "2026-10-02T12:14:24.617Z",
+              "unlimited": false
+            }
+          }
+        },
+        "error": null
+      },
+      {
+        "name": "string-percent-and-clamp",
+        "provider": "opencode-go",
+        "input": {
+          "api_key": "sk-test",
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "usage": {
+                  "rolling": {
+                    "percent": "40.5",
+                    "resetsAt": 1790000000
+                  },
+                  "weekly": {
+                    "percent": 130
+                  },
+                  "monthly": {
+                    "percent": -3,
+                    "resetsAt": "1790000000000"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/go/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-test"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Go",
+          "quotas": {
+            "Rolling": {
+              "used": 40.5,
+              "total": 100,
+              "remaining": 59.5,
+              "remainingPercentage": 59.5,
+              "resetAt": "2026-09-21T14:13:20.000Z",
+              "unlimited": false
+            },
+            "Weekly": {
+              "used": 100,
+              "total": 100,
+              "remaining": 0,
+              "remainingPercentage": 0,
+              "resetAt": null,
+              "unlimited": false
+            },
+            "Monthly": {
+              "used": 0,
+              "total": 100,
+              "remaining": 100,
+              "remainingPercentage": 100,
+              "resetAt": "2026-09-21T14:13:20.000Z",
+              "unlimited": false
+            }
+          }
+        },
+        "error": null
+      },
+      {
+        "name": "no-key",
+        "provider": "opencode-go",
+        "input": {
+          "api_key": null,
+          "responses": []
+        },
+        "requests": [],
+        "result": {
+          "message": "OpenCode Go API key not available. Add a key to view usage."
+        },
+        "error": null
+      },
+      {
+        "name": "unauthorized-401",
+        "provider": "opencode-go",
+        "input": {
+          "api_key": "bad",
+          "responses": [
+            {
+              "status": 401,
+              "body": {
+                "error": "unauthorized"
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/go/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer bad"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Go",
+          "message": "OpenCode Go authentication failed. Check the API key."
+        },
+        "error": null
+      },
+      {
+        "name": "entitlement-403",
+        "provider": "opencode-go",
+        "input": {
+          "api_key": "sk-without",
+          "responses": [
+            {
+              "status": 403,
+              "body": {
+                "error": {
+                  "type": "EntitlementError"
+                }
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/go/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-without"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Go",
+          "message": "OpenCode Go subscription required for this API key."
+        },
+        "error": null
+      },
+      {
+        "name": "forbidden-403",
+        "provider": "opencode-go",
+        "input": {
+          "api_key": "sk-without",
+          "responses": [
+            {
+              "status": 403,
+              "body": {
+                "error": {
+                  "type": "Other"
+                }
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/go/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-without"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Go",
+          "message": "OpenCode Go access forbidden for this API key."
+        },
+        "error": null
+      },
+      {
+        "name": "no-valid-percent",
+        "provider": "opencode-go",
+        "input": {
+          "api_key": "sk-test",
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "usage": {
+                  "rolling": {
+                    "status": "ok"
+                  },
+                  "future": {
+                    "percent": 10
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/go/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-test"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Go",
+          "message": "OpenCode Go usage response did not contain valid quota data."
+        },
+        "error": null
+      },
+      {
+        "name": "no-usage-object",
+        "provider": "opencode-go",
+        "input": {
+          "api_key": "sk-test",
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "data": []
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/go/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-test"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Go",
+          "message": "OpenCode Go usage response did not contain quota data."
+        },
+        "error": null
+      },
+      {
+        "name": "server-500",
+        "provider": "opencode-go",
+        "input": {
+          "api_key": "sk-test",
+          "responses": [
+            {
+              "status": 500,
+              "body": {
+                "error": "unavailable"
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/go/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-test"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Go",
+          "message": "OpenCode Go usage API error (500)."
+        },
+        "error": null
+      },
+      {
+        "name": "network-down",
+        "provider": "opencode-go",
+        "input": {
+          "api_key": "sk-test",
+          "responses": [
+            {
+              "network_failure": true
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/go/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-test"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "message": "OpenCode Go error: socket closed"
+        },
+        "error": null
+      },
+      {
+        "name": "subscription-usage",
+        "provider": "opencode-zen",
+        "input": {
+          "api_key": "sk-test",
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "usage": {
+                  "rolling": {
+                    "status": "ok",
+                    "percent": 13,
+                    "resetsAt": "2026-09-04T14:28:02.617Z"
+                  },
+                  "weekly": {
+                    "status": "ok",
+                    "percent": 5,
+                    "resetsAt": "2026-09-07T00:00:00.617Z"
+                  },
+                  "monthly": {
+                    "status": "ok",
+                    "percent": 2,
+                    "resetsAt": "2026-10-02T12:14:24.617Z"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-test"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Zen",
+          "quotas": {
+            "Rolling": {
+              "used": 13,
+              "total": 100,
+              "remaining": 87,
+              "remainingPercentage": 87,
+              "resetAt": "2026-09-04T14:28:02.617Z",
+              "unlimited": false
+            },
+            "Weekly": {
+              "used": 5,
+              "total": 100,
+              "remaining": 95,
+              "remainingPercentage": 95,
+              "resetAt": "2026-09-07T00:00:00.617Z",
+              "unlimited": false
+            },
+            "Monthly": {
+              "used": 2,
+              "total": 100,
+              "remaining": 98,
+              "remainingPercentage": 98,
+              "resetAt": "2026-10-02T12:14:24.617Z",
+              "unlimited": false
+            }
+          }
+        },
+        "error": null
+      },
+      {
+        "name": "string-percent-and-clamp",
+        "provider": "opencode-zen",
+        "input": {
+          "api_key": "sk-test",
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "usage": {
+                  "rolling": {
+                    "percent": "40.5",
+                    "resetsAt": 1790000000
+                  },
+                  "weekly": {
+                    "percent": 130
+                  },
+                  "monthly": {
+                    "percent": -3,
+                    "resetsAt": "1790000000000"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-test"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Zen",
+          "quotas": {
+            "Rolling": {
+              "used": 40.5,
+              "total": 100,
+              "remaining": 59.5,
+              "remainingPercentage": 59.5,
+              "resetAt": "2026-09-21T14:13:20.000Z",
+              "unlimited": false
+            },
+            "Weekly": {
+              "used": 100,
+              "total": 100,
+              "remaining": 0,
+              "remainingPercentage": 0,
+              "resetAt": null,
+              "unlimited": false
+            },
+            "Monthly": {
+              "used": 0,
+              "total": 100,
+              "remaining": 100,
+              "remainingPercentage": 100,
+              "resetAt": "2026-09-21T14:13:20.000Z",
+              "unlimited": false
+            }
+          }
+        },
+        "error": null
+      },
+      {
+        "name": "no-key",
+        "provider": "opencode-zen",
+        "input": {
+          "api_key": null,
+          "responses": []
+        },
+        "requests": [],
+        "result": {
+          "message": "OpenCode Zen API key not available. Add a key to view usage."
+        },
+        "error": null
+      },
+      {
+        "name": "unauthorized-401",
+        "provider": "opencode-zen",
+        "input": {
+          "api_key": "bad",
+          "responses": [
+            {
+              "status": 401,
+              "body": {
+                "error": "unauthorized"
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer bad"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Zen",
+          "message": "OpenCode Zen authentication failed. Check the API key."
+        },
+        "error": null
+      },
+      {
+        "name": "entitlement-403",
+        "provider": "opencode-zen",
+        "input": {
+          "api_key": "sk-without",
+          "responses": [
+            {
+              "status": 403,
+              "body": {
+                "error": {
+                  "type": "EntitlementError"
+                }
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-without"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Zen",
+          "message": "OpenCode Zen billing required for this API key."
+        },
+        "error": null
+      },
+      {
+        "name": "forbidden-403",
+        "provider": "opencode-zen",
+        "input": {
+          "api_key": "sk-without",
+          "responses": [
+            {
+              "status": 403,
+              "body": {
+                "error": {
+                  "type": "Other"
+                }
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-without"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Zen",
+          "message": "OpenCode Zen access forbidden for this API key."
+        },
+        "error": null
+      },
+      {
+        "name": "no-valid-percent",
+        "provider": "opencode-zen",
+        "input": {
+          "api_key": "sk-test",
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "usage": {
+                  "rolling": {
+                    "status": "ok"
+                  },
+                  "future": {
+                    "percent": 10
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-test"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Zen",
+          "message": "OpenCode Zen usage response did not contain valid quota data."
+        },
+        "error": null
+      },
+      {
+        "name": "no-usage-object",
+        "provider": "opencode-zen",
+        "input": {
+          "api_key": "sk-test",
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "data": []
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-test"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Zen",
+          "message": "OpenCode Zen usage response did not contain quota data."
+        },
+        "error": null
+      },
+      {
+        "name": "server-500",
+        "provider": "opencode-zen",
+        "input": {
+          "api_key": "sk-test",
+          "responses": [
+            {
+              "status": 500,
+              "body": {
+                "error": "unavailable"
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-test"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "OpenCode Zen",
+          "message": "OpenCode Zen usage API error (500)."
+        },
+        "error": null
+      },
+      {
+        "name": "network-down",
+        "provider": "opencode-zen",
+        "input": {
+          "api_key": "sk-test",
+          "responses": [
+            {
+              "network_failure": true
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://opencode.ai/zen/v1/usage",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer sk-test"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "message": "OpenCode Zen error: socket closed"
+        },
+        "error": null
+      }
+    ]
+  }
+}

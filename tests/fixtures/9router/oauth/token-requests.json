@@ -1,0 +1,517 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "cases": [
+      {
+        "name": "xai-code-exchange",
+        "provider": "xai",
+        "grant": "authorization_code",
+        "input": {
+          "code": "auth-code",
+          "redirect_uri": "http://127.0.0.1:56121/callback",
+          "verifier": "verifier-1",
+          "state": "state-1"
+        },
+        "response": {
+          "access_token": "access-token",
+          "refresh_token": "refresh-token",
+          "expires_in": 3600,
+          "scope": "openid offline_access",
+          "token_type": "Bearer",
+          "id_token": "h.eyJlbWFpbCI6InhhaUBleGFtcGxlLmNvbSIsInN1YiI6InMtMiJ9.s"
+        },
+        "calls": [
+          {
+            "url": "https://auth.x.ai/.well-known/openid-configuration",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json"
+            },
+            "body": null
+          },
+          {
+            "url": "https://auth.x.ai/oauth2/token-from-discovery",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/x-www-form-urlencoded"
+            },
+            "body": {
+              "encoding": "form",
+              "fields": [
+                [
+                  "grant_type",
+                  "authorization_code"
+                ],
+                [
+                  "client_id",
+                  "b1a00492-073a-47ea-816f-4c329264a828"
+                ],
+                [
+                  "code",
+                  "auth-code"
+                ],
+                [
+                  "redirect_uri",
+                  "http://127.0.0.1:56121/callback"
+                ],
+                [
+                  "code_verifier",
+                  "verifier-1"
+                ]
+              ],
+              "raw": "grant_type=authorization_code&client_id=b1a00492-073a-47ea-816f-4c329264a828&code=auth-code&redirect_uri=http%3A%2F%2F127.0.0.1%3A56121%2Fcallback&code_verifier=verifier-1"
+            }
+          }
+        ],
+        "result": {
+          "accessToken": "access-token",
+          "refreshToken": "refresh-token",
+          "expiresIn": 3600,
+          "scope": "openid offline_access",
+          "email": "xai@example.com",
+          "providerSpecificData": {
+            "idToken": "h.eyJlbWFpbCI6InhhaUBleGFtcGxlLmNvbSIsInN1YiI6InMtMiJ9.s"
+          }
+        },
+        "error": null
+      },
+      {
+        "name": "anthropic-code-exchange",
+        "provider": "anthropic",
+        "grant": "authorization_code",
+        "input": {
+          "code": "auth-code",
+          "redirect_uri": "http://localhost:54545/callback",
+          "verifier": "verifier-1",
+          "state": "state-1"
+        },
+        "response": {
+          "access_token": "access-token",
+          "refresh_token": "refresh-token",
+          "expires_in": 3600,
+          "scope": "openid offline_access",
+          "token_type": "Bearer"
+        },
+        "calls": [
+          {
+            "url": "https://api.anthropic.com/v1/oauth/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/json"
+            },
+            "body": {
+              "encoding": "json",
+              "fields": [
+                [
+                  "code",
+                  "auth-code"
+                ],
+                [
+                  "state",
+                  "state-1"
+                ],
+                [
+                  "grant_type",
+                  "authorization_code"
+                ],
+                [
+                  "client_id",
+                  "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+                ],
+                [
+                  "redirect_uri",
+                  "http://localhost:54545/callback"
+                ],
+                [
+                  "code_verifier",
+                  "verifier-1"
+                ]
+              ],
+              "raw": "{\"code\":\"auth-code\",\"state\":\"state-1\",\"grant_type\":\"authorization_code\",\"client_id\":\"9d1c250a-e61b-44d9-88ed-5944d1962f5e\",\"redirect_uri\":\"http://localhost:54545/callback\",\"code_verifier\":\"verifier-1\"}"
+            }
+          }
+        ],
+        "result": {
+          "accessToken": "access-token",
+          "refreshToken": "refresh-token",
+          "expiresIn": 3600,
+          "scope": "openid offline_access"
+        },
+        "error": null
+      },
+      {
+        "name": "anthropic-code-hash-state",
+        "provider": "anthropic",
+        "grant": "authorization_code",
+        "input": {
+          "code": "auth-code#state-from-page",
+          "redirect_uri": "http://localhost:54545/callback",
+          "verifier": "verifier-1",
+          "state": "state-1"
+        },
+        "response": {
+          "access_token": "access-token",
+          "refresh_token": "refresh-token",
+          "expires_in": 3600,
+          "scope": "openid offline_access",
+          "token_type": "Bearer"
+        },
+        "calls": [
+          {
+            "url": "https://api.anthropic.com/v1/oauth/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/json"
+            },
+            "body": {
+              "encoding": "json",
+              "fields": [
+                [
+                  "code",
+                  "auth-code"
+                ],
+                [
+                  "state",
+                  "state-from-page"
+                ],
+                [
+                  "grant_type",
+                  "authorization_code"
+                ],
+                [
+                  "client_id",
+                  "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+                ],
+                [
+                  "redirect_uri",
+                  "http://localhost:54545/callback"
+                ],
+                [
+                  "code_verifier",
+                  "verifier-1"
+                ]
+              ],
+              "raw": "{\"code\":\"auth-code\",\"state\":\"state-from-page\",\"grant_type\":\"authorization_code\",\"client_id\":\"9d1c250a-e61b-44d9-88ed-5944d1962f5e\",\"redirect_uri\":\"http://localhost:54545/callback\",\"code_verifier\":\"verifier-1\"}"
+            }
+          }
+        ],
+        "result": {
+          "accessToken": "access-token",
+          "refreshToken": "refresh-token",
+          "expiresIn": 3600,
+          "scope": "openid offline_access"
+        },
+        "error": null
+      },
+      {
+        "name": "grok-cli-device-request",
+        "provider": "grok-cli",
+        "grant": "device_request",
+        "response": {
+          "device_code": "dev-code-1",
+          "user_code": "ABCD-EFGH",
+          "verification_uri": "https://accounts.x.ai/device",
+          "verification_uri_complete": "https://accounts.x.ai/device?user_code=ABCD-EFGH",
+          "expires_in": 600,
+          "interval": 5
+        },
+        "calls": [
+          {
+            "url": "https://auth.x.ai/oauth2/device/code",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/x-www-form-urlencoded",
+              "user-agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)"
+            },
+            "body": {
+              "encoding": "form",
+              "fields": [
+                [
+                  "client_id",
+                  "b1a00492-073a-47ea-816f-4c329264a828"
+                ],
+                [
+                  "scope",
+                  "openid profile email offline_access grok-cli:access api:access conversations:read conversations:write"
+                ],
+                [
+                  "referrer",
+                  "grok-build"
+                ]
+              ],
+              "raw": "client_id=b1a00492-073a-47ea-816f-4c329264a828&scope=openid+profile+email+offline_access+grok-cli%3Aaccess+api%3Aaccess+conversations%3Aread+conversations%3Awrite&referrer=grok-build"
+            }
+          }
+        ],
+        "result": {
+          "device_code": "dev-code-1",
+          "user_code": "ABCD-EFGH",
+          "verification_uri": "https://accounts.x.ai/device",
+          "verification_uri_complete": "https://accounts.x.ai/device?user_code=ABCD-EFGH",
+          "expires_in": 600,
+          "interval": 5
+        },
+        "error": null
+      },
+      {
+        "name": "grok-cli-device-pending",
+        "provider": "grok-cli",
+        "grant": "device_poll",
+        "response": {
+          "error": "authorization_pending"
+        },
+        "calls": [
+          {
+            "url": "https://auth.x.ai/oauth2/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/x-www-form-urlencoded",
+              "user-agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)"
+            },
+            "body": {
+              "encoding": "form",
+              "fields": [
+                [
+                  "grant_type",
+                  "urn:ietf:params:oauth:grant-type:device_code"
+                ],
+                [
+                  "device_code",
+                  "dev-code-1"
+                ],
+                [
+                  "client_id",
+                  "b1a00492-073a-47ea-816f-4c329264a828"
+                ]
+              ],
+              "raw": "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code&device_code=dev-code-1&client_id=b1a00492-073a-47ea-816f-4c329264a828"
+            }
+          }
+        ],
+        "result": {
+          "success": false,
+          "error": "authorization_pending",
+          "pending": true
+        },
+        "error": null
+      },
+      {
+        "name": "grok-cli-device-slow-down",
+        "provider": "grok-cli",
+        "grant": "device_poll",
+        "response": {
+          "error": "slow_down"
+        },
+        "calls": [
+          {
+            "url": "https://auth.x.ai/oauth2/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/x-www-form-urlencoded",
+              "user-agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)"
+            },
+            "body": {
+              "encoding": "form",
+              "fields": [
+                [
+                  "grant_type",
+                  "urn:ietf:params:oauth:grant-type:device_code"
+                ],
+                [
+                  "device_code",
+                  "dev-code-1"
+                ],
+                [
+                  "client_id",
+                  "b1a00492-073a-47ea-816f-4c329264a828"
+                ]
+              ],
+              "raw": "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code&device_code=dev-code-1&client_id=b1a00492-073a-47ea-816f-4c329264a828"
+            }
+          }
+        ],
+        "result": {
+          "success": false,
+          "error": "slow_down",
+          "pending": false
+        },
+        "error": null
+      },
+      {
+        "name": "grok-cli-device-expired",
+        "provider": "grok-cli",
+        "grant": "device_poll",
+        "response": {
+          "error": "expired_token",
+          "error_description": "expired"
+        },
+        "calls": [
+          {
+            "url": "https://auth.x.ai/oauth2/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/x-www-form-urlencoded",
+              "user-agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)"
+            },
+            "body": {
+              "encoding": "form",
+              "fields": [
+                [
+                  "grant_type",
+                  "urn:ietf:params:oauth:grant-type:device_code"
+                ],
+                [
+                  "device_code",
+                  "dev-code-1"
+                ],
+                [
+                  "client_id",
+                  "b1a00492-073a-47ea-816f-4c329264a828"
+                ]
+              ],
+              "raw": "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code&device_code=dev-code-1&client_id=b1a00492-073a-47ea-816f-4c329264a828"
+            }
+          }
+        ],
+        "result": {
+          "success": false,
+          "error": "expired_token",
+          "errorDescription": "expired"
+        },
+        "error": null
+      },
+      {
+        "name": "grok-cli-device-denied",
+        "provider": "grok-cli",
+        "grant": "device_poll",
+        "response": {
+          "error": "access_denied"
+        },
+        "calls": [
+          {
+            "url": "https://auth.x.ai/oauth2/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/x-www-form-urlencoded",
+              "user-agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)"
+            },
+            "body": {
+              "encoding": "form",
+              "fields": [
+                [
+                  "grant_type",
+                  "urn:ietf:params:oauth:grant-type:device_code"
+                ],
+                [
+                  "device_code",
+                  "dev-code-1"
+                ],
+                [
+                  "client_id",
+                  "b1a00492-073a-47ea-816f-4c329264a828"
+                ]
+              ],
+              "raw": "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code&device_code=dev-code-1&client_id=b1a00492-073a-47ea-816f-4c329264a828"
+            }
+          }
+        ],
+        "result": {
+          "success": false,
+          "error": "access_denied"
+        },
+        "error": null
+      },
+      {
+        "name": "grok-cli-device-granted",
+        "provider": "grok-cli",
+        "grant": "device_poll",
+        "response": {
+          "access_token": "access-token",
+          "refresh_token": "refresh-token",
+          "expires_in": 3600,
+          "scope": "openid offline_access",
+          "token_type": "Bearer",
+          "id_token": "h.eyJlbWFpbCI6Imdyb2tAZXhhbXBsZS5jb20iLCJzdWIiOiJzLTEifQ.s"
+        },
+        "profile": {
+          "userId": "user-0001",
+          "email": "profile@example.com",
+          "firstName": "Ada",
+          "lastName": "L",
+          "hasGrokCodeAccess": true,
+          "subscriptionTier": "SuperGrok"
+        },
+        "calls": [
+          {
+            "url": "https://auth.x.ai/oauth2/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/x-www-form-urlencoded",
+              "user-agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)"
+            },
+            "body": {
+              "encoding": "form",
+              "fields": [
+                [
+                  "grant_type",
+                  "urn:ietf:params:oauth:grant-type:device_code"
+                ],
+                [
+                  "device_code",
+                  "dev-code-1"
+                ],
+                [
+                  "client_id",
+                  "b1a00492-073a-47ea-816f-4c329264a828"
+                ]
+              ],
+              "raw": "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code&device_code=dev-code-1&client_id=b1a00492-073a-47ea-816f-4c329264a828"
+            }
+          },
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/user",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer access-token",
+              "user-agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
+              "x-grok-client-version": "0.2.93",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "success": true,
+          "tokens": {
+            "accessToken": "access-token",
+            "refreshToken": "refresh-token",
+            "expiresIn": 3600,
+            "expiresAt": "{now + expires_in}",
+            "scope": "openid offline_access",
+            "email": "grok@example.com",
+            "displayName": "Ada L",
+            "providerSpecificData": {
+              "authMethod": "device_code",
+              "idToken": "h.eyJlbWFpbCI6Imdyb2tAZXhhbXBsZS5jb20iLCJzdWIiOiJzLTEifQ.s",
+              "email": "grok@example.com",
+              "userId": "user-0001",
+              "hasGrokCodeAccess": true,
+              "subscriptionTier": "SuperGrok"
+            }
+          }
+        },
+        "error": null
+      }
+    ]
+  }
+}

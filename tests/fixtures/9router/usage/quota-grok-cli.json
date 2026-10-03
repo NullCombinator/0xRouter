@@ -1,0 +1,1178 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "parse": [
+      {
+        "name": "active",
+        "billing": {
+          "config": {
+            "currentPeriod": {
+              "type": "USAGE_PERIOD_TYPE_WEEKLY",
+              "start": "2026-07-08T00:00:00+00:00",
+              "end": "2026-07-15T00:00:00+00:00"
+            },
+            "onDemandCap": {
+              "val": 100
+            },
+            "onDemandUsed": {
+              "val": 35
+            },
+            "isUnifiedBillingUser": true,
+            "prepaidBalance": {
+              "val": 12.5
+            },
+            "billingPeriodStart": "2026-07-08T00:00:00+00:00",
+            "billingPeriodEnd": "2026-07-15T00:00:00+00:00"
+          }
+        },
+        "user": {
+          "userId": "d84768dd-224d-4052-ba49-0d336fa9160c",
+          "email": "user@example.com",
+          "hasGrokCodeAccess": true,
+          "subscriptionTier": null
+        },
+        "result": {
+          "plan": "Grok Code",
+          "quotas": {
+            "On-demand": {
+              "used": 35,
+              "total": 100,
+              "remainingPercentage": 65,
+              "resetAt": "2026-07-15T00:00:00.000Z",
+              "unlimited": false
+            },
+            "Prepaid": {
+              "used": 0,
+              "total": 12.5,
+              "remainingPercentage": 100,
+              "resetAt": null,
+              "unlimited": false
+            }
+          },
+          "periodEnd": "2026-07-15T00:00:00.000Z",
+          "exhausted": false,
+          "subscriptionAccess": false
+        }
+      },
+      {
+        "name": "exhausted-free",
+        "billing": {
+          "config": {
+            "currentPeriod": {
+              "type": "USAGE_PERIOD_TYPE_WEEKLY",
+              "start": "2026-07-08T00:00:00+00:00",
+              "end": "2026-07-15T00:00:00+00:00"
+            },
+            "onDemandCap": {
+              "val": 0
+            },
+            "onDemandUsed": {
+              "val": 0
+            },
+            "isUnifiedBillingUser": true,
+            "prepaidBalance": {
+              "val": 0
+            },
+            "topUpMethod": "TOP_UP_METHOD_SAVED_PAYMENT_METHOD",
+            "billingPeriodStart": "2026-07-08T00:00:00+00:00",
+            "billingPeriodEnd": "2026-07-15T00:00:00+00:00"
+          }
+        },
+        "user": {
+          "userId": "d84768dd-224d-4052-ba49-0d336fa9160c",
+          "email": "user@example.com",
+          "hasGrokCodeAccess": true,
+          "subscriptionTier": null
+        },
+        "result": {
+          "plan": "Grok Code",
+          "quotas": {
+            "On-demand": {
+              "used": 1,
+              "total": 1,
+              "remainingPercentage": 0,
+              "resetAt": "2026-07-15T00:00:00.000Z",
+              "unlimited": false
+            }
+          },
+          "periodEnd": "2026-07-15T00:00:00.000Z",
+          "exhausted": true,
+          "subscriptionAccess": false
+        }
+      },
+      {
+        "name": "tier-super-grok",
+        "billing": {
+          "config": {
+            "currentPeriod": {
+              "type": "USAGE_PERIOD_TYPE_WEEKLY",
+              "start": "2026-07-08T00:00:00+00:00",
+              "end": "2026-07-15T00:00:00+00:00"
+            },
+            "onDemandCap": {
+              "val": 100
+            },
+            "onDemandUsed": {
+              "val": 35
+            },
+            "isUnifiedBillingUser": true,
+            "prepaidBalance": {
+              "val": 12.5
+            },
+            "billingPeriodStart": "2026-07-08T00:00:00+00:00",
+            "billingPeriodEnd": "2026-07-15T00:00:00+00:00"
+          }
+        },
+        "user": {
+          "userId": "d84768dd-224d-4052-ba49-0d336fa9160c",
+          "email": "user@example.com",
+          "hasGrokCodeAccess": true,
+          "subscriptionTier": "super_grok"
+        },
+        "result": {
+          "plan": "Super Grok",
+          "quotas": {
+            "On-demand": {
+              "used": 35,
+              "total": 100,
+              "remainingPercentage": 65,
+              "resetAt": "2026-07-15T00:00:00.000Z",
+              "unlimited": false
+            },
+            "Prepaid": {
+              "used": 0,
+              "total": 12.5,
+              "remainingPercentage": 100,
+              "resetAt": null,
+              "unlimited": false
+            }
+          },
+          "periodEnd": "2026-07-15T00:00:00.000Z",
+          "exhausted": false,
+          "subscriptionAccess": true
+        }
+      },
+      {
+        "name": "paid-subscription-no-quota",
+        "billing": {
+          "config": {
+            "currentPeriod": {
+              "type": "USAGE_PERIOD_TYPE_WEEKLY",
+              "start": "2026-07-08T00:00:00+00:00",
+              "end": "2026-07-15T00:00:00+00:00"
+            },
+            "onDemandCap": {
+              "val": 0
+            },
+            "onDemandUsed": {
+              "val": 0
+            },
+            "isUnifiedBillingUser": true,
+            "prepaidBalance": {
+              "val": 0
+            },
+            "topUpMethod": "TOP_UP_METHOD_SAVED_PAYMENT_METHOD",
+            "billingPeriodStart": "2026-07-08T00:00:00+00:00",
+            "billingPeriodEnd": "2026-07-15T00:00:00+00:00"
+          }
+        },
+        "user": {
+          "userId": "d84768dd-224d-4052-ba49-0d336fa9160c",
+          "email": "user@example.com",
+          "hasGrokCodeAccess": true,
+          "subscriptionTier": "XPremiumPlus"
+        },
+        "result": {
+          "plan": "XPremiumPlus",
+          "quotas": {},
+          "periodEnd": "2026-07-15T00:00:00.000Z",
+          "exhausted": false,
+          "subscriptionAccess": true
+        }
+      },
+      {
+        "name": "credit-usage-percent",
+        "billing": {
+          "config": {
+            "currentPeriod": {
+              "type": "USAGE_PERIOD_TYPE_WEEKLY",
+              "start": "2026-07-17T12:42:26.494595+00:00",
+              "end": "2026-07-24T12:42:26.494595+00:00"
+            },
+            "creditUsagePercent": 99,
+            "onDemandCap": {
+              "val": 0
+            },
+            "onDemandUsed": {
+              "val": 0
+            },
+            "productUsage": [
+              {
+                "product": "GrokBuild",
+                "usagePercent": 97
+              },
+              {
+                "product": "GrokImagine",
+                "usagePercent": 2
+              }
+            ],
+            "isUnifiedBillingUser": true,
+            "prepaidBalance": {
+              "val": 0
+            },
+            "billingPeriodStart": "2026-07-17T12:42:26.494595+00:00",
+            "billingPeriodEnd": "2026-07-24T12:42:26.494595+00:00"
+          }
+        },
+        "user": {
+          "subscriptionTier": "XPremiumPlus",
+          "hasGrokCodeAccess": true
+        },
+        "result": {
+          "plan": "XPremiumPlus",
+          "quotas": {
+            "Weekly SuperGrok": {
+              "used": 99,
+              "total": 100,
+              "remainingPercentage": 1,
+              "resetAt": "2026-07-24T12:42:26.494Z",
+              "unlimited": false
+            }
+          },
+          "periodEnd": "2026-07-24T12:42:26.494Z",
+          "exhausted": false,
+          "subscriptionAccess": true
+        }
+      },
+      {
+        "name": "monthly-included",
+        "billing": {
+          "monthlyLimit": {
+            "val": 1000
+          },
+          "includedUsed": {
+            "val": 275
+          },
+          "totalUsed": {
+            "val": 300
+          },
+          "resetAt": "2026-08-01T00:00:00Z"
+        },
+        "user": {
+          "subscription_tier": "premium_plus"
+        },
+        "result": {
+          "plan": "Premium Plus",
+          "quotas": {
+            "Monthly included": {
+              "used": 275,
+              "total": 1000,
+              "remainingPercentage": 72.5,
+              "resetAt": "2026-08-01T00:00:00.000Z",
+              "unlimited": false
+            }
+          },
+          "periodEnd": "2026-08-01T00:00:00.000Z",
+          "exhausted": false,
+          "subscriptionAccess": true
+        }
+      },
+      {
+        "name": "monthly-total-used-only",
+        "billing": {
+          "monthlyLimit": 400,
+          "totalUsed": "120",
+          "billing_period_end": 1790000000
+        },
+        "user": null,
+        "result": {
+          "plan": "Grok Build",
+          "quotas": {
+            "Monthly included": {
+              "used": 120,
+              "total": 400,
+              "remainingPercentage": 70,
+              "resetAt": "2026-09-21T14:13:20.000Z",
+              "unlimited": false
+            }
+          },
+          "periodEnd": "2026-09-21T14:13:20.000Z",
+          "exhausted": false,
+          "subscriptionAccess": false
+        }
+      },
+      {
+        "name": "credits-bag-remaining",
+        "billing": {
+          "credits": {
+            "total": {
+              "val": 50
+            },
+            "remaining": {
+              "val": 20
+            },
+            "resetAt": "2026-09-01T00:00:00Z"
+          }
+        },
+        "user": null,
+        "result": {
+          "plan": "Grok Build",
+          "quotas": {
+            "Credits": {
+              "used": 30,
+              "total": 50,
+              "remainingPercentage": 40,
+              "resetAt": "2026-09-01T00:00:00.000Z",
+              "unlimited": false
+            }
+          },
+          "periodEnd": null,
+          "exhausted": false,
+          "subscriptionAccess": false
+        }
+      },
+      {
+        "name": "credits-bag-balance-only",
+        "billing": {
+          "config": {
+            "includedCredits": {
+              "balance": 0
+            }
+          }
+        },
+        "user": null,
+        "result": {
+          "plan": "Grok Build",
+          "quotas": {
+            "Credits": {
+              "used": 0,
+              "total": 1,
+              "remainingPercentage": 0,
+              "resetAt": null,
+              "unlimited": false
+            }
+          },
+          "periodEnd": null,
+          "exhausted": true,
+          "subscriptionAccess": false
+        }
+      },
+      {
+        "name": "testkit-sample",
+        "billing": {
+          "config": {
+            "currentPeriod": {
+              "type": "USAGE_PERIOD_TYPE_WEEKLY",
+              "start": "2026-09-28T00:00:00Z",
+              "end": "2026-10-05T00:00:00Z"
+            },
+            "monthlyLimit": {
+              "val": 2500
+            },
+            "monthlyUsed": {
+              "val": 1200
+            },
+            "onDemandCap": {
+              "val": 1000
+            },
+            "onDemandUsed": {
+              "val": 250
+            },
+            "prepaidBalance": {
+              "val": 500
+            },
+            "isUnifiedBillingUser": true,
+            "billingPeriodStart": "2026-10-01T00:00:00Z",
+            "billingPeriodEnd": "2026-11-01T00:00:00Z"
+          }
+        },
+        "user": {
+          "userId": "user-0001",
+          "email": "user@example.com",
+          "subscriptionTier": "SuperGrok",
+          "hasGrokCodeAccess": true
+        },
+        "result": {
+          "plan": "SuperGrok",
+          "quotas": {
+            "Monthly included": {
+              "used": 0,
+              "total": 2500,
+              "remainingPercentage": 100,
+              "resetAt": "2026-11-01T00:00:00.000Z",
+              "unlimited": false
+            },
+            "On-demand": {
+              "used": 250,
+              "total": 1000,
+              "remainingPercentage": 75,
+              "resetAt": "2026-11-01T00:00:00.000Z",
+              "unlimited": false
+            },
+            "Prepaid": {
+              "used": 0,
+              "total": 500,
+              "remainingPercentage": 100,
+              "resetAt": null,
+              "unlimited": false
+            }
+          },
+          "periodEnd": "2026-11-01T00:00:00.000Z",
+          "exhausted": false,
+          "subscriptionAccess": true
+        }
+      }
+    ],
+    "flow": [
+      {
+        "name": "billing-and-user",
+        "provider": "grok-cli",
+        "input": {
+          "access_token": "test-token",
+          "provider_specific_data": {
+            "email": "user@example.com",
+            "userId": "d84768dd-224d-4052-ba49-0d336fa9160c"
+          },
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "config": {
+                  "currentPeriod": {
+                    "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                    "start": "2026-07-08T00:00:00+00:00",
+                    "end": "2026-07-15T00:00:00+00:00"
+                  },
+                  "onDemandCap": {
+                    "val": 100
+                  },
+                  "onDemandUsed": {
+                    "val": 35
+                  },
+                  "isUnifiedBillingUser": true,
+                  "prepaidBalance": {
+                    "val": 12.5
+                  },
+                  "billingPeriodStart": "2026-07-08T00:00:00+00:00",
+                  "billingPeriodEnd": "2026-07-15T00:00:00+00:00"
+                }
+              }
+            },
+            {
+              "status": 200,
+              "body": {
+                "userId": "d84768dd-224d-4052-ba49-0d336fa9160c",
+                "email": "user@example.com",
+                "hasGrokCodeAccess": true,
+                "subscriptionTier": null
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer test-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-email": "user@example.com",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-userid": "d84768dd-224d-4052-ba49-0d336fa9160c",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          },
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/user?include=subscription",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer test-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-email": "user@example.com",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-userid": "d84768dd-224d-4052-ba49-0d336fa9160c",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "Grok Code",
+          "quotas": {
+            "On-demand": {
+              "used": 35,
+              "total": 100,
+              "remainingPercentage": 65,
+              "resetAt": "2026-07-15T00:00:00.000Z",
+              "unlimited": false
+            },
+            "Prepaid": {
+              "used": 0,
+              "total": 12.5,
+              "remainingPercentage": 100,
+              "resetAt": null,
+              "unlimited": false
+            }
+          }
+        },
+        "error": null
+      },
+      {
+        "name": "billing-401",
+        "provider": "grok-cli",
+        "input": {
+          "access_token": "expired",
+          "provider_specific_data": null,
+          "responses": [
+            {
+              "status": 401,
+              "body": {
+                "error": "unauthorized"
+              }
+            },
+            {
+              "status": 200,
+              "body": {
+                "userId": "d84768dd-224d-4052-ba49-0d336fa9160c",
+                "email": "user@example.com",
+                "hasGrokCodeAccess": true,
+                "subscriptionTier": null
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer expired",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          },
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/user?include=subscription",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer expired",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "message": "Grok CLI authentication expired. Please re-authorize."
+        },
+        "error": null
+      },
+      {
+        "name": "billing-403",
+        "provider": "grok-cli",
+        "input": {
+          "access_token": "expired",
+          "provider_specific_data": null,
+          "responses": [
+            {
+              "status": 403,
+              "body": {
+                "error": "forbidden"
+              }
+            },
+            {
+              "status": 200,
+              "body": {
+                "userId": "d84768dd-224d-4052-ba49-0d336fa9160c",
+                "email": "user@example.com",
+                "hasGrokCodeAccess": true,
+                "subscriptionTier": null
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer expired",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          },
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/user?include=subscription",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer expired",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "message": "Grok CLI authentication expired. Please re-authorize."
+        },
+        "error": null
+      },
+      {
+        "name": "billing-500",
+        "provider": "grok-cli",
+        "input": {
+          "access_token": "test-token",
+          "provider_specific_data": null,
+          "responses": [
+            {
+              "status": 500,
+              "body": "upstream exploded"
+            },
+            {
+              "status": 200,
+              "body": {
+                "userId": "d84768dd-224d-4052-ba49-0d336fa9160c",
+                "email": "user@example.com",
+                "hasGrokCodeAccess": true,
+                "subscriptionTier": null
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer test-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          },
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/user?include=subscription",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer test-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "message": "Grok CLI billing API error (500): upstream exploded"
+        },
+        "error": null
+      },
+      {
+        "name": "exhausted-free",
+        "provider": "grok-cli",
+        "input": {
+          "access_token": "test-token",
+          "provider_specific_data": null,
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "config": {
+                  "currentPeriod": {
+                    "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                    "start": "2026-07-08T00:00:00+00:00",
+                    "end": "2026-07-15T00:00:00+00:00"
+                  },
+                  "onDemandCap": {
+                    "val": 0
+                  },
+                  "onDemandUsed": {
+                    "val": 0
+                  },
+                  "isUnifiedBillingUser": true,
+                  "prepaidBalance": {
+                    "val": 0
+                  },
+                  "topUpMethod": "TOP_UP_METHOD_SAVED_PAYMENT_METHOD",
+                  "billingPeriodStart": "2026-07-08T00:00:00+00:00",
+                  "billingPeriodEnd": "2026-07-15T00:00:00+00:00"
+                }
+              }
+            },
+            {
+              "status": 200,
+              "body": {
+                "userId": "d84768dd-224d-4052-ba49-0d336fa9160c",
+                "email": "user@example.com",
+                "hasGrokCodeAccess": true,
+                "subscriptionTier": null
+              }
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer test-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          },
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/user?include=subscription",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer test-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "Grok Code",
+          "quotas": {
+            "On-demand": {
+              "used": 1,
+              "total": 1,
+              "remainingPercentage": 0,
+              "resetAt": "2026-07-15T00:00:00.000Z",
+              "unlimited": false
+            }
+          }
+        },
+        "error": null
+      },
+      {
+        "name": "grpc-fallback",
+        "provider": "grok-cli",
+        "input": {
+          "access_token": "header.eyJ0aWVyIjo1fQ.signature",
+          "provider_specific_data": null,
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "config": {
+                  "currentPeriod": {
+                    "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                    "start": "2026-07-08T00:00:00+00:00",
+                    "end": "2026-07-15T00:00:00+00:00"
+                  },
+                  "onDemandCap": {
+                    "val": 0
+                  },
+                  "onDemandUsed": {
+                    "val": 0
+                  },
+                  "isUnifiedBillingUser": true,
+                  "prepaidBalance": {
+                    "val": 0
+                  },
+                  "topUpMethod": "TOP_UP_METHOD_SAVED_PAYMENT_METHOD",
+                  "billingPeriodStart": "2026-07-08T00:00:00+00:00",
+                  "billingPeriodEnd": "2026-07-15T00:00:00+00:00"
+                }
+              }
+            },
+            {
+              "status": 200,
+              "body": {
+                "userId": "d84768dd-224d-4052-ba49-0d336fa9160c",
+                "email": "user@example.com",
+                "hasGrokCodeAccess": true,
+                "subscriptionTier": "XPremiumPlus"
+              }
+            },
+            {
+              "status": 200,
+              "hex": "00000000150a130d3333b33e2a0c08d49089d3061090aee99d03"
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer header.eyJ0aWVyIjo1fQ.signature",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          },
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/user?include=subscription",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer header.eyJ0aWVyIjo1fQ.signature",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          },
+          {
+            "url": "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig",
+            "method": "POST",
+            "headers": {
+              "accept": "application/grpc-web+proto",
+              "authorization": "Bearer header.eyJ0aWVyIjo1fQ.signature",
+              "content-type": "application/grpc-web+proto",
+              "x-grpc-web": "1"
+            },
+            "body": {
+              "encoding": "binary",
+              "hex": "0000000000"
+            }
+          }
+        ],
+        "result": {
+          "plan": "SuperGrok Heavy",
+          "quotas": {
+            "Weekly SuperGrok": {
+              "used": 35,
+              "total": 100,
+              "remainingPercentage": 65,
+              "resetAt": "2026-07-23T16:59:00.868Z",
+              "unlimited": false
+            }
+          }
+        },
+        "error": null
+      },
+      {
+        "name": "grpc-fallback-500",
+        "provider": "grok-cli",
+        "input": {
+          "access_token": "test-token",
+          "provider_specific_data": null,
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "config": {
+                  "currentPeriod": {
+                    "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                    "start": "2026-07-08T00:00:00+00:00",
+                    "end": "2026-07-15T00:00:00+00:00"
+                  },
+                  "onDemandCap": {
+                    "val": 0
+                  },
+                  "onDemandUsed": {
+                    "val": 0
+                  },
+                  "isUnifiedBillingUser": true,
+                  "prepaidBalance": {
+                    "val": 0
+                  },
+                  "topUpMethod": "TOP_UP_METHOD_SAVED_PAYMENT_METHOD",
+                  "billingPeriodStart": "2026-07-08T00:00:00+00:00",
+                  "billingPeriodEnd": "2026-07-15T00:00:00+00:00"
+                }
+              }
+            },
+            {
+              "status": 200,
+              "body": {
+                "userId": "d84768dd-224d-4052-ba49-0d336fa9160c",
+                "email": "user@example.com",
+                "hasGrokCodeAccess": true,
+                "subscriptionTier": "XPremiumPlus"
+              }
+            },
+            {
+              "status": 500,
+              "hex": ""
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer test-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          },
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/user?include=subscription",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer test-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          },
+          {
+            "url": "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig",
+            "method": "POST",
+            "headers": {
+              "accept": "application/grpc-web+proto",
+              "authorization": "Bearer test-token",
+              "content-type": "application/grpc-web+proto",
+              "x-grpc-web": "1"
+            },
+            "body": {
+              "encoding": "binary",
+              "hex": "0000000000"
+            }
+          }
+        ],
+        "result": {
+          "plan": "XPremiumPlus",
+          "message": "Subscription access is active; Grok does not expose a numeric included quota.",
+          "quotas": {}
+        },
+        "error": null
+      },
+      {
+        "name": "grpc-fallback-network-down",
+        "provider": "grok-cli",
+        "input": {
+          "access_token": "test-token",
+          "provider_specific_data": null,
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "config": {
+                  "currentPeriod": {
+                    "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                    "start": "2026-07-08T00:00:00+00:00",
+                    "end": "2026-07-15T00:00:00+00:00"
+                  },
+                  "onDemandCap": {
+                    "val": 0
+                  },
+                  "onDemandUsed": {
+                    "val": 0
+                  },
+                  "isUnifiedBillingUser": true,
+                  "prepaidBalance": {
+                    "val": 0
+                  },
+                  "topUpMethod": "TOP_UP_METHOD_SAVED_PAYMENT_METHOD",
+                  "billingPeriodStart": "2026-07-08T00:00:00+00:00",
+                  "billingPeriodEnd": "2026-07-15T00:00:00+00:00"
+                }
+              }
+            },
+            {
+              "status": 200,
+              "body": {
+                "userId": "d84768dd-224d-4052-ba49-0d336fa9160c",
+                "email": "user@example.com",
+                "hasGrokCodeAccess": true,
+                "subscriptionTier": "XPremiumPlus"
+              }
+            },
+            {
+              "network_failure": true
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer test-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          },
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/user?include=subscription",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer test-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          },
+          {
+            "url": "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig",
+            "method": "POST",
+            "headers": {
+              "accept": "application/grpc-web+proto",
+              "authorization": "Bearer test-token",
+              "content-type": "application/grpc-web+proto",
+              "x-grpc-web": "1"
+            },
+            "body": {
+              "encoding": "binary",
+              "hex": "0000000000"
+            }
+          }
+        ],
+        "result": {
+          "plan": "XPremiumPlus",
+          "message": "Subscription access is active; Grok does not expose a numeric included quota.",
+          "quotas": {}
+        },
+        "error": null
+      },
+      {
+        "name": "user-network-down",
+        "provider": "grok-cli",
+        "input": {
+          "access_token": "test-token",
+          "provider_specific_data": null,
+          "responses": [
+            {
+              "status": 200,
+              "body": {
+                "config": {
+                  "currentPeriod": {
+                    "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                    "start": "2026-07-08T00:00:00+00:00",
+                    "end": "2026-07-15T00:00:00+00:00"
+                  },
+                  "onDemandCap": {
+                    "val": 100
+                  },
+                  "onDemandUsed": {
+                    "val": 35
+                  },
+                  "isUnifiedBillingUser": true,
+                  "prepaidBalance": {
+                    "val": 12.5
+                  },
+                  "billingPeriodStart": "2026-07-08T00:00:00+00:00",
+                  "billingPeriodEnd": "2026-07-15T00:00:00+00:00"
+                }
+              }
+            },
+            {
+              "network_failure": true
+            }
+          ]
+        },
+        "requests": [
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/billing?format=credits",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer test-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          },
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/user?include=subscription",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer test-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "Grok Build",
+          "quotas": {
+            "On-demand": {
+              "used": 35,
+              "total": 100,
+              "remainingPercentage": 65,
+              "resetAt": "2026-07-15T00:00:00.000Z",
+              "unlimited": false
+            },
+            "Prepaid": {
+              "used": 0,
+              "total": 12.5,
+              "remainingPercentage": 100,
+              "resetAt": null,
+              "unlimited": false
+            }
+          }
+        },
+        "error": null
+      }
+    ]
+  }
+}

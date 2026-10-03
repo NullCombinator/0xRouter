@@ -1,0 +1,175 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "empty_request_frame_hex": "0000000000",
+    "frames": [
+      {
+        "name": "real-shape-with-trailer",
+        "hex": "00000000230a210d0000803f220c08d49be4d2061090aee99d032a0c08d49089d3061090aee99d03800000000f677270632d7374617475733a300d0a",
+        "result": {
+          "percentUsed": 100,
+          "resetAt": "2026-07-23T16:59:00.868Z"
+        }
+      },
+      {
+        "name": "half-without-trailer",
+        "hex": "000000000f0a0d0d0000003f2a0608d49089d306",
+        "result": {
+          "percentUsed": 50,
+          "resetAt": "2026-07-23T16:59:00.000Z"
+        }
+      },
+      {
+        "name": "half-with-trailer",
+        "hex": "000000000f0a0d0d0000003f2a0608d49089d306800000000f677270632d7374617475733a300d0a",
+        "result": {
+          "percentUsed": 50,
+          "resetAt": "2026-07-23T16:59:00.000Z"
+        }
+      },
+      {
+        "name": "raw-unframed",
+        "hex": "0a130d0000403f2a0c08d49089d3061090aee99d03",
+        "result": {
+          "percentUsed": 75,
+          "resetAt": "2026-07-23T16:59:00.868Z"
+        }
+      },
+      {
+        "name": "ratio-omitted",
+        "hex": "00000000100a0e2a0c08d49089d3061090aee99d03",
+        "result": {
+          "percentUsed": 0,
+          "resetAt": "2026-07-23T16:59:00.868Z"
+        }
+      },
+      {
+        "name": "ratio-above-one",
+        "hex": "00000000070a050d0000c03f",
+        "result": {
+          "percentUsed": 100,
+          "resetAt": null
+        }
+      },
+      {
+        "name": "ratio-negative",
+        "hex": "00000000070a050dcdccccbd",
+        "result": null
+      },
+      {
+        "name": "ratio-fixed64",
+        "hex": "00000000130a1109666666666666d63f2a0608d49089d306",
+        "result": {
+          "percentUsed": 35,
+          "resetAt": "2026-07-23T16:59:00.000Z"
+        }
+      },
+      {
+        "name": "ratio-0.35-fixed32",
+        "hex": "00000000150a130d3333b33e2a0c08d49089d3061090aee99d03",
+        "result": {
+          "percentUsed": 34.99999940395355,
+          "resetAt": "2026-07-23T16:59:00.868Z"
+        }
+      },
+      {
+        "name": "top-field-not-length-delimited",
+        "hex": "0000000002082a",
+        "result": null
+      },
+      {
+        "name": "nested-ratio-wrong-wire-type",
+        "hex": "000000000f0a0d0a0b6e6f742d612d666c6f6174",
+        "result": null
+      },
+      {
+        "name": "no-top-field-1",
+        "hex": "00000000024801",
+        "result": null
+      },
+      {
+        "name": "truncated",
+        "hex": "00000000150a130d0000003f2a0c08d49089d3061090ae",
+        "result": null
+      },
+      {
+        "name": "trailer-only",
+        "hex": "800000000f677270632d7374617475733a300d0a",
+        "result": null
+      },
+      {
+        "name": "empty",
+        "hex": "",
+        "result": null
+      },
+      {
+        "name": "testkit-sample",
+        "hex": "000000000f0a0d0d0000803e2a060880ea86c706800000000f677270632d7374617475733a300d0a",
+        "result": {
+          "percentUsed": 25,
+          "resetAt": "2025-10-05T00:00:00.000Z"
+        }
+      }
+    ],
+    "headers": [
+      {
+        "name": "length-exceeds-body",
+        "hex": "000000270f0102",
+        "offset": 0,
+        "result": null
+      },
+      {
+        "name": "invalid-flag",
+        "hex": "0700000000",
+        "offset": 0,
+        "result": null
+      },
+      {
+        "name": "trailer",
+        "hex": "800000000f677270632d7374617475733a300d0a",
+        "offset": 0,
+        "result": {
+          "flag": 128,
+          "payloadStart": 5,
+          "payloadLength": 15
+        }
+      },
+      {
+        "name": "data-then-trailer-first",
+        "hex": "00000000070a050d0000003f800000000f677270632d7374617475733a300d0a",
+        "offset": 0,
+        "result": {
+          "flag": 0,
+          "payloadStart": 5,
+          "payloadLength": 7
+        }
+      },
+      {
+        "name": "data-then-trailer-second",
+        "hex": "00000000070a050d0000003f800000000f677270632d7374617475733a300d0a",
+        "offset": 12,
+        "result": {
+          "flag": 128,
+          "payloadStart": 17,
+          "payloadLength": 15
+        }
+      },
+      {
+        "name": "compressed-flag",
+        "hex": "010000000101",
+        "offset": 0,
+        "result": {
+          "flag": 1,
+          "payloadStart": 5,
+          "payloadLength": 1
+        }
+      },
+      {
+        "name": "short",
+        "hex": "000000",
+        "offset": 0,
+        "result": null
+      }
+    ]
+  }
+}

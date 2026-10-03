@@ -1,0 +1,293 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "cases": [
+      {
+        "name": "windows-and-models",
+        "provider": "anthropic",
+        "input": {
+          "response": {
+            "status": 200,
+            "body": {
+              "five_hour": {
+                "utilization": 87,
+                "resets_at": "2026-10-02T18:00:00Z"
+              },
+              "seven_day": {
+                "utilization": 40,
+                "resets_at": "2026-10-07T00:00:00Z"
+              },
+              "seven_day_opus": {
+                "utilization": 12.5,
+                "resets_at": "2026-10-07T00:00:00Z"
+              },
+              "seven_day_sonnet": {
+                "utilization": 3,
+                "resets_at": 1791331200
+              },
+              "seven_day_oauth_apps": null,
+              "extra_usage": null,
+              "limits": [
+                {
+                  "kind": "weekly_scoped",
+                  "percent": 30,
+                  "resets_at": "2026-10-07T00:00:00Z",
+                  "scope": {
+                    "model": {
+                      "display_name": "Fable"
+                    }
+                  }
+                },
+                {
+                  "kind": "other",
+                  "percent": 99
+                }
+              ]
+            }
+          }
+        },
+        "requests": [
+          {
+            "url": "https://api.anthropic.com/api/oauth/usage",
+            "method": "GET",
+            "headers": {
+              "anthropic-beta": "oauth-2025-04-20",
+              "anthropic-version": "2023-06-01",
+              "authorization": "Bearer claude-token-1"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "Claude Code",
+          "extraUsage": null,
+          "quotas": {
+            "session (5h)": {
+              "used": 87,
+              "total": 100,
+              "remaining": 13,
+              "remainingPercentage": 13,
+              "resetAt": "2026-10-02T18:00:00.000Z",
+              "unlimited": false
+            },
+            "weekly (7d)": {
+              "used": 40,
+              "total": 100,
+              "remaining": 60,
+              "remainingPercentage": 60,
+              "resetAt": "2026-10-07T00:00:00.000Z",
+              "unlimited": false
+            },
+            "weekly opus (7d)": {
+              "used": 12.5,
+              "total": 100,
+              "remaining": 87.5,
+              "remainingPercentage": 87.5,
+              "resetAt": "2026-10-07T00:00:00.000Z",
+              "unlimited": false
+            },
+            "weekly sonnet (7d)": {
+              "used": 3,
+              "total": 100,
+              "remaining": 97,
+              "remainingPercentage": 97,
+              "resetAt": "2026-10-07T00:00:00.000Z",
+              "unlimited": false
+            },
+            "weekly fable (7d)": {
+              "used": 30,
+              "total": 100,
+              "remaining": 70,
+              "remainingPercentage": 70,
+              "resetAt": "2026-10-07T00:00:00.000Z",
+              "unlimited": false
+            }
+          }
+        },
+        "error": null
+      },
+      {
+        "name": "limits-clamped-and-skipped",
+        "provider": "anthropic",
+        "input": {
+          "response": {
+            "status": 200,
+            "body": {
+              "five_hour": {
+                "utilization": 0,
+                "resets_at": null
+              },
+              "limits": [
+                {
+                  "kind": "weekly_scoped",
+                  "percent": 140,
+                  "resets_at": "2026-10-07T00:00:00Z",
+                  "scope": {
+                    "model": {
+                      "display_name": " Opus 4 "
+                    }
+                  }
+                },
+                {
+                  "kind": "weekly_scoped",
+                  "percent": -5,
+                  "resets_at": "2026-10-07T00:00:00Z",
+                  "scope": {
+                    "model": {
+                      "display_name": "Haiku"
+                    }
+                  }
+                },
+                {
+                  "kind": "weekly_scoped",
+                  "percent": "50",
+                  "scope": {
+                    "model": {
+                      "display_name": "Sonnet"
+                    }
+                  }
+                },
+                {
+                  "kind": "weekly_scoped",
+                  "percent": 10,
+                  "scope": {
+                    "model": {}
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "requests": [
+          {
+            "url": "https://api.anthropic.com/api/oauth/usage",
+            "method": "GET",
+            "headers": {
+              "anthropic-beta": "oauth-2025-04-20",
+              "anthropic-version": "2023-06-01",
+              "authorization": "Bearer claude-token-2"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "Claude Code",
+          "extraUsage": null,
+          "quotas": {
+            "session (5h)": {
+              "used": 0,
+              "total": 100,
+              "remaining": 100,
+              "remainingPercentage": 100,
+              "resetAt": null,
+              "unlimited": false
+            },
+            "weekly opus 4 (7d)": {
+              "used": 100,
+              "total": 100,
+              "remaining": 0,
+              "remainingPercentage": 0,
+              "resetAt": "2026-10-07T00:00:00.000Z",
+              "unlimited": false
+            },
+            "weekly haiku (7d)": {
+              "used": 0,
+              "total": 100,
+              "remaining": 100,
+              "remainingPercentage": 100,
+              "resetAt": "2026-10-07T00:00:00.000Z",
+              "unlimited": false
+            }
+          }
+        },
+        "error": null
+      },
+      {
+        "name": "utilization-not-a-number",
+        "provider": "anthropic",
+        "input": {
+          "response": {
+            "status": 200,
+            "body": {
+              "five_hour": {
+                "utilization": "87",
+                "resets_at": "2026-10-02T18:00:00Z"
+              },
+              "seven_day": {
+                "resets_at": "2026-10-07T00:00:00Z"
+              },
+              "seven_day_opus": {
+                "utilization": 101,
+                "resets_at": "1791331200000"
+              },
+              "extra_usage": {
+                "is_enabled": true,
+                "monthly_limit": 50,
+                "used_credits": 12
+              }
+            }
+          }
+        },
+        "requests": [
+          {
+            "url": "https://api.anthropic.com/api/oauth/usage",
+            "method": "GET",
+            "headers": {
+              "anthropic-beta": "oauth-2025-04-20",
+              "anthropic-version": "2023-06-01",
+              "authorization": "Bearer claude-token-3"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "Claude Code",
+          "extraUsage": {
+            "is_enabled": true,
+            "monthly_limit": 50,
+            "used_credits": 12
+          },
+          "quotas": {
+            "weekly opus (7d)": {
+              "used": 101,
+              "total": 100,
+              "remaining": 0,
+              "remainingPercentage": 0,
+              "resetAt": "2026-10-07T00:00:00.000Z",
+              "unlimited": false
+            }
+          }
+        },
+        "error": null
+      },
+      {
+        "name": "empty",
+        "provider": "anthropic",
+        "input": {
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        "requests": [
+          {
+            "url": "https://api.anthropic.com/api/oauth/usage",
+            "method": "GET",
+            "headers": {
+              "anthropic-beta": "oauth-2025-04-20",
+              "anthropic-version": "2023-06-01",
+              "authorization": "Bearer claude-token-4"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "plan": "Claude Code",
+          "extraUsage": null,
+          "quotas": {}
+        },
+        "error": null
+      }
+    ]
+  }
+}

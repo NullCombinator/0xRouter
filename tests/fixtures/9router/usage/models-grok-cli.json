@@ -1,0 +1,173 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "parse": [
+      {
+        "name": "models-metadata",
+        "body": {
+          "models": [
+            {
+              "model_id": "grok-build",
+              "display_name": "Grok Build",
+              "context_window": 500000,
+              "max_output_tokens": 64000,
+              "supported_in_api": false
+            }
+          ]
+        },
+        "result": [
+          {
+            "model_id": "grok-build",
+            "display_name": "Grok Build",
+            "context_window": 500000,
+            "max_output_tokens": 64000,
+            "supported_in_api": false,
+            "id": "grok-build",
+            "name": "Grok Build",
+            "contextLength": 500000,
+            "maxOutputTokens": 64000
+          }
+        ]
+      },
+      {
+        "name": "data-ids",
+        "body": {
+          "data": [
+            {
+              "id": "grok-build"
+            },
+            {
+              "id": "grok-4"
+            }
+          ]
+        },
+        "result": [
+          {
+            "id": "grok-build",
+            "name": "grok-build",
+            "contextLength": 500000,
+            "maxOutputTokens": 64000
+          },
+          {
+            "id": "grok-4",
+            "name": "grok-4"
+          }
+        ]
+      },
+      {
+        "name": "empty",
+        "body": {},
+        "result": []
+      }
+    ],
+    "flow": [
+      {
+        "name": "refresh-and-retry",
+        "responses": [
+          {
+            "status": 401,
+            "body": {
+              "error": "expired"
+            }
+          },
+          {
+            "status": 200,
+            "body": {
+              "access_token": "new-token",
+              "refresh_token": "new-refresh",
+              "expires_in": 900
+            }
+          },
+          {
+            "status": 200,
+            "body": {
+              "data": [
+                {
+                  "id": "grok-build"
+                }
+              ]
+            }
+          }
+        ],
+        "requests": [
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/models",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer old-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-email": "user@example.com",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          },
+          {
+            "url": "https://auth.x.ai/oauth2/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/x-www-form-urlencoded"
+            },
+            "body": {
+              "encoding": "form",
+              "fields": [
+                [
+                  "grant_type",
+                  "refresh_token"
+                ],
+                [
+                  "client_id",
+                  "b1a00492-073a-47ea-816f-4c329264a828"
+                ],
+                [
+                  "refresh_token",
+                  "refresh-token-models"
+                ]
+              ],
+              "raw": "grant_type=refresh_token&client_id=b1a00492-073a-47ea-816f-4c329264a828&refresh_token=refresh-token-models"
+            }
+          },
+          {
+            "url": "https://cli-chat-proxy.grok.com/v1/models",
+            "method": "GET",
+            "headers": {
+              "accept": "application/json",
+              "authorization": "Bearer new-token",
+              "user-agent": "grok-shell/0.2.99 (linux; x86_64)",
+              "x-email": "user@example.com",
+              "x-grok-client-identifier": "grok-shell",
+              "x-grok-client-mode": "headless",
+              "x-grok-client-version": "0.2.99",
+              "x-xai-token-auth": "xai-grok-cli"
+            },
+            "body": null
+          }
+        ],
+        "result": {
+          "models": [
+            {
+              "id": "grok-build",
+              "name": "grok-build",
+              "contextLength": 500000,
+              "maxOutputTokens": 64000
+            }
+          ]
+        },
+        "error": null,
+        "refreshed": [
+          {
+            "accessToken": "new-token",
+            "refreshToken": "new-refresh",
+            "expiresIn": 900,
+            "expiresAt": "{now + expires_in}",
+            "lastRefreshAt": "{now}"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "cases": [
+      {
+        "provider": "claude",
+        "ours": "anthropic",
+        "supported": true,
+        "result_if_unsupported": null
+      },
+      {
+        "provider": "xai",
+        "ours": "xai",
+        "supported": false,
+        "result_if_unsupported": {
+          "message": "Usage API not implemented for xai"
+        }
+      },
+      {
+        "provider": "grok-cli",
+        "ours": "grok-cli",
+        "supported": true,
+        "result_if_unsupported": null
+      },
+      {
+        "provider": "opencode-go",
+        "ours": "opencode-go",
+        "supported": true,
+        "result_if_unsupported": null
+      },
+      {
+        "provider": "opencode-zen",
+        "ours": "opencode-zen",
+        "supported": true,
+        "result_if_unsupported": null
+      },
+      {
+        "provider": "openrouter",
+        "ours": "openrouter",
+        "supported": false,
+        "result_if_unsupported": {
+          "message": "Usage API not implemented for openrouter"
+        }
+      },
+      {
+        "provider": "elevenlabs",
+        "ours": "elevenlabs",
+        "supported": false,
+        "result_if_unsupported": {
+          "message": "Usage API not implemented for elevenlabs"
+        }
+      },
+      {
+        "provider": "totally-unknown",
+        "ours": null,
+        "supported": false,
+        "result_if_unsupported": {
+          "message": "Usage API not implemented for totally-unknown"
+        }
+      }
+    ]
+  }
+}

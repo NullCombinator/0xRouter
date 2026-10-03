@@ -1,0 +1,305 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "now": "2026-08-01T12:00:00.000Z",
+    "cases": [
+      {
+        "name": "expires-in-10m",
+        "provider": "grok-cli",
+        "ninerouter_provider": "grok-cli",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 10,
+        "selected": true
+      },
+      {
+        "name": "expires-in-29m",
+        "provider": "grok-cli",
+        "ninerouter_provider": "grok-cli",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 29,
+        "selected": true
+      },
+      {
+        "name": "expires-in-31m",
+        "provider": "grok-cli",
+        "ninerouter_provider": "grok-cli",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 31,
+        "selected": false
+      },
+      {
+        "name": "expires-in-2h",
+        "provider": "grok-cli",
+        "ninerouter_provider": "grok-cli",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 120,
+        "selected": false
+      },
+      {
+        "name": "expires-in-3h59m",
+        "provider": "grok-cli",
+        "ninerouter_provider": "grok-cli",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 239,
+        "selected": false
+      },
+      {
+        "name": "expires-in-4h1m",
+        "provider": "grok-cli",
+        "ninerouter_provider": "grok-cli",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 241,
+        "selected": false
+      },
+      {
+        "name": "expired-1m-ago",
+        "provider": "grok-cli",
+        "ninerouter_provider": "grok-cli",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": -1,
+        "selected": true
+      },
+      {
+        "name": "apikey",
+        "provider": "grok-cli",
+        "ninerouter_provider": "grok-cli",
+        "auth_type": "apikey",
+        "has_refresh_token": true,
+        "expires_in_minutes": 1,
+        "selected": false
+      },
+      {
+        "name": "api_key",
+        "provider": "grok-cli",
+        "ninerouter_provider": "grok-cli",
+        "auth_type": "api_key",
+        "has_refresh_token": true,
+        "expires_in_minutes": 1,
+        "selected": false
+      },
+      {
+        "name": "no-refresh-token",
+        "provider": "grok-cli",
+        "ninerouter_provider": "grok-cli",
+        "auth_type": "oauth",
+        "has_refresh_token": false,
+        "expires_in_minutes": 1,
+        "selected": false
+      },
+      {
+        "name": "no-expiry",
+        "provider": "grok-cli",
+        "ninerouter_provider": "grok-cli",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": null,
+        "selected": false
+      },
+      {
+        "name": "expires-in-10m",
+        "provider": "xai",
+        "ninerouter_provider": "xai",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 10,
+        "selected": true
+      },
+      {
+        "name": "expires-in-29m",
+        "provider": "xai",
+        "ninerouter_provider": "xai",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 29,
+        "selected": true
+      },
+      {
+        "name": "expires-in-31m",
+        "provider": "xai",
+        "ninerouter_provider": "xai",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 31,
+        "selected": false
+      },
+      {
+        "name": "expires-in-2h",
+        "provider": "xai",
+        "ninerouter_provider": "xai",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 120,
+        "selected": false
+      },
+      {
+        "name": "expires-in-3h59m",
+        "provider": "xai",
+        "ninerouter_provider": "xai",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 239,
+        "selected": false
+      },
+      {
+        "name": "expires-in-4h1m",
+        "provider": "xai",
+        "ninerouter_provider": "xai",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 241,
+        "selected": false
+      },
+      {
+        "name": "expired-1m-ago",
+        "provider": "xai",
+        "ninerouter_provider": "xai",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": -1,
+        "selected": true
+      },
+      {
+        "name": "apikey",
+        "provider": "xai",
+        "ninerouter_provider": "xai",
+        "auth_type": "apikey",
+        "has_refresh_token": true,
+        "expires_in_minutes": 1,
+        "selected": false
+      },
+      {
+        "name": "api_key",
+        "provider": "xai",
+        "ninerouter_provider": "xai",
+        "auth_type": "api_key",
+        "has_refresh_token": true,
+        "expires_in_minutes": 1,
+        "selected": false
+      },
+      {
+        "name": "no-refresh-token",
+        "provider": "xai",
+        "ninerouter_provider": "xai",
+        "auth_type": "oauth",
+        "has_refresh_token": false,
+        "expires_in_minutes": 1,
+        "selected": false
+      },
+      {
+        "name": "no-expiry",
+        "provider": "xai",
+        "ninerouter_provider": "xai",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": null,
+        "selected": false
+      },
+      {
+        "name": "expires-in-10m",
+        "provider": "anthropic",
+        "ninerouter_provider": "claude",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 10,
+        "selected": true
+      },
+      {
+        "name": "expires-in-29m",
+        "provider": "anthropic",
+        "ninerouter_provider": "claude",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 29,
+        "selected": true
+      },
+      {
+        "name": "expires-in-31m",
+        "provider": "anthropic",
+        "ninerouter_provider": "claude",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 31,
+        "selected": true
+      },
+      {
+        "name": "expires-in-2h",
+        "provider": "anthropic",
+        "ninerouter_provider": "claude",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 120,
+        "selected": true
+      },
+      {
+        "name": "expires-in-3h59m",
+        "provider": "anthropic",
+        "ninerouter_provider": "claude",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 239,
+        "selected": true
+      },
+      {
+        "name": "expires-in-4h1m",
+        "provider": "anthropic",
+        "ninerouter_provider": "claude",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": 241,
+        "selected": false
+      },
+      {
+        "name": "expired-1m-ago",
+        "provider": "anthropic",
+        "ninerouter_provider": "claude",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": -1,
+        "selected": true
+      },
+      {
+        "name": "apikey",
+        "provider": "anthropic",
+        "ninerouter_provider": "claude",
+        "auth_type": "apikey",
+        "has_refresh_token": true,
+        "expires_in_minutes": 1,
+        "selected": false
+      },
+      {
+        "name": "api_key",
+        "provider": "anthropic",
+        "ninerouter_provider": "claude",
+        "auth_type": "api_key",
+        "has_refresh_token": true,
+        "expires_in_minutes": 1,
+        "selected": false
+      },
+      {
+        "name": "no-refresh-token",
+        "provider": "anthropic",
+        "ninerouter_provider": "claude",
+        "auth_type": "oauth",
+        "has_refresh_token": false,
+        "expires_in_minutes": 1,
+        "selected": false
+      },
+      {
+        "name": "no-expiry",
+        "provider": "anthropic",
+        "ninerouter_provider": "claude",
+        "auth_type": "oauth",
+        "has_refresh_token": true,
+        "expires_in_minutes": null,
+        "selected": false
+      }
+    ]
+  }
+}

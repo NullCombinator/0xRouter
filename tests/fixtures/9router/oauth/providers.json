@@ -1,0 +1,72 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "providers": {
+      "anthropic": {
+        "ninerouter_id": "claude",
+        "flow": "authorization_code_pkce",
+        "client_id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+        "scopes": [
+          "org:create_api_key",
+          "user:profile",
+          "user:inference"
+        ],
+        "authorize_url": "https://claude.ai/oauth/authorize",
+        "token_url": "https://api.anthropic.com/v1/oauth/token",
+        "redirect_uri": null,
+        "token_body": "json",
+        "verifier_bytes": 32,
+        "refresh_lead_ms": 14400000
+      },
+      "xai": {
+        "ninerouter_id": "xai",
+        "flow": "authorization_code_pkce",
+        "client_id": "b1a00492-073a-47ea-816f-4c329264a828",
+        "scopes": [
+          "openid",
+          "profile",
+          "email",
+          "offline_access",
+          "grok-cli:access",
+          "api:access"
+        ],
+        "discovery_url": "https://auth.x.ai/.well-known/openid-configuration",
+        "authorize_url": "https://auth.x.ai/oauth2/authorize",
+        "token_url": "https://auth.x.ai/oauth2/token",
+        "redirect_uri": "http://127.0.0.1:56121/callback",
+        "token_body": "form",
+        "verifier_bytes": 96,
+        "refresh_lead_ms": 300000
+      },
+      "grok-cli": {
+        "ninerouter_id": "grok-cli",
+        "flow": "device_code",
+        "client_id": "b1a00492-073a-47ea-816f-4c329264a828",
+        "scopes": [
+          "openid",
+          "profile",
+          "email",
+          "offline_access",
+          "grok-cli:access",
+          "api:access",
+          "conversations:read",
+          "conversations:write"
+        ],
+        "device_url": "https://auth.x.ai/oauth2/device/code",
+        "token_url": "https://auth.x.ai/oauth2/token",
+        "refresh_url": "https://auth.x.ai/oauth2/token",
+        "params": {
+          "referrer": "grok-build"
+        },
+        "token_body": "form",
+        "refresh_lead_ms": 300000
+      }
+    },
+    "default_refresh_lead_ms": 300000,
+    "background_refresh_lead_ms": 1800000,
+    "registry_oauth_ids": [
+      "claude",
+      "grok-cli"
+    ]
+  }
+}

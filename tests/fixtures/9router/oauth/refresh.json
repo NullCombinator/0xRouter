@@ -1,0 +1,368 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "discovery_request": {
+      "url": "https://auth.x.ai/.well-known/openid-configuration",
+      "method": "GET",
+      "headers": {
+        "accept": "application/json"
+      },
+      "body": null
+    },
+    "cases": [
+      {
+        "name": "xai-rotated",
+        "provider": "xai",
+        "input": {
+          "refresh_token": "old-refresh-xai-rotated"
+        },
+        "response": {
+          "access_token": "new-access",
+          "refresh_token": "new-refresh",
+          "expires_in": 900,
+          "id_token": "id-token"
+        },
+        "calls": [
+          {
+            "url": "https://auth.x.ai/oauth2/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/x-www-form-urlencoded"
+            },
+            "body": {
+              "encoding": "form",
+              "fields": [
+                [
+                  "grant_type",
+                  "refresh_token"
+                ],
+                [
+                  "client_id",
+                  "b1a00492-073a-47ea-816f-4c329264a828"
+                ],
+                [
+                  "refresh_token",
+                  "old-refresh-xai-rotated"
+                ]
+              ],
+              "raw": "grant_type=refresh_token&client_id=b1a00492-073a-47ea-816f-4c329264a828&refresh_token=old-refresh-xai-rotated"
+            }
+          }
+        ],
+        "result": {
+          "accessToken": "new-access",
+          "refreshToken": "new-refresh",
+          "expiresIn": 900,
+          "idToken": "id-token"
+        },
+        "error": null
+      },
+      {
+        "name": "xai-not-rotated",
+        "provider": "xai",
+        "input": {
+          "refresh_token": "old-refresh-xai-not-rotated"
+        },
+        "response": {
+          "access_token": "new-access",
+          "expires_in": 900,
+          "id_token": "id-token"
+        },
+        "calls": [
+          {
+            "url": "https://auth.x.ai/oauth2/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/x-www-form-urlencoded"
+            },
+            "body": {
+              "encoding": "form",
+              "fields": [
+                [
+                  "grant_type",
+                  "refresh_token"
+                ],
+                [
+                  "client_id",
+                  "b1a00492-073a-47ea-816f-4c329264a828"
+                ],
+                [
+                  "refresh_token",
+                  "old-refresh-xai-not-rotated"
+                ]
+              ],
+              "raw": "grant_type=refresh_token&client_id=b1a00492-073a-47ea-816f-4c329264a828&refresh_token=old-refresh-xai-not-rotated"
+            }
+          }
+        ],
+        "result": {
+          "accessToken": "new-access",
+          "refreshToken": "old-refresh-xai-not-rotated",
+          "expiresIn": 900,
+          "idToken": "id-token"
+        },
+        "error": null
+      },
+      {
+        "name": "grok-cli-rotated",
+        "provider": "grok-cli",
+        "input": {
+          "refresh_token": "old-refresh-grok-cli-rotated"
+        },
+        "response": {
+          "access_token": "new-access",
+          "refresh_token": "new-refresh",
+          "expires_in": 900,
+          "id_token": "id-token"
+        },
+        "calls": [
+          {
+            "url": "https://auth.x.ai/oauth2/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/x-www-form-urlencoded"
+            },
+            "body": {
+              "encoding": "form",
+              "fields": [
+                [
+                  "grant_type",
+                  "refresh_token"
+                ],
+                [
+                  "client_id",
+                  "b1a00492-073a-47ea-816f-4c329264a828"
+                ],
+                [
+                  "refresh_token",
+                  "old-refresh-grok-cli-rotated"
+                ]
+              ],
+              "raw": "grant_type=refresh_token&client_id=b1a00492-073a-47ea-816f-4c329264a828&refresh_token=old-refresh-grok-cli-rotated"
+            }
+          }
+        ],
+        "result": {
+          "accessToken": "new-access",
+          "refreshToken": "new-refresh",
+          "expiresIn": 900,
+          "idToken": "id-token"
+        },
+        "error": null
+      },
+      {
+        "name": "grok-cli-not-rotated",
+        "provider": "grok-cli",
+        "input": {
+          "refresh_token": "old-refresh-grok-cli-not-rotated"
+        },
+        "response": {
+          "access_token": "new-access",
+          "expires_in": 900,
+          "id_token": "id-token"
+        },
+        "calls": [
+          {
+            "url": "https://auth.x.ai/oauth2/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/x-www-form-urlencoded"
+            },
+            "body": {
+              "encoding": "form",
+              "fields": [
+                [
+                  "grant_type",
+                  "refresh_token"
+                ],
+                [
+                  "client_id",
+                  "b1a00492-073a-47ea-816f-4c329264a828"
+                ],
+                [
+                  "refresh_token",
+                  "old-refresh-grok-cli-not-rotated"
+                ]
+              ],
+              "raw": "grant_type=refresh_token&client_id=b1a00492-073a-47ea-816f-4c329264a828&refresh_token=old-refresh-grok-cli-not-rotated"
+            }
+          }
+        ],
+        "result": {
+          "accessToken": "new-access",
+          "refreshToken": "old-refresh-grok-cli-not-rotated",
+          "expiresIn": 900,
+          "idToken": "id-token"
+        },
+        "error": null
+      },
+      {
+        "name": "anthropic-rotated",
+        "provider": "anthropic",
+        "input": {
+          "refresh_token": "old-refresh-claude-rotated"
+        },
+        "response": {
+          "access_token": "new-access",
+          "refresh_token": "new-refresh",
+          "expires_in": 900,
+          "id_token": "id-token"
+        },
+        "calls": [
+          {
+            "url": "https://api.anthropic.com/v1/oauth/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/json"
+            },
+            "body": {
+              "encoding": "json",
+              "fields": [
+                [
+                  "grant_type",
+                  "refresh_token"
+                ],
+                [
+                  "refresh_token",
+                  "old-refresh-claude-rotated"
+                ],
+                [
+                  "client_id",
+                  "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+                ]
+              ],
+              "raw": "{\"grant_type\":\"refresh_token\",\"refresh_token\":\"old-refresh-claude-rotated\",\"client_id\":\"9d1c250a-e61b-44d9-88ed-5944d1962f5e\"}"
+            }
+          }
+        ],
+        "result": {
+          "accessToken": "new-access",
+          "refreshToken": "new-refresh",
+          "expiresIn": 900
+        },
+        "error": null
+      },
+      {
+        "name": "anthropic-not-rotated",
+        "provider": "anthropic",
+        "input": {
+          "refresh_token": "old-refresh-claude-not-rotated"
+        },
+        "response": {
+          "access_token": "new-access",
+          "expires_in": 900,
+          "id_token": "id-token"
+        },
+        "calls": [
+          {
+            "url": "https://api.anthropic.com/v1/oauth/token",
+            "method": "POST",
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/json"
+            },
+            "body": {
+              "encoding": "json",
+              "fields": [
+                [
+                  "grant_type",
+                  "refresh_token"
+                ],
+                [
+                  "refresh_token",
+                  "old-refresh-claude-not-rotated"
+                ],
+                [
+                  "client_id",
+                  "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+                ]
+              ],
+              "raw": "{\"grant_type\":\"refresh_token\",\"refresh_token\":\"old-refresh-claude-not-rotated\",\"client_id\":\"9d1c250a-e61b-44d9-88ed-5944d1962f5e\"}"
+            }
+          }
+        ],
+        "result": {
+          "accessToken": "new-access",
+          "refreshToken": "old-refresh-claude-not-rotated",
+          "expiresIn": 900
+        },
+        "error": null
+      }
+    ],
+    "guards": [
+      {
+        "fn": "getAccessToken",
+        "provider": "claude",
+        "credentials": {},
+        "result": null,
+        "calls": 0
+      },
+      {
+        "fn": "refreshTokenByProvider",
+        "provider": "claude",
+        "credentials": {},
+        "result": null,
+        "calls": 0
+      },
+      {
+        "fn": "getAccessToken",
+        "provider": "claude",
+        "credentials": {
+          "refreshToken": 123
+        },
+        "result": null,
+        "calls": 0
+      },
+      {
+        "fn": "getAccessToken",
+        "provider": "claude",
+        "credentials": {
+          "refreshToken": ""
+        },
+        "result": null,
+        "calls": 0
+      },
+      {
+        "fn": "refreshTokenByProvider",
+        "provider": "claude",
+        "credentials": {
+          "refreshToken": ""
+        },
+        "result": null,
+        "calls": 0
+      },
+      {
+        "fn": "getAccessToken",
+        "provider": "xai",
+        "credentials": {
+          "refreshToken": ""
+        },
+        "result": null,
+        "calls": 0
+      },
+      {
+        "fn": "refreshTokenByProvider",
+        "provider": "xai",
+        "credentials": {
+          "refreshToken": ""
+        },
+        "result": null,
+        "calls": 0
+      },
+      {
+        "fn": "getAccessToken",
+        "provider": "totally-unknown",
+        "credentials": {
+          "refreshToken": "x"
+        },
+        "result": null,
+        "calls": 0
+      }
+    ]
+  }
+}

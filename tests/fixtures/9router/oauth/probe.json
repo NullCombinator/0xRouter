@@ -1,0 +1,85 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "cases": [
+      {
+        "name": "ok-200",
+        "status": 200,
+        "body": "",
+        "accept_statuses": [
+          402
+        ],
+        "result": {
+          "valid": true,
+          "error": null,
+          "soft": false
+        }
+      },
+      {
+        "name": "spending-limit-402",
+        "status": 402,
+        "body": "{\"code\":\"personal-team-blocked:spending-limit\",\"error\":\"You have run out of credits\"}",
+        "accept_statuses": [
+          402
+        ],
+        "result": {
+          "valid": true,
+          "error": "Connected, but Grok Build credits are exhausted (spending limit). Add credits or upgrade SuperGrok.",
+          "soft": true
+        }
+      },
+      {
+        "name": "unauthorized-401",
+        "status": 401,
+        "body": "unauthorized",
+        "accept_statuses": [
+          402
+        ],
+        "result": {
+          "valid": false,
+          "error": "Token invalid or revoked",
+          "soft": false
+        }
+      },
+      {
+        "name": "forbidden-403",
+        "status": 403,
+        "body": "",
+        "accept_statuses": [
+          402
+        ],
+        "result": {
+          "valid": false,
+          "error": "Access denied",
+          "soft": false
+        }
+      },
+      {
+        "name": "server-500",
+        "status": 500,
+        "body": "",
+        "accept_statuses": [
+          402
+        ],
+        "result": {
+          "valid": false,
+          "error": "API returned 500",
+          "soft": false
+        }
+      },
+      {
+        "name": "codex-accept-400",
+        "status": 400,
+        "body": "bad request",
+        "accept_statuses": [
+          400
+        ],
+        "result": {
+          "valid": true,
+          "error": null,
+          "soft": false
+        }
+      }
+    ]
+  }
+}
