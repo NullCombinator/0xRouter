@@ -240,7 +240,7 @@ mod us6 {
         let http = SignInHttp::new(true).with_timeout(Duration::from_secs(5));
         let body =
             signin::encode_body(TokenBody::Form, &[("grant_type", "refresh_token"), ("refresh_token", "rt-SENTINEL")]);
-        let e = signin::token_request(&http, &mock.url("/idp/token"), body).await.unwrap_err();
+        let e = signin::token_request(&http, &mock.url("/idp/token"), Default::default(), body).await.unwrap_err();
         assert!(!e.to_string().contains("rt-SENTINEL"), "{e}");
         let got = mock.received();
         assert_eq!(got.iter().map(|r| r.path_and_query.as_str()).collect::<Vec<_>>(), ["/idp/token"]);

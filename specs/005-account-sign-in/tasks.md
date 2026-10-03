@@ -275,9 +275,9 @@ declarations are refused.
 - [X] T091 [P] Secrets sentinel in `crates/nullrouter-server/tests/secrets.rs`: sentinel access tokens, refresh tokens, device codes, authorization codes, PKCE verifiers and the anthropic usage token across logs (tracing output), records, informational errors, CLI output (`signin`, `list`, `quota`), operator socket answers, `quota/*.jsonl`, and plugin-visible data; zero occurrences (SC-009).
 - [X] T092 [P] `nullrouter check` in `crates/nullrouter-cli/src/cmd/check.rs`: report `tokens.toml` entries without a matching account, sign-in accounts without tokens, and file modes of `tokens.toml`, `install-id` and `quota/`.
 - [X] T093 Bench baseline: run the engine bench (T084) on an idle machine and append the summary to `specs/005-account-sign-in/bench-baseline.md`.
-- [ ] T094 `/rust-parity-audit` on `crates/nullrouter-engine/src/signin/` and `src/quota/` against `ref/9router/src/lib/oauth/*`, `open-sse/services/tokenRefresh*` and `open-sse/services/usage/*`; deliberate deviations are those in research R19 and must not be reported as gaps; fix High findings.
-- [ ] T095 Security review of the slice diff (`/security-review`): token file locking and modes, host binding, loopback listener (binds 127.0.0.1 only, single request, state check), paste parsing, redaction generations.
-- [ ] T096 Run [quickstart.md](quickstart.md) §1–2 end to end; fix what fails.
+- [X] T094 `/rust-parity-audit` on `crates/nullrouter-engine/src/signin/` and `src/quota/` against `ref/9router/src/lib/oauth/*`, `open-sse/services/tokenRefresh*` and `open-sse/services/usage/*`; deliberate deviations are those in research R19 and must not be reported as gaps; fix High findings.
+- [X] T095 Security review of the slice diff (`/security-review`): token file locking and modes, host binding, loopback listener (binds 127.0.0.1 only, single request, state check), paste parsing, redaction generations.
+- [X] T096 Run [quickstart.md](quickstart.md) §1–2 end to end; fix what fails.
 - [ ] T097 *operator-run* [quickstart §3–4 and §6](quickstart.md) with real accounts over SSH: `! nr accounts signin …` for each provider, a request from two harnesses each, `! nr quota`; confirm SC-001 (under 3 minutes each) and that quota matches the providers' own pages.
 - [X] T098 `cargo fmt --all`, then `nice cargo clippy -p <crate> -j 2 -- -D warnings` crate by crate.
 

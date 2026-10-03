@@ -270,6 +270,7 @@ verifier_bytes = 96                             # 32-96, pkce only
 refresh_lead = "5m"                             # refresh this long before expiry
 auth = { header = "Authorization", scheme = "bearer" }
 terms_warning = false
+headers = { User-Agent = "grok-pager/0.2.93" }  # optional, fixed values
 
 [signin.profile]                                # optional read after sign-in
 url = "https://cli-chat-proxy.grok.com/v1/user"
@@ -293,6 +294,14 @@ body_contains = "only authorized for use with Claude Code"
 - A discovery document is used only while its authorize and token URLs stay on the
   declared sign-in hosts. Otherwise the declared URLs are used.
 - `terms_warning = true` prints the provider's terms warning at every sign-in.
+- `headers` are fixed, non-secret headers sent on the discovery, device, token and refresh
+  calls (grok-cli sends its CLI's `User-Agent`). The rules are those of
+  `[signin.profile] headers`: fixed strings only, no security-floor name, and a value that
+  looks like a secret is refused (`signin.headers.User-Agent: looks like a secret`). The core
+  sets `Content-Type` for the body and `Accept: application/json` unless you declare one.
+- A refresh sends the refresh token only to a `token_url` on a host the account's tokens are
+  bound to. A plugin that moves the token URL to another host gets no refresh: the account
+  needs signing in again.
 
 ### `[identity]`
 

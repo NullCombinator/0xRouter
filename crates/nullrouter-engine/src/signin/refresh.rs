@@ -21,7 +21,7 @@ use nullrouter_registry::schema::{ProviderEntity, SignInDecl};
 
 use super::classify::{RefreshClass, classify};
 use super::dedup::Dedup;
-use super::{DEFAULT_EXPIRES_IN, SignInError, SignInHttp, encode_body, token_request};
+use super::{SignInError, SignInHttp, encode_body, expiry, signin_headers, token_request};
 use crate::files::FileError;
 use crate::state::Engine;
 use crate::tokens::{self, AccountState, PersistedState, TokenEntry, TokenView, dup_entry};
@@ -87,7 +87,7 @@ pub fn refresh_at(view: &TokenView, decl: &SignInDecl, timing: &Timing) -> Optio
 /// of expiry (capped, like the lead, at half the token's lifetime).
 pub fn near_expiry(view: &TokenView, timing: &Timing, now: SystemTime) -> bool {
     let margin = timing.use_margin.min(lifetime(&view.entry) / 2);
-    now + margin >= view.entry.expires_at
+    now.checked_add(margin).is_none_or(|t| t >= view.entry.expires_at)
 }
 
 /// The refresh-token grant for `entry` at `provider`'s declared token URL, with its
@@ -95,12 +95,20 @@ pub fn near_expiry(view: &TokenView, timing: &Timing, now: SystemTime) -> bool {
 /// successor entry: the new access token, the new refresh token or the old one when the
 /// response omits it (rotation, `providers.js:131`), and `expires_at` from the local
 /// clock. No state change is made here.
+///
+/// The refresh token goes only to a host the account's tokens are bound to (FR-031,
+/// security review M2): a `token_url` off `entry.hosts` is refused before anything is
+/// sent, as [`SignInError::UnboundHost`], which is permanent.
 pub async fn refresh(
     http: &SignInHttp,
     provider: &ProviderEntity,
     entry: &TokenEntry,
 ) -> Result<TokenEntry, SignInError> {
     let decl = provider.signin.as_ref().ok_or_else(|| SignInError::NotSignIn(provider.id.clone()))?;
+    let host = http.url(&decl.token_url)?.host_str().map(str::to_ascii_lowercase).unwrap_or_default();
+    if !entry.hosts.contains(&host) {
+        return Err(SignInError::UnboundHost { host, provider: entry.provider.clone(), name: entry.name.clone() });
+    }
     let old = entry.refresh_token.as_ref().ok_or_else(|| SignInError::Rejected {
         what: "token endpoint",
         status: 400,
@@ -112,14 +120,14 @@ pub async fn refresh(
             &[("grant_type", "refresh_token"), ("refresh_token", r), ("client_id", decl.client_id.as_str())],
         )
     });
-    let grant = token_request(http, &decl.token_url, body).await?;
+    let grant = token_request(http, &decl.token_url, signin_headers(decl), body).await?;
     let now = SystemTime::now();
     let mut next = dup_entry(entry);
     next.access_token = grant.access_token;
     if let Some(r) = grant.refresh_token {
         next.refresh_token = Some(r);
     }
-    next.expires_at = now + grant.expires_in.unwrap_or(DEFAULT_EXPIRES_IN);
+    next.expires_at = expiry(now, grant.expires_in);
     if let Some(scope) = grant.scope {
         next.scope = scope;
     }
@@ -130,16 +138,40 @@ pub async fn refresh(
     Ok(next)
 }
 
-/// Writes `entry` over its account's entry in `home/tokens.toml` under `tokens.lock`.
-/// `false` (nothing written) when the account has no entry any more: it was removed
-/// while the refresh ran. Blocking.
-pub fn persist(home: &Path, entry: &TokenEntry) -> Result<bool, FileError> {
-    tokens::update(home, &entry.provider, &entry.name, |slot| match slot {
-        Some(_) => {
-            *slot = Some(dup_entry(entry));
-            true
+/// What [`persist`] did.
+#[derive(Debug)]
+pub enum Persisted {
+    /// The refreshed entry is on disk.
+    Written,
+    /// The account has no entry any more: it was removed while the refresh ran.
+    Gone,
+    /// The stored entry is no longer the one the refresh started from (a sign-in replaced
+    /// it meanwhile): nothing was written, and this is the stored entry.
+    Superseded(Box<TokenEntry>),
+}
+
+/// Whether `stored` still holds the grant `from` holds: the same refresh token, or with
+/// none, the same access token.
+fn same_grant(stored: &TokenEntry, from: &TokenEntry) -> bool {
+    match (&stored.refresh_token, &from.refresh_token) {
+        (Some(a), Some(b)) => a.with_exposed(|a| b.matches(a)),
+        (None, None) => stored.access_token.with_exposed(|a| from.access_token.matches(a)),
+        _ => false,
+    }
+}
+
+/// Writes `next` over its account's entry in `home/tokens.toml` under `tokens.lock`, as a
+/// compare and swap (security review M1): only while the stored entry still holds the
+/// grant `from` (the entry the refresh started from). A sign-in written meanwhile is never
+/// reverted to the old grant. Blocking.
+pub fn persist(home: &Path, from: &TokenEntry, next: &TokenEntry) -> Result<Persisted, FileError> {
+    tokens::update(home, &next.provider, &next.name, |slot| match slot {
+        Some(stored) if same_grant(stored, from) => {
+            *slot = Some(dup_entry(next));
+            Persisted::Written
         }
-        None => false,
+        Some(stored) => Persisted::Superseded(Box::new(dup_entry(stored))),
+        None => Persisted::Gone,
     })
 }
 
@@ -299,14 +331,30 @@ impl Engine {
         match result {
             Ok(next) => {
                 let this = self.clone();
+                let from = dup_entry(&view.entry);
                 let swapped = tokio::task::spawn_blocking(move || {
                     // Write first: a crash after this line still leaves the newest refresh
                     // token on disk (FR-014).
-                    match persist(this.home().path(), &next) {
-                        Ok(true) => {}
-                        Ok(false) => return false,
-                        Err(e) => tracing::error!("refreshed tokens not saved (kept in memory): {e}"),
-                    }
+                    let next = match persist(this.home().path(), &from, &next) {
+                        Ok(Persisted::Written) => next,
+                        Ok(Persisted::Gone) => return false,
+                        Ok(Persisted::Superseded(stored)) => {
+                            // A sign-in replaced the grant while this refresh ran: its result
+                            // is dropped and the cell takes the stored entry.
+                            tracing::debug!(
+                                provider = %from.provider,
+                                account = %from.name,
+                                "a sign-in replaced the tokens during a refresh; refresh result dropped"
+                            );
+                            *stored
+                        }
+                        Err(e) => {
+                            tracing::error!("refreshed tokens not saved (kept in memory): {e}");
+                            next
+                        }
+                    };
+                    // The redactor knows the new tokens before the cell holds them (L3).
+                    this.admit_secrets(std::iter::once(&next.access_token).chain(&next.refresh_token));
                     this.tokens.replace(next);
                     this.rebuild_redactor();
                     true
@@ -326,7 +374,7 @@ impl Engine {
                 match classify(&e) {
                     RefreshClass::Permanent => {
                         self.refresher.cleared(key);
-                        self.needs_sign_in(key, &e).await;
+                        self.needs_sign_in(key, &e, &view.entry.access_token).await;
                         Refreshed::Permanent(reason)
                     }
                     RefreshClass::Transient => {
@@ -349,13 +397,16 @@ impl Engine {
     }
 
     /// Persists `needs_sign_in` with the time and the provider's error code (research R10),
-    /// then swaps the cell.
-    async fn needs_sign_in(self: &Arc<Self>, key: &Key, e: &SignInError) {
+    /// then swaps the cell. Only while the account still holds `sent` (the access token the
+    /// failed refresh started from): an old grant's failure never marks a fresh sign-in
+    /// (security review M1).
+    async fn needs_sign_in(self: &Arc<Self>, key: &Key, e: &SignInError, sent: &SecretString) {
         let code = match e {
             SignInError::Rejected { code, .. } => code.clone(),
             other => other.to_string(),
         };
-        self.take_out_of_service(&key.0, &key.1, PersistedState::NeedsSignIn, &code, None).await;
+        let token = sent.with_exposed(|t| SecretString::new(t));
+        self.take_out_of_service(&key.0, &key.1, PersistedState::NeedsSignIn, &code, Some(token)).await;
     }
 
     /// The provider refused a fresh token's request (FR-004b): persists `refused` with the
@@ -382,14 +433,34 @@ impl Engine {
         let _ = tokio::task::spawn_blocking(move || {
             match tokens::persist_state(this.home().path(), &p, &n, state, &reason, now, token.as_ref()) {
                 Ok(Some(entry)) => this.tokens.replace(entry),
-                Ok(None) => {}
+                Ok(None) => {
+                    // The stored tokens are no longer `token`'s (a sign-in replaced them, or
+                    // the account was removed): the cell follows the file.
+                    if let Ok(store) = tokens::TokenStore::load(this.home().path())
+                        && let Some(stored) = store.get(&p, &n)
+                        && !this
+                            .tokens
+                            .get(&p, &n)
+                            .is_some_and(|v| stored.access_token.with_exposed(|a| v.entry.access_token.matches(a)))
+                    {
+                        let stored = dup_entry(stored);
+                        this.admit_secrets(std::iter::once(&stored.access_token).chain(&stored.refresh_token));
+                        this.tokens.replace(stored);
+                        this.rebuild_redactor();
+                    }
+                }
                 Err(err) => {
                     tracing::error!("{p}/{n}: account state not saved: {err}");
                     let st = match state {
                         PersistedState::NeedsSignIn => AccountState::NeedsSignIn { since: now, reason },
                         PersistedState::Refused => AccountState::Refused { since: now, reason },
                     };
-                    this.tokens.set_state(&p, &n, st);
+                    // Only the generation that failed is marked.
+                    if token.as_ref().is_none_or(|t| {
+                        this.tokens.get(&p, &n).is_some_and(|v| t.with_exposed(|t| v.entry.access_token.matches(t)))
+                    }) {
+                        this.tokens.set_state(&p, &n, st);
+                    }
                 }
             }
         })
@@ -397,9 +468,10 @@ impl Engine {
     }
 }
 
-/// A reason kept with a state: one line, at most 200 characters.
+/// A reason kept with a state: one line, at most 200 characters, no control characters
+/// (it is printed by `accounts list`).
 pub(crate) fn short(reason: &str) -> String {
-    let line = reason.split_whitespace().collect::<Vec<_>>().join(" ");
+    let line = super::printable(&reason.split_whitespace().collect::<Vec<_>>().join(" "));
     match line.char_indices().nth(200) {
         Some((i, _)) => format!("{}…", &line[..i]),
         None => line,

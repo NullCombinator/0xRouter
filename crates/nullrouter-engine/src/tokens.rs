@@ -143,17 +143,18 @@ pub fn path(home: &Path) -> PathBuf {
 }
 
 impl TokenStore {
-    /// Reads `home/tokens.toml`; a missing file is no tokens. Refuses a shared file.
+    /// Reads `home/tokens.toml`; a missing file is no tokens. Refuses a shared file and a
+    /// symbolic link.
     pub fn load(home: &Path) -> Result<Self, FileError> {
         let path = path(home);
-        match files::read_private(&path)? {
+        match files::read_private_file(&path)? {
             None => Ok(Self::default()),
             Some(text) => Self::parse(&text, &path),
         }
     }
 
     pub fn parse(text: &str, path: &Path) -> Result<Self, FileError> {
-        let raw: RawFile = toml::from_str(text).map_err(|e| FileError::invalid(path, e.to_string()))?;
+        let raw: RawFile = toml::from_str(text).map_err(|e| FileError::toml(path, text, &e))?;
         if raw.schema != SCHEMA {
             return Err(FileError::invalid(
                 path,
@@ -221,13 +222,21 @@ impl TokenStore {
     }
 }
 
-/// Holds the exclusive lock on `home/tokens.lock` until dropped.
+/// Holds the exclusive lock on `home/tokens.lock` until dropped. Refuses a symbolic link
+/// (security review L5): checked before the open, and the opened file must be the one at
+/// the path.
 fn lock(home: &Path) -> Result<File, FileError> {
     let path = home.join(LOCK);
     let io = |source| FileError::Io { path: path.clone(), source };
     std::fs::create_dir_all(home).map_err(io)?;
+    files::refuse_symlink(&path)?;
     let f =
         OpenOptions::new().read(true).write(true).create(true).truncate(false).mode(0o600).open(&path).map_err(io)?;
+    let opened = f.metadata().map_err(io)?;
+    let at_path = std::fs::symlink_metadata(&path).map_err(io)?;
+    if at_path.file_type().is_symlink() || (opened.dev(), opened.ino()) != (at_path.dev(), at_path.ino()) {
+        return Err(FileError::invalid(&path, "changed while it was opened (a symbolic link?)"));
+    }
     f.lock().map_err(io)?;
     Ok(f)
 }
@@ -465,7 +474,7 @@ pub struct Stamp(Option<(u64, SystemTime)>);
 
 fn stamp(home: &Path) -> Result<Stamp, FileError> {
     let path = path(home);
-    match std::fs::metadata(&path) {
+    match std::fs::symlink_metadata(&path) {
         Ok(m) => Ok(Stamp(Some((m.ino(), m.modified().unwrap_or(SystemTime::UNIX_EPOCH))))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Stamp(None)),
         Err(source) => Err(FileError::Io { path, source }),
@@ -694,6 +703,30 @@ pub(crate) mod tests {
         assert!(err.contains("tokens.toml") && err.contains("chmod 600"), "{err}");
         assert!(TokenCells::load(dir.path()).is_err());
         assert!(update(dir.path(), "xai", "main", |_| ()).is_err(), "writers refuse it too");
+    }
+
+    /// L5: a symlinked tokens.toml or tokens.lock is refused by readers and writers, and
+    /// the link's target is left alone.
+    #[test]
+    fn symlinked_files_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let other = dir.path().join("other");
+        put(&other, entry("xai", "main", "xai-access-0000", &[]));
+        std::fs::create_dir_all(&home).unwrap();
+        std::os::unix::fs::symlink(path(&other), path(&home)).unwrap();
+        let err = TokenStore::load(&home).unwrap_err().to_string();
+        assert!(err.contains("symbolic link"), "{err}");
+        assert!(TokenCells::load(&home).is_err(), "serve refuses it");
+        assert!(update(&home, "xai", "main", |_| ()).is_err(), "writers refuse it");
+        assert!(std::fs::symlink_metadata(path(&home)).unwrap().file_type().is_symlink(), "the link is untouched");
+
+        let lock_home = dir.path().join("lock");
+        std::fs::create_dir_all(&lock_home).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("lock-target"), lock_home.join(LOCK)).unwrap();
+        let err = update(&lock_home, "xai", "main", |_| ()).unwrap_err().to_string();
+        assert!(err.contains("tokens.lock") && err.contains("symbolic link"), "{err}");
+        assert!(!dir.path().join("lock-target").exists(), "nothing created through the link");
     }
 
     #[test]

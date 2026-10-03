@@ -242,7 +242,7 @@ impl Accounts {
 
     /// Parses schema 1 (every account a `key` account) or schema 2.
     pub fn parse(text: &str, path: &Path, env: impl Fn(&str) -> Option<String>) -> Result<Self, FileError> {
-        let raw: RawFile = toml::from_str(text).map_err(|e| FileError::invalid(path, e.to_string()))?;
+        let raw: RawFile = toml::from_str(text).map_err(|e| FileError::toml(path, text, &e))?;
         if !matches!(raw.schema, 1 | SCHEMA) {
             return Err(FileError::invalid(
                 path,

@@ -84,3 +84,23 @@ repeated below.
 
 No Critical or High findings. Finding 1 is Medium: before L4, add a sign-in headers field, or
 confirm live that `auth.x.ai` accepts UA-less calls.
+
+## Resolution (2026-10-03)
+
+| # | Status | Test or record |
+|---|---|---|
+| 1 (Medium) | Fixed. Optional fixed-value `[signin] headers` (schema and gate, same rules as `[signin.profile] headers`), sent on discovery, device, token and refresh calls. grok-cli declares `User-Agent: grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)`. On refresh this is a recorded deviation (9router sends none). Live check L4 still to confirm `auth.x.ai`'s view. | `parity_oauth::grok_cli_device_grant_sends_9routers_bodies`, `parity_oauth::refresh_call_rotates_like_9router`, `parity_oauth::bundled_signin_declarations_match_9router`, `gate::signin_gate_rules`; R19 row |
+| 2 | Kept and recorded: profile-first email; the access-token JWT fallback is not ported. | R19 row |
+| 3 | Fixed (data): grok-cli's profile read sends 9router's `User-Agent` and `x-grok-client-version`. | `parity_oauth::grok_cli_device_grant_sends_9routers_bodies` (profile headers against the oracle) |
+| 4, 5, 6, 7 | Accepted, as recommended. | — |
+| 8 | Recorded. | R19 row (30 s use-time margin) |
+| 9 | Recorded. | R19 row (one refresh on 401 or a matching 403) |
+| 10 | Kept and recorded. | R19 row (two decimals) |
+| 11 | Accepted: a poll refreshes on 401 only. | — |
+| 12 | Kept and recorded. | R19 row (identity headers on every quota source, `grok.com` included) |
+| 13 | Fixed (data): opencode-go and opencode-zen polls send `Accept: application/json`. | `parity_usage::quota_requests_match_the_research_table` |
+| 14 | Recorded next to the `credits-bag-balance-only` deviation (no oracle case covers it). | `parity_usage.rs` deviation table |
+| 15 | Accepted, not reordered: moving `limits[*]` first changes the reported window order, and no fixture covers the overlap. | — |
+| 16 | Accepted. | — |
+| R11 text | Fixed: the grok-cli row no longer lists `…/v1/user?include=subscription` as a quota source; R19 records that it is not read. | research.md R11, R19 |
+| R9 text | Fixed: the dedup is one `std::sync::Mutex<HashMap<(provider, name), Shared<…>>>` with the refresh spawned as its own task. | research.md R9 |

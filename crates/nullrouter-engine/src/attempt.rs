@@ -965,7 +965,7 @@ impl Run {
                 let identity = match &c.provider.identity {
                     None => Vec::new(),
                     Some(d) => {
-                        let session_id = self.engine.sessions.id_for(&self.req.agent);
+                        let session_id = self.engine.sessions.id_for_upstream(&self.req.agent, &st.redactor.current());
                         let ctx = FillContext {
                             session_id: &session_id,
                             request_id: &identity::uuid_v4(),

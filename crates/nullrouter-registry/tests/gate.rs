@@ -232,6 +232,7 @@ fn signin_sections_pass_the_gate_and_fit_only_when_bundled() {
     assert_eq!(s.flow, SignInFlow::Pkce);
     assert_eq!(s.params[&SignInParam::Nonce], SignInParamValue::RandomHex16);
     assert_eq!(s.redirect.len(), 2);
+    assert_eq!(s.headers["User-Agent"], "grokish-pager/1.0");
     let id = p.identity.as_ref().unwrap();
     assert_eq!(id.headers["x-grok-agent-id"], HeaderValue::Core(Placeholder::InstallId));
     assert_eq!(id.placeholders().count(), 8);
@@ -317,6 +318,18 @@ fn signin_gate_rules() {
     fails("scheme = \"bearer\" }", "scheme = \"<user_id> <access_token>\" }", "takes `bearer` or `raw`");
     fails("status = [400, 403]", "status = [99]", "statuses must be 100-599");
     fails("x-grok-client-identifier = \"grok-shell\"", "Cookie = \"a=b\"", "\"Cookie\" is in the security floor");
+    // `[signin] headers`: fixed values, no floor names, no secrets (as the profile's).
+    fails(
+        "User-Agent = \"grokish-pager/1.0\"",
+        "Authorization = \"Basic eA\"",
+        "signin.headers.Authorization: \"Authorization\" is in the security floor",
+    );
+    fails(
+        "User-Agent = \"grokish-pager/1.0\"",
+        "User-Agent = \"ghp_0123456789abcdefABCDEF\"",
+        "signin.headers.User-Agent: looks like a secret",
+    );
+    fails("User-Agent = \"grokish-pager/1.0\"", "\"bad name\" = \"x\"", "\"bad name\" is not a header name");
     fails(
         "x-grok-client-identifier = \"grok-shell\"",
         "x-grok-client-identifier = \"id-{session.id}\"",

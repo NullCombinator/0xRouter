@@ -98,12 +98,16 @@ pub(crate) fn from_query(query: &str, expected_state: &str) -> Result<SecretStri
             _ => {}
         }
     }
-    if let Some(e) = error {
-        // The provider's error code is short and public; cap it in case it isn't.
-        return Err(PasteError::Provider(e.chars().take(80).collect()));
-    }
+    // State first (security review L1): an `error` from anything but this sign-in's
+    // provider redirect (another local process, a web page hitting the fixed port) is a
+    // state mismatch, not a message to print.
     if state.as_deref() != Some(expected_state) {
         return Err(PasteError::StateMismatch);
+    }
+    if let Some(e) = error {
+        // The provider's error code is short and public; cap it in case it isn't, and keep
+        // control characters off the terminal.
+        return Err(PasteError::Provider(super::printable(&e).chars().take(80).collect()));
     }
     code.filter(|c| !c.is_empty()).ok_or(PasteError::NoCode)
 }
@@ -183,6 +187,14 @@ mod tests {
         assert_eq!(
             err(parse_paste("http://h/cb?error=access_denied&state=s", Loopback, "s")),
             PasteError::Provider("access_denied".into())
+        );
+        // L1: an error without this sign-in's state is not shown, and control characters
+        // never reach the terminal.
+        assert_eq!(err(parse_paste("http://h/cb?error=Run%20rm%20-rf", Loopback, "s")), PasteError::StateMismatch);
+        assert_eq!(err(parse_paste("http://h/cb?error=x&state=other", Loopback, "s")), PasteError::StateMismatch);
+        assert_eq!(
+            err(parse_paste("http://h/cb?error=denied%1B%5B2J&state=s", Loopback, "s")),
+            PasteError::Provider("denied[2J".into())
         );
     }
 }

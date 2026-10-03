@@ -50,6 +50,31 @@ pub const BROWSER_TIMEOUT: Duration = Duration::from_secs(600);
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 /// The access-token lifetime assumed when a token response has no `expires_in`.
 pub const DEFAULT_EXPIRES_IN: Duration = Duration::from_secs(3600);
+/// The longest lifetime a provider's `expires_in` is taken at (security review L8): a larger
+/// value is clamped, so no clock arithmetic on it can overflow.
+pub const MAX_EXPIRES_IN: Duration = Duration::from_secs(365 * 24 * 3600);
+
+/// `now + expires_in` (or [`DEFAULT_EXPIRES_IN`]), clamped to [`MAX_EXPIRES_IN`]. Never
+/// panics.
+pub fn expiry(now: SystemTime, expires_in: Option<Duration>) -> SystemTime {
+    let d = expires_in.unwrap_or(DEFAULT_EXPIRES_IN).min(MAX_EXPIRES_IN);
+    now.checked_add(d).unwrap_or(now)
+}
+
+/// `[signin] headers` as a header map: fixed values sent on the discovery, device, token
+/// and refresh calls. A name or value that doesn't parse is skipped (the gate refuses it).
+pub fn signin_headers(decl: &SignInDecl) -> HeaderMap {
+    decl.headers
+        .iter()
+        .filter_map(|(k, v)| Some((HeaderName::from_bytes(k.as_bytes()).ok()?, HeaderValue::from_str(v).ok()?)))
+        .collect()
+}
+
+/// `s` without control characters (security review L1): provider and callback text is
+/// shown on the operator's terminal, where an escape sequence could rewrite what it shows.
+pub fn printable(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).collect()
+}
 
 /// The client sign-in calls go through: the engine's redirect-free client with the SSRF
 /// resolver, plus the address-literal check.
@@ -102,9 +127,17 @@ impl SignInHttp {
         body: Option<(&'static str, String)>,
     ) -> Result<(u16, Bytes), SignInError> {
         let url = self.url(url)?;
-        let mut rb = self.client.request(method, url).headers(headers).header(ACCEPT, "application/json");
-        if let Some((ct, body)) = body {
-            rb = rb.header(CONTENT_TYPE, ct).body(body);
+        // `Accept: application/json` unless the caller set one; the body's content type
+        // always wins over a declared header.
+        let mut all = HeaderMap::new();
+        all.insert(ACCEPT, HeaderValue::from_static("application/json"));
+        all.extend(headers);
+        if let Some((ct, _)) = &body {
+            all.insert(CONTENT_TYPE, HeaderValue::from_static(ct));
+        }
+        let mut rb = self.client.request(method, url).headers(all);
+        if let Some((_, body)) = body {
+            rb = rb.body(body);
         }
         let transport = |e: reqwest::Error| SignInError::Transport { what, reason: transport_reason(&e, self.timeout) };
         let r = rb.timeout(self.timeout).send().await.map_err(transport)?;
@@ -153,6 +186,12 @@ pub enum SignInError {
     Paste(#[from] PasteError),
     #[error("nothing left to wait for: no loopback listener and no more input")]
     NoInput,
+    /// A refresh whose token URL is off the hosts the account's tokens are bound to
+    /// (FR-031, security review M2). Permanent: nothing was sent.
+    #[error(
+        "the token URL's host {host} is not one this account's sign-in covered; run nullrouter accounts signin {provider} {name}"
+    )]
+    UnboundHost { host: String, provider: String, name: String },
 }
 
 impl SignInError {
@@ -205,17 +244,22 @@ fn error_code(status: u16, body: &[u8]) -> String {
     .filter(|c| !c.is_empty())
     .or_else(|| v["error_code"].as_str());
     // An error code is a short public token; cap it so an odd provider can't echo much.
-    code.filter(|c| !c.is_empty()).map_or_else(|| format!("HTTP {status}"), |c| c.chars().take(80).collect())
+    // Control characters are dropped: the code is printed on the operator's terminal.
+    code.map(printable)
+        .filter(|c| !c.is_empty())
+        .map_or_else(|| format!("HTTP {status}"), |c| c.chars().take(80).collect())
 }
 
-/// POSTs an encoded token request to `token_url` and reads the grant.
+/// POSTs an encoded token request to `token_url` with `headers` (the plugin's
+/// [`signin_headers`]) and reads the grant.
 pub async fn token_request(
     http: &SignInHttp,
     token_url: &str,
+    headers: HeaderMap,
     body: (&'static str, String),
 ) -> Result<TokenGrant, SignInError> {
     const WHAT: &str = "token endpoint";
-    let (status, bytes) = http.send(WHAT, reqwest::Method::POST, token_url, HeaderMap::new(), Some(body)).await?;
+    let (status, bytes) = http.send(WHAT, reqwest::Method::POST, token_url, headers, Some(body)).await?;
     if !(200..300).contains(&status) {
         return Err(SignInError::Rejected { what: WHAT, status, code: error_code(status, &bytes) });
     }
@@ -235,7 +279,7 @@ pub async fn token_request(
         _ => None,
     }
     .filter(|s| s.is_finite() && *s > 0.0)
-    .map(Duration::from_secs_f64);
+    .map(|s| Duration::from_secs_f64(s.min(MAX_EXPIRES_IN.as_secs_f64())));
     Ok(TokenGrant { access_token, refresh_token, expires_in, scope, id_token })
 }
 
@@ -255,7 +299,7 @@ fn lookup(root: &Value, path: &ValuePath) -> Option<String> {
     path.alternatives().find_map(|alt| {
         let v = if alt == "." { root } else { alt.split('.').try_fold(root, |v, k| v.get(k))? };
         match v {
-            Value::String(s) if !s.trim().is_empty() => Some(s.trim().to_owned()),
+            Value::String(s) if !printable(s).trim().is_empty() => Some(printable(s).trim().to_owned()),
             Value::Number(n) => Some(n.to_string()),
             Value::Bool(b) => Some(b.to_string()),
             _ => None,
@@ -337,7 +381,7 @@ async fn endpoints(http: &SignInHttp, decl: &SignInDecl) -> (Option<String>, Str
     let declared = (decl.authorize_url.clone(), decl.token_url.clone());
     let Some(discovery) = decl.discovery_url.as_deref() else { return declared };
     let Ok(base) = http.url(discovery) else { return declared };
-    let doc = match http.send("discovery", reqwest::Method::GET, discovery, HeaderMap::new(), None).await {
+    let doc = match http.send("discovery", reqwest::Method::GET, discovery, signin_headers(decl), None).await {
         Ok((status, body)) if (200..300).contains(&status) => serde_json::from_slice::<Value>(&body).ok(),
         _ => None,
     };
@@ -366,6 +410,8 @@ pub(crate) struct Flow {
     decl: SignInDecl,
     hosts: BTreeSet<String>,
     token_url: String,
+    /// `[signin] headers`.
+    headers: HeaderMap,
 }
 
 impl Flow {
@@ -383,7 +429,7 @@ impl Flow {
             name: name.to_owned(),
             access_token: grant.access_token,
             refresh_token: grant.refresh_token,
-            expires_at: now + grant.expires_in.unwrap_or(DEFAULT_EXPIRES_IN),
+            expires_at: expiry(now, grant.expires_in),
             scope: grant.scope.unwrap_or_else(|| self.decl.scopes.join(" ")),
             claims,
             hosts: self.hosts.clone(),
@@ -408,7 +454,13 @@ pub enum Begun {
 pub async fn begin(http: &SignInHttp, provider: &ProviderEntity) -> Result<Begun, SignInError> {
     let decl = provider.signin.as_ref().ok_or_else(|| SignInError::NotSignIn(provider.id.clone()))?;
     let (authorize, token_url) = endpoints(http, decl).await;
-    let flow = Flow { provider: provider.id.clone(), decl: decl.clone(), hosts: provider.token_hosts(), token_url };
+    let flow = Flow {
+        provider: provider.id.clone(),
+        decl: decl.clone(),
+        hosts: provider.token_hosts(),
+        token_url,
+        headers: signin_headers(decl),
+    };
     match decl.flow {
         SignInFlow::DeviceCode => DeviceSignIn::start(http, flow).await.map(Begun::Device),
         SignInFlow::Pkce => {
@@ -589,7 +641,7 @@ impl PkceSignIn {
                 encode_body(decl.body, &fields)
             })
         });
-        let grant = token_request(http, &self.flow.token_url, body).await?;
+        let grant = token_request(http, &self.flow.token_url, self.flow.headers.clone(), body).await?;
         Ok(self.flow.finish(http, name, grant).await)
     }
 }
@@ -620,6 +672,25 @@ mod tests {
         let c = read_claims(None, None, Some(json!({ "preferred_username": "pu" })));
         assert_eq!(c.email.as_deref(), Some("pu"));
         assert_eq!(read_claims(None, None, None), Claims::default());
+    }
+
+    #[test]
+    fn expires_in_is_clamped_and_never_overflows() {
+        let now = SystemTime::now();
+        assert_eq!(expiry(now, None), now + DEFAULT_EXPIRES_IN);
+        assert_eq!(expiry(now, Some(Duration::from_secs(60))), now + Duration::from_secs(60));
+        assert_eq!(expiry(now, Some(Duration::MAX)), now + MAX_EXPIRES_IN, "a huge value is clamped");
+        assert_eq!(
+            expiry(SystemTime::UNIX_EPOCH, Some(Duration::from_secs(9_300_000_000_000_000_000))),
+            SystemTime::UNIX_EPOCH + MAX_EXPIRES_IN
+        );
+    }
+
+    #[test]
+    fn provider_text_loses_control_characters() {
+        assert_eq!(printable("ABCD-\u{1b}[2J1234\r\n"), "ABCD-[2J1234");
+        let c = read_claims(None, None, Some(json!({ "email": "a\u{1b}]0;x\u{7}@b.c" })));
+        assert_eq!(c.email.as_deref(), Some("a]0;x@b.c"));
     }
 
     #[test]

@@ -147,6 +147,10 @@ pub struct SignInDecl {
     pub params: IndexMap<SignInParam, SignInParamValue>,
     #[serde(default)]
     pub body: TokenBody,
+    /// Fixed, non-secret headers sent on the discovery, device, token and refresh calls
+    /// (grok-cli's `User-Agent`). Same rules as `[signin.profile] headers`.
+    #[serde(default)]
+    pub headers: IndexMap<String, String>,
     /// `pkce` only, 32–96; see [`SignInDecl::verifier_len`].
     pub verifier_bytes: Option<u32>,
     /// How long before expiry the core refreshes.
@@ -236,6 +240,13 @@ body_contains = "only authorized for use with Claude Code"
         assert_eq!(s.body, TokenBody::Form);
         assert_eq!(s.verifier_len(), 96);
         assert_eq!(s.flow_urls().count(), 3);
+        assert!(s.headers.is_empty(), "headers are optional");
+        let ua = XAI.replace(
+            "refresh_lead = \"5m\"",
+            "refresh_lead = \"5m\"\nheaders = { User-Agent = \"grok-pager/0.2.93\" }",
+        );
+        let s = toml::from_str::<Doc>(&ua).unwrap().signin;
+        assert_eq!(s.headers["User-Agent"], "grok-pager/0.2.93");
         assert!(s.refuses(403, "x only authorized for use with Claude Code y"));
         assert!(!s.refuses(401, "only authorized for use with Claude Code"));
     }

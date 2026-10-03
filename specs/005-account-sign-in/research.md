@@ -248,9 +248,10 @@ serves where one exists. The fix, if needed, is a 004 adapter, not this slice.
   sign-in account triggers one deduplicated refresh, then one retry on the same account with
   the new token. The client sees only the answer. 9router does this for grok-cli and claude
   but not xai (its default executor has no xai refresher); 0router does it for all three.
-- **Dedup (FR-012)**: one in-flight refresh per account, shared by every waiter (a
-  `tokio::sync::Mutex<Option<Shared<…>>>` per account). Ports `dedup.js`, keyed per account
-  instead of per old refresh token.
+- **Dedup (FR-012)**: one in-flight refresh per account, shared by every waiter: one
+  `std::sync::Mutex<HashMap<(provider, name), Shared<…>>>` for the engine, with the refresh
+  spawned as its own task, so a waiter that goes away never cancels it. Ports `dedup.js`,
+  keyed per account instead of per old refresh token, without its 10 s result cache.
 - **Rotation**: the new refresh token, or the old one when the response omits it
   (`providers.js:131`).
 - **Clock skew**: `expires_at` is computed from the local clock and `expires_in` when the token
@@ -258,8 +259,17 @@ serves where one exists. The fix, if needed, is a 004 adapter, not this slice.
   timing.
 - **Restart (FR-014)**: tokens are read from `tokens.toml` at start. An access token already
   expired is refreshed before the account serves.
-- **Redaction**: every refresh rebuilds the redactor with the new tokens plus the previous
-  generation (so an old token echoed late is still masked) and swaps it into `Engine.redactor`.
+- **Redaction**: the engine has one redactor, shared by every snapshot. A refresh adds the new
+  tokens to it before the cell holds them, then rebuilds it with the current and previous
+  generation (so an old token echoed late is still masked). A reload does the same with the
+  tokens it reads.
+- **Write only over the grant refreshed (compare and swap)**: the refresh result is written
+  only while `tokens.toml` still holds the refresh token the refresh started from. A sign-in
+  written meanwhile wins: the result is dropped and the cell takes the stored entry. A
+  permanent failure marks the account only while it still holds the access token the refresh
+  started from.
+- **Bound hosts**: the refresh token goes only to a `token_url` whose host is one the account's
+  tokens are bound to; otherwise nothing is sent and the account needs sign-in.
 
 ## R10. Refresh failures and account states **(user-visible)**
 
@@ -323,7 +333,7 @@ the provider's reason, so they survive a restart.
 |---|---|---|
 | anthropic (sign-in only) | `GET https://api.anthropic.com/api/oauth/usage` with `anthropic-beta: oauth-2025-04-20` | `five_hour` → "5-hour", `seven_day` → "weekly", `seven_day_<model>` → "weekly <model>", `limits[]` with `kind = weekly_scoped` → "weekly <model>"; unit percent used |
 | anthropic (API key) | none | "quota not reported" |
-| grok-cli | `GET …/v1/billing?format=credits` and `GET …/v1/user?include=subscription`; fallback gRPC-web `POST https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig` | "monthly included", "on-demand", "prepaid", "weekly SuperGrok" (credits or percent, as reported) |
+| grok-cli | `GET …/v1/billing?format=credits`; fallback gRPC-web `POST https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig` | "monthly included", "on-demand", "prepaid", "weekly SuperGrok" (credits or percent, as reported) |
 | opencode-go | `GET https://opencode.ai/zen/go/v1/usage` | `rolling`, `weekly`, `monthly`; percent used |
 | opencode-zen | `GET https://opencode.ai/zen/v1/usage` | same |
 | xai | none known (9router has no reader) | "quota not reported", unless live check L2 finds rate-limit headers on `GET /v1/models` |
@@ -482,3 +492,10 @@ Opt-in (`NR_LIVE=1`) with the operator's real accounts, never in CI.
 | xai/grok-cli refresh retries `refresh_token_reused`, `unauthorized_client` | permanent: the account needs sign-in | a reused or unauthorized refresh token can't recover; retrying hides it from the operator |
 | xai discovery accepted on any https `*.x.ai` host | only the plugin's declared sign-in hosts | host binding (FR-030) |
 | email falls back to the token's `sub` | no `sub` fallback | `sub` is an opaque id, not an email |
+| grok-cli email: id token (`email`, `preferred_username`), then the access token's JWT claims, then the profile | the profile's `email` first, then the id token; the access-token JWT fallback is not ported | the profile is the account the provider serves; an access token is read for no other purpose |
+| request path refreshes within the provider lead before use (5 min xai/grok-cli, 4 h claude) | refresh before use only within 30 s of expiry (capped at half the lifetime); the background task refreshes at the lead | a request never waits for a refresh the background task does anyway |
+| on a rejected token: refresh on 401 and on any 403, up to 3 tries (1 s, 2 s apart) | one deduplicated refresh on 401, or on a 403 only when the plugin's auth-rejection rule matches, then one retry | a 403 that isn't an auth rejection isn't fixed by a refresh; retries are the backoff's job (R10) |
+| gRPC-web credits ratio rounded to an integer percent | rounded to two decimals | closer to the provider's figure (SC-006) |
+| identity headers only on inference; claude usage and the `grok.com` fallback get auth and content headers only | `[identity]` headers on every quota source of a sign-in account, the `grok.com` fallback included | one identity per account everywhere (Q3) |
+| grok-cli refresh sends no `User-Agent` | the plugin's `[signin] headers` (the pager agent) on discovery, device, token and refresh calls | one client identity at the identity provider |
+| the usage `GET …/v1/user?include=subscription` names the plan for the on-demand bar | not read | it reports no window; the synthetic on-demand bar is not ported |

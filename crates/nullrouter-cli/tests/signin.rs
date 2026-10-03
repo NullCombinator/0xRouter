@@ -368,3 +368,34 @@ async fn refused_and_cancelled_sign_ins_write_nothing() {
     assert_eq!((e.code, e.message.as_str()), (EXIT_ENDED, "anthropic/max: sign-in ended: cancelled; nothing saved"));
     nothing_written(dir.path());
 }
+
+/// Security review L2: a device link that isn't https (the mock's is http) is printed but
+/// never handed to the browser.
+#[tokio::test]
+async fn only_https_links_reach_the_browser() {
+    let idp = MockIdp::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let home = OperatorHome::new(dir.path());
+    let http = SignInHttp::new(true).with_timeout(Duration::from_secs(5));
+    let p = grok_cli(&idp);
+    let opened = Mutex::new(Vec::<String>::new());
+    let browser = |l: &str| opened.lock().unwrap().push(l.to_owned());
+    let job = SignIn {
+        home: &home,
+        provider: &p,
+        name: "work",
+        http: &http,
+        accept_terms_risk: false,
+        browser: Some(&browser),
+    };
+    let (_tx, mut rx) = unbounded_channel();
+    let screen = Screen::default();
+    let mut out = screen.clone();
+    job.run(&mut rx, &mut out, &CancellationToken::new()).await.unwrap();
+    assert!(opened.lock().unwrap().is_empty(), "an http link was opened");
+    let printed = screen.text();
+    assert!(
+        printed.contains("  http://") && printed.contains("(Not opened in the browser: not an https link.)"),
+        "{printed}"
+    );
+}

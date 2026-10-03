@@ -470,6 +470,7 @@ fn check_signin(s: &SignInDecl, floor: &Floor, err: &mut impl FnMut(FieldPath, S
     if s.refresh_lead.is_zero() {
         err(at("refresh_lead"), "must be more than 0".into());
     }
+    check_static_headers(&s.headers, &at("headers"), floor, err);
     if let Some(prof) = &s.profile {
         check_static_headers(&prof.headers, &at("profile").key("headers"), floor, err);
     }

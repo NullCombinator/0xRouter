@@ -4,6 +4,7 @@
 //! Every value is true information the core owns. Nothing here hashes the request, copies
 //! another machine's id or lets a plugin compute a value.
 
+use std::borrow::Cow;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
@@ -16,6 +17,7 @@ use nullrouter_wire::ir::{self, Part, Role};
 
 use crate::files::{self, FileError};
 use crate::keys::AgentId;
+use crate::redact::Redactor;
 use crate::tokens::Claims;
 
 pub const INSTALL_ID_FILE: &str = "install-id";
@@ -81,6 +83,21 @@ impl AgentSessions {
         if let Some(s) = &agent.session {
             return s.clone();
         }
+        self.kept_id(agent)
+    }
+
+    /// [`id_for`](Self::id_for) for an upstream header: the client's session value passes
+    /// the same checks a same-style forwarded header does (no control characters, no
+    /// account secret, nothing shaped like an agent key); one that fails is replaced by the
+    /// agent's kept random id.
+    pub fn id_for_upstream(&self, agent: &AgentId, redactor: &Redactor) -> String {
+        match &agent.session {
+            Some(s) if !s.chars().any(char::is_control) && matches!(redactor.redact(s), Cow::Borrowed(_)) => s.clone(),
+            _ => self.kept_id(agent),
+        }
+    }
+
+    fn kept_id(&self, agent: &AgentId) -> String {
         let mut ids = self.ids.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(id) = ids.get(&agent.key) {
             return id.clone();
@@ -200,6 +217,20 @@ mod tests {
         }
         assert_eq!(s.ids.lock().unwrap().len(), MAX_AGENT_SESSIONS, "capped");
         assert_ne!(s.id_for(&AgentId::new("ak_1", None)), a, "the oldest was forgotten");
+    }
+
+    /// The `{session.id}` value sent upstream passes the forwarding filter.
+    #[test]
+    fn a_client_session_carrying_a_secret_is_not_sent_upstream() {
+        let s = AgentSessions::default();
+        let secret = nullrouter_registry::SecretString::new("sk-ant-SENTINEL-SESSION");
+        let r = Redactor::new([&secret]);
+        assert_eq!(s.id_for_upstream(&AgentId::new("ak_1", Some("sess-9")), &r), "sess-9");
+        let kept = s.id_for(&AgentId::new("ak_1", None));
+        let key = format!("0r-{}", "A".repeat(43));
+        for bad in ["x sk-ant-SENTINEL-SESSION", key.as_str(), "sess\u{1b}[2J"] {
+            assert_eq!(s.id_for_upstream(&AgentId::new("ak_1", Some(bad)), &r), kept, "{bad:?}");
+        }
     }
 
     #[test]

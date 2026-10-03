@@ -28,6 +28,7 @@ verifier_bytes = 96
 refresh_lead = "5m"
 auth = { header = "Authorization", scheme = "bearer" }
 terms_warning = false
+headers = { User-Agent = "grok-pager/0.2.93" }  # optional; discovery, device, token, refresh calls
 
 [signin.profile]                                # optional post-sign-in read
 url = "https://cli-chat-proxy.grok.com/v1/user"
@@ -45,6 +46,8 @@ body_contains = "only authorized for use with Claude Code"
 - `params` keys are a closed set: `plan`, `referrer`, `code`, `audience`, `prompt`, `nonce`.
   Values are fixed strings or `{random.hex16}`.
 - `redirect.kind = "code_page"` allows pasting a bare code or `code#state`.
+- `headers` (added after the T094 parity audit) follows `[signin.profile] headers`: fixed
+  strings, no floor names, no secret-like values.
 
 ## `[identity]`
 

@@ -4,6 +4,12 @@
 //! zero port means an ephemeral one, written back into the redirect URI. It answers the
 //! first `GET <path>?…` with a short page and hands back the query; any other request gets
 //! a 404 and the wait goes on. A busy port is reported, not fatal: paste-back still works.
+//!
+//! A `localhost` redirect binds the port on both loopback families, `127.0.0.1` and
+//! `[::1]` (security review L7): a browser may resolve `localhost` to either, and a port
+//! left free on one family could be taken by another local user's listener, which would
+//! then receive the code and state. The redirect URI stays `localhost`, as the provider
+//! registered it. Where the system has no IPv6 loopback, `127.0.0.1` alone is bound.
 
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -33,9 +39,43 @@ pub enum BindError {
 
 #[derive(Debug)]
 pub struct Loopback {
-    listener: TcpListener,
+    /// One listener, or two for `localhost` (IPv4 and IPv6 on the same port).
+    listeners: Vec<TcpListener>,
     path: String,
     redirect_uri: String,
+}
+
+/// How many ephemeral ports are tried for a `localhost` redirect whose IPv6 twin is taken.
+const LOCALHOST_TRIES: usize = 8;
+
+async fn bind_one(addr: SocketAddr) -> Result<TcpListener, BindError> {
+    TcpListener::bind(addr).await.map_err(|source| match source.kind() {
+        io::ErrorKind::AddrInUse => BindError::Busy(addr),
+        _ => BindError::Io { addr, source },
+    })
+}
+
+/// `127.0.0.1:port` and `[::1]` on the same port; `[::1]` is skipped only where the
+/// system has no IPv6 loopback (nobody can listen there either).
+async fn bind_localhost(port: u16) -> Result<Vec<TcpListener>, BindError> {
+    for _ in 0..LOCALHOST_TRIES {
+        let v4 = bind_one(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)).await?;
+        let bound = v4
+            .local_addr()
+            .map_err(|source| BindError::Io { addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port), source })?
+            .port();
+        match bind_one(SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), bound)).await {
+            Ok(v6) => return Ok(vec![v4, v6]),
+            // An ephemeral port whose IPv6 twin is taken: try another.
+            Err(BindError::Busy(_)) if port == 0 => continue,
+            Err(e @ BindError::Busy(_)) => return Err(e),
+            Err(e) => {
+                tracing::debug!(error = %e, "no IPv6 loopback; the localhost redirect listens on 127.0.0.1 only");
+                return Ok(vec![v4]);
+            }
+        }
+    }
+    Err(BindError::Busy(SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), port)))
 }
 
 impl Loopback {
@@ -44,25 +84,25 @@ impl Loopback {
         let bad = || BindError::NotLoopback(redirect_uri.to_owned());
         let mut u = url::Url::parse(redirect_uri).map_err(|_| bad())?;
         let ip = match u.host() {
-            Some(url::Host::Domain("localhost")) | Some(url::Host::Ipv4(Ipv4Addr::LOCALHOST)) => {
-                IpAddr::V4(Ipv4Addr::LOCALHOST)
-            }
-            Some(url::Host::Ipv6(Ipv6Addr::LOCALHOST)) => IpAddr::V6(Ipv6Addr::LOCALHOST),
+            Some(url::Host::Domain("localhost")) => None,
+            Some(url::Host::Ipv4(Ipv4Addr::LOCALHOST)) => Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Some(url::Host::Ipv6(Ipv6Addr::LOCALHOST)) => Some(IpAddr::V6(Ipv6Addr::LOCALHOST)),
             _ => return Err(bad()),
         };
         if u.scheme() != "http" {
             return Err(bad());
         }
-        let addr = SocketAddr::new(ip, u.port().unwrap_or(0));
-        let listener = TcpListener::bind(addr).await.map_err(|source| match source.kind() {
-            io::ErrorKind::AddrInUse => BindError::Busy(addr),
-            _ => BindError::Io { addr, source },
-        })?;
-        if addr.port() == 0 {
-            let port = listener.local_addr().map_err(|source| BindError::Io { addr, source })?.port();
-            u.set_port(Some(port)).map_err(|()| bad())?;
+        let port = u.port().unwrap_or(0);
+        let listeners = match ip {
+            Some(ip) => vec![bind_one(SocketAddr::new(ip, port)).await?],
+            None => bind_localhost(port).await?,
+        };
+        if port == 0 {
+            let addr = SocketAddr::new(ip.unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST)), 0);
+            let bound = listeners[0].local_addr().map_err(|source| BindError::Io { addr, source })?.port();
+            u.set_port(Some(bound)).map_err(|()| bad())?;
         }
-        Ok(Self { listener, path: u.path().to_owned(), redirect_uri: u.into() })
+        Ok(Self { listeners, path: u.path().to_owned(), redirect_uri: u.into() })
     }
 
     /// The redirect URI to send, with the bound port.
@@ -74,10 +114,22 @@ impl Loopback {
     /// `true` for "signed in". Cancel-safe between connections.
     pub async fn accept(&self, verdict: impl Fn(&str) -> bool) -> io::Result<String> {
         loop {
-            let (stream, _) = self.listener.accept().await?;
+            let stream = self.accept_any().await?;
             if let Ok(Some(query)) = tokio::time::timeout(HEAD_TIMEOUT, self.serve(stream, &verdict)).await {
                 return Ok(query);
             }
+        }
+    }
+
+    /// The next connection on any of the listeners. Cancel-safe.
+    async fn accept_any(&self) -> io::Result<TcpStream> {
+        match self.listeners.as_slice() {
+            [one] => one.accept().await.map(|(s, _)| s),
+            [a, b, ..] => tokio::select! {
+                r = a.accept() => r.map(|(s, _)| s),
+                r = b.accept() => r.map(|(s, _)| s),
+            },
+            [] => std::future::pending().await,
         }
     }
 
@@ -137,6 +189,30 @@ mod tests {
         let (status, page) = client.await.unwrap();
         assert_eq!(status, 200);
         assert!(page.contains("close this page"));
+    }
+
+    /// L7: `localhost` listens on both loopback families, so neither can be taken by
+    /// another listener; a fixed port whose IPv6 twin is taken is busy.
+    #[tokio::test]
+    async fn localhost_binds_both_loopback_families() {
+        let Ok(held) = std::net::TcpListener::bind("[::1]:0") else {
+            eprintln!("no IPv6 loopback here; skipped");
+            return;
+        };
+        let port = held.local_addr().unwrap().port();
+        let err = Loopback::bind(&format!("http://localhost:{port}/callback")).await.unwrap_err();
+        assert!(matches!(err, BindError::Busy(a) if a.is_ipv6()), "{err}");
+        drop(held);
+
+        let l = Loopback::bind("http://localhost:0/callback").await.unwrap();
+        let port: u16 = url::Url::parse(l.redirect_uri()).unwrap().port().unwrap();
+        assert!(std::net::TcpListener::bind(("::1", port)).is_err(), "[::1]:{port} is ours too");
+        assert!(std::net::TcpListener::bind(("127.0.0.1", port)).is_err(), "127.0.0.1:{port} is ours");
+        let client = tokio::spawn(async move {
+            reqwest::get(format!("http://[::1]:{port}/callback?code=c&state=s")).await.unwrap().status()
+        });
+        assert_eq!(l.accept(|_| true).await.unwrap(), "code=c&state=s", "answered over IPv6");
+        assert_eq!(client.await.unwrap(), 200);
     }
 
     #[tokio::test]

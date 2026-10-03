@@ -110,7 +110,7 @@ impl Keys {
     }
 
     pub fn parse(text: &str, path: &Path) -> Result<Self, FileError> {
-        let raw: RawFile = toml::from_str(text).map_err(|e| FileError::invalid(path, e.to_string()))?;
+        let raw: RawFile = toml::from_str(text).map_err(|e| FileError::toml(path, text, &e))?;
         if raw.schema != 1 {
             return Err(FileError::invalid(path, format!("schema {} is not supported (expected 1)", raw.schema)));
         }

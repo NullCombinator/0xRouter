@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use common::{Setup, send, settled};
 use nullrouter_engine::signin::SignInHttp;
-use nullrouter_engine::signin::refresh::{persist, refresh};
+use nullrouter_engine::signin::refresh::{Persisted, persist, refresh};
 use nullrouter_engine::state::Engine;
 use nullrouter_registry::OperatorHome;
 use signin_kit::{Shape, bearer, kit};
@@ -29,7 +29,7 @@ async fn a_crash_after_the_write_keeps_the_newest_refresh_token_and_a_restart_re
     let st = engine.snapshot();
     let http = SignInHttp::with_client(st.http.clone(), true);
     let next = refresh(&http, st.registry.provider("p").unwrap(), &view.entry).await.unwrap();
-    assert!(persist(k.home(), &next).unwrap());
+    assert!(matches!(persist(k.home(), &view.entry, &next).unwrap(), Persisted::Written));
     let in_memory = engine.tokens.get("p", "a").unwrap();
     assert!(in_memory.entry.refresh_token.as_ref().unwrap().matches(&first), "not swapped: the crash came first");
     drop((st, view, in_memory));

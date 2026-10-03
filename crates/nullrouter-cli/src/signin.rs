@@ -10,7 +10,7 @@ use std::io::Write;
 use std::time::{Duration, SystemTime};
 
 use nullrouter_engine::accounts::{self, Account, AccountKind, Accounts};
-use nullrouter_engine::signin::{self, Begun, DeviceSignIn, PkceSignIn, SignInError, SignInHttp};
+use nullrouter_engine::signin::{self, Begun, DeviceSignIn, PkceSignIn, SignInError, SignInHttp, printable};
 use nullrouter_engine::tokens::{self, TokenEntry};
 use nullrouter_registry::schema::RedirectKind;
 use nullrouter_registry::{OperatorHome, ProviderEntity, SecretString};
@@ -58,10 +58,11 @@ pub struct Done {
 }
 
 impl Done {
-    /// `xai/main: signed in as a…@example.com (SuperGrok); applied`.
+    /// `xai/main: signed in as a…@example.com (SuperGrok); applied`. The provider's email
+    /// and tier lose any control characters.
     pub fn line(&self) -> String {
-        let who = self.email.as_deref().unwrap_or("account");
-        let tier = self.tier.as_deref().map(|t| format!(" ({t})")).unwrap_or_default();
+        let who = self.email.as_deref().map_or_else(|| "account".to_owned(), printable);
+        let tier = self.tier.as_deref().map(|t| format!(" ({})", printable(t))).unwrap_or_default();
         let replaced = match self.replaced {
             Some(AccountKind::Signin) => "replaced the earlier sign-in; ",
             Some(AccountKind::Key) => "replaced the key account; ",
@@ -91,9 +92,20 @@ pub fn has_display() -> bool {
         || ["DISPLAY", "WAYLAND_DISPLAY"].iter().any(|v| std::env::var_os(v).is_some_and(|s| !s.is_empty()))
 }
 
+/// Whether a link from a provider may be handed to the browser (security review L2): an
+/// `https` link with no control characters or spaces. Any other link (`file:`, a custom
+/// scheme) is only printed.
+pub fn openable(link: &str) -> bool {
+    link.get(..8).is_some_and(|p| p.eq_ignore_ascii_case("https://"))
+        && !link.chars().any(|c| c.is_control() || c.is_whitespace())
+}
+
 /// Opens `url` with `open` (macOS) or `xdg-open`, ignoring any failure: the link is printed
-/// either way.
+/// either way. Only [`openable`] links are opened.
 pub fn open_browser(url: &str) {
+    if !openable(url) {
+        return;
+    }
     let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
     let _ = std::process::Command::new(opener)
         .arg(url)
@@ -118,7 +130,20 @@ fn expires_in(at: SystemTime) -> String {
 
 impl SignIn<'_> {
     fn ended(&self, code: u8, reason: impl std::fmt::Display) -> Ended {
+        // The reason may carry a provider's error code: no control characters (L1).
+        let reason = printable(&reason.to_string());
         Ended { code, message: format!("{}/{}: sign-in ended: {reason}; nothing saved", self.provider.id, self.name) }
+    }
+
+    /// Hands `link` to the browser when there is one and the link is [`openable`];
+    /// otherwise says why it wasn't opened (the link is printed already).
+    fn open(&self, link: &str, out: &mut impl Write) {
+        let Some(open) = self.browser else { return };
+        if openable(link) {
+            open(link);
+        } else {
+            say!(out, "(Not opened in the browser: not an https link.)\n");
+        }
     }
 
     fn failed(&self, e: &SignInError) -> Ended {
@@ -195,11 +220,10 @@ impl SignIn<'_> {
         out: &mut impl Write,
         cancel: &CancellationToken,
     ) -> Result<TokenEntry, Ended> {
-        say!(out, "Open this page on any device and approve:\n  {}\n", d.link());
-        say!(out, "Code: {} (expires in {})\n", d.user_code, expires_in(d.expires_at));
-        if let Some(open) = self.browser {
-            open(d.link());
-        }
+        // The device endpoint's text is the provider's: printed without control characters.
+        say!(out, "Open this page on any device and approve:\n  {}\n", printable(d.link()));
+        say!(out, "Code: {} (expires in {})\n", printable(&d.user_code), expires_in(d.expires_at));
+        self.open(d.link(), out);
         say!(out, "Waiting for approval… ");
         match d.poll(self.http, self.name, cancel).await {
             Ok(e) => {
@@ -220,7 +244,7 @@ impl SignIn<'_> {
         out: &mut impl Write,
         cancel: &CancellationToken,
     ) -> Result<TokenEntry, Ended> {
-        say!(out, "Open this link in a browser (on any device):\n  {}\n", p.authorize_url());
+        say!(out, "Open this link in a browser (on any device):\n  {}\n", printable(p.authorize_url()));
         match p.redirect_kind() {
             RedirectKind::CodePage => say!(out, "After you approve, the page shows a code; paste it here.\n"),
             RedirectKind::Loopback => {
@@ -233,9 +257,7 @@ impl SignIn<'_> {
                 }
             }
         }
-        if let Some(open) = self.browser {
-            open(p.authorize_url());
-        }
+        self.open(p.authorize_url(), out);
         let code: SecretString = loop {
             say!(out, "{PASTE_PROMPT}");
             let pasted = Cell::new(false);
@@ -251,7 +273,9 @@ impl SignIn<'_> {
                     }
                     break code;
                 }
-                Err(SignInError::Paste(e)) => say!(out, "That didn't work: {e}. Try again.\n"),
+                Err(SignInError::Paste(e)) => {
+                    say!(out, "That didn't work: {}. Try again.\n", printable(&e.to_string()))
+                }
                 Err(e) => {
                     say!(out, "\n");
                     return Err(self.failed(&e));
@@ -287,6 +311,30 @@ impl SignIn<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_https_links_are_opened() {
+        assert!(openable("https://accounts.x.ai/device?user_code=ABCD"));
+        assert!(openable("HTTPS://auth.example/a"));
+        for bad in
+            ["http://127.0.0.1:1/device", "file:///etc/passwd", "x-custom:open", "https://a\u{1b}[2J", "https://a b"]
+        {
+            assert!(!openable(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn provider_text_in_the_done_line_loses_control_characters() {
+        let d = Done {
+            provider: "xai".into(),
+            name: "main".into(),
+            email: Some("a\u{1b}[2J…@example.com".into()),
+            tier: Some("Super\u{7}Grok".into()),
+            replaced: None,
+            status: "applied",
+        };
+        assert_eq!(d.line(), "xai/main: signed in as a[2J…@example.com (SuperGrok); applied");
+    }
 
     #[test]
     fn emails_are_shortened() {

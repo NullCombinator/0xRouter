@@ -129,6 +129,13 @@ fn bundled_signin_declarations_match_9router() {
         }
     }
 
+    // grok-cli: the official CLI's pager agent (`grok-cli.js` device request and polls).
+    assert_eq!(
+        decl("grok-cli").headers.get("User-Agent").map(String::as_str),
+        Some("grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)")
+    );
+    assert!(decl("xai").headers.is_empty() && decl("anthropic").headers.is_empty());
+
     // xai: the same loopback redirect.
     let xai = decl("xai");
     assert_eq!(xai.redirect[0].uri, data["providers"]["xai"]["redirect_uri"].as_str().unwrap());
@@ -282,6 +289,25 @@ async fn grok_cli_device_grant_sends_9routers_bodies() {
     assert!(!device.json);
     assert_eq!(device.fields, want, "client_id, scope (all eight) and referrer=grok-build");
 
+    // The official CLI's pager agent on the device request and every token poll
+    // (`[signin] headers`); the profile read carries 9router's agent and client version.
+    let header = |h: &reqwest::header::HeaderMap, k: &str| h.get(k).and_then(|v| v.to_str().ok()).map(str::to_owned);
+    let theirs = &by("grok-cli-device-request")["calls"][0]["headers"];
+    let ua = theirs["user-agent"].as_str().unwrap();
+    assert_eq!(ua, "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)");
+    assert_eq!(header(&idp.headers_at(DEVICE).pop().unwrap(), "user-agent").as_deref(), Some(ua));
+    let polls = idp.headers_at(TOKEN);
+    assert!(!polls.is_empty() && polls.iter().all(|h| header(h, "user-agent").as_deref() == Some(ua)), "every poll");
+    for h in idp.headers_at(DEVICE).iter().chain(&polls) {
+        assert_eq!(header(h, "accept").as_deref(), theirs["accept"].as_str());
+        assert_eq!(header(h, "content-type").as_deref(), theirs["content-type"].as_str());
+    }
+    let profile = &by("grok-cli-device-granted")["calls"][1]["headers"];
+    let ours = idp.headers_at(PROFILE).pop().expect("the profile was read");
+    for k in ["user-agent", "x-grok-client-version", "x-xai-token-auth", "accept"] {
+        assert_eq!(header(&ours, k).as_deref(), profile[k].as_str(), "profile {k}");
+    }
+
     let poll = idp.token_requests().pop().unwrap();
     let want = fields(&by("grok-cli-device-granted")["calls"][0]["body"]);
     assert!(!poll.json);
@@ -370,7 +396,7 @@ async fn refresh_errors_read_9routers_codes_and_split_like_r10() {
             // A closed port: connection failure.
             None => format!("http://127.0.0.1:{}/oauth2/token", closed_port()),
         };
-        let err = signin::token_request(&http(), &url, body.clone()).await.unwrap_err();
+        let err = signin::token_request(&http(), &url, Default::default(), body.clone()).await.unwrap_err();
 
         if let Some(permanent) = r10_permanent(status) {
             assert_eq!(err.is_transient(), !permanent, "{name}: {err}");
@@ -486,7 +512,7 @@ async fn refresh_call_rotates_like_9router() {
             expires_at: SystemTime::now(),
             scope: "s".into(),
             claims: Default::default(),
-            hosts: BTreeSet::new(),
+            hosts: p.token_hosts(),
             signed_in_at: SystemTime::now(),
             last_refresh_at: None,
             state: None,
@@ -498,6 +524,11 @@ async fn refresh_call_rotates_like_9router() {
         let sent = idp.token_requests().pop().unwrap();
         let call = &c["calls"][0];
         assert_eq!(call["body"]["encoding"], if sent.json { "json" } else { "form" }, "{name}");
+        // Deviation: 9router's refresh sends no agent; 0router sends the plugin's
+        // `[signin] headers` on every sign-in call, refresh included (grok-cli's pager agent).
+        let ua = idp.headers_at(TOKEN).pop().unwrap().get("user-agent").map(|v| v.to_str().unwrap().to_owned());
+        assert_eq!(ua, p.signin.as_ref().unwrap().headers.get("User-Agent").cloned(), "{name}");
+        assert_eq!(call["headers"].get("user-agent"), None, "{name}: 9router sends none");
         let theirs = fields(&call["body"]);
         assert_eq!(sent.fields.keys().collect::<BTreeSet<_>>(), theirs.keys().collect::<BTreeSet<_>>(), "{name}");
         assert_eq!(sent.get("grant_type"), Some("refresh_token"), "{name}");
@@ -537,7 +568,7 @@ async fn refresh_failures_classify_per_r10() {
             }
             None => format!("http://127.0.0.1:{}/oauth2/token", closed_port()),
         };
-        let err = signin::token_request(&http(), &url, body.clone()).await.unwrap_err();
+        let err = signin::token_request(&http(), &url, Default::default(), body.clone()).await.unwrap_err();
         let permanent = classify(&err) == RefreshClass::Permanent;
         assert_eq!(permanent, r10_permanent(status).unwrap_or(false), "{name}: {err}");
         if c["classify"]["permanent"] == true {

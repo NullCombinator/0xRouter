@@ -136,20 +136,6 @@ fn mode_of(path: &Path) -> Option<(u32, bool)> {
     Some((meta.permissions().mode() & 0o777, meta.is_dir()))
 }
 
-/// A file error with any quoted source line removed: a TOML parse error shows the line,
-/// and in `tokens.toml` that line may hold a token.
-fn without_source(e: &FileError) -> String {
-    e.to_string()
-        .lines()
-        .filter(|l| {
-            let t = l.trim_start();
-            let gutter = t.trim_start_matches(|c: char| c.is_ascii_digit()).trim_start();
-            !gutter.starts_with('|')
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 fn signin_report(home: &Path) -> SigninReport {
     let mut r = SigninReport::default();
 
@@ -187,7 +173,7 @@ fn signin_report(home: &Path) -> SigninReport {
     let list = match Accounts::load(&home.join(accounts::FILE)) {
         Ok(l) => Some(l),
         Err(e) => {
-            r.errors.push(format!("{}; `serve` refuses to start", without_source(&e)));
+            r.errors.push(format!("{}; `serve` refuses to start", e));
             None
         }
     };
@@ -195,7 +181,7 @@ fn signin_report(home: &Path) -> SigninReport {
         Ok(s) => Some(s),
         Err(FileError::NotPrivate { .. }) => None, // already reported above
         Err(e) => {
-            r.errors.push(format!("{}; `serve` refuses to start", without_source(&e)));
+            r.errors.push(format!("{}; `serve` refuses to start", e));
             None
         }
     };

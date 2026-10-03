@@ -26,10 +26,13 @@ params = { referrer = "grok-build" }
 body = "form"
 refresh_lead = "5m"
 auth = { header = "Authorization", scheme = "bearer" }
+# 9router's device request and token polls send the official CLI's pager agent
+# (`src/lib/oauth/providers/grok-cli.js`); 0router sends it on refreshes too.
+headers = { User-Agent = "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)" }
 
 [signin.profile]
 url = "https://cli-chat-proxy.grok.com/v1/user"
-headers = { x-xai-token-auth = "xai-grok-cli" }
+headers = { User-Agent = "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)", x-xai-token-auth = "xai-grok-cli", x-grok-client-version = "0.2.93" }
 email = "email | id_token.email | id_token.preferred_username"
 user_id = "userId | principalId"
 tier = "subscriptionTier"

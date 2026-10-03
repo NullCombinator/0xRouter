@@ -9,11 +9,10 @@
 use std::time::{Duration, Instant, SystemTime};
 
 use nullrouter_registry::SecretString;
-use reqwest::header::HeaderMap;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use super::{Flow, SignInError, SignInHttp, encode_body, error_code, pkce, token_request};
+use super::{Flow, MAX_EXPIRES_IN, SignInError, SignInHttp, encode_body, error_code, pkce, token_request};
 use crate::tokens::TokenEntry;
 
 pub const GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
@@ -53,7 +52,8 @@ fn secs(v: &Value) -> Option<Duration> {
         Value::String(s) => s.trim().parse().ok(),
         _ => None,
     }
-    .map(Duration::from_secs)
+    // A provider's number is clamped (security review L8): no clock arithmetic overflows.
+    .map(|s| Duration::from_secs(s.min(MAX_EXPIRES_IN.as_secs())))
 }
 
 impl DeviceSignIn {
@@ -72,7 +72,7 @@ impl DeviceSignIn {
         }
         fields.extend(params.iter().map(|(k, v)| (*k, v.as_str())));
         let body = encode_body(decl.body, &fields);
-        let (status, bytes) = http.send(WHAT, reqwest::Method::POST, url, HeaderMap::new(), Some(body)).await?;
+        let (status, bytes) = http.send(WHAT, reqwest::Method::POST, url, flow.headers.clone(), Some(body)).await?;
         if !(200..300).contains(&status) {
             return Err(SignInError::Rejected { what: WHAT, status, code: error_code(status, &bytes) });
         }
@@ -89,10 +89,10 @@ impl DeviceSignIn {
             user_code,
             verification_uri,
             verification_uri_complete: text("verification_uri_complete"),
-            expires_at: SystemTime::now() + expires_in,
+            expires_at: SystemTime::now().checked_add(expires_in).unwrap_or_else(SystemTime::now),
             device_code,
             interval,
-            deadline: Instant::now() + expires_in,
+            deadline: Instant::now().checked_add(expires_in).unwrap_or_else(Instant::now),
             flow,
         })
     }
@@ -120,11 +120,11 @@ impl DeviceSignIn {
                 &[("grant_type", GRANT_TYPE), ("device_code", dc), ("client_id", decl.client_id.as_str())],
             )
         });
-        match token_request(http, &self.flow.token_url, body).await {
+        match token_request(http, &self.flow.token_url, self.flow.headers.clone(), body).await {
             Ok(grant) => Ok(DevicePoll::Done(Box::new(self.flow.finish(http, name, grant).await))),
             Err(SignInError::Rejected { code, .. }) if code == "authorization_pending" => Ok(DevicePoll::Pending),
             Err(SignInError::Rejected { code, .. }) if code == "slow_down" => {
-                self.interval += SLOW_DOWN_STEP;
+                self.interval = self.interval.saturating_add(SLOW_DOWN_STEP);
                 Ok(DevicePoll::SlowDown)
             }
             Err(SignInError::Rejected { code, .. }) if code == "expired_token" => Err(SignInError::Expired),

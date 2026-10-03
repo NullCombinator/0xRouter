@@ -170,6 +170,9 @@ fn quota_requests_match_the_research_table() {
                 "https://opencode.ai/zen/v1/usage"
             };
             assert_eq!(r["url"], want);
+            // 9router's opencode reader asks for JSON; the bundled plugin declares the same.
+            let ours = plugin_quota(c["provider"].as_str().unwrap()).primary.request.headers;
+            assert_eq!(ours.get("Accept").map(String::as_str), r["headers"]["accept"].as_str(), "{}", c["provider"]);
         }
     }
     // xai has no reader in 9router: "quota not reported" (R11).
@@ -256,6 +259,9 @@ fn deviation(case: &str, ours: &str, theirs: Want) -> Option<Option<Want>> {
         // `includedUsed`).
         ("testkit-sample", "monthly included") => None,
         // `{ balance: 0 }`: 9router's synthetic "0 of 1"; the extractor reports remaining 0.
+        // Likewise a bag with only `remaining > 0` and no total: 9router draws "0 used of
+        // <remaining>", the extractor a remaining-only window (parity audit finding 14; no
+        // oracle case).
         ("credits-bag-balance-only", "credits") => Some((None, None, Some(0.0), None)),
         // Percent `used` is shown as reported, not capped at 100 (SC-006); 9router caps the
         // anthropic `limits[]` windows and opencode's.

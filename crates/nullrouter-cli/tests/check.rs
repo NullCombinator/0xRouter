@@ -135,4 +135,17 @@ fn a_malformed_tokens_file_is_an_error_without_its_source_line() {
     assert_eq!(out.status.code(), Some(1), "{text}");
     assert_no_token(&text);
     assert!(text.lines().any(|l| l.starts_with("error: ") && l.contains("tokens.toml")), "{text}");
+    // L4: every command that reads the file names the place, never the line.
+    for args in [
+        &["accounts", "list"][..],
+        &["accounts", "remove", "grok-cli", "work"],
+        &["accounts", "enable", "grok-cli", "work"],
+    ] {
+        let out = nr(h, args);
+        let all = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        assert_no_token(&all);
+    }
+    let out = nr(h, &["accounts", "list"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("tokens.toml: line 3, column "), "{err}");
 }

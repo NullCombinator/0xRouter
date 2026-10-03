@@ -66,6 +66,8 @@ pub enum Failure {
     /// No response for this long, then a 504 (a client timeout shorter than this sees a
     /// timeout).
     Hang(Duration),
+    /// No response for this long, then the request is answered as usual.
+    Slow(Duration),
 }
 
 impl Failure {
@@ -117,6 +119,8 @@ struct Idp {
     token_requests: Mutex<Vec<TokenRequest>>,
     authorize_queries: Mutex<Vec<String>>,
     device_requests: Mutex<Vec<TokenRequest>>,
+    /// Every request's path and headers, in arrival order.
+    seen: Mutex<Vec<(String, HeaderMap)>>,
     token_calls: AtomicUsize,
     refresh_calls: AtomicUsize,
     device_calls: AtomicUsize,
@@ -189,6 +193,7 @@ impl MockIdp {
             token_requests: Mutex::default(),
             authorize_queries: Mutex::default(),
             device_requests: Mutex::default(),
+            seen: Mutex::default(),
             token_calls: AtomicUsize::new(0),
             refresh_calls: AtomicUsize::new(0),
             device_calls: AtomicUsize::new(0),
@@ -292,6 +297,11 @@ impl MockIdp {
         lock(&self.inner.authorize_queries).clone()
     }
 
+    /// The headers of every request to `path`, in arrival order.
+    pub fn headers_at(&self, path: &str) -> Vec<HeaderMap> {
+        lock(&self.inner.seen).iter().filter(|(p, _)| p == path).map(|(_, h)| h.clone()).collect()
+    }
+
     pub fn token_calls(&self) -> usize {
         self.inner.token_calls.load(Ordering::SeqCst)
     }
@@ -350,6 +360,7 @@ async fn handle(State(idp): State<Arc<Idp>>, req: Request) -> Response {
     let (parts, body) = req.into_parts();
     let body: Bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap_or_default();
     let path = parts.uri.path().to_owned();
+    lock(&idp.seen).push((path.clone(), parts.headers.clone()));
     let pq = parts.uri.path_and_query().map_or_else(|| path.clone(), |p| p.to_string());
     let json_body = parts
         .headers
@@ -459,6 +470,7 @@ async fn token(idp: &Idp, json_body: bool, body: &[u8], path_and_query: String) 
             tokio::time::sleep(d).await;
             return reply(504, json!({ "message": "mock: hung" }));
         }
+        Some(Failure::Slow(d)) => tokio::time::sleep(d).await,
         None => {}
     }
     if fields.get("client_id") != Some(&lock(&idp.client_id)) {

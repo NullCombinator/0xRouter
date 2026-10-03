@@ -7,7 +7,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use arc_swap::ArcSwap;
-use nullrouter_registry::{LoadReport, OperatorHome, Registry, RegistryHandle, RuntimeSettings, StartupError};
+use nullrouter_registry::{
+    LoadReport, OperatorHome, Registry, RegistryHandle, RuntimeSettings, SecretString, StartupError,
+};
 use nullrouter_wire::codec::Style;
 
 use crate::accounts::{self, Accounts};
@@ -27,7 +29,8 @@ pub struct EngineState {
     pub registry: Arc<Registry>,
     pub accounts: Accounts,
     pub keys: Keys,
-    /// Swappable on its own: a token refresh extends it (`Engine::rebuild_redactor`).
+    /// The engine's one redactor, shared by every snapshot (security review L3): a request
+    /// holding an older snapshot still masks a token refreshed after it started.
     pub redactor: Arc<SharedRedactor>,
     /// The engine's live sign-in tokens, shared by every snapshot.
     pub tokens: Arc<TokenCells>,
@@ -90,6 +93,11 @@ pub struct Engine {
     state: ArcSwap<EngineState>,
     /// Shared with the log writer, so log lines follow reloads.
     redactor: Arc<ArcSwap<Redactor>>,
+    /// The redactor every snapshot holds; swapped together with [`redactor`](Self::redactor).
+    shared_redactor: Arc<SharedRedactor>,
+    /// Secrets of the key accounts the last reload dropped: still masked for one generation,
+    /// since a request holding the older snapshot may still send them.
+    retired: Mutex<Vec<SecretString>>,
     pub records: RecordStore,
     /// Account rests per model and backoff levels (research R6). In memory only.
     pub cooldowns: Cooldowns,
@@ -128,6 +136,7 @@ fn assemble(
     registry: Arc<Registry>,
     mut accounts: Accounts,
     keys: Keys,
+    redactor: Arc<SharedRedactor>,
     tokens: Arc<TokenCells>,
     live_models: Arc<LiveModels>,
     generation: u64,
@@ -138,7 +147,6 @@ fn assemble(
         tracing::warn!("account hosts bound but not saved: {e}");
     }
     let unused_accounts = accounts.unused(&registry).map(|a| format!("{}/{}", a.provider, a.name)).collect();
-    let redactor = Arc::new(SharedRedactor::new(Redactor::for_state(&accounts, &tokens)));
     let report = StateReport { generation, registry: registry.report().clone(), unused_accounts };
     // The gate proved every loaded style compiles; one that doesn't is left out, not fatal.
     let styles = registry
@@ -181,12 +189,23 @@ impl Engine {
         quota.on_poll(history.hook());
         let registry = open(home)?;
         let live_models = Arc::new(LiveModels::default());
-        let (state, report) = assemble(registry.snapshot(), accounts, keys, tokens.clone(), live_models.clone(), 1);
-        let redactor = Arc::new(ArcSwap::new(state.redactor.current()));
+        let shared_redactor = Arc::new(SharedRedactor::new(Redactor::for_state(&accounts, &tokens)));
+        let (state, report) = assemble(
+            registry.snapshot(),
+            accounts,
+            keys,
+            shared_redactor.clone(),
+            tokens.clone(),
+            live_models.clone(),
+            1,
+        );
+        let redactor = Arc::new(ArcSwap::new(shared_redactor.current()));
         let engine = Self {
             registry,
             state: ArcSwap::from_pointee(state),
             redactor,
+            shared_redactor,
+            retired: Mutex::new(Vec::new()),
             records: RecordStore::default(),
             cooldowns: Cooldowns::default(),
             warm: WarmMap::default(),
@@ -226,6 +245,29 @@ impl Engine {
         let (accounts, keys) = operator_files(self.registry.home())?;
         let tokens = self.tokens.changed(self.registry.home().path())?;
         self.registry.reload().map_err(|e| StateError::Registry(e.to_string()))?;
+        // Key accounts this reload drops stay masked for one generation.
+        let old = self.snapshot();
+        let kept = |s: &SecretString| {
+            accounts.iter().any(|a| a.secret.as_ref().is_some_and(|n| s.with_exposed(|v| n.matches(v))))
+        };
+        let retired: Vec<SecretString> = old
+            .accounts
+            .iter()
+            .filter_map(|a| a.secret.as_ref())
+            .filter(|s| !kept(s))
+            .map(|s| s.with_exposed(|v| SecretString::new(v)))
+            .collect();
+        *self.retired.lock().unwrap_or_else(|e| e.into_inner()) = retired;
+        // The redactor learns new accounts and tokens before any snapshot or cell holds them
+        // (security review L3).
+        match &tokens {
+            Some((store, _)) => {
+                let incoming =
+                    store.entries.iter().flat_map(|e| std::iter::once(&e.access_token).chain(&e.refresh_token));
+                self.swap_redactor(self.build_redactor(&accounts, incoming));
+            }
+            None => self.swap_redactor(self.build_redactor(&accounts, std::iter::empty())),
+        }
         if let Some((store, at)) = tokens {
             self.tokens.apply(store, at);
         }
@@ -234,11 +276,12 @@ impl Engine {
             self.registry.snapshot(),
             accounts,
             keys,
+            self.shared_redactor.clone(),
             self.tokens.clone(),
             self.live_models.clone(),
             generation,
         );
-        self.redactor.store(state.redactor.current());
+        self.swap_redactor(self.build_redactor(&state.accounts, std::iter::empty()));
         self.state.store(Arc::new(state));
         self.changed.notify_one();
         Ok(report)
@@ -250,10 +293,41 @@ impl Engine {
     pub fn rebuild_redactor(&self) {
         let _guard = self.reload.lock().unwrap_or_else(|e| e.into_inner());
         let st = self.snapshot();
-        let r = Arc::new(Redactor::for_state(&st.accounts, &self.tokens));
-        st.redactor.store(r.clone());
-        self.redactor.store(r);
+        self.swap_redactor(self.build_redactor(&st.accounts, std::iter::empty()));
         self.changed.notify_one();
+    }
+
+    /// Adds `secrets` to the redactor before they go into a token cell (security review
+    /// L3): there is no moment when a cell holds a token the redactor doesn't know. Call
+    /// [`rebuild_redactor`](Self::rebuild_redactor) after the swap.
+    pub fn admit_secrets<'a>(&self, secrets: impl IntoIterator<Item = &'a SecretString>) {
+        let _guard = self.reload.lock().unwrap_or_else(|e| e.into_inner());
+        let st = self.snapshot();
+        self.swap_redactor(self.build_redactor(&st.accounts, secrets));
+    }
+
+    /// Every key-account secret in `accounts`, every token-cell generation, the retired
+    /// secrets, and `extra`.
+    fn build_redactor<'a>(&self, accounts: &Accounts, extra: impl IntoIterator<Item = &'a SecretString>) -> Redactor {
+        let views = self.tokens.views();
+        let retired = self.retired.lock().unwrap_or_else(|e| e.into_inner());
+        let mut all: Vec<&SecretString> = accounts
+            .iter()
+            .filter_map(|a| a.secret.as_ref())
+            .chain(views.iter().flat_map(|v| v.secrets()))
+            .chain(retired.iter())
+            .collect();
+        for s in extra {
+            all.push(s);
+        }
+        Redactor::new(all)
+    }
+
+    /// Swaps `r` into the shared redactor and the log writer's cell.
+    fn swap_redactor(&self, r: Redactor) {
+        let r = Arc::new(r);
+        self.shared_redactor.store(r.clone());
+        self.redactor.store(r);
     }
 
     /// `$NULLROUTER_HOME/install-id`, created on first use (research R7).
@@ -346,6 +420,33 @@ mod tests {
 
         let id = engine.install_id().unwrap().to_owned();
         assert_eq!(engine.install_id().unwrap(), id);
+    }
+
+    /// L3: one redactor for every snapshot. A request that holds a snapshot from before a
+    /// reload, then refreshes its token, still masks the new one.
+    #[test]
+    fn a_held_snapshot_masks_tokens_refreshed_after_a_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let e = crate::tokens::tests::entry("xai", "main", "xai-gen1-SENTINEL", &["api.x.ai"]);
+        crate::tokens::update(home, "xai", "main", |s| *s = Some(e)).unwrap();
+        write_private(
+            &home.join(accounts::FILE),
+            "schema = 1\n[[account]]\nprovider = \"anthropic\"\nname = \"gone\"\nsecret = \"sk-ant-RETIRED-0001\"\n",
+        );
+        let (engine, _) = Engine::open(OperatorHome::new(home)).unwrap();
+        let held = engine.snapshot();
+        write_private(&home.join(accounts::FILE), "schema = 1\n");
+        engine.reload_blocking().unwrap();
+        assert_eq!(held.redact_probe("sk-ant-RETIRED-0001"), "***", "a dropped key stays masked a generation");
+
+        let next = crate::tokens::tests::entry("xai", "main", "xai-gen2-SENTINEL", &["api.x.ai"]);
+        engine.admit_secrets([&next.access_token]);
+        assert_eq!(held.redact_probe("xai-gen2-SENTINEL"), "***", "known before the cell holds it");
+        engine.tokens.replace(next);
+        engine.rebuild_redactor();
+        assert_eq!(held.redact_probe("xai-gen2-SENTINEL xai-gen1-SENTINEL"), "*** ***");
+        assert!(Arc::ptr_eq(&held.redactor, &engine.snapshot().redactor), "one redactor");
     }
 
     impl EngineState {

@@ -40,7 +40,7 @@ derive = "ses_sha256_hex32"
 # Usage windows (research R11): API-key accounts, percent used, as 9router's opencode-go.js.
 [quota]
 accounts = "key"
-request = { url = "https://opencode.ai/zen/go/v1/usage" }
+request = { url = "https://opencode.ai/zen/go/v1/usage", headers = { Accept = "application/json" } }
 
 [[quota.window]]
 path = "usage.rolling"

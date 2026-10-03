@@ -5,6 +5,7 @@
 //! | `invalid_grant`, `invalid_request`, `unauthorized_client`, `refresh_token_expired`, `refresh_token_reused`, `refresh_token_invalidated` | permanent |
 //! | any other 400/401/403 from the token endpoint | permanent |
 //! | timeout, connection failure, 5xx, 429 | transient |
+//! | the token URL's host is not one the account's tokens are bound to (nothing sent) | permanent |
 //!
 //! Outside the table: a token endpoint answering some other status (404, 405, …) or a 2xx
 //! without an access token is transient, so an outage that misroutes the endpoint never
@@ -43,6 +44,8 @@ pub fn classify(e: &SignInError) -> RefreshClass {
                 RefreshClass::Transient
             }
         }
+        // The refresh token can't go there; only a sign-in binds the new host.
+        SignInError::UnboundHost { .. } => RefreshClass::Permanent,
         _ => RefreshClass::Transient,
     }
 }
@@ -71,5 +74,7 @@ mod tests {
         assert_eq!(classify(&t), RefreshClass::Transient);
         let b = SignInError::BadResponse { what: "token endpoint", reason: "not JSON".into() };
         assert_eq!(classify(&b), RefreshClass::Transient);
+        let u = SignInError::UnboundHost { host: "evil.example".into(), provider: "p".into(), name: "a".into() };
+        assert_eq!(classify(&u), RefreshClass::Permanent);
     }
 }

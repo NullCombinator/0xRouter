@@ -31,6 +31,7 @@ verifier_bytes = 96
 refresh_lead = "5m"
 auth = { header = "Authorization", scheme = "bearer" }
 terms_warning = true
+headers = { User-Agent = "grokish-pager/1.0" }
 
 [signin.profile]
 url = "https://cli-chat-proxy.grokish.example/v1/user"
