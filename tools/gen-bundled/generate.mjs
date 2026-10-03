@@ -932,6 +932,13 @@ count("empty", {});
 mkdirSync(join(fixDir, "count"), { recursive: true });
 writeFixture(join("count", "cases.json"), { cases: countCases });
 
+// ── Sign-in and quota oracle (T040) ─────────────────────────────────────────
+//
+// In its own process: it installs a scripted fetch before any 9router module loads, which
+// this process has already done. Proxy variables are dropped so proxyFetch.js never routes.
+const oracleEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(https?|all|no)_proxy$/i.test(k)));
+execFileSync(process.execPath, ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", join(ROOT, "tools", "gen-bundled", "oauth-oracle.mjs")], { stdio: ["ignore", "inherit", "inherit"], env: oracleEnv });
+
 console.log(`ref/9router@${SHA}`);
 console.log(`  ${plugins.length} plugins, ${credentials.length} credentials (${credentials.map((c) => c.provider_id).join(", ")})`);
 console.log(`  ${oauthParamKeys.size} oauth params, ${sectionFormats.size} section formats, ${lookupRows.length} lookup rows`);

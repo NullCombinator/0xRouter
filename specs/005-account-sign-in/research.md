@@ -237,9 +237,10 @@ serves where one exists. The fix, if needed, is a 004 adapter, not this slice.
 
 **Decision**:
 - **Proactive**: a maintenance task (R13) refreshes each sign-in account when `expires_at −
-  lead` is reached. `lead` is the plugin's `refresh_lead` (grok-cli and xai 5 min, anthropic
-  4 h as 9router declares), with a core floor of 2 min and a ceiling of half the token's
-  lifetime. Refresh happens with or without traffic.
+  lead` is reached. As 9router's background refresher (`backgroundTokenRefresh.js:9`), `lead` is
+  the larger of the plugin's `refresh_lead` (grok-cli and xai 5 min, anthropic 4 h) and 30 min,
+  with a core ceiling of half the token's lifetime (so a 40-minute grok-cli token refreshes after
+  20 minutes). Refresh happens with or without traffic. (Found by the T040 parity fixtures.)
 - **At use**: `Run::outgoing` checks expiry too. A token within 30 s of expiry triggers the
   same deduplicated refresh, and the request waits for it (bounded by the refresh timeout,
   15 s).
@@ -269,6 +270,8 @@ serves where one exists. The fix, if needed, is a 004 adapter, not this slice.
 | `invalid_grant`, `invalid_request`, `unauthorized_client`, `refresh_token_expired`, `refresh_token_reused`, `refresh_token_invalidated` | permanent |
 | any other 400/401/403 from the token endpoint | permanent |
 | timeout, connection failure, 5xx, 429 | transient |
+
+The error code is read from `error`, then `error_code` (as `tokenRefresh/providers.js:244`).
 
 **States**:
 
@@ -476,3 +479,6 @@ Opt-in (`NR_LIVE=1`) with the operator's real accounts, never in CI.
 | Anthropic loopback redirect only | hosted code page first (L1) | headless sign-in |
 | Quota polled only while a dashboard tab is open | polled always, slower default | FR-018 |
 | Claude legacy org-usage fallback | not ported | admin-only, unnormalised |
+| xai/grok-cli refresh retries `refresh_token_reused`, `unauthorized_client` | permanent: the account needs sign-in | a reused or unauthorized refresh token can't recover; retrying hides it from the operator |
+| xai discovery accepted on any https `*.x.ai` host | only the plugin's declared sign-in hosts | host binding (FR-030) |
+| email falls back to the token's `sub` | no `sub` fallback | `sub` is an opaque id, not an email |
