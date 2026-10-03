@@ -388,3 +388,33 @@ config.toml:4:1 unified_model[0].members[1].provider: unknown provider "xx"
 - withheld credentials;
 - skipped plugins;
 - dropped unified models.
+
+## Live checks (opt-in)
+
+The live checks send a few tiny requests with your real accounts and print what the
+providers answered. They never run in CI and print no tokens. Keep their accounts in a
+separate home (`.nr-live/` is git-ignored), then point both the CLI and the tests at it:
+
+```bash
+export NULLROUTER_HOME=$PWD/.nr-live
+nullrouter accounts signin anthropic max      # add --paste over SSH
+nullrouter accounts signin grok-cli work
+nullrouter accounts signin xai main           # optional: L2 and L4 for xai
+nullrouter accounts add opencode-go main      # optional: key accounts with [quota]
+
+NR_LIVE=1 cargo test -p nullrouter-engine --test live -- signin_anthropic signin_grok_cli --nocapture
+NR_LIVE=1 cargo test -p nullrouter-engine --test live -- token_lifetimes --nocapture
+NR_LIVE=1 cargo test -p nullrouter-engine --test live -- quota --nocapture
+```
+
+| Check | Sends | Prints |
+|---|---|---|
+| `signin_anthropic` (L1) | one Messages request, `max_tokens` 5, per anthropic sign-in account | `SERVED` with the answer and usage, or `REFUSED` with the status and the provider's text for `[[signin.refused]]`. Note whether sign-in showed the code page ("paste the code") or fell back to loopback: the token store doesn't record it. |
+| `signin_grok_cli` (L3) | three streamed Responses requests through one grok-cli account: (a) every `[identity]` header, (b) the fixed-value headers only, (c) every header and a body with an `item_reference` and foreign item ids | `PASSED`/`FAILED` per variant, with the identity header names sent and the error text |
+| `token_lifetimes` (L4) | one refresh per sign-in account, saved like any refresh | the stored and the fresh `expires_in`, whether the refresh token `ROTATED`, and a hint when the lifetime is under 2 × `refresh_lead` |
+| `quota` (L2, L5) | one quota read per account with `[quota]` (the fallback only when the primary yields no window), and `GET api.x.ai/v1/models` per xai account kind | the raw answer (truncated) next to the extracted windows, and the `x-ratelimit-*` headers xai returned |
+
+A provider with no account in the home is skipped with a message. The checks send their
+requests directly rather than through the attempt loop, so a refusal doesn't take the
+account out of service. Run them while no server uses the same home: the checks refresh
+tokens, and two processes refreshing one rotating token can sign the account out.
