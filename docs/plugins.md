@@ -22,6 +22,8 @@ mutating command (`plugins install`, `accounts add`, `keys issue`, …) sends it
 
 Full reference: [`specs/003-request-pipeline/contracts/provider-schema-v2.md`](../specs/003-request-pipeline/contracts/provider-schema-v2.md),
 which extends slice 002's [`plugin-schema.md`](../specs/002-provider-model-registry/contracts/plugin-schema.md).
+Slice 005's sign-in, identity, quota and live-model sections are in
+[`signin-quota-schema.md`](../specs/005-account-sign-in/contracts/signin-quota-schema.md).
 
 ## The smallest plugin
 
@@ -106,6 +108,26 @@ style.
   style has one. Without it, 0router estimates.
 - **`[endpoints.text.continuation]`**: whether a trailing assistant turn is continued
   (`assistant_prefill` or `prefix_flag`), for which `models`, and `unless` what holds.
+- **`force`**: request parameters the provider fails without. See
+  [Forced parameters](#forced-parameters).
+- **`poll_url` and `job`** (video endpoints only): for a job API that doesn't follow the
+  wire's shape. `poll_url` is the status URL, with the job's `{id}` in its path, on the
+  endpoint's own host. `job` says where the job's fields sit:
+
+  ```toml
+  [endpoints.video]
+  url = "https://api.x.ai/v1/videos/generations"
+  wire = "openai-chat"
+  poll_url = "https://api.x.ai/v1/videos/{id}"
+  job = { id = "request_id", status = "status", status_map = { pending = "queued", done = "completed", failed = "failed" }, content_url = "video.url", error = "error.message" }
+  ```
+
+  `id` is read from the submit answer; `status`, `content_url` and `error` from each poll.
+  `status_map` maps the provider's values to `queued`, `in_progress`, `completed` or
+  `failed`. With `content_url`, the finished video is downloaded from that URL rather
+  than a `{poll_url}/content` route. The download's host is checked like any endpoint
+  host, and redirects are never followed. If the URL is on a host the account isn't
+  bound to, 0router fetches it with no secret and no identity headers.
 
 ## Session
 
@@ -164,6 +186,191 @@ shorter than 3 characters is an error.
   has none.
 - `wires = [...]` lists the wires a model may be sent on, in order of preference.
 
+## Forced parameters
+
+By default a request goes upstream as the client sent it, with as little change as
+possible. A plugin may force a request parameter only in two cases:
+
+- the provider fails without it, as shown by a live check;
+- the client asked for it through the model id, as with effort-suffixed ids.
+
+```toml
+[endpoints.text]
+force = { store = false }          # only if a live check shows the provider needs it
+
+[[models]]
+id = "grok-4.5-high"
+upstream_id = "grok-4.5"
+force = { "reasoning.effort" = "high" }
+```
+
+The keys form a closed set: `store`, `reasoning.summary`, `reasoning.effort` and
+`include`. An `include` list is appended to the client's own, without duplicates. Each
+forced parameter is noted in the request record. Prompt content, tools, conversation
+items and the system prompt are never changed, for any provider: no renamed or decoy
+tools, no injected text, no invented ids. Any other key is refused:
+`force: tools can't be forced`.
+
+## Sign-in, identity, quota and live models (bundled plugins only)
+
+Four sections describe subscription accounts, as data:
+
+- `[signin]`: how an account signs in;
+- `[identity]`: the client identity its requests carry;
+- `[quota]`: how its quota is read;
+- `[models_live]`: its live model list.
+
+The core runs every flow, does all the sending, and keeps the tokens. **In this slice only
+bundled plugins may declare these sections** (anthropic, xai, grok-cli, opencode-go,
+opencode-zen). A user or community plugin that declares any of them passes the gate but
+is refused whole by the fit check:
+
+```text
+plugins/acme.toml: not supported by this core (0router 0.1.0, plugin schema 1-2)
+  - plugins/acme.toml:9:2 signin: account sign-in is not supported
+  - plugins/acme.toml:17:2 identity: account sign-in is not supported
+No part of this plugin was loaded.
+```
+
+Opening them to other plugins later means removing that one rule. The schema and the gate
+stay as they are.
+
+General rules:
+
+- **No field holds a secret.** There is no client-secret or token field, so an unknown
+  key such as `client_secret` is refused. A value that looks like a secret (a known key
+  prefix, a JWT, a long opaque token) is refused too:
+  `signin.client_id: looks like a secret; plugins can't hold secrets`. The providers here
+  are public clients and need no client secret. Bundled client secrets, where a provider
+  needs one, live in the core's credentials table.
+- **Every URL** passes the endpoint SSRF checks and may not contain placeholders.
+- **Profile, quota and live-model URLs** must be on the provider's hosts: its endpoint
+  hosts, its `[signin]` flow hosts, or a host of the same site. Any other host is refused:
+  `quota.request.url: host other.example is not one of this provider's hosts`.
+- **Host binding.** A signed-in account's tokens are bound to every host the plugin sends
+  them to: endpoint, sign-in, quota and live-model hosts. A plugin that later names a new
+  host gets no token until the account signs in again. Redirects are never followed.
+- **Floor headers** (`authorization`, `cookie`, `x-api-key`, …) can't be set in any of
+  these sections. The core places the token itself.
+
+### `[signin]`
+
+```toml
+[signin]
+flow = "pkce"                                   # pkce | device_code
+client_id = "b1a00492-073a-47ea-816f-4c329264a828"
+scopes = ["openid", "profile", "email", "offline_access"]
+discovery_url = "https://auth.x.ai/.well-known/openid-configuration"   # optional
+authorize_url = "https://auth.x.ai/oauth2/authorize"                   # used when discovery fails
+token_url = "https://auth.x.ai/oauth2/token"
+redirect = [{ uri = "http://127.0.0.1:56121/callback", kind = "loopback" }]
+params = { plan = "generic", nonce = "{random.hex16}" }
+body = "form"                                   # form | json
+verifier_bytes = 96                             # 32-96, pkce only
+refresh_lead = "5m"                             # refresh this long before expiry
+auth = { header = "Authorization", scheme = "bearer" }
+terms_warning = false
+
+[signin.profile]                                # optional read after sign-in
+url = "https://cli-chat-proxy.grok.com/v1/user"
+email = "email | id_token.email"
+user_id = "userId | principalId"
+tier = "subscriptionTier"
+
+[[signin.refused]]                              # marks the account "refused by provider"
+status = [400, 403]
+body_contains = "only authorized for use with Claude Code"
+```
+
+- `pkce` needs `authorize_url` or `discovery_url`, and at least one `redirect`, tried in
+  order. A `loopback` redirect is `http://127.0.0.1`, `http://localhost` or
+  `http://[::1]` with a path. A `code_page` redirect is the provider's own https page that
+  shows the code; the operator may paste a bare code or `code#state` from it.
+- `device_code` needs `device_url`. `authorize_url`, `redirect` and `verifier_bytes` are
+  refused there.
+- `params` keys are `plan`, `referrer`, `code`, `audience`, `prompt` and `nonce`. A value
+  is a fixed string or `{random.hex16}`, which is new at every sign-in.
+- A discovery document is used only while its authorize and token URLs stay on the
+  declared sign-in hosts. Otherwise the declared URLs are used.
+- `terms_warning = true` prints the provider's terms warning at every sign-in.
+
+### `[identity]`
+
+```toml
+[identity.headers]
+User-Agent = "grok-shell/0.2.99 (linux; x86_64)"
+x-grok-client-identifier = "grok-shell"
+x-grok-session-id = "{session.id}"
+x-grok-req-id = "{request.id}"
+```
+
+These headers go on every request, poll and live-model call of a sign-in account. A plugin
+may copy the official client's identity headers. The body stays as the client sent it.
+
+A value is either a fixed string or exactly one placeholder from a closed set. The core
+fills each placeholder with true information it owns:
+
+| Placeholder | Value |
+|---|---|
+| `{session.id}` | the agent's session id, else a random id kept per agent |
+| `{request.id}` | a fresh random id per request |
+| `{session.turn}` | the user turns in this request's conversation |
+| `{model.upstream}` | the upstream model id |
+| `{account.email}`, `{account.user_id}` | the signed-in account's own values |
+| `{install.id}` | a random id made once per 0router installation |
+
+Anything else is refused (`identity.headers.x: unknown placeholder {machine.id}`). So is
+a mix such as `"id-{session.id}"`. A plugin can't compute a value, hash the request, or
+imitate another machine's id. `[identity]` needs `[signin]`.
+
+### `[quota]`
+
+```toml
+[quota]
+accounts = "signin"                             # signin | key | any
+request = { url = "https://api.anthropic.com/api/oauth/usage", headers = { anthropic-beta = "oauth-2025-04-20" } }
+
+[[quota.window]]
+path = "seven_day_*"                            # `*` binds {1}
+name = "weekly {1}"
+unit = "percent"                                # percent | credits | requests | tokens
+used = "utilization"
+resets_at = "resets_at"
+```
+
+- `path` finds windows: a key, or a path with `*` over object keys or array items
+  (`limits[*]`). `where = { kind = "weekly_scoped" }` keeps matches with those field
+  values.
+- `name` is literal text with `{1}`, `{2}`, … for the `*` bindings, and `{path}` or
+  `{path|lower}` read from the match.
+- A rule sets at least one of `used`, `limit` and `remaining`, and optionally `resets_at`
+  with `resets_format = "auto" | "epoch_s" | "epoch_ms" | "rfc3339"`.
+- Value paths may list alternatives: `"billingPeriodEnd | currentPeriod.end"`; the first
+  that resolves wins. `unwrap_val = true` reads `{ val = n }` numbers.
+- A window whose numbers don't resolve is skipped.
+- `[quota.fallback]` is a second request, used when the first yields no window. It may
+  use `decoder = "grpc_web_ratio"` (the core's grok-cli credits decoder), with the
+  window's `name` and `unit` declared there.
+- Without `[quota]`, the account shows "quota not reported".
+
+### `[models_live]`
+
+```toml
+[models_live]
+url = "https://cli-chat-proxy.grok.com/v1/models"
+headers = { x-grok-client-mode = "headless" }
+list = "data | models | ."                      # `.` is the root
+id = "id | model_id | slug"
+name = "display_name | name"
+context = "context_length"
+max_output = "max_output_tokens"
+type = "text"                                   # a model type, or a path; default text
+refresh = "6h"
+```
+
+The list is read with a signed-in account (so it needs `[signin]`). Listed models join the
+static `[[models]]`, which stay as the fallback.
+
 ## Schema 1
 
 Schema 1 (slice 002's format, and most of the community set) declares `[transport]` and
@@ -199,6 +406,7 @@ acme.toml:9:13 transport.headers.Authorization: credential-bearing header not al
   - credential-bearing header names (`Authorization`, `x-api-key`, …);
   - secret-like model `params`;
   - URLs with `user:pass@` or `?api_key=`-style query keys.
+  - secret-like values in `[signin]`, `[identity]`, `[quota]` and `[models_live]`.
 - **Bad values**:
   - an unknown category, format, quirk, hook, capability or executor param;
   - an `id` outside `[a-z0-9][a-z0-9-]*`;
@@ -212,8 +420,8 @@ acme.toml:9:13 transport.headers.Authorization: credential-bearing header not al
 
 ## Community plugins and the fit check
 
-0router bundles five providers: anthropic, openrouter, opencode-zen, opencode-go and
-elevenlabs. The other providers 9router knows ship inside the binary as the **community
+0router bundles seven providers: anthropic, openrouter, opencode-zen, opencode-go,
+elevenlabs, xai and grok-cli. The other providers 9router knows ship inside the binary as the **community
 set**, generated from 9router, and are installed on request:
 
 ```bash
@@ -240,7 +448,8 @@ No part of this plugin was loaded.
 
 Unsupported today:
 
-- OAuth or cookie sign-in, even next to an API key;
+- OAuth or cookie sign-in, even next to an API key, and the `[signin]`, `[identity]`,
+  `[quota]` and `[models_live]` sections;
 - wire formats other than `openai`, `claude`, `openai-responses` and `gemini`;
 - web search, web fetch and systemone sections;
 - quirks, auth hooks, `executor_params`, `credential_fallback`, regions, reasoning

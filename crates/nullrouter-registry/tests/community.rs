@@ -142,3 +142,124 @@ fn install_and_uninstall() {
     assert!(!dest.exists());
     assert!(matches!(community::uninstall("groq", &operator), Err(InstallError::NotInstalled(_))));
 }
+
+/// A schema-2 user plugin, as a community author would write one.
+const ACME: &str = r#"schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "Authorization"
+scheme = "bearer"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/chat/completions"
+wire = "openai-chat"
+
+[[models]]
+id = "m1"
+"#;
+
+const SIGNIN: &str = r#"
+[signin]
+flow = "device_code"
+client_id = "b1a00492-073a-47ea-816f-4c329264a828"
+device_url = "https://auth.acme.example/oauth2/device/code"
+token_url = "https://auth.acme.example/oauth2/token"
+refresh_lead = "5m"
+"#;
+
+const IDENTITY: &str = "\n[identity.headers]\nUser-Agent = \"acme-cli/1.0\"\nx-acme-req = \"{request.id}\"\n";
+
+const QUOTA: &str = r#"
+[quota]
+accounts = "any"
+request = { url = "https://api.acme.example/v1/usage" }
+
+[[quota.window]]
+path = "limits[*]"
+name = "{name|lower}"
+unit = "requests"
+used = "used"
+"#;
+
+const MODELS_LIVE: &str =
+    "\n[models_live]\nurl = \"https://api.acme.example/v1/models\"\nlist = \"data\"\nid = \"id\"\n";
+
+/// US6, FR-029: in this slice `[signin]`, `[identity]`, `[quota]` and `[models_live]` are
+/// bundled-only. A user (community) plugin carrying any of them passes the gate, is refused
+/// whole naming the part and why, and contributes nothing; the same file fits as bundled.
+#[test]
+fn a_community_plugin_with_a_sign_in_or_quota_section_is_refused_whole() {
+    use nullrouter_registry::validate::validate_with;
+    use nullrouter_registry::{PluginSource, bundled_gate_ctx, fit};
+
+    let sign_in = "account sign-in is not supported";
+    // `(case, source, the refused parts as (path, reason))`.
+    type Case<'a> = (&'a str, String, &'a [(&'a str, &'a str)]);
+    let cases: [Case; 5] = [
+        ("signin", format!("{ACME}{SIGNIN}"), &[("signin", sign_in)]),
+        ("identity", format!("{ACME}{SIGNIN}{IDENTITY}"), &[("signin", sign_in), ("identity", sign_in)]),
+        ("models_live", format!("{ACME}{SIGNIN}{MODELS_LIVE}"), &[("signin", sign_in), ("models_live", sign_in)]),
+        ("quota", format!("{ACME}{QUOTA}"), &[("quota", "quota is not supported")]),
+        (
+            "all",
+            format!("{ACME}{SIGNIN}{IDENTITY}{QUOTA}{MODELS_LIVE}"),
+            &[
+                ("signin", sign_in),
+                ("identity", sign_in),
+                ("models_live", sign_in),
+                ("quota", "quota is not supported"),
+            ],
+        ),
+    ];
+    for (case, src, want) in cases {
+        let file = format!("{case}.toml");
+        let verdict = check_user_plugin(&src, Path::new(&file), false).unwrap_or_else(|e| panic!("{case}: {e:#?}"));
+        let FitVerdict::Unsupported { parts } = &verdict else { panic!("{case}: a community plugin fits") };
+        let got: Vec<(String, &str)> = parts.iter().map(|p| (p.path.to_string(), p.reason.as_str())).collect();
+        let want: Vec<(String, &str)> = want.iter().map(|(k, r)| ((*k).to_owned(), *r)).collect();
+        assert_eq!(got, want, "{case}");
+        let message = verdict.message(&file).unwrap();
+        assert!(message.starts_with(&format!("{file}: not supported by this core")), "{message}");
+        assert!(message.ends_with("No part of this plugin was loaded."), "{message}");
+        assert!(parts.iter().all(|p| p.line > 0 && p.col > 0), "{case}: {parts:?}");
+
+        // The rule is the source alone: bundled, the same file fits.
+        let ctx = bundled_gate_ctx(true, false).unwrap();
+        let bundled = validate_with(&src, PluginSource::Bundled, &file, &ctx).unwrap().entity;
+        assert_eq!(fit::check(&bundled, &src, &file, &ctx), FitVerdict::Fits, "{case}");
+
+        // Installed by hand, it contributes nothing.
+        let home = home();
+        let path = home.path().join("plugins/acme.toml");
+        fs::write(&path, &src).unwrap();
+        let reg = RegistryHandle::open(OperatorHome::new(home.path())).unwrap().snapshot();
+        assert!(reg.provider("acme").is_err(), "{case}");
+        assert!(reg.resolve("acme/m1").is_err(), "{case}");
+        let r = reg.report();
+        assert_eq!(r.unsupported.len(), 1, "{case}: {r:#?}");
+        assert_eq!(r.unsupported[0].id, "acme");
+        let named = if case == "quota" { "quota is not supported" } else { sign_in };
+        assert!(r.unsupported[0].message.contains(named), "{}", r.unsupported[0].message);
+    }
+}
+
+/// FR-029: the generated community set declares none of the slice 005 sections, so it
+/// loads or is refused exactly as before; xai and grok-cli left it for the bundle.
+#[test]
+fn the_community_set_carries_no_sign_in_or_quota_section() {
+    let set = community::community();
+    for p in set {
+        let doc: toml::Table = toml::from_str(p.src).unwrap();
+        for key in ["signin", "identity", "quota", "models_live"] {
+            assert!(!doc.contains_key(key), "{}: declares [{key}]", p.file());
+        }
+    }
+    assert!(set.iter().all(|p| p.id != "xai" && p.id != "grok-cli"));
+    let refused = set.iter().filter(|p| !p.verdict.as_ref().unwrap().fits()).count();
+    assert_eq!((set.len() - refused, refused), FIT_REFUSED, "fit, refused");
+}
+/// Fitting and refused community plugins since xai and grok-cli moved to the bundle.
+const FIT_REFUSED: (usize, usize) = (33, 81);

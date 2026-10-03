@@ -173,3 +173,173 @@ mod signin {
         assert!(json.contains("\"class\":\"needs_sign_in\"") && json.contains("\"token_refreshing\""), "{json}");
     }
 }
+
+/// US6 (T088, FR-030, FR-031): a sign-in token goes only to the hosts its sign-in bound
+/// it to. A redirect is never followed, a declared sign-in host the token wasn't bound to
+/// withholds it, and a video download on another host is fetched bare.
+///
+/// Discovery naming another host is refused before any token exists: the flow falls back
+/// to the declared URLs (`signin_flows.rs`,
+/// `discovery_off_the_declared_hosts_falls_back_to_the_declared_urls`); the test below
+/// checks the release side, that the issued token is bound to `token_hosts()` only.
+mod us6 {
+    use std::time::Duration;
+
+    use super::common::{SECRET, chat_plugin, setup_signin};
+    use nullrouter_engine::jobs::Job;
+    use nullrouter_engine::signin::{self, Begun, SignInHttp};
+    use nullrouter_engine::testkit::mock_idp::{AUTHORIZE, CLIENT_ID, DISCOVERY, TOKEN};
+    use nullrouter_engine::testkit::{MockIdp, MockUpstream, Step};
+    use nullrouter_registry::PluginSource;
+    use nullrouter_registry::schema::TokenBody;
+    use nullrouter_registry::validate::{GateCtx, validate_with};
+    use serde_json::json;
+
+    /// The token of `sso/main` in [`setup_signin`].
+    const TOKEN_SSO: &str = "sk-mock-SENTINEL-0003-sso-main";
+
+    /// A device-code `[signin]` whose flow URLs sit on `host` (the mock's port).
+    fn signin_on(mock: &MockUpstream, host: &str) -> String {
+        let at = |p: &str| mock.url(p).replace("127.0.0.1", host);
+        format!(
+            "[signin]\nflow = \"device_code\"\nclient_id = \"test-client\"\ndevice_url = \"{}\"\ntoken_url = \"{}\"\nrefresh_lead = \"5m\"\n[identity.headers]\nx-client = \"test\"\nx-email = \"{{account.email}}\"\n",
+            at("/idp/device"),
+            at("/idp/token"),
+        )
+    }
+
+    fn auth_headers(mock: &MockUpstream) -> Vec<Option<String>> {
+        mock.received().iter().map(|r| r.headers.get("authorization").map(|v| v.to_str().unwrap().to_owned())).collect()
+    }
+
+    #[tokio::test]
+    async fn an_upstream_redirect_is_never_followed() {
+        let s = setup_signin(
+            |m| vec![("sso", format!("{}{}", chat_plugin(m, "sso", ""), signin_on(m, "127.0.0.1")))],
+            &[("sso", "main")],
+            &[("sso", "main")],
+            "",
+        )
+        .await;
+        let elsewhere = s.mock.url("/steal").replace("127.0.0.1", "localhost");
+        s.mock.push([Step::json(302, json!({})).with_header("location", &elsewhere)]);
+        let (_, res) = super::common::send(&s, "sso/m1").await;
+        let Err(f) = res else { panic!("a redirect is not an answer") };
+        let got = s.mock.received();
+        assert_eq!(got.len(), 1, "{:?}", got.iter().map(|r| &r.path_and_query).collect::<Vec<_>>());
+        assert_eq!(got[0].path_and_query, "/sso/chat/completions");
+        assert_eq!(auth_headers(&s.mock), [Some(format!("Bearer {TOKEN_SSO}"))]);
+        assert!(!f.message.contains(SECRET) && !format!("{:?}", f.tried).contains(SECRET));
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_token_endpoint_redirect_is_never_followed() {
+        let mock = MockUpstream::start().await;
+        let elsewhere = mock.url("/steal").replace("127.0.0.1", "localhost");
+        mock.push([Step::json(307, json!({})).with_header("location", &elsewhere)]);
+        let http = SignInHttp::new(true).with_timeout(Duration::from_secs(5));
+        let body =
+            signin::encode_body(TokenBody::Form, &[("grant_type", "refresh_token"), ("refresh_token", "rt-SENTINEL")]);
+        let e = signin::token_request(&http, &mock.url("/idp/token"), body).await.unwrap_err();
+        assert!(!e.to_string().contains("rt-SENTINEL"), "{e}");
+        let got = mock.received();
+        assert_eq!(got.iter().map(|r| r.path_and_query.as_str()).collect::<Vec<_>>(), ["/idp/token"]);
+    }
+
+    /// The token's hosts are every host the plugin sends it to: a sign-in URL on a host the
+    /// stored token wasn't bound to withholds it, though the endpoint's host is bound.
+    #[tokio::test]
+    async fn a_sign_in_host_outside_the_binding_withholds_the_token() {
+        let s = setup_signin(
+            |m| vec![("sso", format!("{}{}", chat_plugin(m, "sso", ""), signin_on(m, "localhost")))],
+            &[("sso", "main")],
+            &[("sso", "main")],
+            "",
+        )
+        .await;
+        let (_, res) = super::common::send(&s, "sso/m1").await;
+        let Err(f) = res else { panic!("the token was released") };
+        assert!(f.tried.iter().any(|t| t.reason.contains("localhost")), "{:?}", f.tried);
+        assert!(s.mock.received().is_empty(), "nothing is sent");
+        assert!(!f.message.contains(SECRET) && !format!("{:?}", f.tried).contains(SECRET));
+    }
+
+    /// A discovery document naming another host never widens the binding: the token is
+    /// bound to the plugin's `token_hosts()`, and the foreign host gets nothing.
+    #[tokio::test]
+    async fn discovery_naming_another_host_binds_nothing_there() {
+        let idp = MockIdp::start().await;
+        let foreign = |p: &str| idp.url(p).replace("127.0.0.1", "localhost");
+        let src = format!(
+            "schema = 2\nid = \"xai\"\ncategory = \"oauth\"\n[endpoints.text]\nurl = \"{}\"\nwire = \"openai-chat\"\n[[models]]\nid = \"m1\"\n[signin]\nflow = \"pkce\"\nclient_id = \"{CLIENT_ID}\"\ndiscovery_url = \"{}\"\nauthorize_url = \"{}\"\ntoken_url = \"{}\"\nredirect = [{{ uri = \"http://127.0.0.1:0/callback\", kind = \"loopback\" }}]\nrefresh_lead = \"5m\"\n",
+            idp.url("/v1/chat/completions"),
+            idp.url(DISCOVERY),
+            idp.url(AUTHORIZE),
+            idp.url(TOKEN),
+        );
+        let ctx = GateCtx { allow_private: true, ..GateCtx::default() };
+        let p = validate_with(&src, PluginSource::Bundled, "xai.toml", &ctx).unwrap().entity;
+        idp.set_discovery(Some(
+            json!({ "authorization_endpoint": foreign(AUTHORIZE), "token_endpoint": foreign(TOKEN) }),
+        ));
+        let http = SignInHttp::new(true).with_timeout(Duration::from_secs(5));
+        let Begun::Pkce(s) = signin::begin(&http, &p).await.unwrap() else { panic!("pkce") };
+        assert!(s.authorize_url().starts_with(&idp.url(AUTHORIZE)), "{}", s.authorize_url());
+        let location = idp.browse(s.authorize_url()).await;
+        let e = s.complete(&http, "main", s.parse_paste(&location).unwrap()).await.unwrap();
+        assert_eq!(e.hosts, p.token_hosts());
+        assert_eq!(e.hosts.iter().map(String::as_str).collect::<Vec<_>>(), ["127.0.0.1"]);
+        assert_eq!(idp.token_requests().pop().unwrap().path_and_query, TOKEN);
+    }
+
+    /// A video job's download URL on a host the token isn't bound to is fetched bare: no
+    /// token, no identity headers. Polls on the bound host carry both.
+    #[tokio::test]
+    async fn a_video_download_on_a_foreign_host_gets_no_token() {
+        let plugin = |m: &MockUpstream| {
+            format!(
+                "schema = 2\nid = \"vidso\"\ncategory = \"apikey\"\n[endpoints.video]\nurl = \"{}\"\nwire = \"openai-chat\"\npoll_url = \"{}\"\njob = {{ id = \"request_id\", status = \"status\", status_map = {{ done = \"completed\" }}, content_url = \"video.url\" }}\n[[models]]\nid = \"vid\"\nkind = \"video\"\n{}",
+                m.url("/v1/videos/generations"),
+                m.url("/v1/videos/{id}"),
+                signin_on(m, "127.0.0.1"),
+            )
+        };
+        let s = setup_signin(|m| vec![("vidso", plugin(m))], &[("vidso", "main")], &[("vidso", "main")], "").await;
+        let foreign = s.mock.url("/files/out.mp4").replace("127.0.0.1", "localhost");
+        s.mock.on("/files/out.mp4", [Step::binary("video/mp4", &b"MP4"[..])]);
+        s.mock.on("/v1/videos/req-1", [Step::json(200, json!({"status": "done", "video": {"url": foreign}}))]);
+        let id = s.engine.jobs.insert(Job {
+            record: "rq_none".into(),
+            provider: "vidso".into(),
+            account: Some("main".into()),
+            url: s.mock.url("/v1/videos/generations"),
+            wire: "openai-chat".into(),
+            model: "vid".into(),
+            upstream_id: "req-1".into(),
+            target: "vidso/vid".into(),
+            agent: "ak_test".into(),
+            content_url: None,
+        });
+        let (ct, mut rx) = s.engine.job_content(&s.engine.snapshot(), &id, "ak_test", "openai-chat").await.unwrap();
+        assert_eq!(ct, "video/mp4");
+        let mut bytes = Vec::new();
+        while let Some(chunk) = rx.recv().await {
+            bytes.extend_from_slice(&chunk.unwrap());
+        }
+        assert_eq!(bytes, b"MP4");
+
+        let got = s.mock.received();
+        assert_eq!(
+            got.iter().map(|r| r.path_and_query.as_str()).collect::<Vec<_>>(),
+            ["/v1/videos/req-1", "/files/out.mp4"]
+        );
+        let (poll, download) = (&got[0], &got[1]);
+        assert_eq!(poll.headers["authorization"], format!("Bearer {SECRET}-vidso-main"));
+        assert_eq!(poll.headers["x-email"], "main@example.com");
+        assert!(download.headers["host"].to_str().unwrap().starts_with("localhost"));
+        for h in ["authorization", "x-email", "x-client"] {
+            assert!(download.headers.get(h).is_none(), "{h}: {:?}", download.headers);
+        }
+        assert!(!format!("{:?}", download.headers).contains(SECRET));
+    }
+}
