@@ -109,7 +109,7 @@ pub mod samples {
                 "currentPeriod": { "type": "USAGE_PERIOD_TYPE_WEEKLY",
                                    "start": "2026-09-28T00:00:00Z", "end": "2026-10-05T00:00:00Z" },
                 "monthlyLimit": { "val": 2500 },
-                "monthlyUsed": { "val": 1200 },
+                "includedUsed": { "val": 1200 },
                 "onDemandCap": { "val": 1000 },
                 "onDemandUsed": { "val": 250 },
                 "prepaidBalance": { "val": 500 },
