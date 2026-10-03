@@ -42,6 +42,13 @@ also expects its own API error, not a parse error, with the record id in the mes
 and Codex send what they send). A missing tool is skipped with a message; `run.sh` fails
 on any failure, or if fewer than two harnesses ran (SC-001).
 
+Signed-in accounts (spec 005 SC-002): a second test in the same file starts the server
+with sign-in accounts on the bundled anthropic, xai and grok-cli plugins (hosts pointed at
+the mock, tokens in `tokens.toml`) and runs `run.sh` once per provider with `NR_MODEL` set
+to `anthropic/claude-sonnet-4-20250514`, `xai/grok-4` and `grok-cli/grok-4.5`. Every SDK
+style and Claude Code must pass, every upstream request must carry the account's token as
+its bearer (never an `x-api-key`), and every record must succeed on that account.
+
 The headroom chain (SC-014, US1-11) runs when `NR_MODEL_MESSAGES` names a messages-wire
 model (the cargo test sets `multi/m-messages`) and a headroom with its proxy extras is in
 `.venv` or on `PATH`; otherwise it is skipped and doesn't count toward SC-001. Each SDK

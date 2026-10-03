@@ -1174,6 +1174,7 @@ dependencies = [
  "bytes",
  "criterion",
  "futures-util",
+ "nullrouter-cli",
  "nullrouter-engine",
  "nullrouter-registry",
  "nullrouter-wire",

@@ -28,6 +28,9 @@ nullrouter-engine = { workspace = true, features = ["testkit"] }
 criterion.workspace = true
 tempfile.workspace = true
 reqwest.workspace = true
+# The secrets sentinel (spec 005 T091) drives the CLI's sign-in driver and quota text. A
+# dev-dependency cycle: integration tests link the one server library the CLI links.
+nullrouter-cli = { path = "../nullrouter-cli" }
 
 [[bench]]
 name = "server"

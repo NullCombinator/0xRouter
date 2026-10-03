@@ -7,7 +7,8 @@
 # sends one whole and one streamed request and expects the text "Hello". NR_MODEL_FAIL
 # (a model whose every attempt fails) makes each SDK also expect its own API error with
 # the record id.
-# Fails if any harness fails, or if fewer than two ran (SC-001).
+# Fails if any harness fails, or if fewer than two ran (SC-001). The cargo test also runs
+# it once per signed-in provider (anthropic, xai, grok-cli; spec 005 SC-002), NR_MODEL only.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 : "${NR_BASE:?}" "${NR_KEY:?}" "${NR_MODEL:?}"

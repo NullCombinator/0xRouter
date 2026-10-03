@@ -5,6 +5,10 @@
 //! left out, and recorded, across styles. Every SDK also meets an all-attempts-failed
 //! request (`broken/m1`, T074), and to restarted and error-event streams (`cutco/m1`,
 //! T090): the first stream for each body is cut after three words.
+//!
+//! Signed-in accounts (spec 005 T043, SC-002): the same SDK scripts and Claude Code run
+//! against sign-in accounts on the bundled anthropic, xai and grok-cli plugins (hosts
+//! pointed at the mock), one `run.sh` pass per provider.
 
 mod common;
 
@@ -13,9 +17,9 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use common::{broken_plugin, multi_plugin, reply_by_wire, server_with};
+use common::{SECRET, broken_plugin, bundled_at_mock, multi_plugin, reply_by_wire, server_with, signin_server};
 use nullrouter_engine::keys::{self, BreakBehaviour, Keys};
-use nullrouter_engine::records::{BreakHandling, Query};
+use nullrouter_engine::records::{BreakHandling, Outcome, Query};
 use nullrouter_engine::testkit::{MockUpstream, Received, Step};
 use serde_json::{Value, json};
 
@@ -49,6 +53,19 @@ fn marker(r: &Received) -> (Option<String>, Option<String>) {
     (body, header)
 }
 
+/// Runs `tests/harness/run.sh` against `base` with `env` set; returns its output and status.
+async fn run_sh(base: &str, key: &str, env: Vec<(&'static str, String)>) -> (String, bool) {
+    let run = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/harness/run.sh");
+    let (base, key) = (base.to_owned(), key.to_owned());
+    let out = tokio::task::spawn_blocking(move || {
+        std::process::Command::new("bash").arg(run).env("NR_BASE", base).env("NR_KEY", key).envs(env).output().unwrap()
+    })
+    .await
+    .unwrap();
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    (text, out.status.success())
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn sdks_and_harnesses_accept_every_style() {
     if std::env::var("NR_HARNESS").as_deref() != Ok("1") {
@@ -69,26 +86,16 @@ async fn sdks_and_harnesses_accept_every_style() {
             && seen.lock().unwrap().insert(r.body.clone());
         if cut { cut_stream() } else { reply_by_wire(r) }
     });
-    let run = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/harness/run.sh");
-    let (base, key) = (s.base.clone(), s.key.clone());
-    let out = tokio::task::spawn_blocking(move || {
-        std::process::Command::new("bash")
-            .arg(run)
-            .env("NR_BASE", base)
-            .env("NR_KEY", key)
-            .env("NR_MODEL", "mockco/m1")
-            .env("NR_MODEL_MESSAGES", "multi/m-messages")
-            .env("NR_MODEL_FAIL", "broken/m1")
-            .env("NR_MODEL_CUT", "cutco/m1")
-            .env("NR_KEY_STRICT", strict)
-            .output()
-            .unwrap()
-    })
-    .await
-    .unwrap();
-    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    let env = vec![
+        ("NR_MODEL", "mockco/m1".to_owned()),
+        ("NR_MODEL_MESSAGES", "multi/m-messages".to_owned()),
+        ("NR_MODEL_FAIL", "broken/m1".to_owned()),
+        ("NR_MODEL_CUT", "cutco/m1".to_owned()),
+        ("NR_KEY_STRICT", strict),
+    ];
+    let (text, ok) = run_sh(&s.base, &s.key, env).await;
     println!("{text}");
-    assert!(out.status.success(), "{text}");
+    assert!(ok, "{text}");
     // The first 401 rests the account, so the later failed requests are skipped attempts.
     assert!(s.mock.received().iter().any(|r| r.path_and_query.starts_with("/broken")), "the all-failed checks ran");
     let failed =
@@ -101,6 +108,56 @@ async fn sdks_and_harnesses_accept_every_style() {
     assert!(restarted >= 8 && ended >= 8, "restarted {restarted}, error events {ended}: 2 SDK scripts, 4 styles each");
     if text.contains("ok   headroom chain") {
         headroom_chain_kept_the_optimizers_additions(&s);
+    }
+}
+
+/// The signed-in accounts' unified names equal the upstream ids (as in `signin_serving.rs`).
+const SIGNIN_CONFIG: &str = r#"[plugin_decisions]
+anthropic = "replace"
+xai = "replace"
+"grok-cli" = "replace"
+"#;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sdks_and_claude_code_use_signed_in_accounts() {
+    if std::env::var("NR_HARNESS").as_deref() != Ok("1") {
+        eprintln!("skipped: set NR_HARNESS=1 to run the harness scripts");
+        return;
+    }
+    let s = signin_server(
+        |m| ["anthropic", "xai", "grok-cli"].map(|id| (id, bundled_at_mock(m, id))).into_iter().collect(),
+        &[("anthropic", "max"), ("xai", "main"), ("grok-cli", "work")],
+        SIGNIN_CONFIG,
+    )
+    .await;
+    s.mock.respond(reply_by_wire);
+    let targets = [
+        ("anthropic", "max", "anthropic/claude-sonnet-4-20250514"),
+        ("xai", "main", "xai/grok-4"),
+        ("grok-cli", "work", "grok-cli/grok-4.5"),
+    ];
+    for (provider, account, model) in targets {
+        let before = s.mock.received().len();
+        let (text, ok) = run_sh(&s.base, &s.key, vec![("NR_MODEL", model.to_owned())]).await;
+        println!("== {model}\n{text}");
+        assert!(ok, "{model}: {text}");
+        // Every request reached the provider with the account's token, never a key.
+        let got = s.mock.received();
+        assert!(got.len() > before, "{model}: nothing reached the provider");
+        for r in &got[before..] {
+            let auth = r.headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default();
+            assert_eq!(auth, format!("Bearer {SECRET}-{provider}-{account}"), "{model}: {}", r.path_and_query);
+            assert!(r.headers.get("x-api-key").is_none(), "{model}: no x-api-key");
+        }
+    }
+    // Every record (any harness, any style) succeeded on the signed-in account it named.
+    let records = s.engine.records.query(&Query::default());
+    assert!(!records.is_empty());
+    for r in &records {
+        assert_eq!(r.outcome, Outcome::Succeeded, "{r:#?}");
+        let by = r.served_by.as_ref().unwrap();
+        let want = targets.iter().find(|t| t.0 == by.provider).map(|t| t.1);
+        assert_eq!(by.account.as_deref(), want, "{r:#?}");
     }
 }
 
