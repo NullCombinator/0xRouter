@@ -172,6 +172,15 @@ fn s7_uncatalogued_models_can_be_disabled() {
         NotFound::Model { provider: "openai".into(), model: "brand-new-model".into() }
     );
     assert!(matches!(reg.resolve("openai/text-embedding-3-large"), Ok(Resolution::Direct { catalogued: true, .. })));
+    // A live list (spec 005 T100) the caller supplies names more; static results don't move.
+    let live = |p: &str, m: &str| p == "openai" && m == "brand-new-model";
+    let Ok(Resolution::Direct { upstream_id, catalogued, .. }) = reg.resolve_with("openai/brand-new-model", live)
+    else {
+        panic!("a live id resolves")
+    };
+    assert_eq!((upstream_id.as_str(), catalogued), ("brand-new-model", false));
+    assert!(reg.resolve_with("openai/other-model", live).is_err());
+    assert_eq!(reg.resolve_with("openai/text-embedding-3-large", live), reg.resolve("openai/text-embedding-3-large"));
 
     let reg = ok("[provider.openrouter]\nallow_uncatalogued_models = false\n");
     // Passthrough is not subject to the setting.

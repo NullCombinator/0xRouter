@@ -13,6 +13,7 @@ use nullrouter_registry::{NotFound, Registry, Resolution};
 
 use crate::accounts::{self, Account, Accounts};
 use crate::keys::AgentId;
+use crate::models_live::LiveModels;
 use crate::records::ErrorClass;
 use crate::tokens::TokenCells;
 
@@ -144,9 +145,12 @@ struct Ask<'a> {
     client_style: &'a str,
     warm: Option<&'a Warm>,
     tokens: &'a TokenCells,
+    live: &'a LiveModels,
 }
 
 /// One member's steps: its accounts in operator order, the warm one first, or one skip.
+/// A model the static catalog lacks but the provider's live list holds is served with the
+/// list's type; one in neither list is not found unless uncatalogued models are allowed.
 /// A sign-in account that can't serve now is a recorded skip naming the command that
 /// brings it back (research R10, FR-016); a disabled account is left out silently.
 fn member<'s>(
@@ -157,8 +161,24 @@ fn member<'s>(
     upstream_id: String,
     ask: &Ask,
 ) -> Result<Vec<Step<'s>>, PlanError> {
-    let Ask { ty, client_style, warm, tokens } = *ask;
+    let Ask { ty, client_style, warm, tokens, live } = *ask;
     let model = registry.model(&provider.id, requested).ok().and_then(|m| m.model);
+    if model.is_none() && provider.models_live.is_some() {
+        match live.find(&provider.id, requested) {
+            Some(m) if m.ty != ty => {
+                return Err(PlanError::TypeMismatch {
+                    target: format!("{}/{requested}", provider.id),
+                    model: m.ty,
+                    route: ty,
+                });
+            }
+            Some(_) => {}
+            None if !provider.passthrough_models && !registry.settings(&provider.id).allow_uncatalogued_models => {
+                return Err(NotFound::Model { provider: provider.id.clone(), model: requested.to_owned() }.into());
+            }
+            None => {}
+        }
+    }
     let wires = model.and_then(|m| m.wires.as_deref());
     let endpoint = endpoints(provider, ty, &upstream_id, wires, client_style)
         .into_iter()
@@ -205,17 +225,20 @@ fn member<'s>(
 /// provider's other accounts in operator order, then, for a unified target, the other
 /// members in declared order, each with its accounts. A member that isn't installed, has
 /// no endpoint for the type or has no account is a skip. `warm` is left out by the caller
-/// when that account is cooling.
+/// when that account is cooling. `live` holds the providers' live model lists, which
+/// resolve beside the static catalog.
+#[allow(clippy::too_many_arguments)]
 pub fn plan<'s>(
     registry: &'s Registry,
     accounts: &'s Accounts,
     tokens: &TokenCells,
+    live: &LiveModels,
     target: &'s str,
     ty: ModelType,
     client_style: &str,
     warm: Option<&Warm>,
 ) -> Result<RequestPlan<'s>, PlanError> {
-    let resolution = registry.resolve(target)?;
+    let resolution = registry.resolve_with(target, |p, m| live.has(p, m))?;
     let declared = match &resolution {
         Resolution::Direct { provider, requested, .. } => {
             registry.model(&provider.id, requested).ok().and_then(|m| m.kind)
@@ -228,7 +251,7 @@ pub fn plan<'s>(
     {
         return Err(PlanError::TypeMismatch { target: target.to_owned(), model, route: ty });
     }
-    let ask = Ask { ty, client_style, warm, tokens };
+    let ask = Ask { ty, client_style, warm, tokens, live };
     match resolution {
         Resolution::Direct { provider, requested, upstream_id, .. } => {
             let steps = member(registry, accounts, provider, requested, upstream_id, &ask)?;

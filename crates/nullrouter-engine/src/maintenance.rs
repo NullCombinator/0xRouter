@@ -1,5 +1,6 @@
 //! Background maintenance (research R13): token refreshes, quota polls and live model lists,
-//! run from one timer queue while the server is up.
+//! run from one timer queue while the server is up, and the traffic tally checkpoints
+//! (research R15): every 10 s and once more when the task stops.
 //!
 //! The queue holds one slot per [`JobKey`] (a [`JobKind`] and the account it serves). Each
 //! wake, every kind says when each of its keys is next due ([`JobKind::due`]); the task
@@ -238,17 +239,29 @@ impl Queue {
     }
 }
 
+/// Checkpoints the running tallies every [`History::checkpoint_every`] (research R15).
+///
+/// [`History::checkpoint_every`]: crate::quota::history::History::checkpoint_every
+async fn checkpoints(engine: Arc<Engine>) {
+    loop {
+        tokio::time::sleep(engine.history.checkpoint_every()).await;
+        engine.checkpoint_tallies().await;
+    }
+}
+
 /// Spawns the maintenance task over `engine`; it runs until `stop` completes, then
-/// cancels every running job and waits for them.
+/// cancels every running job, waits for them, and checkpoints the tallies a last time.
 pub fn spawn(engine: Arc<Engine>, stop: impl Future<Output = ()> + Send + 'static) -> JoinHandle<()> {
     tokio::spawn(async move {
         let root = CancellationToken::new();
-        let mut q = Queue { engine, root: root.clone(), slots: BTreeMap::new(), jobs: JoinSet::new() };
+        let mut q = Queue { engine: engine.clone(), root: root.clone(), slots: BTreeMap::new(), jobs: JoinSet::new() };
         tokio::select! {
             () = stop => {}
             () = q.run() => {}
+            () = checkpoints(engine.clone()) => {}
         }
         root.cancel();
         while q.jobs.join_next().await.is_some() {}
+        engine.checkpoint_tallies().await;
     })
 }

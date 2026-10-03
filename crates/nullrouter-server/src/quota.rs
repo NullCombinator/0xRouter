@@ -4,6 +4,7 @@
 //! |---|---|
 //! | `{"op":"quota.list","provider"?,"name"?}` | `{"ok":true,"accounts":[…]}`: per account `kind`, `reported`, `interval_s`, `latest`, `last_failure` |
 //! | `{"op":"quota.poll","provider","name"}` | `{"ok":true,"poll":{…}}`: the poll just run |
+//! | `{"op":"quota.checkpoint"}` | `{"ok":true,"written":N}`: queued poll entries and running tallies flushed to disk |
 //!
 //! A poll is `{provider, account, at, windows, error?, retry}`; a failed one's `error` carries
 //! `class`, `status?`, a redacted `reason` and the CLI's `summary`. Tokens never cross.
@@ -68,4 +69,10 @@ pub async fn poll_now(engine: &Arc<Engine>, req: &Value) -> Value {
         Some(p) => json!({"ok": true, "poll": poll_json(&p)}),
         None => json!({"ok": false, "error": format!("{provider}/{name}: quota not reported")}),
     }
+}
+
+/// `quota.checkpoint`: writes queued poll entries and checkpoints changed tallies, so the
+/// CLI can work on the history files (`quota history`, `prune`, `forget`).
+pub async fn checkpoint(engine: &Arc<Engine>) -> Value {
+    json!({"ok": true, "written": engine.checkpoint_tallies().await})
 }

@@ -4,6 +4,10 @@
 //! Polls run in the server (research R11, R13): `quota` reads its latest polls over the
 //! operator socket, and `quota poll` asks it to poll now (exit 4 with no server). `quota
 //! interval` writes `poll_interval` to `accounts.toml` and tells a running server to reload.
+//!
+//! The history files (`quota/<provider>/<account>.jsonl`, research R15) are read and edited
+//! here directly. When a server runs, `quota history`, `prune` and `forget` first ask it for
+//! `quota.checkpoint`, so every poll it kept and every running tally is on disk.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -12,7 +16,8 @@ use std::time::SystemTime;
 use clap::{Args as ClapArgs, Subcommand};
 use nullrouter_cli::quota_text;
 use nullrouter_engine::accounts::{self, Accounts};
-use nullrouter_engine::quota::poll;
+use nullrouter_engine::clock;
+use nullrouter_engine::quota::{history, poll};
 use nullrouter_registry::OperatorHome;
 use nullrouter_registry::schema::parse_duration;
 use nullrouter_server::operator::{self, CallError};
@@ -36,7 +41,7 @@ pub(crate) enum Command {
     History {
         provider: String,
         name: String,
-        /// RFC 3339 date or time.
+        /// `YYYY-MM-DD` or an RFC 3339 time.
         #[arg(long, value_name = "DATE")]
         since: Option<String>,
         #[arg(long)]
@@ -126,12 +131,56 @@ pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<Ex
                 println!("{provider}/{name}: polls every {every}{note}; {status}");
             }
         }
-        Command::History { .. } | Command::Prune { .. } | Command::Forget { .. } => {
-            eprintln!("quota: poll history is not available in this build yet");
-            return Err(ExitCode::from(1));
+        Command::History { provider, name, since, limit } => {
+            let since = since.as_deref().map(date).transpose()?;
+            checkpoint(&home)?;
+            let entries = history::read(home.path(), &provider, &name, since, limit).map_err(fail)?;
+            let entries: Vec<Value> = entries.iter().filter_map(|e| serde_json::to_value(e).ok()).collect();
+            if as_json {
+                println!("{:#}", Value::Array(entries));
+            } else if entries.is_empty() {
+                eprintln!("{provider}/{name}: no poll history{}", if since.is_some() { " in that range" } else { "" });
+            } else {
+                print!("{}", quota_text::history(&entries, SystemTime::now(), 0));
+            }
+        }
+        Command::Prune { before, provider, name } => {
+            let at = date(&before)?;
+            checkpoint(&home)?;
+            let n = history::prune(home.path(), at, provider.as_deref(), name.as_deref()).map_err(fail)?;
+            if as_json {
+                println!("{}", json!({"removed": n, "before": clock::rfc3339(at)}));
+            } else {
+                let s = if n == 1 { "entry" } else { "entries" };
+                println!("deleted {n} history {s} older than {}", clock::rfc3339(at));
+            }
+        }
+        Command::Forget { provider, name } => {
+            checkpoint(&home)?;
+            let found = history::forget(home.path(), &provider, &name).map_err(fail)?;
+            if as_json {
+                println!("{}", json!({"provider": provider, "name": name, "forgotten": found}));
+            } else if found {
+                println!("{provider}/{name}: poll history deleted");
+            } else {
+                println!("{provider}/{name}: no poll history");
+            }
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// `DATE`: RFC 3339, or `YYYY-MM-DD` (midnight UTC).
+fn date(s: &str) -> Result<SystemTime, ExitCode> {
+    let full = if s.len() == 10 { format!("{s}T00:00:00Z") } else { s.to_owned() };
+    clock::parse_rfc3339(&full)
+        .ok_or_else(|| fail(format!("{s:?} is not a date (use YYYY-MM-DD or 2026-10-03T14:00:00Z)")))
+}
+
+/// Asks a running server to write its queued poll entries and running tallies. No server:
+/// the files are already all there is.
+fn checkpoint(home: &OperatorHome) -> Result<(), ExitCode> {
+    ask(home, &json!({"op": "quota.checkpoint"})).map(|_| ())
 }
 
 /// With no server: the accounts and whether their provider reports quota, and why nothing

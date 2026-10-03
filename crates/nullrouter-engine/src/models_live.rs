@@ -119,6 +119,16 @@ impl LiveModels {
         self.lock().get(provider).map(|l| l.models.clone()).unwrap_or_default()
     }
 
+    /// The model `id` in the provider's last good live list.
+    pub fn find(&self, provider: &str, id: &str) -> Option<LiveModel> {
+        self.lock().get(provider).and_then(|l| l.models.iter().find(|m| m.id == id).cloned())
+    }
+
+    /// Whether the provider's last good live list holds `id`.
+    pub fn has(&self, provider: &str, id: &str) -> bool {
+        self.lock().get(provider).is_some_and(|l| l.models.iter().any(|m| m.id == id))
+    }
+
     /// When the provider's list is next read: now when never tried; `retry_after` after a
     /// failure not yet retried; else `refresh` after the last try.
     pub fn due(&self, provider: &str, refresh: Duration, retry_after: Duration) -> SystemTime {

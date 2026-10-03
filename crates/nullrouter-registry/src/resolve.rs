@@ -33,6 +33,19 @@ pub enum Resolution<'a> {
 impl Registry {
     /// Classifies `target` by shape. The only allocation on success is the upstream ID.
     pub fn resolve<'a>(&'a self, target: &'a str) -> Result<Resolution<'a>, NotFound> {
+        self.resolve_with(target, |_, _| false)
+    }
+
+    /// [`resolve`](Self::resolve), with `live(provider_id, model)` naming the models a
+    /// provider's live list (`[models_live]`) holds beside its static catalog. The registry
+    /// stays file-only: the caller owns the live lists. A live model resolves as an
+    /// uncatalogued direct target even when uncatalogued models are disabled; static
+    /// results are unchanged.
+    pub fn resolve_with<'a>(
+        &'a self,
+        target: &'a str,
+        live: impl FnOnce(&str, &str) -> bool,
+    ) -> Result<Resolution<'a>, NotFound> {
         if target.is_empty() {
             return Err(NotFound::EmptyTarget);
         }
@@ -46,7 +59,11 @@ impl Registry {
         let provider = &self.providers[p];
         let (found, upstream_id) = self.lookup_at(p, model);
         let catalogued = found.is_some();
-        if !catalogued && !provider.passthrough_models && !self.settings(&provider.id).allow_uncatalogued_models {
+        if !catalogued
+            && !provider.passthrough_models
+            && !self.settings(&provider.id).allow_uncatalogued_models
+            && !live(&provider.id, model)
+        {
             return Err(NotFound::Model { provider: provider.id.clone(), model: model.to_owned() });
         }
         Ok(Resolution::Direct { provider, requested: model, upstream_id, catalogued })

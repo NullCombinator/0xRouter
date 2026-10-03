@@ -591,7 +591,9 @@ pub(crate) fn validate_config(
                 continue;
             }
             let model = reg.find_at(p, &m.model);
-            if model.is_none() && !provider.passthrough_models {
+            // A provider with a live list (`[models_live]`) may serve ids the file doesn't
+            // declare; the engine checks the member against the list at request time.
+            if model.is_none() && !provider.passthrough_models && provider.models_live.is_none() {
                 err(mb.key("model"), format!("{:?} is not declared by provider {:?}", m.model, provider.id));
                 continue;
             }

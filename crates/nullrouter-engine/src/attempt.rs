@@ -448,6 +448,9 @@ struct Run {
     segmented: bool,
     /// Usage of the segments cut by breaks, added to the answer's.
     carried: Option<Usage>,
+    /// The running attempt's `(provider, account, upstream model)`, for the traffic tally
+    /// (research R15); `None` for an attempt without an account.
+    sent: Option<(String, String, String)>,
 }
 
 fn cooldown_key<'c>(c: &'c Candidate<'_>) -> (&'c str, &'c str, &'c str) {
@@ -527,6 +530,7 @@ impl Engine {
             broken: None,
             segmented: false,
             carried: None,
+            sent: None,
         };
         tokio::spawn(run.run(st));
         answer.await.unwrap_or_else(|_| Err(Failure::new(500, "0router: the request ended without an answer")))
@@ -578,9 +582,10 @@ impl Run {
         let (mut target, client_style) = (req.target.clone(), req.client.id.clone());
         // 9router's `provider/model/voice` form for a TTS target: the prefix names a model
         // declared as TTS and the whole target doesn't (an undeclared id would pass through).
-        let declared = |t: &str| match st.registry.resolve(t) {
+        let declared = |t: &str| match st.registry.resolve_with(t, |p, m| st.live_models.has(p, m)) {
             Ok(Resolution::Direct { provider, requested, .. }) => {
                 st.registry.model(&provider.id, requested).is_ok_and(|m| m.kind.is_some())
+                    || st.live_models.has(&provider.id, requested)
             }
             Ok(Resolution::Unified(_)) => true,
             Err(_) => false,
@@ -597,7 +602,16 @@ impl Run {
             }
             target = model;
         }
-        let plan = match plan::plan(&st.registry, &st.accounts, &st.tokens, &target, ty, &client_style, warm.as_ref()) {
+        let plan = match plan::plan(
+            &st.registry,
+            &st.accounts,
+            &st.tokens,
+            &st.live_models,
+            &target,
+            ty,
+            &client_style,
+            warm.as_ref(),
+        ) {
             Ok(p) => p,
             Err(e) => {
                 self.end_request(Outcome::Failed, None);
@@ -1599,6 +1613,7 @@ impl Run {
         forced: Vec<(String, Value)>,
     ) {
         self.n += 1;
+        self.sent = c.account.map(|a| (c.provider.id.clone(), a.name.clone(), c.upstream_id.clone()));
         let a = Attempt {
             n: self.n,
             provider: c.provider.id.clone(),
@@ -1615,8 +1630,20 @@ impl Run {
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
     }
 
+    /// Ends the running attempt with its provider-reported usage, and tallies it on the
+    /// account it was sent through (FR-024). An estimate sent nothing; a count consumes no
+    /// tokens.
     fn end_attempt(&self, outcome: AttemptOutcome, usage: Option<Usage>) {
         let at = self.now();
+        if let Some((p, a, m)) = &self.sent
+            && !usage.is_some_and(|u| u.estimated)
+        {
+            if self.req.count {
+                self.engine.history.tally.attempt_without_tokens(p, a, m);
+            } else {
+                self.engine.history.tally.attempt(p, a, m, usage.as_ref());
+            }
+        }
         self.engine.records.update(self.id(), |r| {
             if let Some(a) = r.attempts.last_mut() {
                 a.ended = Some(at);

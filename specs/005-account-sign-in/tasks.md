@@ -215,6 +215,8 @@ with poll times; changes appear after the next poll; idle polling keeps poll tim
 - [X] T077 [US4] Green run for US4 tests.
 - [ ] T078 [US4] *operator-run* Live checks L2 and L5: `! NR_LIVE=1 cargo test -p nullrouter-engine --test live -- quota --nocapture` prints each real quota response next to the extracted windows, and the `x-ratelimit-*` headers of `api.x.ai/v1/models`. Fix the declared paths (data only); add an xai `[quota]` only if L2 finds headers (then a header-reading rule is a new task).
 
+- [X] T100 [US4] Live models are served, not only listed (FR-008, US1 scenario 8; found reviewing T076). A model id that grok-cli's `[models_live]` list returns but the static `[[models]]` don't declare must resolve as `grok-cli/<id>` (and in unified models that name it) and be served with the type the list gives (default text), through the same pipeline; ids absent from both lists stay "not found". The registry stays sync and file-only: the engine supplies the live ids to resolution (e.g. a resolver hook or a per-snapshot overlay), not the plugin. Tests: a live-only model is listed in every style and a request for it reaches the mock upstream with its upstream id; after a failed refresh the last good list still resolves; an unknown id is refused.
+
 **Checkpoint**: the operator sees every reported quota with its poll time.
 
 ---
@@ -229,16 +231,16 @@ summed reported usage, per model; history survives a restart.
 
 ### Tests for User Story 5 ⚠️
 
-- [ ] T079 [P] [US5] `crates/nullrouter-engine/tests/tally.rs`: tally equals the sum of reported `input`, `output`, `cache_read`, `cache_write` per upstream model (SC-008); unreported usage counts in `requests_usage_unreported` and adds no tokens; a request retried across accounts tallies each attempt on its own account; key and sign-in accounts both tally.
-- [ ] T080 [P] [US5] `crates/nullrouter-engine/tests/quota_history.rs`: JSONL entries per [data-model § Quota poll](data-model.md#quota-poll-history-entry-quotaprovideraccountjsonl) with `v = 1`; files mode 0600; checkpoint every 10 s and at shutdown, so a graceful restart loses nothing; `prune --before` removes only older entries; `forget` deletes one account's files; `accounts remove` stops polls but keeps history (FR-025, Clarifications Q4).
+- [X] T079 [P] [US5] `crates/nullrouter-engine/tests/tally.rs`: tally equals the sum of reported `input`, `output`, `cache_read`, `cache_write` per upstream model (SC-008); unreported usage counts in `requests_usage_unreported` and adds no tokens; a request retried across accounts tallies each attempt on its own account; key and sign-in accounts both tally.
+- [X] T080 [P] [US5] `crates/nullrouter-engine/tests/quota_history.rs`: JSONL entries per [data-model § Quota poll](data-model.md#quota-poll-history-entry-quotaprovideraccountjsonl) with `v = 1`; files mode 0600; checkpoint every 10 s and at shutdown, so a graceful restart loses nothing; `prune --before` removes only older entries; `forget` deletes one account's files; `accounts remove` stops polls but keeps history (FR-025, Clarifications Q4).
 
 ### Implementation for User Story 5
 
-- [ ] T081 [P] [US5] Tally in `crates/nullrouter-engine/src/quota/tally.rs`: per account, per upstream model counters `requests`, `requests_usage_unreported`, `input`, `output`, `cache_read`, `cache_write` (the quota meter's names, FR-026); fed from `Run::end_attempt` (`attempt.rs:1388-1397`) with the attempt's account and provider-reported usage; lock-free or a short `Mutex` per account; taken and reset when a poll entry is written.
-- [ ] T082 [US5] History in `crates/nullrouter-engine/src/quota/history.rs`: append one JSON line per poll to `quota/<provider>/<account>.jsonl` (0600) in `spawn_blocking`; checkpoint the running tally to `.tally.json` with `write_private` every 10 s and at shutdown; reload the checkpoint at start; tail reader for the newest N entries.
-- [ ] T083 [US5] `quota history`, `quota prune`, `quota forget` in `crates/nullrouter-cli/src/cmd/quota.rs` and `quota.checkpoint` in `crates/nullrouter-server/src/operator.rs` (called before `prune`/`forget` when a server runs).
-- [ ] T084 [US5] Bench case in `crates/nullrouter-engine/benches/engine.rs`: a request through a sign-in account (token cell load, identity headers, forced parameters, tally update); compare with the `pre-005` baseline recorded in T001 (`--baseline pre-005`); no regression beyond noise.
-- [ ] T085 [US5] Green run for US5 tests.
+- [X] T081 [P] [US5] Tally in `crates/nullrouter-engine/src/quota/tally.rs`: per account, per upstream model counters `requests`, `requests_usage_unreported`, `input`, `output`, `cache_read`, `cache_write` (the quota meter's names, FR-026); fed from `Run::end_attempt` (`attempt.rs:1388-1397`) with the attempt's account and provider-reported usage; lock-free or a short `Mutex` per account; taken and reset when a poll entry is written.
+- [X] T082 [US5] History in `crates/nullrouter-engine/src/quota/history.rs`: append one JSON line per poll to `quota/<provider>/<account>.jsonl` (0600) in `spawn_blocking`; checkpoint the running tally to `.tally.json` with `write_private` every 10 s and at shutdown; reload the checkpoint at start; tail reader for the newest N entries.
+- [X] T083 [US5] `quota history`, `quota prune`, `quota forget` in `crates/nullrouter-cli/src/cmd/quota.rs` and `quota.checkpoint` in `crates/nullrouter-server/src/operator.rs` (called before `prune`/`forget` when a server runs).
+- [X] T084 [US5] Bench case in `crates/nullrouter-engine/benches/engine.rs`: a request through a sign-in account (token cell load, identity headers, forced parameters, tally update); compare with the `pre-005` baseline recorded in T001 (`--baseline pre-005`); no regression beyond noise.
+- [X] T085 [US5] Green run for US5 tests.
 
 **Checkpoint**: slice 006 has poll history and per-model traffic from the first day.
 

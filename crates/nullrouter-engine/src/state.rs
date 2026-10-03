@@ -106,6 +106,9 @@ pub struct Engine {
     pub refresher: crate::signin::refresh::Refresher,
     /// Quota polls per account: latest, last failure, schedule (research R11). In memory.
     pub quota: crate::quota::poll::QuotaBoard,
+    /// Poll history and the running per-account traffic tally (research R15). Every
+    /// completed poll is written to it through a [`quota`](Self::quota) hook.
+    pub history: Arc<crate::quota::history::History>,
     /// Live model lists, shared with every snapshot.
     pub live_models: Arc<LiveModels>,
     /// Wakes the maintenance task after a reload or a token change.
@@ -173,6 +176,9 @@ impl Engine {
     ) -> Result<(Self, StateReport), StateError> {
         let (accounts, keys) = operator_files(&home)?;
         let tokens = Arc::new(TokenCells::load(home.path())?);
+        let history = Arc::new(crate::quota::history::History::open(home.path()));
+        let quota = crate::quota::poll::QuotaBoard::default();
+        quota.on_poll(history.hook());
         let registry = open(home)?;
         let live_models = Arc::new(LiveModels::default());
         let (state, report) = assemble(registry.snapshot(), accounts, keys, tokens.clone(), live_models.clone(), 1);
@@ -188,7 +194,8 @@ impl Engine {
             tokens,
             sessions: AgentSessions::default(),
             refresher: Default::default(),
-            quota: Default::default(),
+            quota,
+            history,
             live_models,
             changed: tokio::sync::Notify::new(),
             install_id: OnceLock::new(),

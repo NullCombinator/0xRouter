@@ -32,7 +32,8 @@ pub struct UnifiedMember {
     pub requested: String,
     /// FR-021.
     pub upstream_id: String,
-    /// `false`: not in the catalog, accepted because the provider is passthrough.
+    /// `false`: not in the catalog, accepted because the provider is passthrough or keeps
+    /// a live model list (`[models_live]`).
     pub catalogued: bool,
 }
 

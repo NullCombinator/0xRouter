@@ -169,6 +169,69 @@ pub fn render(accounts: &[Value], now: SystemTime, offset_secs: i64) -> String {
     out
 }
 
+/// `1 request`, `3 requests`.
+fn requests(n: u64) -> String {
+    if n == 1 { "1 request".into() } else { format!("{} requests", num(n as f64)) }
+}
+
+/// A failed entry's short reason: `HTTP 500`, `timeout`, `rate limited`, ….
+fn entry_failure(e: &Value) -> String {
+    match (e["class"].as_str().unwrap_or("failed"), e["status"].as_u64()) {
+        ("rate_limited", _) => "rate limited".into(),
+        ("no_windows", _) => "no quota in the answer".into(),
+        ("network", _) => "network error".into(),
+        (_, Some(s)) => format!("HTTP {s}"),
+        (class, None) => class.replace('_', " "),
+    }
+}
+
+/// The `quota history` text for one account's entries (oldest first, as stored): a line
+/// per poll with its windows or failure, then a line per model of the traffic tally.
+///
+/// ```text
+/// Oct 2 14:20   ok       rolling 75% left
+///   m1                     2 requests   input 15   output 3   cache read 0   cache write 0
+/// Oct 2 14:30   failed   HTTP 500   no traffic
+/// ```
+pub fn history(entries: &[Value], now: SystemTime, offset_secs: i64) -> String {
+    let mut out = String::new();
+    for e in entries {
+        let when = time_of(&e["at"]).map_or_else(|| "?".to_owned(), |t| when_polled(t, now, offset_secs));
+        let mut line = if e["ok"] == true {
+            let windows: Vec<String> = e["windows"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|w| format!("{} {}", w["name"].as_str().unwrap_or("?"), window_value(w)))
+                .collect();
+            format!("{when:<13} ok       {}", windows.join(", "))
+        } else {
+            format!("{when:<13} failed   {}", entry_failure(&e["error"]))
+        };
+        let tally = e["tally"].as_object().filter(|t| !t.is_empty());
+        if tally.is_none() {
+            line.push_str("   no traffic");
+        }
+        let _ = writeln!(out, "{}", line.trim_end());
+        for (model, t) in tally.into_iter().flatten() {
+            let n = |k: &str| t[k].as_u64().unwrap_or(0);
+            let mut reqs = requests(n("requests"));
+            if n("requests_usage_unreported") > 0 {
+                let _ = write!(reqs, " ({} usage unreported)", num(n("requests_usage_unreported") as f64));
+            }
+            let _ = writeln!(
+                out,
+                "  {model:<22} {reqs}   input {}   output {}   cache read {}   cache write {}",
+                num(n("input") as f64),
+                num(n("output") as f64),
+                num(n("cache_read") as f64),
+                num(n("cache_write") as f64),
+            );
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

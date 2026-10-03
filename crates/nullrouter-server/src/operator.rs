@@ -8,7 +8,7 @@
 //! | `{"op":"records.list","provider"?,"unified_model"?,"limit"?}` | `{"ok":true,"records":[…]}` |
 //! | `{"op":"records.get","id":"rq_…"}` | `{"ok":true,"record":{…}}` |
 //! | `{"op":"accounts.state"}` | `{"ok":true,"accounts":[…]}`: per account `kind`, `state`, `state_since`, `state_reason`, `expires_at`, cooldowns |
-//! | `{"op":"quota.list"}`, `{"op":"quota.poll"}` | see [`crate::quota`] |
+//! | `{"op":"quota.list"}`, `{"op":"quota.poll"}`, `{"op":"quota.checkpoint"}` | see [`crate::quota`] |
 
 use std::future::Future;
 use std::io::{BufRead, BufReader, Write};
@@ -152,6 +152,7 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         }
         Some("quota.list") => crate::quota::list(engine, req),
         Some("quota.poll") => crate::quota::poll_now(engine, req).await,
+        Some("quota.checkpoint") => crate::quota::checkpoint(engine).await,
         Some(op) => json!({"ok": false, "error": format!("unknown op {op:?}")}),
         None => json!({"ok": false, "error": "the request names no op"}),
     }
@@ -193,6 +194,7 @@ mod tests {
         let home = OperatorHome::new(dir.path());
         let (engine, _) = Engine::open(home.clone()).unwrap();
         let engine = Arc::new(engine);
+        engine.history.tally.attempt("p", "a", "m", None);
         // A stale file from a server that died.
         std::fs::create_dir_all(dir.path().join("run")).unwrap();
         std::fs::write(socket_path(&home), "").unwrap();
@@ -206,16 +208,25 @@ mod tests {
         }));
         let h = home.clone();
         let answers = tokio::task::spawn_blocking(move || {
-            [json!({"op": "reload"}), json!({"op": "records.get", "id": "rq_x"}), json!({"op": "nope"})]
-                .iter()
-                .map(|r| call(&h, r).unwrap())
-                .collect::<Vec<_>>()
+            [
+                json!({"op": "reload"}),
+                json!({"op": "records.get", "id": "rq_x"}),
+                json!({"op": "nope"}),
+                json!({"op": "quota.checkpoint"}),
+            ]
+            .iter()
+            .map(|r| call(&h, r).unwrap())
+            .collect::<Vec<_>>()
         })
         .await
         .unwrap();
         assert_eq!(answers[0], json!({"ok": true, "generation": 2}));
         assert_eq!(answers[1]["ok"], false);
         assert_eq!(answers[2]["ok"], false);
+        // The running tally reaches its checkpoint file on request.
+        assert_eq!(answers[3], json!({"ok": true, "written": 1}));
+        let cp = nullrouter_engine::quota::history::tally_file(dir.path(), "p", "a").unwrap();
+        assert!(std::fs::read_to_string(cp).unwrap().contains("\"requests\":1"));
         stop.send(()).unwrap();
         task.await.unwrap();
         assert!(!socket_path(&home).exists());

@@ -3,6 +3,11 @@
 //! with reqwest; the engine benches minus `direct` are what 0router adds. Each bench also
 //! prints the per-request median and p95 (target p95 ≤ 10 ms).
 //!
+//! `signin` (spec 005 T084) is `same_style` through a sign-in account: the token cell load,
+//! the `[identity]` headers, a forced parameter, and the traffic tally update when the
+//! attempt ends (drained outside the measurement, like the rest of the stream).
+//! `tally/attempt` is the tally update alone.
+//!
 //! `cargo bench -p nullrouter-engine --bench engine -- --save-baseline slice-003`
 
 #[path = "../tests/common/mod.rs"]
@@ -11,7 +16,7 @@ mod common;
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
-use common::{Setup, chat_body, chat_chunks, chat_plugin, request, setup};
+use common::{Setup, chat_body, chat_chunks, chat_plugin, request, setup, setup_signin};
 use criterion::{Criterion, criterion_group, criterion_main};
 use nullrouter_engine::attempt::Answer;
 use serde_json::json;
@@ -20,6 +25,10 @@ use tokio_util::sync::CancellationToken;
 
 /// Prints the median and p95 of the individual request latencies.
 fn report(name: &str, mut all: Vec<Duration>) {
+    if all.is_empty() {
+        // Filtered out.
+        return;
+    }
     all.sort_unstable();
     let at = |q: f64| all[((all.len() - 1) as f64 * q).round() as usize];
     println!("{name}: per-request median {:?}, p95 {:?} over {} requests", at(0.5), at(0.95), all.len());
@@ -27,9 +36,9 @@ fn report(name: &str, mut all: Vec<Duration>) {
 
 /// Sends one streamed request through the engine and returns the time until its first
 /// piece, then drains the rest outside the measurement.
-async fn first_piece(s: &Setup, client: &str, body: serde_json::Value) -> Duration {
+async fn first_piece(s: &Setup, client: &str, target: &str, body: serde_json::Value) -> Duration {
     let st = s.engine.snapshot();
-    let req = request(s, client, "mockco/m1", body, "ak_bench", CancellationToken::new());
+    let req = request(s, client, target, body, "ak_bench", CancellationToken::new());
     let start = Instant::now();
     let Ok(Answer::Events { mut rx, .. }) = s.engine.text(st, req).await else { panic!("expected a stream") };
     let first = rx.recv().await.expect("a first piece");
@@ -78,7 +87,7 @@ fn bench(c: &mut Criterion) {
                 rt.block_on(async {
                     let mut total = Duration::ZERO;
                     for _ in 0..iters {
-                        let took = first_piece(&s, client, body.clone()).await;
+                        let took = first_piece(&s, client, "mockco/m1", body.clone()).await;
                         all.push(took);
                         total += took;
                     }
@@ -88,7 +97,76 @@ fn bench(c: &mut Criterion) {
         });
         report(&format!("ttfb/{name}"), std::mem::take(&mut all));
     }
+
+    let signed = rt.block_on(setup_signin(
+        |m| vec![("signco", signin_plugin(m))],
+        &[("signco", "main")],
+        &[("signco", "main")],
+        "",
+    ));
+    signed.mock.respond(|_| chat_chunks());
+    group.bench_function("signin", |b| {
+        b.iter_custom(|iters| {
+            rt.block_on(async {
+                let mut total = Duration::ZERO;
+                for _ in 0..iters {
+                    let took = first_piece(&signed, "openai-chat", "signco/m1", chat_body("signco/m1", true)).await;
+                    all.push(took);
+                    total += took;
+                }
+                total
+            })
+        })
+    });
+    report("ttfb/signin", std::mem::take(&mut all));
+    let tallied = signed.engine.history.tally.get("signco", "main");
+    assert!(tallied.get("m1").is_some_and(|t| t.requests > 0 && t.output > 0), "the sign-in case tallies: {tallied:?}");
     group.finish();
+
+    let mut group = c.benchmark_group("tally");
+    let tally = nullrouter_engine::quota::tally::Tally::default();
+    let usage = nullrouter_engine::records::Usage {
+        input: Some(1200),
+        output: Some(300),
+        cache_read: Some(4096),
+        cache_write: None,
+        reasoning: None,
+        input_semantics: nullrouter_registry::schema::InputSemantics::IncludesCache,
+        estimated: false,
+    };
+    group.bench_function("attempt", |b| b.iter(|| tally.attempt("signco", "main", black_box("m1"), Some(&usage))));
+    group.finish();
+}
+
+/// An openai-chat provider `signco` with a device-code `[signin]`, `[identity]` headers
+/// filled per request, and a forced `store = false` on its model.
+fn signin_plugin(mock: &nullrouter_engine::testkit::MockUpstream) -> String {
+    format!(
+        r#"schema = 2
+id = "signco"
+category = "apikey"
+[endpoints.text]
+url = "{url}"
+wire = "openai-chat"
+[signin]
+flow = "device_code"
+client_id = "bench-client"
+device_url = "{device}"
+token_url = "{token}"
+refresh_lead = "5m"
+[identity.headers]
+User-Agent = "signco-cli/1.0 (linux; x86_64)"
+x-request-id = "{{request.id}}"
+x-session-id = "{{session.id}}"
+x-email = "{{account.email}}"
+[[models]]
+id = "m1"
+force = {{ store = false }}
+"#,
+        url = mock.url("/signco/chat/completions"),
+        device = mock.url("/idp/device"),
+        token = mock.url("/idp/token"),
+    )
 }
 
 criterion_group!(benches, bench);

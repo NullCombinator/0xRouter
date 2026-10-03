@@ -1,7 +1,9 @@
 //! `nullrouter quota` (spec 005 T069; contracts/operator-cli.md § `quota`): the text view of a
 //! `quota.list` answer, line for line; `quota poll` needs the running server (exit 4);
 //! `quota interval` saves `poll_interval` and says it applies at the next start; `quota` with
-//! no server names the accounts whose quota isn't reported.
+//! no server names the accounts whose quota isn't reported. `quota history`, `prune` and
+//! `forget` (T083) work on the history files when no server runs; `accounts remove` keeps the
+//! history.
 
 use std::path::Path;
 use std::process::{Command, Output};
@@ -148,4 +150,94 @@ fn quota_without_a_server_names_what_isnt_reported() {
     let o = nr(dir.path(), &["quota", "xai"]);
     assert_eq!(text(&o).0, "xai/main                 quota not reported\n");
     assert!(!format!("{:?}", text(&o)).contains("SENTINEL"));
+}
+
+/// Two kept polls of `opencode-go/main` (Oct 1 and Oct 3) and one of `xai/main`.
+fn with_history(dir: &Path) {
+    use nullrouter_engine::quota::history::{self, Entry, EntryError};
+    use nullrouter_engine::quota::tally::{AccountTally, ModelTally};
+    let tally = AccountTally::from([(
+        "deepseek-flash".to_owned(),
+        ModelTally {
+            requests: 3,
+            requests_usage_unreported: 1,
+            input: 1200,
+            output: 340,
+            cache_read: 4096,
+            cache_write: 0,
+        },
+    )]);
+    let window: nullrouter_engine::quota::QuotaWindow = serde_json::from_value(
+        json!({"name": "rolling", "unit": "percent", "used": 25.0, "limit": 100.0, "remaining": 75.0}),
+    )
+    .unwrap();
+    let entry = |at: &str, ok: bool, tally: AccountTally| Entry {
+        v: 1,
+        at: at.into(),
+        ok,
+        error: (!ok).then(|| EntryError { class: "status".into(), status: Some(500), reason: "down".into() }),
+        windows: if ok { vec![window.clone()] } else { Vec::new() },
+        tally,
+    };
+    history::append(dir, "opencode-go", "main", &entry("2026-10-01T10:00:00.000Z", true, tally)).unwrap();
+    history::append(dir, "opencode-go", "main", &entry("2026-10-03T14:20:00.000Z", false, AccountTally::new()))
+        .unwrap();
+    history::append(dir, "xai", "main", &entry("2026-10-01T09:00:00.000Z", true, AccountTally::new())).unwrap();
+}
+
+#[test]
+fn quota_history_reads_the_kept_polls() {
+    let dir = home();
+    with_history(dir.path());
+    let o = nr(dir.path(), &["quota", "history", "opencode-go", "main"]);
+    assert!(o.status.success(), "{:?}", text(&o));
+    let (out, _) = text(&o);
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 3, "{out}");
+    assert!(lines[0].ends_with("ok       rolling 75% left"), "{out}");
+    assert_eq!(
+        lines[1],
+        "  deepseek-flash         3 requests (1 usage unreported)   input 1,200   output 340   cache read 4,096   cache write 0"
+    );
+    assert!(lines[2].ends_with("failed   HTTP 500   no traffic"), "{out}");
+
+    let o = nr(dir.path(), &["--json", "quota", "history", "opencode-go", "main", "--limit", "1"]);
+    let v: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v.as_array().unwrap().len(), 1);
+    assert_eq!(v[0]["v"], 1);
+    assert_eq!(v[0]["error"]["status"], 500);
+    let o = nr(dir.path(), &["--json", "quota", "history", "opencode-go", "main", "--since", "2026-10-02"]);
+    let v: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v.as_array().unwrap().len(), 1, "{v}");
+    let o = nr(dir.path(), &["quota", "history", "opencode-go", "nobody"]);
+    assert!(o.status.success());
+    assert!(text(&o).1.contains("no poll history"), "{:?}", text(&o));
+    let o = nr(dir.path(), &["quota", "history", "opencode-go", "main", "--since", "soon"]);
+    assert_eq!(o.status.code(), Some(1));
+}
+
+#[test]
+fn quota_prune_and_forget_edit_the_files() {
+    let dir = home();
+    with_history(dir.path());
+    let o = nr(dir.path(), &["quota", "prune", "--before", "2026-10-02", "opencode-go"]);
+    assert!(o.status.success(), "{:?}", text(&o));
+    assert_eq!(text(&o).0, "deleted 1 history entry older than 2026-10-02T00:00:00Z\n");
+    let left = |p: &str| nullrouter_engine::quota::history::read(dir.path(), p, "main", None, None).unwrap().len();
+    assert_eq!((left("opencode-go"), left("xai")), (1, 1), "only the named provider");
+    let o = nr(dir.path(), &["quota", "prune", "--before", "2026-10-02"]);
+    assert_eq!(text(&o).0, "deleted 1 history entry older than 2026-10-02T00:00:00Z\n");
+    assert_eq!(left("xai"), 0);
+
+    // `accounts remove` keeps the history; `quota forget` deletes it.
+    let o = nr(dir.path(), &["accounts", "remove", "opencode-go", "main"]);
+    assert!(o.status.success(), "{:?}", text(&o));
+    assert_eq!(left("opencode-go"), 1, "kept after accounts remove");
+    let o = nr(dir.path(), &["quota", "forget", "opencode-go", "main"]);
+    assert_eq!(text(&o).0, "opencode-go/main: poll history deleted\n");
+    assert_eq!(left("opencode-go"), 0);
+    let o = nr(dir.path(), &["quota", "forget", "opencode-go", "main"]);
+    assert_eq!(text(&o).0, "opencode-go/main: no poll history\n");
+    let o = nr(dir.path(), &["quota", "prune", "--before", "yesterday"]);
+    assert_eq!(o.status.code(), Some(1));
 }
