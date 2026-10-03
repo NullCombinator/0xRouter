@@ -1,0 +1,52 @@
+# Security review: slice 005 (T095)
+
+Run 2026-10-03 with the `security-auditor` agent over `67a9b4b..HEAD` (crates, plugins, tools):
+token storage, host binding, the sign-in flows, redaction generations, identity placeholders,
+quota polling and history, and the `testkit` feature. The scale and format follow
+[slice 003's review](../003-request-pipeline/security-review.md); its open items are not
+repeated unless this slice changes them. Saved by the main session (the reviewer had no write
+tool); fixes are tracked below the findings.
+
+## High
+
+None.
+
+## Medium (open)
+
+| # | Finding | Fix |
+|---|---|---|
+| M1 | A refresh can overwrite a newer sign-in. `refresh_now` reads the cell, makes the HTTP refresh, then `persist` (`signin/refresh.rs:136-144`) writes the result over whatever entry `tokens.toml` holds. A CLI sign-in in between (a new account, or a re-sign-in after a compromise) is reverted to the old grant, in the file and, through `tokens.replace`, in memory. `needs_sign_in` passes `token = None` (`refresh.rs:358`), so a permanent failure of the old refresh marks the fresh sign-in out of service. When the CLI's reload over the socket fails (slice 003 M4), the server keeps the old cell and its next scheduled refresh does the same. | Compare and swap: `persist` writes only while the stored refresh token (or access token) is still the one the refresh started from; otherwise drop the result and re-read the cell from the file. Pass `Some(sent access token)` from `needs_sign_in`. |
+| M2 | The refresh token is sent to the active plugin's `[signin] token_url` (`refresh.rs:103-115`) with no check against `entry.hosts`. The maintenance task schedules refreshes on its own timer (`maintenance.rs:61-74`), without `release`. Today only the fit rule "sign-in only in bundled plugins" stops a replacing plugin from receiving it. `fit.rs:119-120` says that rule is meant to be removed. FR-031 should not rest on an unrelated rule (lesson: check at the gate and again at runtime). | In `refresh`, refuse (as a permanent `NewTokenHost`) when the `token_url` host is not in `entry.hosts`. |
+
+## Low (open)
+
+| # | Finding |
+|---|---|
+| L1 | Provider- and callback-controlled text reaches the terminal unfiltered: the loopback or pasted `error` parameter (`PasteError::Provider`), the device `user_code` and `verification_uri`, and `Rejected.code`. `from_query` honours `error` before checking `state` (`signin/pkce.rs:101-107`). So any local process, or any web page the operator has open, can hit the fixed port (xai: 56121) and print 80 characters of escape sequences or a fake instruction. Fix: check `state` before `error`; strip control characters from provider strings before printing. |
+| L2 | The device link is opened with `xdg-open`/`open` with no scheme check (`cli/src/signin.rs:96-104, 200-202`). `Command::arg` uses no shell, so there is no command injection, but a `file:` link or a custom-scheme link from the device endpoint would be opened. Fix: open only `https` links; print the others. |
+| L3 | Each snapshot has its own `SharedRedactor` (`state.rs:141`). `rebuild_redactor` updates only the current one (`state.rs:250-257`). A request that holds an older snapshot (a reload happened mid-request), refreshes on a 401 and retries sends a token its own redactor doesn't know. The cell is also swapped before the redactor is rebuilt (`refresh.rs:310-311`, `reload_blocking`). Fix: one engine-wide `Arc<SharedRedactor>` shared by every snapshot; build the new redactor before swapping the cell. |
+| L4 | TOML parse errors quote the failing line. In `tokens.toml` that line is a token. `nullrouter check` strips it (`cmd/check.rs:139-151`), but `serve`, `accounts list` (`cmd/accounts.rs:355-357`), `accounts signin`, `remove` and `enable` print `FileError` unfiltered. This extends slice 003 L2. Fix: drop the snippet in `TokenStore::parse` (and `Accounts::parse`) and keep the line and column. |
+| L5 | A symlinked `tokens.toml` is read through (`read_private` uses `metadata`, `files.rs:29`). The first write replaces the link with a regular 0600 file and leaves the old tokens at the target. `check` (`symlink_metadata`) reports the link as mode 777, fatal, while `serve` accepts it. `tokens.lock` is opened with `create` and follows symlinks (`tokens.rs:229-230`). Slice 003 L4 (predictable temp name) now also covers `tokens.toml` and the tally files. Fix: refuse symlinks for both files (`O_NOFOLLOW` or `symlink_metadata`). |
+| L6 | The gate's "site" (`validate/gate.rs:627-645`) is the last two labels, or three under a short country second level. It treats `github.io`, `amazonaws.com`, `vercel.app`, `pages.dev`, `workers.dev`, `herokuapp.com`, `cloudfront.net`, `appspot.com` and `azurewebsites.net` as one site, and misses `ltd.uk`, `plc.uk`, `me.uk`, `gv.at` and `gc.ca`. It is not the release boundary: tokens go only to exact `token_hosts`, the plugin author picks every URL anyway, and the sections are bundled-only. Acceptable for this slice. Before opening the sections to community plugins: use exact hosts (or a public-suffix list), and print the bound host list at sign-in. |
+| L7 | A `localhost` loopback redirect binds `127.0.0.1` only (`signin/loopback.rs:46-49`; anthropic's fallback is `http://localhost:0/callback`). A browser that tries `[::1]` first can reach another local user's listener on that port, which then gets the code and state. PKCE stops the exchange, so the impact is a failed sign-in. The serial accept with a 10 s head timeout lets a local client stall the listener; paste still works. Fix: bind both families for `localhost`, or send `127.0.0.1`. |
+| L8 | A provider-supplied `expires_in` is not bounded. `Duration::from_secs_f64`, then `SystemTime + Duration`, panics at about 9.2e18 s (`signin/mod.rs:232-238, 386`, `refresh.rs:122`, `device_code.rs:86-95`). In the CLI that aborts a sign-in after the tokens were issued. On the server, `Dedup` catches the panic, but the freshly rotated refresh token is lost before it is persisted, and the `aborted` result skips the backoff count. Fix: clamp the value (for example, at most a year) and use checked arithmetic. |
+| L9 | `write_private` doesn't fsync the directory after the rename (`files.rs:50-55`). A power loss can bring back a pre-rotation `tokens.toml`, and the next refresh then fails with `refresh_token_reused`, so the account needs sign-in. Availability only. Fix: fsync the parent directory for `tokens.toml`. |
+
+Observation: `{session.id}` sends the client's session value upstream without the secret and
+agent-key filter that same-style forwarding applies (`identity.rs:128`). The value is the
+client's own, so this is not a finding; apply the filter for consistency.
+
+## Holding
+
+- **Files and locking.** `tokens.toml` is written 0600 and refused when shared. `tokens.lock` is 0600. Every writer goes through `update`: `flock` on the lock file, a fresh read, an atomic rename (the concurrent-writer test covers it). The quota directories are 0700 and their files 0600. `install-id` is created with `create_new` and a hard link.
+- **Write before swap, and reload-if-changed.** `refresh_now` persists before `tokens.replace`; a failed write is logged and the token kept in memory. The reload stamp is read before the file, so a race costs one extra reload. An inode-and-mtime collision would need two writes within one timestamp tick plus inode reuse. Its effect would be a stale cell, not a leak.
+- **Host binding.** `release` checks `token_hosts ⊆ entry.hosts` and the account state from one atomic load. Quota polls, live model lists (`account_call`) and video downloads (`jobs::bound`) check the URL's host against `entry.hosts`; a download off those hosts is a bare GET. A replacing user plugin can't declare `[signin]`, and any host it adds trips `NewTokenHost`.
+- **Sign-in HTTP.** Sign-in calls use the SSRF-checking client with redirects off, plus the address-literal check. Discovery is accepted only on a declared sign-in host and port.
+- **Loopback listener.** It binds loopback only (the gate requires `http` on 127.0.0.1, localhost or [::1], with no query). It answers GET on the exact path only, serves static pages with no input reflected, and caps the request head at 16 KiB. A callback with the wrong state doesn't end the sign-in.
+- **Paste.** A pasted address must carry the matching `state`. A bare code is accepted only for code-page providers, and S256 PKCE binds the code to this sign-in's verifier anyway.
+- **Errors.** No `SignInError` variant carries a code, verifier or token. Provider error codes are capped at 80 characters. State reasons are redacted and capped at 200. `SecretString`'s Debug hides the value, and auth header values are marked sensitive.
+- **Redaction generations.** The current and previous access and refresh tokens are masked. The previous generation survives same-token swaps and state changes.
+- **Identity.** Claims come only from the released account's own token view. Key accounts get no identity headers. Values pass `HeaderValue` validation (no CR or LF), and floor names are refused at the gate and skipped at runtime. Fallback re-releases from the next account's own view, so no claim crosses accounts or providers.
+- **History.** `component()` refuses empty names, a leading `.`, `/`, `\` and NUL. Account names are `[a-z0-9_-]{1,32}` and provider ids come from the registry. Entries hold windows, tallies and redacted reasons only.
+- **`testkit`.** The feature is enabled only from dev-dependencies (cli, server, and the engine's own). Resolver 3 doesn't bring dev features into `cargo build` or `cargo install`. No cli or server source mentions `open_parity`, `parity_set`, `testkit` or `parity`, so even a binary built by `cargo test` can't reach the fit-off path.
+- **Browser.** It is opened with `Command::new(opener).arg(url)`: no shell, and the link is always printed.
