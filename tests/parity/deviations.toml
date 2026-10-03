@@ -497,3 +497,13 @@ provider = "grok-cli"
 fixture = "providers"
 field = "headers"
 reason = "client identity headers apply to signed-in accounts only, as [identity] (slice 005 R7)"
+
+# Behavioural deviations (research R19) have no oracle field to compare: a row here needs a
+# fixture field that differs, and 9router's fixtures don't record request bodies. They are
+# asserted on the request reaching the provider instead:
+# - no Claude cloaking (tools, decoys, system text, ids): the signed-in anthropic body equals
+#   the client's, crates/nullrouter-engine/tests/no_cloaking.rs;
+# - no grok-cli input rewrites, field allowlist or always-forced store/reasoning.summary/
+#   include; only an effort-suffixed model id forces reasoning.effort: same file, and
+#   crates/nullrouter-server/tests/signin_serving.rs;
+# - x-grok-agent-id is {install.id}, not a machine-id hash: no_cloaking.rs.

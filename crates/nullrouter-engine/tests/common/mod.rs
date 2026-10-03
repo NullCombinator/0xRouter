@@ -69,6 +69,75 @@ pub async fn setup(
     Setup { _dir: dir, engine: Arc::new(engine), mock }
 }
 
+/// [`setup`] where `signin` names the `(provider, account)` pairs that are sign-in accounts:
+/// their access token is the same `{SECRET}-<provider>-<name>` a key account would carry
+/// (so [`accounts_hit`] reads both), kept in `tokens.toml` and bound to the mock's host,
+/// with an email and user id as claims. The engine opens over the parity set, so these
+/// user plugins may declare `[signin]` and `[identity]`.
+pub async fn setup_signin(
+    plugins: impl FnOnce(&MockUpstream) -> Vec<(&'static str, String)>,
+    accounts: &[(&str, &str)],
+    signin: &[(&str, &str)],
+    config: &str,
+) -> Setup {
+    let mock = MockUpstream::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), format!("allow_private_endpoints = true\n{config}")).unwrap();
+    std::fs::create_dir(dir.path().join("plugins")).unwrap();
+    for (id, toml) in plugins(&mock) {
+        std::fs::write(dir.path().join(format!("plugins/{id}.toml")), toml).unwrap();
+    }
+    let (mut file, mut tokens) = (String::from("schema = 2\n"), String::from("schema = 1\n"));
+    for (order, (provider, name)) in accounts.iter().enumerate() {
+        let token = format!("{SECRET}-{provider}-{name}");
+        if signin.contains(&(provider, name)) {
+            file += &format!(
+                "[[account]]\nprovider = \"{provider}\"\nname = \"{name}\"\nkind = \"signin\"\norder = {order}\n"
+            );
+            tokens += &format!(
+                "[[token]]\nprovider = \"{provider}\"\nname = \"{name}\"\naccess_token = \"{token}\"\nexpires_at = \"2099-01-01T00:00:00Z\"\nsigned_in_at = \"2026-10-01T00:00:00Z\"\nhosts = [\"127.0.0.1\"]\nclaims = {{ email = \"{name}@example.com\", user_id = \"user-{name}\" }}\n"
+            );
+        } else {
+            file += &format!(
+                "[[account]]\nprovider = \"{provider}\"\nname = \"{name}\"\nsecret = \"{token}\"\norder = {order}\n"
+            );
+        }
+    }
+    nullrouter_engine::files::write_private(&dir.path().join(nullrouter_engine::accounts::FILE), &file).unwrap();
+    nullrouter_engine::files::write_private(&nullrouter_engine::tokens::path(dir.path()), &tokens).unwrap();
+    let (engine, report) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
+    assert!(report.registry.unsupported.is_empty() && report.registry.skipped.is_empty(), "{report:#?}");
+    Setup { _dir: dir, engine: Arc::new(engine), mock }
+}
+
+/// A whole Responses answer saying "hi", streamed (a `force_stream` endpoint).
+pub fn responses_stream() -> Step {
+    let usage = json!({"input_tokens": 3, "output_tokens": 1, "total_tokens": 4});
+    let item = json!({"type": "message", "id": "msg_up", "status": "completed", "role": "assistant", "content": [{"type": "output_text", "text": "hi", "annotations": []}]});
+    let done = json!({"id": "resp_up", "object": "response", "created_at": 1, "status": "completed", "model": "m1", "output": [item], "usage": usage});
+    let started = json!({"id": "resp_up", "object": "response", "created_at": 1, "status": "in_progress", "model": "m1", "output": []});
+    let ev = |name: &'static str, v: Value| (Some(name), v);
+    Step::sse(
+        &[
+            ev("response.created", json!({"type": "response.created", "sequence_number": 0, "response": started})),
+            ev(
+                "response.output_item.added",
+                json!({"type": "response.output_item.added", "sequence_number": 1, "output_index": 0, "item": {"type": "message", "id": "msg_up", "status": "in_progress", "role": "assistant", "content": []}}),
+            ),
+            ev(
+                "response.output_text.delta",
+                json!({"type": "response.output_text.delta", "sequence_number": 2, "item_id": "msg_up", "output_index": 0, "content_index": 0, "delta": "hi"}),
+            ),
+            ev(
+                "response.output_item.done",
+                json!({"type": "response.output_item.done", "sequence_number": 3, "output_index": 0, "item": item}),
+            ),
+            ev("response.completed", json!({"type": "response.completed", "sequence_number": 4, "response": done})),
+        ],
+        false,
+    )
+}
+
 /// A unified model `u` over `members` (`(provider, model)`).
 pub fn unified(members: &[(&str, &str)]) -> String {
     let m: Vec<String> = members.iter().map(|(p, m)| format!("{{ provider = \"{p}\", model = \"{m}\" }}")).collect();

@@ -447,8 +447,13 @@ pub fn out_of_service(account: &Account, tokens: &TokenCells) -> Option<Withheld
     if !account.is_signin() {
         return None;
     }
+    view_out_of_service(account, tokens.get(&account.provider, &account.name).as_deref())
+}
+
+/// [`out_of_service`] for a sign-in account's view, already loaded.
+fn view_out_of_service(account: &Account, view: Option<&TokenView>) -> Option<Withheld> {
     let needs = || Withheld::NeedsSignIn { provider: account.provider.clone(), name: account.name.clone() };
-    let Some(view) = tokens.get(&account.provider, &account.name) else { return Some(needs()) };
+    let Some(view) = view else { return Some(needs()) };
     match &view.state {
         AccountState::Active | AccountState::Disabled => None,
         AccountState::NeedsSignIn { .. } => Some(needs()),
@@ -466,17 +471,20 @@ pub fn out_of_service(account: &Account, tokens: &TokenCells) -> Option<Withheld
 /// added for. A sign-in account's current access token is read from `tokens`, and is
 /// released only while the account is in service and every host the active plugin sends
 /// the token to (`token_hosts`) is one its sign-in was bound to (research R5, FR-031).
+///
+/// The token cell is read once (one atomic load), so the state checked and the token
+/// released come from the same generation even while a refresh swaps the cell.
 pub fn release<'a>(
     account: &'a Account,
     active: &ProviderEntity,
     tokens: &TokenCells,
 ) -> Result<Released<'a>, Withheld> {
     if account.is_signin() {
-        if let Some(w) = out_of_service(account, tokens) {
+        let view = tokens.get(&account.provider, &account.name);
+        if let Some(w) = view_out_of_service(account, view.as_deref()) {
             return Err(w);
         }
-        let view = tokens
-            .get(&account.provider, &account.name)
+        let view = view
             .ok_or_else(|| Withheld::NeedsSignIn { provider: account.provider.clone(), name: account.name.clone() })?;
         return match active.token_hosts().into_iter().find(|h| !view.entry.hosts.contains(h)) {
             Some(host) => {

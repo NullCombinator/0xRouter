@@ -66,14 +66,78 @@ pub async fn server_with(extra: impl FnOnce(&MockUpstream) -> Vec<(&'static str,
         accounts += &format!("[[account]]\nprovider = \"{id}\"\nname = \"main\"\nsecret = \"{SECRET}\"\n");
     }
     nullrouter_engine::files::write_private(&dir.path().join(nullrouter_engine::accounts::FILE), &accounts).unwrap();
+    let keys = write_keys(dir.path());
+    let (engine, report) = Engine::open(OperatorHome::new(dir.path())).unwrap();
+    assert!(report.registry.diagnostics.is_empty(), "{:#?}", report.registry.diagnostics);
+    start(dir, mock, engine, keys).await
+}
+
+/// A server whose `accounts` (`(provider, name)`) are all sign-in accounts: access token
+/// `{SECRET}-<provider>-<name>` in `tokens.toml`, bound to the mock's host, with an email
+/// and user id as claims. The engine opens over the parity set, so the plugins may declare
+/// `[signin]` and `[identity]`; `config` is extra `config.toml` (decisions, unified models).
+pub async fn signin_server(
+    plugins: impl FnOnce(&MockUpstream) -> Vec<(&'static str, String)>,
+    accounts: &[(&str, &str)],
+    config: &str,
+) -> Server {
+    let mock = MockUpstream::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), format!("allow_private_endpoints = true\n{config}")).unwrap();
+    std::fs::create_dir(dir.path().join("plugins")).unwrap();
+    for (id, toml) in plugins(&mock) {
+        std::fs::write(dir.path().join(format!("plugins/{id}.toml")), toml).unwrap();
+    }
+    let (mut file, mut tokens) = (String::from("schema = 2\n"), String::from("schema = 1\n"));
+    for (provider, name) in accounts {
+        file += &format!("[[account]]\nprovider = \"{provider}\"\nname = \"{name}\"\nkind = \"signin\"\n");
+        tokens += &format!(
+            "[[token]]\nprovider = \"{provider}\"\nname = \"{name}\"\naccess_token = \"{SECRET}-{provider}-{name}\"\nexpires_at = \"2099-01-01T00:00:00Z\"\nsigned_in_at = \"2026-10-01T00:00:00Z\"\nhosts = [\"127.0.0.1\"]\nclaims = {{ email = \"{name}@example.com\", user_id = \"user-{name}\" }}\n"
+        );
+    }
+    nullrouter_engine::files::write_private(&dir.path().join(nullrouter_engine::accounts::FILE), &file).unwrap();
+    nullrouter_engine::files::write_private(&nullrouter_engine::tokens::path(dir.path()), &tokens).unwrap();
+    let keys = write_keys(dir.path());
+    let (engine, report) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
+    let r = &report.registry;
+    assert!(r.unsupported.is_empty() && r.skipped.is_empty() && r.pending_conflicts.is_empty(), "{report:#?}");
+    assert!(report.unused_accounts.is_empty(), "{report:#?}");
+    start(dir, mock, engine, keys).await
+}
+
+/// `plugins/bundled/<id>.toml` with every `https://host` the core sends to pointed at the
+/// mock. Redirect URIs stay: the browser, not the core, follows them.
+pub fn bundled_at_mock(mock: &MockUpstream, id: &str) -> String {
+    let path = format!("{}/../../plugins/bundled/{id}.toml", env!("CARGO_MANIFEST_DIR"));
+    let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let base = mock.url("");
+    let mut out = String::with_capacity(src.len());
+    for line in src.lines() {
+        let mut rest = line;
+        while let Some(i) = rest.find("https://").filter(|_| !line.contains("uri =")) {
+            out.push_str(&rest[..i]);
+            out.push_str(&base);
+            let after = &rest[i + "https://".len()..];
+            rest = &after[after.find(['/', '"']).unwrap_or(after.len())..];
+        }
+        out.push_str(rest);
+        out.push('\n');
+    }
+    out
+}
+
+/// Issues agent key `laptop` and a revoked `old`; returns both.
+fn write_keys(home: &std::path::Path) -> (String, String) {
     let mut keys = Keys::default();
     let (key, _) = keys.issue("laptop", None).unwrap();
     let (revoked, _) = keys.issue("old", None).unwrap();
     keys.revoke("old").unwrap();
-    nullrouter_engine::files::write_private(&dir.path().join(keys::FILE), &keys.to_toml()).unwrap();
+    nullrouter_engine::files::write_private(&home.join(keys::FILE), &keys.to_toml()).unwrap();
+    (key, revoked)
+}
 
-    let (engine, report) = Engine::open(OperatorHome::new(dir.path())).unwrap();
-    assert!(report.registry.diagnostics.is_empty(), "{:#?}", report.registry.diagnostics);
+/// Serves `engine` on an ephemeral port.
+async fn start(dir: tempfile::TempDir, mock: MockUpstream, engine: Engine, (key, revoked): (String, String)) -> Server {
     let engine = Arc::new(engine);
     let app = App::new(engine.clone()).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

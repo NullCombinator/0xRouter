@@ -9,7 +9,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use nullrouter_registry::SecretString;
 use nullrouter_registry::floor::Floor;
-use nullrouter_registry::schema::{AuthScheme, Endpoint, ForwardMerge, ProviderEntity};
+use nullrouter_registry::schema::{AuthScheme, Endpoint, EndpointAuth, ForwardMerge, ProviderEntity};
 use nullrouter_registry::validate::is_private_ip;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
@@ -135,6 +135,17 @@ pub struct RequestParts<'a> {
     pub voice: Option<&'a str>,
     pub content_type: Option<&'a str>,
     pub body: Bytes,
+    /// Set for a sign-in account's request; `None` for a key account.
+    pub signin: Option<SignedIn<'a>>,
+}
+
+/// What a sign-in account's request adds (research R6, R7): the token goes where
+/// `[signin] auth` says, and the `[identity]` headers, already filled, come on top.
+#[derive(Debug, Clone)]
+pub struct SignedIn<'a> {
+    pub auth: &'a EndpointAuth,
+    /// `(name, value)` from [`identity::headers`](crate::identity::headers), in order.
+    pub identity: Vec<(&'a str, String)>,
 }
 
 /// `s` as one path segment: everything but unreserved characters percent-encoded.
@@ -161,22 +172,23 @@ pub fn endpoint_url(template: &str, model: &str, voice: Option<&str>) -> Result<
     Url::parse(&url).map_err(|e| BuildError::BadUrl { url: template.to_owned(), reason: e.to_string() })
 }
 
-/// The header the core writes the secret into, and its value: the endpoint's placement,
-/// else the provider's `[auth]`.
+/// The header the core writes the secret into, and its value: a sign-in account's
+/// `[signin] auth` placement, else the endpoint's, else the provider's `[auth]`.
 fn auth_header(
     p: &ProviderEntity,
     e: &Endpoint,
+    signin: Option<&EndpointAuth>,
     secret: &SecretString,
 ) -> Result<(HeaderName, HeaderValue), BuildError> {
     let auth = p.auth.as_ref();
-    let header = e.auth.as_ref().map(|a| a.header.as_str()).or_else(|| auth.and_then(|a| a.header.as_deref()));
+    let placed = signin.or(e.auth.as_ref());
+    let header = placed.map(|a| a.header.as_str()).or_else(|| auth.and_then(|a| a.header.as_deref()));
     let name = header.map_or(AUTHORIZATION, |h| HeaderName::from_bytes(h.as_bytes()).unwrap_or(AUTHORIZATION));
-    let scheme = e
-        .auth
-        .as_ref()
-        .map(|a| a.scheme)
-        .or_else(|| auth.and_then(|a| a.scheme))
-        .unwrap_or(if name == AUTHORIZATION { AuthScheme::Bearer } else { AuthScheme::Raw });
+    let scheme = placed.map(|a| a.scheme).or_else(|| auth.and_then(|a| a.scheme)).unwrap_or(if name == AUTHORIZATION {
+        AuthScheme::Bearer
+    } else {
+        AuthScheme::Raw
+    });
     let mut value = secret
         .with_exposed(|s| match scheme {
             AuthScheme::Bearer => Ok(HeaderValue::from_str(&format!("Bearer {s}"))),
@@ -196,7 +208,34 @@ fn forwarded(parts: &RequestParts) -> Vec<(HeaderName, HeaderValue, ForwardMerge
     forwarding::client_headers(rules, same_style, parts.client_style, parts.client_headers, parts.floor, parts.redactor)
 }
 
-/// Assembles the request: client headers → floor → plugin static headers → core auth.
+/// Whether `name` merges as a comma-separated list for this client style: a
+/// `forwarding.to_upstream` rule with `merge = "append_csv"` covers it.
+fn appends(parts: &RequestParts, name: &str) -> bool {
+    let rules = parts.provider.forwarding.as_ref().map_or(&[][..], |f| &f.to_upstream.headers[..]);
+    rules.iter().any(|r| {
+        r.merge == ForwardMerge::AppendCsv
+            && forwarding::name_matches(&r.name, name)
+            && (r.from_styles.is_empty() || r.from_styles.iter().any(|s| s == parts.client_style))
+    })
+}
+
+/// Joins comma-separated lists, keeping the first occurrence of each item.
+fn join_csv(lists: &[&str]) -> String {
+    let mut items: Vec<&str> = Vec::new();
+    for item in lists.iter().flat_map(|l| l.split(',')).map(str::trim).filter(|i| !i.is_empty()) {
+        if !items.contains(&item) {
+            items.push(item);
+        }
+    }
+    items.join(",")
+}
+
+/// Assembles the request: client headers → floor → plugin static headers → identity
+/// headers (sign-in accounts) → core auth.
+///
+/// An identity header under an `append_csv` forwarding rule for the client's style joins
+/// the list already there (the client's and the endpoint's), so anthropic's `anthropic-beta`
+/// keeps the client's own flags; any other identity header replaces.
 pub fn build_request(parts: RequestParts) -> Result<Outgoing, BuildError> {
     let e = parts.endpoint;
     let url = endpoint_url(&e.url, parts.model, parts.voice)?;
@@ -229,10 +268,21 @@ pub fn build_request(parts: RequestParts) -> Result<Outgoing, BuildError> {
             HeaderValue::from_str(ct).map_err(|_| BuildError::BadHeader("content-type".into()))?,
         );
     }
+    for (k, v) in parts.signin.iter().flat_map(|s| &s.identity) {
+        let name = HeaderName::from_bytes(k.as_bytes()).map_err(|_| BuildError::BadHeader((*k).to_owned()))?;
+        if parts.floor.lists(name.as_str()) {
+            continue;
+        }
+        let merged = match headers.get(&name).and_then(|h| h.to_str().ok()) {
+            Some(existing) if appends(&parts, name.as_str()) => join_csv(&[existing, v]),
+            _ => v.clone(),
+        };
+        headers.insert(name, HeaderValue::from_str(&merged).map_err(|_| BuildError::BadHeader((*k).to_owned()))?);
+    }
     let no_auth = parts.provider.auth.as_ref().is_some_and(|a| a.no_auth);
     if !no_auth {
         let secret = parts.secret.ok_or_else(|| BuildError::NoSecret(parts.provider.id.clone()))?;
-        let (name, value) = auth_header(parts.provider, e, secret)?;
+        let (name, value) = auth_header(parts.provider, e, parts.signin.as_ref().map(|s| s.auth), secret)?;
         headers.insert(name, value);
     }
     let header_timeout =
@@ -317,6 +367,7 @@ headers = { "anthropic-beta" = "base-1", "anthropic-version" = "2023-06-01" }
             voice: None,
             content_type: Some("application/json"),
             body: Bytes::from_static(b"{}"),
+            signin: None,
         };
         let out = build_request(base.clone()).unwrap();
         let h = &out.headers;
@@ -380,6 +431,54 @@ auth = { header = "x-api-key", scheme = "raw" }
         assert!(messages.headers.get(AUTHORIZATION).is_none());
     }
 
+    #[test]
+    fn a_sign_in_request_moves_the_token_and_adds_identity_headers() {
+        let p = provider(
+            r#"
+schema = 2
+id = "acme"
+category = "apikey"
+[auth]
+header = "x-api-key"
+scheme = "raw"
+[forwarding.to_upstream]
+headers = [{ name = "anthropic-beta", merge = "append_csv", from_styles = ["anthropic-messages"] }]
+[[endpoints.text]]
+url = "https://api.acme.example/v1/messages"
+wire = "anthropic-messages"
+headers = { "anthropic-beta" = "base-1" }
+"#,
+        );
+        let (secret, floor) = (SecretString::new("tok-acme-1"), Floor::default());
+        let redactor = Redactor::new([&secret]);
+        let mut client = HeaderMap::new();
+        client.insert("anthropic-beta", HeaderValue::from_static("client-2, base-1"));
+        client.insert("user-agent", HeaderValue::from_static("client-agent/1"));
+        let endpoint = p.endpoints.values().next().unwrap().0[0].clone();
+        let bearer = EndpointAuth { header: "Authorization".into(), scheme: AuthScheme::Bearer };
+        let identity = vec![("anthropic-beta", "oauth-1".to_owned()), ("User-Agent", "official/2".to_owned())];
+        let parts = RequestParts {
+            provider: &p,
+            client_style: "anthropic-messages",
+            signin: Some(SignedIn { auth: &bearer, identity }),
+            ..other_parts(&endpoint, &floor, &redactor, &secret, &client)
+        };
+        let out = build_request(parts.clone()).unwrap();
+        let h = &out.headers;
+        assert_eq!(h[AUTHORIZATION], "Bearer tok-acme-1");
+        assert!(h[AUTHORIZATION].is_sensitive());
+        assert!(h.get("x-api-key").is_none(), "the key placement is not used");
+        assert_eq!(h["anthropic-beta"], "base-1,client-2,oauth-1", "joined once each, in order");
+        assert_eq!(h["user-agent"], "official/2", "an identity header without a merge rule replaces");
+
+        let other = build_request(RequestParts { client_style: "openai-chat", ..parts.clone() }).unwrap();
+        assert_eq!(other.headers["anthropic-beta"], "oauth-1", "no rule for this style: replaces");
+
+        let key = build_request(RequestParts { signin: None, ..parts }).unwrap();
+        assert_eq!(key.headers["x-api-key"], "tok-acme-1");
+        assert_eq!(key.headers["user-agent"], "client-agent/1", "a key account sends no identity");
+    }
+
     fn other_parts<'a>(
         endpoint: &'a Endpoint,
         floor: &'a Floor,
@@ -404,6 +503,7 @@ auth = { header = "x-api-key", scheme = "raw" }
             voice: None,
             content_type: None,
             body: Bytes::new(),
+            signin: None,
         }
     }
 

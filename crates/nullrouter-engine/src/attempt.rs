@@ -21,9 +21,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
+use indexmap::IndexMap;
 use nullrouter_registry::Resolution;
 use nullrouter_registry::schema::{
-    BodyEncoding, BreakBehaviour, Endpoint, ErrorRule, Framing, InputSemantics, ModelType, RouteOp,
+    BodyEncoding, BreakBehaviour, Endpoint, ErrorRule, ForcedParam, Framing, InputSemantics, ModelType, RouteOp,
 };
 use nullrouter_registry::template::{FieldPath, Template};
 use nullrouter_wire::codec::request::{self, Edits};
@@ -37,7 +38,7 @@ use nullrouter_wire::primitives::{body as encodings, session};
 use nullrouter_wire::stream::{Frame, Framer, StreamReader, StreamWriter, usage_unasked};
 use nullrouter_wire::template::Bindings;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
 use tokio_util::sync::CancellationToken;
@@ -46,6 +47,7 @@ use crate::accounts;
 use crate::breaks::{self, Broken, Resume, Seen};
 use crate::classify::{self, Verdict};
 use crate::forwarding;
+use crate::identity::{self, FillContext};
 use crate::inband;
 use crate::jobs::Job;
 use crate::keys::AgentId;
@@ -54,7 +56,7 @@ use crate::records::{
     Attempt, AttemptKind, AttemptOutcome, BreakHandling, ErrorClass, JobRef, Outcome, ServedBy, Usage,
 };
 use crate::state::{Engine, EngineState};
-use crate::upstream::{self, RequestParts};
+use crate::upstream::{self, RequestParts, SignedIn};
 
 /// Events buffered between the upstream reader and the client relay.
 pub const CHANNEL: usize = 64;
@@ -191,6 +193,57 @@ fn session_input(agent: &AgentId) -> String {
     }
 }
 
+/// Writes the plugin's forced parameters into `body` (research R8, spec FR-004c): the
+/// endpoint's, then the model's, which win. `include` is appended to the client's list
+/// without duplicates; the others replace. Nothing else in the body changes. Returns each
+/// parameter as written, for the attempt record.
+fn force(body: &mut Value, c: &Candidate<'_>, st: &EngineState) -> Vec<(String, Value)> {
+    let model = st.registry.model(&c.provider.id, &c.requested).ok().and_then(|m| m.model);
+    let mut params: IndexMap<ForcedParam, &toml::Value> = c.endpoint.force.iter().collect();
+    params.extend(model.into_iter().flat_map(|m| m.force.iter()));
+    write_forced(body, params)
+}
+
+/// [`force`]'s writes, for `params` already merged.
+fn write_forced<'v>(
+    body: &mut Value,
+    params: impl IntoIterator<Item = (ForcedParam, &'v toml::Value)>,
+) -> Vec<(String, Value)> {
+    let params = params.into_iter();
+    let Some(root) = body.as_object_mut() else { return Vec::new() };
+    let mut forced = Vec::new();
+    for (p, v) in params {
+        let Ok(v) = serde_json::to_value(v) else { continue };
+        let Some((last, parents)) = p.path().split_last() else { continue };
+        let mut at = &mut *root;
+        for k in parents {
+            let slot = at.entry(*k).or_insert_with(|| Value::Object(Map::new()));
+            if !slot.is_object() {
+                *slot = Value::Object(Map::new());
+            }
+            let Value::Object(next) = slot else { unreachable!("made an object above") };
+            at = next;
+        }
+        if p.appends() {
+            let slot = at.entry(*last).or_insert_with(|| Value::Array(Vec::new()));
+            if !slot.is_array() {
+                *slot = Value::Array(Vec::new());
+            }
+            if let Value::Array(list) = slot {
+                for item in v.as_array().into_iter().flatten() {
+                    if !list.contains(item) {
+                        list.push(item.clone());
+                    }
+                }
+            }
+        } else {
+            at.insert((*last).to_owned(), v.clone());
+        }
+        forced.push((p.to_string(), v));
+    }
+    forced
+}
+
 /// The upstream body for `c` and the client keys it couldn't carry.
 fn body_for(
     req: &TextRequest,
@@ -239,6 +292,8 @@ struct Outbound {
     content_type: String,
     voice: Option<String>,
     dropped: Vec<Dropped>,
+    /// The forced parameters the body carries (research R8).
+    forced: Vec<(String, Value)>,
 }
 
 /// An inline endpoint's response mapping (IR field → path); empty = a binary answer.
@@ -287,7 +342,7 @@ fn media_body(req: &TextRequest, m: &Media, c: &Candidate<'_>, wire: Option<&Sty
         }
     };
     let (body, content_type) = encodings::encode(encoding, &value);
-    Ok(Outbound { body: body.into(), content_type, voice, dropped: Vec::new() })
+    Ok(Outbound { body: body.into(), content_type, voice, dropped: Vec::new(), forced: Vec::new() })
 }
 
 /// A count as the record's usage.
@@ -623,18 +678,23 @@ impl Run {
                     content_type: "application/json".into(),
                     voice: None,
                     dropped,
+                    forced: Vec::new(),
                 },
                 Err(f) => return skip(self, f.message, tried),
             },
             (None, Some(wire)) => {
                 let upstream_stream = self.req.stream || c.endpoint.force_stream;
                 match body_for(&self.req, c, wire, upstream_stream) {
-                    Ok((body, dropped)) => Outbound {
-                        body: Bytes::from(body.to_string()),
-                        content_type: "application/json".into(),
-                        voice: None,
-                        dropped,
-                    },
+                    Ok((mut body, dropped)) => {
+                        let forced = force(&mut body, c, st);
+                        Outbound {
+                            body: Bytes::from(body.to_string()),
+                            content_type: "application/json".into(),
+                            voice: None,
+                            dropped,
+                            forced,
+                        }
+                    }
                     Err(f) => return skip(self, f.message, tried),
                 }
             }
@@ -647,14 +707,16 @@ impl Run {
             let ob = match self.broken.as_ref().map(|b| b.reason.clone()) {
                 None => &outbound,
                 Some(reason) => match wire.as_deref().map(|w| breaks::continuation(&self.req, c, w, &self.seen)) {
-                    Some(Ok((body, dropped))) => {
+                    Some(Ok((mut body, dropped))) => {
                         kind = AttemptKind::Continuation;
                         self.resume_with(Resume::Continue);
+                        let forced = force(&mut body, c, st);
                         prefilled = Outbound {
                             body: Bytes::from(body.to_string()),
                             content_type: "application/json".into(),
                             voice: None,
                             dropped,
+                            forced,
                         };
                         &prefilled
                     }
@@ -670,7 +732,7 @@ impl Run {
                 Ok(o) => o,
                 Err(reason) => return skip(self, reason, tried),
             };
-            self.start_attempt(c, kind, ob.dropped.clone());
+            self.start_attempt(c, kind, ob.dropped.clone(), ob.forced.clone());
             let f = match self.once(st, c, wire.as_ref(), out).await {
                 Ended::Ok(usage) => {
                     self.succeed(c, usage);
@@ -752,12 +814,38 @@ impl Run {
     }
 
     /// The request for `c`, secret and session header included; `Err` is a skip reason.
+    ///
+    /// A sign-in account's token comes from its cell in one atomic load ([`accounts::release`]),
+    /// so a refresh never waits for a reload; its request gets the `[signin] auth` placement
+    /// and the filled `[identity]` headers (research R6, R7). The body is not touched here.
     fn outgoing(&self, st: &EngineState, c: &Candidate<'_>, ob: &Outbound) -> Result<upstream::Outgoing, String> {
         let released = c
             .account
             .map(|a| accounts::release(a, c.provider, &st.tokens))
             .transpose()
             .map_err(|w| format!("0router: {w}"))?;
+        let token = released.as_ref().and_then(accounts::Released::token);
+        let signin = match (token, &c.provider.signin) {
+            (Some(view), Some(decl)) => {
+                let identity = match &c.provider.identity {
+                    None => Vec::new(),
+                    Some(d) => {
+                        let session_id = self.engine.sessions.id_for(&self.req.agent);
+                        let ctx = FillContext {
+                            session_id: &session_id,
+                            request_id: &identity::uuid_v4(),
+                            turns: identity::user_turns(&self.req.ir),
+                            upstream_model: &c.upstream_id,
+                            claims: Some(&view.entry.claims),
+                            install_id: self.engine.install_id().map_err(|e| format!("0router: {e}"))?,
+                        };
+                        identity::headers(d, &ctx)
+                    }
+                };
+                Some(SignedIn { auth: &decl.auth, identity })
+            }
+            _ => None,
+        };
         let redactor = st.redactor.current();
         let parts = RequestParts {
             provider: c.provider,
@@ -771,6 +859,7 @@ impl Run {
             voice: ob.voice.as_deref(),
             content_type: Some(&ob.content_type),
             body: ob.body.clone(),
+            signin,
         };
         let mut out = upstream::build_request(parts).map_err(|e| format!("0router: {e}"))?;
         upstream::check_ip_host(&out.url, st.registry.runtime().allow_private_endpoints)
@@ -1075,7 +1164,7 @@ impl Run {
             st.style(MESSAGES).and_then(|m| estimate::estimate(&self.req.ir, m, &self.req.client.id).ok())
         };
         let Some(n) = n else { return false };
-        self.start_attempt(c, kind, Vec::new());
+        self.start_attempt(c, kind, Vec::new(), Vec::new());
         self.succeed(c, Some(count_usage(n, true)));
         self.answer(Answer::Count { input_tokens: n, estimated: true });
         true
@@ -1374,7 +1463,13 @@ impl Run {
         });
     }
 
-    fn start_attempt(&mut self, c: &Candidate<'_>, kind: AttemptKind, dropped: Vec<Dropped>) {
+    fn start_attempt(
+        &mut self,
+        c: &Candidate<'_>,
+        kind: AttemptKind,
+        dropped: Vec<Dropped>,
+        forced: Vec<(String, Value)>,
+    ) {
         self.n += 1;
         let a = Attempt {
             n: self.n,
@@ -1387,7 +1482,7 @@ impl Run {
             outcome: None,
             usage: None,
             dropped,
-            forced: Vec::new(),
+            forced,
         };
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
     }
@@ -1510,6 +1605,31 @@ mod tests {
         assert_eq!(error_message(br#"{"error":"nope"}"#), "nope");
         assert_eq!(error_message(br#"{"detail":{"message":"x"}}"#), "x");
         assert_eq!(error_message(b"plain text"), "plain text");
+    }
+
+    #[test]
+    fn forced_parameters_touch_only_their_paths() {
+        let v = |s: &str| toml::Value::try_from(serde_json::from_str::<Value>(s).unwrap()).unwrap();
+        let (store, summary, effort, include) = (v("false"), v("\"concise\""), v("\"high\""), v("[\"a\", \"b\"]"));
+        let mut body = serde_json::json!({"model": "m", "reasoning": null, "include": ["b", "c"], "input": "hi"});
+        let forced = write_forced(
+            &mut body,
+            [
+                (ForcedParam::Store, &store),
+                (ForcedParam::ReasoningSummary, &summary),
+                (ForcedParam::ReasoningEffort, &effort),
+                (ForcedParam::Include, &include),
+            ],
+        );
+        assert_eq!(
+            body.to_string(),
+            r#"{"model":"m","reasoning":{"summary":"concise","effort":"high"},"include":["b","c","a"],"input":"hi","store":false}"#
+        );
+        let names: Vec<&str> = forced.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["store", "reasoning.summary", "reasoning.effort", "include"]);
+        assert_eq!(forced[3].1, serde_json::json!(["a", "b"]), "recorded as declared");
+        let mut list = serde_json::json!([1]);
+        assert!(write_forced(&mut list, [(ForcedParam::Store, &store)]).is_empty(), "not an object: untouched");
     }
 
     #[test]

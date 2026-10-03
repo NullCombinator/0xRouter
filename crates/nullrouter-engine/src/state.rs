@@ -144,9 +144,24 @@ impl Engine {
     /// Loads everything under `home`. Refuses shared `accounts.toml` / `keys.toml` /
     /// `tokens.toml`.
     pub fn open(home: OperatorHome) -> Result<(Self, StateReport), StateError> {
+        Self::open_with(home, RegistryHandle::open)
+    }
+
+    /// [`open`](Self::open) over the registry's parity set: the fit check is off, so a
+    /// test's user plugin may declare `[signin]` and `[identity]` (open to bundled plugins
+    /// only) while pointing at a mock upstream.
+    #[cfg(feature = "testkit")]
+    pub fn open_parity(home: OperatorHome) -> Result<(Self, StateReport), StateError> {
+        Self::open_with(home, RegistryHandle::open_parity)
+    }
+
+    fn open_with(
+        home: OperatorHome,
+        open: impl FnOnce(OperatorHome) -> Result<RegistryHandle, StartupError>,
+    ) -> Result<(Self, StateReport), StateError> {
         let (accounts, keys) = operator_files(&home)?;
         let tokens = Arc::new(TokenCells::load(home.path())?);
-        let registry = RegistryHandle::open(home)?;
+        let registry = open(home)?;
         let (state, report) = assemble(registry.snapshot(), accounts, keys, tokens.clone(), 1);
         let redactor = Arc::new(ArcSwap::new(state.redactor.current()));
         let engine = Self {

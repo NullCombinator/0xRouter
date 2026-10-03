@@ -19,9 +19,11 @@ use tokio::time;
 
 use crate::accounts;
 use crate::attempt::{CHANNEL, Failure};
+use crate::identity::{self, FillContext};
+use crate::keys::AgentId;
 use crate::records::Outcome;
 use crate::state::{Engine, EngineState};
-use crate::upstream::{self, RequestParts};
+use crate::upstream::{self, RequestParts, SignedIn};
 
 /// The bound on one poll or content request's headers and each body chunk.
 pub const POLL_TIMEOUT: Duration = Duration::from_secs(60);
@@ -128,6 +130,29 @@ impl Engine {
             .transpose()
             .map_err(|w| failure(502, format!("0router: {w}")))?;
         let secret = released.as_ref().map(accounts::Released::secret);
+        // A sign-in account's poll carries its token where `[signin] auth` says, and the
+        // identity headers, as its submit did (research R6, R7).
+        let signin = match (released.as_ref().and_then(accounts::Released::token), &provider.signin) {
+            (Some(view), Some(decl)) => {
+                let identity = match &provider.identity {
+                    None => Vec::new(),
+                    Some(d) => {
+                        let session_id = self.sessions.id_for(&AgentId::new(job.agent.clone(), None));
+                        let ctx = FillContext {
+                            session_id: &session_id,
+                            request_id: &identity::uuid_v4(),
+                            turns: 0,
+                            upstream_model: &job.model,
+                            claims: Some(&view.entry.claims),
+                            install_id: self.install_id().map_err(|e| failure(502, format!("0router: {e}")))?,
+                        };
+                        identity::headers(d, &ctx)
+                    }
+                };
+                Some(SignedIn { auth: &decl.auth, identity })
+            }
+            _ => None,
+        };
         let redactor = st.redactor.current();
         let headers = HeaderMap::new();
         let parts = RequestParts {
@@ -142,6 +167,7 @@ impl Engine {
             voice: None,
             content_type: None,
             body: Bytes::new(),
+            signin,
         };
         let out = upstream::build_request(parts).map_err(|e| failure(502, format!("0router: {e}")))?;
         upstream::check_ip_host(&out.url, st.registry.runtime().allow_private_endpoints)
