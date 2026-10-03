@@ -118,9 +118,14 @@ fn bench(c: &mut Criterion) {
             })
         })
     });
+    // A filtered run (`-- ttfb/cross_style`) skips the sign-in case, which then sent nothing.
+    let ran = !all.is_empty();
     report("ttfb/signin", std::mem::take(&mut all));
     let tallied = signed.engine.history.tally.get("signco", "main");
-    assert!(tallied.get("m1").is_some_and(|t| t.requests > 0 && t.output > 0), "the sign-in case tallies: {tallied:?}");
+    assert!(
+        !ran || tallied.get("m1").is_some_and(|t| t.requests > 0 && t.output > 0),
+        "the sign-in case tallies: {tallied:?}"
+    );
     group.finish();
 
     let mut group = c.benchmark_group("tally");
