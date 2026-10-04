@@ -14,8 +14,9 @@
 //! Each account has its own short mutex; the map of accounts is read-locked on the hot path
 //! and write-locked only when an account first tallies.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use nullrouter_registry::schema::InputSemantics;
 use serde::{Deserialize, Serialize};
@@ -88,11 +89,60 @@ pub fn merge(into: &mut AccountTally, from: &AccountTally) {
     }
 }
 
+/// How far back the hourly counters reach: the longest window a plugin may declare (30 days)
+/// and a day of slack for a fixed window's offset.
+pub const HORIZON: Duration = Duration::from_secs(31 * 24 * 3600);
+/// How far back attempts are kept one by one, for the sliding limits shorter than an hour.
+const RECENT_FOR: Duration = Duration::from_secs(3600);
+/// The most attempts kept one by one per account.
+const RECENT_MAX: usize = 20_000;
+
+/// One attempt as the sliding limits count it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Counted {
+    pub at: SystemTime,
+    pub model: String,
+    pub tally: ModelTally,
+}
+
+/// The hour (since the epoch) `at` falls in.
+pub fn hour_of(at: SystemTime) -> u64 {
+    at.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() / 3600)
+}
+
 #[derive(Debug, Default)]
 struct Cell {
+    /// Since the last poll entry.
     models: AccountTally,
+    /// Taken by failed polls since the last good one: the entries hold it, but a window's
+    /// remaining quota is still the last good poll's less everything sent since.
+    carried: AccountTally,
+    /// Per hour of the clock, kept [`HORIZON`] back: what the estimated windows count from
+    /// (spec 006 R6). Not reset by a poll.
+    hours: BTreeMap<u64, AccountTally>,
+    /// The last [`RECENT_FOR`], one entry per attempt.
+    recent: VecDeque<Counted>,
     /// Changed since the last checkpoint.
     dirty: bool,
+}
+
+impl Cell {
+    fn count(&mut self, model: &str, usage: Option<&Usage>, at: SystemTime) {
+        let mut one = ModelTally::default();
+        one.add(usage);
+        self.models.entry(model.to_owned()).or_default().merge(&one);
+        self.hours.entry(hour_of(at)).or_default().entry(model.to_owned()).or_default().merge(&one);
+        let oldest = hour_of(at).saturating_sub(HORIZON.as_secs() / 3600);
+        while self.hours.first_key_value().is_some_and(|(h, _)| *h < oldest) {
+            self.hours.pop_first();
+        }
+        self.recent.push_back(Counted { at, model: model.to_owned(), tally: one });
+        let from = at.checked_sub(RECENT_FOR).unwrap_or(UNIX_EPOCH);
+        while self.recent.len() > RECENT_MAX || self.recent.front().is_some_and(|c| c.at < from) {
+            self.recent.pop_front();
+        }
+        self.dirty = true;
+    }
 }
 
 type Key = (String, String);
@@ -129,17 +179,12 @@ impl Tally {
     /// Tallies one attempt sent through `provider/account` to upstream `model`, with the
     /// usage its provider reported (`None`: not reported).
     pub fn attempt(&self, provider: &str, account: &str, model: &str, usage: Option<&Usage>) {
-        let cell = self.cell(provider, account);
-        let mut c = lock(&cell);
-        match c.models.get_mut(model) {
-            Some(t) => t.add(usage),
-            None => {
-                let mut t = ModelTally::default();
-                t.add(usage);
-                c.models.insert(model.to_owned(), t);
-            }
-        }
-        c.dirty = true;
+        self.attempt_at(provider, account, model, usage, SystemTime::now());
+    }
+
+    /// [`attempt`](Self::attempt) for an attempt that ended at `at`.
+    pub fn attempt_at(&self, provider: &str, account: &str, model: &str, usage: Option<&Usage>, at: SystemTime) {
+        lock(&self.cell(provider, account)).count(model, usage, at);
     }
 
     /// Tallies one attempt that consumes no tokens (a count-tokens call): a request, with
@@ -157,9 +202,60 @@ impl Tally {
         self.attempt(provider, account, model, Some(&zero));
     }
 
+    /// The account's hourly counters from the hour of `from` on, oldest first.
+    pub fn hours_since(&self, provider: &str, account: &str, from: SystemTime) -> Vec<(u64, AccountTally)> {
+        let Some(cell) = self.existing(provider, account) else { return Vec::new() };
+        let c = lock(&cell);
+        c.hours.range(hour_of(from)..).map(|(h, t)| (*h, t.clone())).collect()
+    }
+
+    /// The attempts counted one by one since `from`, oldest first.
+    pub fn recent_since(&self, provider: &str, account: &str, from: SystemTime) -> Vec<Counted> {
+        let Some(cell) = self.existing(provider, account) else { return Vec::new() };
+        lock(&cell).recent.iter().filter(|c| c.at > from).cloned().collect()
+    }
+
+    /// Adds a recovered attempt to the hourly counters and the sliding list, and to the running
+    /// tally when `running` (it is later than the checkpoint the tally was reloaded from).
+    pub fn recover_attempt(&self, provider: &str, account: &str, model: &str, usage: Option<&Usage>, at: SystemTime, running: bool) {
+        let cell = self.cell(provider, account);
+        let mut c = lock(&cell);
+        let before = std::mem::take(&mut c.models);
+        c.count(model, usage, at);
+        if running {
+            merge(&mut c.models, &before);
+        } else {
+            c.models = before;
+        }
+    }
+
     /// The account's tally so far, without resetting it.
     pub fn get(&self, provider: &str, account: &str) -> AccountTally {
         self.existing(provider, account).map(|c| lock(&c).models.clone()).unwrap_or_default()
+    }
+
+    /// What was sent since the last good poll: the running tally and what failed polls took.
+    pub fn since_good_poll(&self, provider: &str, account: &str) -> AccountTally {
+        let Some(cell) = self.existing(provider, account) else { return AccountTally::new() };
+        let c = lock(&cell);
+        let mut all = c.models.clone();
+        merge(&mut all, &c.carried);
+        all
+    }
+
+    /// [`take`](Self::take) for a poll that landed: a good one also forgets what failed polls
+    /// took, since its figure already includes it.
+    pub fn take_poll(&self, provider: &str, account: &str, good: bool) -> AccountTally {
+        let Some(cell) = self.existing(provider, account) else { return AccountTally::new() };
+        let mut c = lock(&cell);
+        let taken = std::mem::take(&mut c.models);
+        if good {
+            c.carried.clear();
+        } else {
+            let t = taken.clone();
+            merge(&mut c.carried, &t);
+        }
+        taken
     }
 
     /// Takes the account's tally and resets it (a poll entry is being written).

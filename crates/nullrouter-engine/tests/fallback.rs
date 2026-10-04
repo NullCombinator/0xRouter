@@ -137,3 +137,87 @@ async fn a_member_that_cant_carry_the_request_is_skipped() {
     assert!(reason.contains("response format"), "{reason}");
     assert_eq!(paths(&s), ["/alpha/chat/completions"], "nothing reached the member that can't carry it");
 }
+
+// ---- spec 006 (T034, SC-010, FR-039): the same matrix over routed subscription accounts ----
+
+const SUB_ROUTING: &str = r#"
+[routing.cache]
+mode = "automatic"
+lifetime = "5m"
+min_tokens = 0
+
+[[routing.window]]
+name = "5h"
+length = "5h"
+unit = "weighted_tokens"
+capacity = 1000000
+"#;
+
+fn subscriptions() -> Fleet {
+    Fleet::new()
+        .provider("alpha", SUB_ROUTING, &[])
+        .provider("beta", SUB_ROUTING, &[])
+        .account("alpha", "main", 1.0)
+        .account("alpha", "backup", 1.0)
+        .account("beta", "main", 1.0)
+        .unified(&[("alpha", "m1"), ("beta", "m1")])
+}
+
+#[tokio::test]
+async fn a_failure_on_the_placed_account_never_reaches_the_client_while_another_can_serve() {
+    for code in [429, 500, 502, 503, 504] {
+        let f = subscriptions().build().await;
+        // Whichever account is placed first fails; same-account retries are slice 003's.
+        f.setup.mock.push([err(code), err(code), ok()]);
+        let (id, res) = send(&f.setup, "u").await;
+        assert!(res.is_ok(), "{code}");
+        let r = f.setup.engine.records.get(&id).unwrap();
+        use nullrouter_engine::routing::PlacementReason::{ColdByDeficit, Fallback, Retry};
+        let reasons: Vec<_> =
+            r.attempts.iter().filter_map(|a| a.placement.map(|p| p.reason)).filter(|r| *r != Retry).collect();
+        assert_eq!(reasons[0], ColdByDeficit, "{code}");
+        assert!(reasons[1..].iter().all(|r| *r == Fallback), "{code}: {reasons:?}");
+        // Later steps exclude the accounts already tried (FR-039): each step is a new account.
+        let mut stepped: Vec<_> = r
+            .attempts
+            .iter()
+            .filter(|a| a.placement.is_some_and(|p| p.reason != Retry))
+            .map(|a| (a.provider.clone(), a.account.clone()))
+            .collect();
+        let n = stepped.len();
+        stepped.sort();
+        stepped.dedup();
+        assert_eq!(stepped.len(), n, "{code}");
+    }
+}
+
+#[tokio::test]
+async fn a_timeout_or_a_refused_connection_on_the_placed_account_falls_back_too() {
+    // A hang past the endpoint's timeout.
+    let s = setup(
+        |m| vec![("alpha", chat_plugin(m, "alpha", &format!("timeout_ms = 300\n{NO_RETRY}")))],
+        &[("alpha", "main"), ("alpha", "backup")],
+        "",
+    )
+    .await;
+    s.mock.push([nullrouter_engine::testkit::Step::StallHeaders { hold: std::time::Duration::from_secs(3) }, ok()]);
+    let (_, res) = send(&s, "alpha/m1").await;
+    assert!(res.is_ok());
+    assert_eq!(accounts_hit(&s), ["alpha-main", "alpha-backup"]);
+
+    // Nothing listening: the first provider can't be reached, the second serves.
+    let s = setup(
+        |m| {
+            let dead = chat_plugin(m, "dead", NO_RETRY).replace(&m.url("/dead/chat/completions"), "http://127.0.0.1:1/chat");
+            vec![("dead", dead), ("alpha", chat_plugin(m, "alpha", NO_RETRY))]
+        },
+        &[("dead", "main"), ("dead", "backup"), ("alpha", "main")],
+        &unified(&[("dead", "m1"), ("alpha", "m1")]),
+    )
+    .await;
+    s.mock.push([ok()]);
+    let (id, res) = send(&s, "u").await;
+    assert!(res.is_ok());
+    let r = s.engine.records.get(&id).unwrap();
+    assert_eq!(r.served_by.unwrap().provider, "alpha");
+}

@@ -72,6 +72,29 @@ pub async fn server_with(extra: impl FnOnce(&MockUpstream) -> Vec<(&'static str,
     start(dir, mock, engine, keys).await
 }
 
+/// A server over `plugins` (`(id, TOML)`), a ready `accounts.toml` and extra `config.toml`
+/// (unified models, an `[routing]` section), for the routing scenarios (spec 006). Opens over the
+/// parity set, so a plugin may declare `[quota]`.
+pub async fn server_custom(
+    plugins: impl FnOnce(&MockUpstream) -> Vec<(&'static str, String)>,
+    accounts_toml: &str,
+    config: &str,
+) -> Server {
+    let mock = MockUpstream::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), format!("allow_private_endpoints = true\n{config}")).unwrap();
+    std::fs::create_dir(dir.path().join("plugins")).unwrap();
+    for (id, toml) in plugins(&mock) {
+        std::fs::write(dir.path().join(format!("plugins/{id}.toml")), toml).unwrap();
+    }
+    nullrouter_engine::files::write_private(&dir.path().join(nullrouter_engine::accounts::FILE), accounts_toml)
+        .unwrap();
+    let keys = write_keys(dir.path());
+    let (engine, report) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
+    assert!(report.registry.diagnostics.is_empty(), "{:#?}", report.registry.diagnostics);
+    start(dir, mock, engine, keys).await
+}
+
 /// A server whose `accounts` (`(provider, name)`) are all sign-in accounts: access token
 /// `{SECRET}-<provider>-<name>` in `tokens.toml`, bound to the mock's host, with an email
 /// and user id as claims. The engine opens over the parity set, so the plugins may declare

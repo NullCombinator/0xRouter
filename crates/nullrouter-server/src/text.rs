@@ -142,6 +142,12 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
     relay::forward(resp, forwarded)
 }
 
+/// Whether `events` finish the answer: from here on the client's bytes are the answer's ending.
+fn ends_answer(events: &[nullrouter_wire::ir::Event]) -> bool {
+    use nullrouter_wire::ir::Event;
+    events.iter().any(|e| matches!(e, Event::Finish(_) | Event::Done | Event::Error(_)))
+}
+
 /// Where a stream writer reports its write times: the record's TTFT is the first content
 /// handed to the client's socket, its total the last byte (T105).
 struct Written {
@@ -168,30 +174,44 @@ async fn write_stream(
 ) {
     let Ok(mut w) = StreamWriter::new(&client, &body, &written.id, "", unix_now()) else { return };
     let (mut relayed, mut first) = (false, true);
+    // Once the answer has finished, what is left of it (the finish, the usage, the end marker)
+    // is held until the engine has the request's `close` line in the journal: the engine keeps
+    // the channel open until then, so the channel closing is the ack (FR-037).
+    let (mut finishing, mut held) = (false, Vec::<Bytes>::new());
     while let Some(piece) = rx.recv().await {
-        let (out, content) = match piece {
+        let (out, content, ends) = match piece {
             Piece::Event(ev) => {
                 // Written content after relayed frames (a resumed answer): the writer ends it.
                 relayed &= !ev.is_output();
-                (w.write(&ev), ev.is_output())
+                (w.write(&ev), ev.is_output(), ends_answer(std::slice::from_ref(&ev)))
             }
             Piece::Frame(f, events) => {
                 w.observe(&events);
                 relayed = true;
-                (f.to_bytes(framing).unwrap_or_default(), events.iter().any(|e| e.is_output()))
+                (f.to_bytes(framing).unwrap_or_default(), events.iter().any(|e| e.is_output()), ends_answer(&events))
             }
             Piece::Restart => {
                 relayed = false;
-                (w.restart(), true)
+                (w.restart(), true, false)
             }
         };
-        if !out.is_empty() && tx.send(Ok(Bytes::from(out))).await.is_err() {
-            return;
+        finishing |= ends;
+        if !out.is_empty() {
+            if finishing {
+                held.push(Bytes::from(out));
+            } else if tx.send(Ok(Bytes::from(out))).await.is_err() {
+                return;
+            }
         }
         if content && first {
             first = false;
             let at = written.ms();
             written.engine.records.update(&written.id, |r| r.ttft_ms = Some(at));
+        }
+    }
+    for bytes in held {
+        if tx.send(Ok(bytes)).await.is_err() {
+            return;
         }
     }
     let out = if relayed { String::new() } else { w.end() };

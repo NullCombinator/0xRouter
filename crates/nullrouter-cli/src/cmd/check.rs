@@ -11,6 +11,7 @@ use nullrouter_engine::files::FileError;
 use nullrouter_engine::identity;
 use nullrouter_engine::quota::history;
 use nullrouter_engine::tokens::{self, TokenStore};
+use nullrouter_registry::schema::glob_match;
 use serde_json::json;
 
 pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, ExitCode> {
@@ -18,7 +19,20 @@ pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, Exit
     let reg = handle.snapshot();
     let r = reg.report();
     let s = signin_report(handle.home().path());
+    // The record journal's health, when a server answers (it owns the writer).
+    let journal = nullrouter_server::operator::call(&nullrouter_registry::OperatorHome::new(handle.home().path()), &json!({"op": "routing.health"}))
+        .ok()
+        .filter(|a| a["ok"] == true)
+        .map(|a| a["journal"].clone());
+    let journal_line = journal.as_ref().filter(|j| j["kept"] == false).map(|j| {
+        format!(
+            "records not kept since {} (disk full): {} requests",
+            j["since"].as_str().unwrap_or("?"),
+            j["unkept_requests"]
+        )
+    });
     let pair = |(p, n): &(String, String)| json!({ "provider": p, "name": n });
+    let unmetered = unmetered_windows(&reg);
 
     if as_json {
         let out = json!({
@@ -34,6 +48,8 @@ pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, Exit
             })).collect::<Vec<_>>(),
             "dropped_unified_models": r.dropped_unified_models.iter()
                 .map(|d| json!({ "name": d.name, "provider": d.provider })).collect::<Vec<_>>(),
+            "journal": journal,
+            "unmetered_windows": unmetered.iter().map(|(p, w)| json!({ "provider": p, "window": w })).collect::<Vec<_>>(),
             "signin": {
                 "errors": s.errors,
                 "tokens_without_account": s.orphan_tokens.iter().map(pair).collect::<Vec<_>>(),
@@ -76,6 +92,12 @@ pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, Exit
         for d in &r.dropped_unified_models {
             println!("dropped unified model {}: member provider {} was skipped", d.name, d.provider);
         }
+        if let Some(line) = &journal_line {
+            println!("warning: {line}");
+        }
+        for (p, w) in &unmetered {
+            println!("note: {p} reports window {w}, which no [[routing.window]] meter names; it is paced in its own unit");
+        }
         for e in &s.errors {
             println!("error: {e}");
         }
@@ -94,6 +116,28 @@ pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, Exit
         || !s.errors.is_empty()
         || s.modes.iter().any(|m| m.fatal);
     Ok(ExitCode::from(u8::from(errors)))
+}
+
+/// The windows a provider's `[quota]` reports by a fixed name that none of its
+/// `[[routing.window]]` meters matches (spec 006 T079): they are paced in the unit the provider
+/// reports, which is enough between accounts of one provider. Names built from the response
+/// (`{1}`, `{path}`) can't be checked here.
+fn unmetered_windows(reg: &nullrouter_registry::Registry) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for p in reg.providers() {
+        let Some(q) = &p.quota else { continue };
+        let meters = p.routing().windows;
+        for source in q.sources() {
+            let names = source.windows.iter().map(|w| w.name.clone()).chain(source.name.clone());
+            for name in names.filter(|n| !n.contains('{')) {
+                let metered = meters.iter().any(|m| m.name == name || glob_match(&m.name, &name));
+                if !metered && !out.iter().any(|(id, n)| *id == p.id && *n == name) {
+                    out.push((p.id.clone(), name));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The sign-in files' findings (spec 005 T092). Built from names and modes only: no token

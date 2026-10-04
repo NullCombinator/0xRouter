@@ -396,11 +396,13 @@ async fn quota_interval_changes_only_that_account() {
 }
 
 #[tokio::test]
-async fn an_account_at_zero_percent_is_still_tried_first() {
+async fn an_account_at_zero_percent_is_a_last_resort_behind_pay_as_you_go() {
     let q = setup().await;
     q.set(
         QuotaRoute::AnthropicUsage.path(),
-        Step::json(200, json!({"five_hour": {"utilization": 100, "resets_at": "2026-10-02T18:00:00Z"}})),
+        // A reset still to come: the plugin now declares the window's length, and a reset that
+        // has passed counts as happened (FR-022), which would refill it.
+        Step::json(200, json!({"five_hour": {"utilization": 100, "resets_at": "2099-01-01T00:00:00Z"}})),
     );
     let poll = q.engine.poll_quota("anthropic", "max").await.unwrap();
     assert_eq!(poll.windows[0].remaining, Some(0.0));
@@ -417,7 +419,9 @@ async fn an_account_at_zero_percent_is_still_tried_first() {
     assert_eq!(r.status(), 200);
     let sent = q.received("/v1/messages");
     assert_eq!(sent.len(), 1);
-    assert_eq!(bearer(&sent[0]), format!("Bearer {TOKEN}-anthropic"), "the 0% account served, first in order");
+    // Spec 006 (FR-025a): the 0% subscription is held back by its floor, so the pay-as-you-go key
+    // serves as overflow; the subscription is only the last resort.
+    assert_ne!(bearer(&sent[0]), format!("Bearer {TOKEN}-anthropic"), "the 0% account was passed over");
 }
 
 #[tokio::test]

@@ -5,14 +5,10 @@
 //! then the model's `wires` in declared order, then the provider's other endpoints for
 //! the type in declared order.
 
-use std::collections::HashMap;
-use std::sync::Mutex;
-
 use nullrouter_registry::schema::{Endpoint, ModelType, ProviderEntity};
 use nullrouter_registry::{NotFound, Registry, Resolution};
 
 use crate::accounts::{self, Account, Accounts};
-use crate::keys::AgentId;
 use crate::models_live::LiveModels;
 use crate::records::ErrorClass;
 use crate::tokens::TokenCells;
@@ -84,31 +80,6 @@ impl PlanError {
     }
 }
 
-/// The account an agent was last served by for a target (research R8).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Warm {
-    pub provider: String,
-    /// `None` for a provider with `auth.no_auth`.
-    pub account: Option<String>,
-}
-
-/// `(agent, target) → the account that last completed a request`. Updated on successful
-/// completion only (a stream counts when it ends); last success wins. Held in memory.
-#[derive(Debug, Default)]
-pub struct WarmMap {
-    inner: Mutex<HashMap<(AgentId, String), Warm>>,
-}
-
-impl WarmMap {
-    pub fn get(&self, agent: &AgentId, target: &str) -> Option<Warm> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).get(&(agent.clone(), target.to_owned())).cloned()
-    }
-
-    pub fn set(&self, agent: &AgentId, target: &str, warm: Warm) {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).insert((agent.clone(), target.to_owned()), warm);
-    }
-}
-
 /// `p`'s endpoints for `ty` that serve `upstream_id`, in try order for a client speaking
 /// `client_style`. `wires` is the model's declared list, if any.
 pub fn endpoints<'p>(
@@ -143,12 +114,11 @@ pub fn endpoints<'p>(
 struct Ask<'a> {
     ty: ModelType,
     client_style: &'a str,
-    warm: Option<&'a Warm>,
     tokens: &'a TokenCells,
     live: &'a LiveModels,
 }
 
-/// One member's steps: its accounts in operator order, the warm one first, or one skip.
+/// One member's steps: its enabled accounts in operator order, or one skip.
 /// A model the static catalog lacks but the provider's live list holds is served with the
 /// list's type; one in neither list is not found unless uncatalogued models are allowed.
 /// A sign-in account that can't serve now is a recorded skip naming the command that
@@ -161,7 +131,7 @@ fn member<'s>(
     upstream_id: String,
     ask: &Ask,
 ) -> Result<Vec<Step<'s>>, PlanError> {
-    let Ask { ty, client_style, warm, tokens, live } = *ask;
+    let Ask { ty, client_style, tokens, live } = *ask;
     let model = registry.model(&provider.id, requested).ok().and_then(|m| m.model);
     if model.is_none() && provider.models_live.is_some() {
         match live.find(&provider.id, requested) {
@@ -196,15 +166,9 @@ fn member<'s>(
     if provider.auth.as_ref().is_some_and(|a| a.no_auth) {
         return Ok(vec![candidate(None)]);
     }
-    let mut mine: Vec<&Account> = accounts.for_provider(&provider.id).collect();
+    let mine: Vec<&Account> = accounts.for_provider(&provider.id).collect();
     if mine.is_empty() {
         return Err(PlanError::NoAccount { provider: provider.id.clone() });
-    }
-    if let Some(w) = warm.filter(|w| w.provider == provider.id)
-        && let Some(i) = mine.iter().position(|a| w.account.as_deref() == Some(a.name.as_str()))
-    {
-        let a = mine.remove(i);
-        mine.insert(0, a);
     }
     Ok(mine
         .into_iter()
@@ -221,13 +185,12 @@ fn member<'s>(
         .collect())
 }
 
-/// The candidate order for one request (research R7, R8): the warm account first, then its
-/// provider's other accounts in operator order, then, for a unified target, the other
-/// members in declared order, each with its accounts. A member that isn't installed, has
-/// no endpoint for the type or has no account is a skip. `warm` is left out by the caller
-/// when that account is cooling. `live` holds the providers' live model lists, which
+/// The candidates behind one request's target (spec 006, R4): for each member of a unified
+/// target, in declared order, its enabled accounts in operator order. A member that isn't
+/// installed, has no endpoint for the type or has no account is a skip, and so is an account
+/// that is out of service. Which one is tried first is the placement's decision
+/// (`routing::place`), not this list's. `live` holds the providers' live model lists, which
 /// resolve beside the static catalog.
-#[allow(clippy::too_many_arguments)]
 pub fn plan<'s>(
     registry: &'s Registry,
     accounts: &'s Accounts,
@@ -236,7 +199,6 @@ pub fn plan<'s>(
     target: &'s str,
     ty: ModelType,
     client_style: &str,
-    warm: Option<&Warm>,
 ) -> Result<RequestPlan<'s>, PlanError> {
     let resolution = registry.resolve_with(target, |p, m| live.has(p, m))?;
     let declared = match &resolution {
@@ -251,20 +213,15 @@ pub fn plan<'s>(
     {
         return Err(PlanError::TypeMismatch { target: target.to_owned(), model, route: ty });
     }
-    let ask = Ask { ty, client_style, warm, tokens, live };
+    let ask = Ask { ty, client_style, tokens, live };
     match resolution {
         Resolution::Direct { provider, requested, upstream_id, .. } => {
             let steps = member(registry, accounts, provider, requested, upstream_id, &ask)?;
             Ok(RequestPlan { steps, unified: None })
         }
         Resolution::Unified(u) => {
-            let mut members: Vec<_> = u.members.iter().collect();
-            if let Some(i) = warm.and_then(|w| members.iter().position(|m| m.provider == w.provider)) {
-                let m = members.remove(i);
-                members.insert(0, m);
-            }
             let mut steps = Vec::new();
-            for m in members {
+            for m in &u.members {
                 let skip = |reason: String| {
                     Step::Skip(Skip {
                         provider: m.provider.clone(),

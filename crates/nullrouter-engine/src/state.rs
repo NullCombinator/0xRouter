@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::SystemTime;
 
 use arc_swap::ArcSwap;
 use nullrouter_registry::{
@@ -18,7 +19,6 @@ use crate::files::FileError;
 use crate::identity::AgentSessions;
 use crate::keys::{self, BreakBehaviour, Keys};
 use crate::models_live::LiveModels;
-use crate::plan::WarmMap;
 use crate::records::RecordStore;
 use crate::redact::{Redactor, SharedRedactor};
 use crate::tokens::TokenCells;
@@ -69,6 +69,8 @@ pub enum StateError {
     File(#[from] FileError),
     #[error("{0}")]
     Registry(String),
+    #[error("the record journal can't start: {0}")]
+    Journal(String),
     #[error("reload task failed: {0}")]
     Join(String),
 }
@@ -99,10 +101,12 @@ pub struct Engine {
     /// since a request holding the older snapshot may still send them.
     retired: Mutex<Vec<SecretString>>,
     pub records: RecordStore,
+    /// The record journal: one writer thread for `records/` and `routing/` (spec 006, R11).
+    pub journal: Arc<crate::journal::Journal>,
+    /// The routing decision's live state: salt, warm store, ledgers (spec 006).
+    pub router: crate::routing::Router,
     /// Account rests per model and backoff levels (research R6). In memory only.
     pub cooldowns: Cooldowns,
-    /// The account each agent was last served by, per target (research R8).
-    pub warm: WarmMap,
     /// Video jobs by their `vj_` id.
     pub jobs: crate::jobs::JobMap,
     /// Sign-in account tokens (spec 005, research R6). Kept across reloads; re-read only
@@ -188,6 +192,12 @@ impl Engine {
         let quota = crate::quota::poll::QuotaBoard::default();
         quota.on_poll(history.hook());
         let registry = open(home)?;
+        accounts.check_routing(&registry.snapshot())?;
+        let router = crate::routing::Router::open(registry.home().path())?;
+        let journal = Arc::new(
+            crate::journal::Journal::start(registry.home().path(), Default::default())
+                .map_err(|e| StateError::Journal(e.to_string()))?,
+        );
         let live_models = Arc::new(LiveModels::default());
         let shared_redactor = Arc::new(SharedRedactor::new(Redactor::for_state(&accounts, &tokens)));
         let (state, report) = assemble(
@@ -206,9 +216,10 @@ impl Engine {
             redactor,
             shared_redactor,
             retired: Mutex::new(Vec::new()),
-            records: RecordStore::default(),
+            records: RecordStore::journaled(journal.clone()),
+            journal,
+            router,
             cooldowns: Cooldowns::default(),
-            warm: WarmMap::default(),
             jobs: crate::jobs::JobMap::default(),
             tokens,
             sessions: AgentSessions::default(),
@@ -221,7 +232,25 @@ impl Engine {
             generation: AtomicU64::new(1),
             reload: Mutex::new(()),
         };
+        let st = engine.snapshot();
+        let restored = crate::route::restore(&engine, &st, SystemTime::now());
+        tracing::info!(
+            "routing state restored: {} fingerprints, {} ledgers",
+            restored.fingerprints,
+            restored.ledgers
+        );
         Ok((engine, report))
+    }
+
+    /// Makes the newest record segments whole after a crash: cuts a torn final line and closes
+    /// every request that was still open as `interrupted`. Returns how many. Blocking; the
+    /// server runs it before it listens.
+    pub fn recover_journal(&self) -> std::io::Result<usize> {
+        self.journal.flush_blocking();
+        let now = SystemTime::now();
+        let closed = crate::journal::records::recover(self.home().path(), now)?;
+        self.history.recover_counters(now);
+        Ok(closed)
     }
 
     /// The snapshot to hold for one request.
@@ -245,6 +274,7 @@ impl Engine {
         let (accounts, keys) = operator_files(self.registry.home())?;
         let tokens = self.tokens.changed(self.registry.home().path())?;
         self.registry.reload().map_err(|e| StateError::Registry(e.to_string()))?;
+        accounts.check_routing(&self.registry.snapshot())?;
         // Key accounts this reload drops stay masked for one generation.
         let old = self.snapshot();
         let kept = |s: &SecretString| {
@@ -282,6 +312,33 @@ impl Engine {
             generation,
         );
         self.swap_redactor(self.build_redactor(&state.accounts, std::iter::empty()));
+        // An account that was added, enabled again or given a new priority starts its deficit at 0
+        // (spec 006).
+        let fresh: Vec<String> = state
+            .accounts
+            .iter()
+            .filter(|a| {
+                !a.disabled && old.accounts.get(&a.provider, &a.name).is_none_or(|o| o.disabled || o.priority != a.priority)
+            })
+            .map(|a| format!("{}/{}", a.provider, a.name))
+            .collect();
+        if !fresh.is_empty() {
+            for ledger in self.router.lock().ledgers.values_mut() {
+                for key in &fresh {
+                    ledger.forget(key);
+                }
+            }
+        }
+        // A removed account's fingerprints and deficits go with it.
+        let removed: Vec<(String, String)> = old
+            .accounts
+            .iter()
+            .filter(|a| state.accounts.get(&a.provider, &a.name).is_none())
+            .map(|a| (a.provider.clone(), a.name.clone()))
+            .collect();
+        for (provider, name) in &removed {
+            crate::route::drop_account(self, &state, provider, name, SystemTime::now());
+        }
         self.state.store(Arc::new(state));
         self.changed.notify_one();
         Ok(report)

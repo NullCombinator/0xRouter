@@ -444,3 +444,25 @@ website = "https://opencode.ai/auth"
 notice = { text = "OpenCode Zen PAYG: pay-as-you-go, key from https://opencode.ai/auth. Same models as Zen: paid + free tiers on the fast lane.", api_key_url = "https://opencode.ai/auth" }
 priority = 205
 features = { usage = true, usage_apikey = true }
+
+# Source: OpenCode Zen routes to automatic-caching upstreams; 5 minutes is the common provider default, to be fit from usage history (slice 007).
+[routing.cache]
+mode = "automatic"
+lifetime = "5m"
+
+# Source: the usage report's rolling, weekly and monthly windows (5 hours, 7 days, 30 days).
+# Capacities are not published; the report is percent, so each counts out of 100 until 007 fits one.
+[[routing.window]]
+name = "rolling"
+length = "5h"
+unit = "weighted_tokens"
+
+[[routing.window]]
+name = "weekly"
+length = "7d"
+unit = "weighted_tokens"
+
+[[routing.window]]
+name = "monthly"
+length = "30d"
+unit = "weighted_tokens"

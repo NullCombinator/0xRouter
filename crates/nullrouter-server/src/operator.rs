@@ -5,9 +5,12 @@
 //! | Request | Response |
 //! |---|---|
 //! | `{"op":"reload"}` | `{"ok":true,"generation":N}`, or the error with the old snapshot kept |
-//! | `{"op":"records.list","provider"?,"unified_model"?,"limit"?}` | `{"ok":true,"records":[…]}` |
+//! | `{"op":"records.list","provider"?,"unified_model"?,"account"?,"agent"?,"model"?,"reason"?,"since"?,"limit"?}` | `{"ok":true,"records":[…]}`: the journal's records plus those still in flight, newest first |
 //! | `{"op":"records.get","id":"rq_…"}` | `{"ok":true,"record":{…}}` |
+//! | `{"op":"records.forget","account"?:"P/N","agent"?:KEY}` | `{"ok":true,"fingerprints":N}`: the agent's fingerprints (or the account's fingerprints and ledger entries) leave memory and `routing/warm.jsonl`, and the live ring; the CLI then rewrites the record segments |
 //! | `{"op":"accounts.state"}` | `{"ok":true,"accounts":[…]}`: per account `kind`, `state`, `state_since`, `state_reason`, `expires_at`, cooldowns |
+//! | `{"op":"routing.view","target"?}` | `{"ok":true,"amortization":{start,length},"journal":{…},"targets":[…],"warnings":[…]}`: per target and account the pace, share, deficit, priority, cache lifetime, quota source and each window's remaining amount, unit, reset and reserve |
+//! | `{"op":"routing.health"}` | `{"ok":true,"journal":{kept,since,unkept_requests,held_lines,last_sync,last_sync_age_s}}` |
 //! | `{"op":"quota.list"}`, `{"op":"quota.poll"}`, `{"op":"quota.checkpoint"}` | see [`crate::quota`] |
 
 use std::future::Future;
@@ -17,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use nullrouter_engine::journal::records;
 use nullrouter_engine::records::Query;
 use nullrouter_engine::state::Engine;
 use nullrouter_registry::OperatorHome;
@@ -100,18 +104,39 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
                 json!({"ok": false, "error": error})
             }
         },
-        Some("records.list") => {
-            let q = Query {
-                provider: str_of("provider"),
-                unified_model: str_of("unified_model"),
-                limit: req.get("limit").and_then(Value::as_u64).map(|n| n as usize),
-            };
-            json!({"ok": true, "records": engine.records.query(&q)})
+        Some("records.list") => records_list(engine, req).await,
+        Some("records.get") => {
+            let Some(id) = str_of("id") else { return json!({"ok": false, "error": "the request names no id"}) };
+            if let Some(r) = engine.records.get(&id) {
+                return json!({"ok": true, "record": r});
+            }
+            let home = engine.home().path().to_owned();
+            let found = tokio::task::spawn_blocking(move || nullrouter_engine::journal::records::get(&home, &id)).await;
+            match found {
+                Ok(Some(r)) => json!({"ok": true, "record": r}),
+                _ => json!({"ok": false, "error": "no such record"}),
+            }
         }
-        Some("records.get") => match str_of("id").and_then(|id| engine.records.get(&id)) {
-            Some(r) => json!({"ok": true, "record": r}),
-            None => json!({"ok": false, "error": "no such record (it may have been evicted)"}),
-        },
+        Some("records.forget") => {
+            let st = engine.snapshot();
+            let now = std::time::SystemTime::now();
+            let (account, agent) = (str_of("account"), str_of("agent"));
+            let fingerprints = match (&account, &agent) {
+                (Some(a), None) => match a.split_once('/') {
+                    Some((p, n)) => {
+                        engine.records.forget(|r| records::Filter { account: Some(a.clone()), ..Default::default() }.matches(r));
+                        nullrouter_engine::route::drop_account(engine, &st, p, n, now)
+                    }
+                    None => return json!({"ok": false, "error": "--account is provider/name"}),
+                },
+                (None, Some(k)) => {
+                    engine.records.forget(|r| records::Filter { agent: Some(k.clone()), ..Default::default() }.matches(r));
+                    nullrouter_engine::route::drop_agent(engine, &st, k, now)
+                }
+                _ => return json!({"ok": false, "error": "name an account or an agent, not both"}),
+            };
+            json!({"ok": true, "fingerprints": fingerprints})
+        }
         Some("accounts.state") => {
             let st = engine.snapshot();
             let active = engine.cooldowns.active();
@@ -150,12 +175,91 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
                 .collect();
             json!({"ok": true, "accounts": accounts})
         }
+        Some("routing.view") => routing_view(engine, str_of("target").as_deref()),
+        Some("routing.health") => json!({"ok": true, "journal": journal_health(engine)}),
         Some("quota.list") => crate::quota::list(engine, req),
         Some("quota.poll") => crate::quota::poll_now(engine, req).await,
         Some("quota.checkpoint") => crate::quota::checkpoint(engine).await,
         Some(op) => json!({"ok": false, "error": format!("unknown op {op:?}")}),
         None => json!({"ok": false, "error": "the request names no op"}),
     }
+}
+
+/// `records.list`: what the journal holds plus what is still in flight (the live ring is the
+/// fresher copy of a record it has). Reading the segments happens off the executor.
+async fn records_list(engine: &Arc<Engine>, req: &Value) -> Value {
+    let str_of = |k: &str| req.get(k).and_then(Value::as_str).map(str::to_owned);
+    let limit = req.get("limit").and_then(Value::as_u64).map(|n| n as usize);
+    let filter = records::Filter {
+        provider: str_of("provider"),
+        unified_model: str_of("unified_model"),
+        account: str_of("account"),
+        agent: str_of("agent"),
+        model: str_of("model"),
+        reason: str_of("reason"),
+        since: str_of("since").and_then(|s| nullrouter_engine::clock::parse_rfc3339(&s)),
+        limit,
+    };
+    let home = engine.home().path().to_owned();
+    let read = filter.clone();
+    let mut disk = tokio::task::spawn_blocking(move || records::read(&home, &read)).await.unwrap_or_default();
+    let live: Vec<Value> = engine
+        .records
+        .query(&Query::default())
+        .iter()
+        .filter_map(|r| serde_json::to_value(r).ok())
+        .filter(|r| filter.matches(r))
+        .collect();
+    let ids: std::collections::BTreeSet<String> = live.iter().filter_map(|r| r["id"].as_str().map(str::to_owned)).collect();
+    disk.retain(|r| r["id"].as_str().is_none_or(|id| !ids.contains(id)));
+    disk.extend(live);
+    disk.sort_by(|a, b| b["id"].as_str().cmp(&a["id"].as_str()));
+    disk.truncate(limit.unwrap_or(usize::MAX));
+    json!({"ok": true, "records": disk})
+}
+
+/// The journal's health, as the routing view and `check` show it.
+fn journal_health(engine: &Engine) -> Value {
+    let h = engine.journal.health();
+    let time = |t: std::time::SystemTime| nullrouter_engine::clock::rfc3339(t);
+    json!({
+        "kept": h.kept,
+        "since": h.since.map(time),
+        "unkept_requests": h.unkept_requests,
+        "held_lines": h.held_lines,
+        "last_sync": h.last_sync.map(time),
+        "last_sync_age_s": h.last_sync.and_then(|t| t.elapsed().ok()).map(|d| d.as_secs_f64()),
+    })
+}
+
+/// `routing.view`: every target's accounts as the next cold decision sees them.
+fn routing_view(engine: &Engine, target: Option<&str>) -> Value {
+    let st = engine.snapshot();
+    let now = std::time::SystemTime::now();
+    let targets = nullrouter_engine::route::view_all(engine, &st, target, now);
+    let mut warnings: Vec<String> = targets.iter().flat_map(nullrouter_engine::routing::view::warnings).collect();
+    warnings.dedup();
+    let health = journal_health(engine);
+    if health["kept"] == false {
+        warnings.push(format!(
+            "records not kept since {}: {} requests",
+            health["since"].as_str().unwrap_or("?"),
+            health["unkept_requests"]
+        ));
+    }
+    let length = st.settings().routing.amortization;
+    let default = nullrouter_engine::routing::AmortizationWindow {
+        start: nullrouter_engine::routing::ledger::window_start(now, length),
+        length,
+    };
+    json!({
+        "ok": true,
+        "now": nullrouter_engine::clock::rfc3339(now),
+        "amortization": default,
+        "journal": health,
+        "targets": targets,
+        "warnings": warnings,
+    })
 }
 
 /// Why [`call`] got no answer.

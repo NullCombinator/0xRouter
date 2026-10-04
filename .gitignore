@@ -7,7 +7,6 @@
 
 # upstream reference clone + its generated code graph (never committed)
 ref/
-tests/
 
 # Rust build output and the project-local cargo home (set by the launcher)
 target/

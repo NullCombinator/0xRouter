@@ -249,6 +249,27 @@ async fn checkpoints(engine: Arc<Engine>) {
     }
 }
 
+/// How often expired fingerprints are swept, and how often the routing files are compacted
+/// (research R12).
+pub const SWEEP_EVERY: Duration = Duration::from_secs(60);
+pub const COMPACT_EVERY: Duration = Duration::from_secs(3600);
+
+/// Sweeps expired fingerprints every minute and compacts the routing files every hour. The
+/// work is in memory; the writer thread does the file replacing.
+async fn routing_upkeep(engine: Arc<Engine>) {
+    let mut since_compaction = Duration::ZERO;
+    loop {
+        tokio::time::sleep(SWEEP_EVERY).await;
+        let (st, now) = (engine.snapshot(), SystemTime::now());
+        crate::route::sweep(&engine, &st, now);
+        since_compaction += SWEEP_EVERY;
+        if since_compaction >= COMPACT_EVERY {
+            since_compaction = Duration::ZERO;
+            crate::route::compact(&engine, &st, now);
+        }
+    }
+}
+
 /// Spawns the maintenance task over `engine`; it runs until `stop` completes, then
 /// cancels every running job, waits for them, and checkpoints the tallies a last time.
 pub fn spawn(engine: Arc<Engine>, stop: impl Future<Output = ()> + Send + 'static) -> JoinHandle<()> {
@@ -259,9 +280,12 @@ pub fn spawn(engine: Arc<Engine>, stop: impl Future<Output = ()> + Send + 'stati
             () = stop => {}
             () = q.run() => {}
             () = checkpoints(engine.clone()) => {}
+            () = routing_upkeep(engine.clone()) => {}
         }
         root.cancel();
         while q.jobs.join_next().await.is_some() {}
         engine.checkpoint_tallies().await;
+        // A clean stop leaves the compacted state; the writer syncs it at shutdown.
+        crate::route::compact(&engine, &engine.snapshot(), SystemTime::now());
     })
 }

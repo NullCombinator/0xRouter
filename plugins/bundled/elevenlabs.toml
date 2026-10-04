@@ -58,3 +58,11 @@ color = "#6C47FF"
 text_icon = "EL"
 website = "https://elevenlabs.io"
 notice = { api_key_url = "https://elevenlabs.io/app/settings/api-keys" }
+
+# Source: ElevenLabs has no prompt cache: text-to-speech and speech-to-text requests carry no reusable prefix.
+[routing.cache]
+mode = "none"
+
+# No [[routing.price]]: ElevenLabs charges per character, with no per-token price that 9router's
+# pricing table or the provider publishes. Its accounts rank as price 1 until the operator sets one
+# (per character expressed as input).

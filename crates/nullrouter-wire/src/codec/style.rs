@@ -22,6 +22,8 @@ pub struct Style {
     pub error_types: BTreeMap<u16, String>,
     pub error_event: EventTpl,
     pub keepalive: Option<EventTpl>,
+    /// The key inside a `cache_control` marker that holds its lifetime, if the style declares one.
+    pub cache_ttl_key: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -145,6 +147,7 @@ impl Style {
             error_types,
             error_event: event(&f.errors.stream_event, "errors.stream_event")?,
             keepalive: f.errors.keepalive.as_ref().map(|k| event(k, "errors.keepalive")).transpose()?,
+            cache_ttl_key: f.cache_marker.as_ref().and_then(|m| m.ttl.clone()),
         })
     }
 

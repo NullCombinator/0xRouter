@@ -55,12 +55,15 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
         // Token refreshes, quota polls and live model lists run while the server is up
         // (research R11, R13, R14).
         let upkeep = maintenance::spawn(engine.clone(), until_stopped(stopped.clone()));
+        let journal_owner = engine.clone();
         let ops = tokio::spawn(operator::serve(engine, socket, until_stopped(stopped)));
         tracing::info!("listening on {listen}");
         let served = serve::run(app, listener, serve::signal()).await;
         let _ = stop.send(true);
         let _ = ops.await;
         let _ = upkeep.await;
+        // Every line sent so far is written and synced before the process exits (spec 006).
+        let _ = tokio::task::spawn_blocking(move || journal_owner.journal.shutdown()).await;
         served.map_err(|e| {
             eprintln!("server failed: {e}");
             ExitCode::from(1)

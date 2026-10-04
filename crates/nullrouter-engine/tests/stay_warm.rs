@@ -1,5 +1,8 @@
-//! Stay-warm (T065, SC-003, research R8): an agent keeps the account that last served it
-//! until that account fails, and a success is only counted when the answer completes.
+//! Stay-warm under fingerprint semantics (spec 006, T021, SC-003): an agent keeps the account
+//! that holds its prompt prefix until that account can't serve, and a success is only counted
+//! when the answer completes. Slice 003's "last account that served" map is gone; the
+//! scenarios that still hold are kept, the rest (last success wins between two requests in
+//! flight) are replaced by the prefix fingerprints, which every success adds to.
 
 mod common;
 
@@ -8,111 +11,94 @@ use std::time::Duration;
 use common::*;
 use nullrouter_engine::attempt::Answer;
 use nullrouter_engine::classify;
-use nullrouter_engine::keys::AgentId;
-use nullrouter_engine::plan::Warm;
 use nullrouter_engine::records::AttemptKind;
 use nullrouter_engine::testkit::Step;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-const NO_RETRY: &str = "retry = { 429 = { retries = 0 }, 500 = { retries = 0 } }";
+const ROUTING: &str = r#"
+[routing.cache]
+mode = "automatic"
+lifetime = "5m"
+min_tokens = 0
 
-fn agent() -> AgentId {
-    AgentId::new("ak_test", Some("sess-1"))
+[[routing.window]]
+name = "5h"
+length = "5h"
+unit = "weighted_tokens"
+capacity = 1000000
+"#;
+
+fn fleet() -> Fleet {
+    Fleet::new()
+        .provider("alpha", ROUTING, &[("5h", "tokens")])
+        .account("alpha", "main", 1.0)
+        .account("alpha", "backup", 1.0)
 }
 
-fn warm(provider: &str, account: &str) -> Option<Warm> {
-    Some(Warm { provider: provider.into(), account: Some(account.into()) })
+fn chat(turns: &[&str], stream: bool) -> serde_json::Value {
+    let mut messages = vec![json!({"role": "system", "content": "You answer briefly and never guess."})];
+    for (i, t) in turns.iter().enumerate() {
+        messages.push(json!({"role": if i % 2 == 0 { "user" } else { "assistant" }, "content": t}));
+    }
+    json!({"model": "alpha/m1", "stream": stream, "messages": messages})
+}
+
+async fn send_turns(f: &FleetSetup, turns: &[&str]) -> String {
+    let req = request(&f.setup, "openai-chat", "alpha/m1", chat(turns, false), "ak_test", CancellationToken::new());
+    let id = req.id.clone();
+    assert!(f.setup.engine.text(f.setup.engine.snapshot(), req).await.is_ok());
+    id
 }
 
 #[tokio::test]
-async fn the_agent_stays_on_backup_until_backup_fails_then_returns_to_main() {
-    let s =
-        setup(|m| vec![("alpha", chat_plugin(m, "alpha", NO_RETRY))], &[("alpha", "main"), ("alpha", "backup")], "")
-            .await;
-    // A 429 rests main for 2 s (backoff level 1).
-    s.mock.push([Step::json(429, json!({"error": {"message": "slow down"}})), ok()]);
-    assert!(send(&s, "alpha/m1").await.1.is_ok());
-    assert_eq!(accounts_hit(&s), ["alpha-main", "alpha-backup"]);
-    assert_eq!(s.engine.warm.get(&agent(), "alpha/m1"), warm("alpha", "backup"));
+async fn the_agent_stays_on_backup_until_backup_cant_serve_then_returns_to_main() {
+    let f = fleet().build().await;
+    // main rests for 2 s after a 429, so the agent lands on backup.
+    f.setup.engine.cooldowns.fail("alpha", "main", "m1", &classify::upstream(429, "slow down"));
+    let id = send_turns(&f, &["a"]).await;
+    assert_eq!(trail(&f.setup.engine.records.get(&id).unwrap()), [t("alpha", "backup", AttemptKind::Initial)]);
 
-    s.mock.push([ok()]);
-    let (id, res) = send(&s, "alpha/m1").await;
-    assert!(res.is_ok());
-    assert_eq!(accounts_hit(&s)[2], "alpha-backup", "warm backup first, though main is first in operator order");
-    assert_eq!(trail(&s.engine.records.get(&id).unwrap()), [t("alpha", "backup", AttemptKind::Initial)]);
-
+    // Main is back, and first in operator order: the warm account still wins.
     tokio::time::sleep(Duration::from_millis(2100)).await;
-    s.mock.push([Step::json(429, json!({"error": {"message": "slow down"}})), ok()]);
-    let (id, res) = send(&s, "alpha/m1").await;
-    assert!(res.is_ok());
-    assert_eq!(&accounts_hit(&s)[3..], ["alpha-backup", "alpha-main"]);
-    assert_eq!(
-        trail(&s.engine.records.get(&id).unwrap()),
-        [t("alpha", "backup", AttemptKind::Initial), t("alpha", "main", AttemptKind::NextAccount)]
-    );
-    assert_eq!(s.engine.warm.get(&agent(), "alpha/m1"), warm("alpha", "main"));
+    let id = send_turns(&f, &["a", "b", "c"]).await;
+    assert_eq!(trail(&f.setup.engine.records.get(&id).unwrap()), [t("alpha", "backup", AttemptKind::Initial)]);
 
-    s.mock.push([ok()]);
-    assert!(send(&s, "alpha/m1").await.1.is_ok());
-    assert_eq!(accounts_hit(&s)[5], "alpha-main");
+    // Backup is rate limited: the request moves to main, which now holds the newer prefix.
+    f.setup.engine.cooldowns.fail("alpha", "backup", "m1", &classify::upstream(429, "slow down"));
+    let id = send_turns(&f, &["a", "b", "c", "d", "e"]).await;
+    assert_eq!(trail(&f.setup.engine.records.get(&id).unwrap()), [t("alpha", "main", AttemptKind::Initial)]);
+    assert_eq!(accounts_hit(&f.setup), ["alpha-backup", "alpha-backup", "alpha-main"]);
 }
 
 #[tokio::test]
-async fn a_cooling_warm_account_is_skipped() {
-    let s =
-        setup(|m| vec![("alpha", chat_plugin(m, "alpha", NO_RETRY))], &[("alpha", "main"), ("alpha", "backup")], "")
-            .await;
-    s.engine.warm.set(&agent(), "alpha/m1", Warm { provider: "alpha".into(), account: Some("backup".into()) });
-    s.engine.cooldowns.fail("alpha", "backup", "m1", &classify::upstream(500, "boom"));
-    s.mock.push([ok()]);
-    let (id, res) = send(&s, "alpha/m1").await;
-    assert!(res.is_ok());
-    assert_eq!(accounts_hit(&s), ["alpha-main"]);
-    let r = s.engine.records.get(&id).unwrap();
-    assert_eq!(trail(&r), [t("alpha", "backup", AttemptKind::Skipped), t("alpha", "main", AttemptKind::Initial)]);
-}
-
-#[tokio::test]
-async fn with_two_requests_in_flight_the_last_success_wins() {
-    let s = setup(
-        |m| vec![("alpha", chat_plugin(m, "alpha", NO_RETRY)), ("beta", chat_plugin(m, "beta", NO_RETRY))],
-        &[("alpha", "main"), ("beta", "main")],
-        &unified(&[("alpha", "m1"), ("beta", "m1")]),
-    )
-    .await;
-    let Step::Stream { status, headers, frames, cut, .. } = chat_chunks() else { unreachable!() };
-    let slow = Step::Stream { status, headers, frames, every: Duration::from_millis(200), cut };
-    s.mock.on("/alpha", [slow, err(500)]);
-    s.mock.on("/beta", [chat_chunks()]);
-
-    let a = request(&s, "openai-chat", "u", chat_body("u", true), "ak_test", CancellationToken::new());
-    let Answer::Events { rx: mut rx_a, .. } = s.engine.text(s.engine.snapshot(), a).await.unwrap() else {
-        panic!("events")
-    };
-    let b = request(&s, "openai-chat", "u", chat_body("u", true), "ak_test", CancellationToken::new());
-    let Answer::Events { rx: mut rx_b, .. } = s.engine.text(s.engine.snapshot(), b).await.unwrap() else {
-        panic!("events")
-    };
-    drain(&mut rx_b).await;
-    assert_eq!(s.engine.warm.get(&agent(), "u"), warm("beta", "main"), "b finished first, on beta");
-    drain(&mut rx_a).await;
-    tokio::time::sleep(Duration::from_millis(20)).await;
-    assert_eq!(s.engine.warm.get(&agent(), "u"), warm("alpha", "main"), "a finished last, on alpha");
+async fn a_cooling_warm_account_is_passed_over_for_one_that_can_serve() {
+    let f = fleet().build().await;
+    send_turns(&f, &["a"]).await;
+    f.setup.engine.cooldowns.fail("alpha", "main", "m1", &classify::upstream(500, "boom"));
+    let id = send_turns(&f, &["a", "b", "c"]).await;
+    // The resting account is never tried; the request goes to the account that can serve.
+    assert_eq!(trail(&f.setup.engine.records.get(&id).unwrap()), [t("alpha", "backup", AttemptKind::Initial)]);
+    assert_eq!(accounts_hit(&f.setup), ["alpha-main", "alpha-backup"]);
 }
 
 #[tokio::test]
 async fn a_stream_that_breaks_isnt_counted_as_warm() {
-    let s = setup(|m| vec![("alpha", chat_plugin(m, "alpha", NO_RETRY))], &[("alpha", "main")], "").await;
+    // The break ends the request with an error event instead of resuming it.
+    let f = fleet().config("[pipeline]\nbreak_behaviour = \"error_event\"\n").build().await;
     // Frames spaced out, so the cut can't overtake them.
     let Step::Stream { status, headers, frames, .. } = chat_chunks().cut_after(2) else { unreachable!() };
-    s.mock.push([Step::Stream { status, headers, frames, every: Duration::from_millis(20), cut: true }]);
-    let req = request(&s, "openai-chat", "alpha/m1", chat_body("alpha/m1", true), "ak_test", CancellationToken::new());
+    f.setup.mock.push([Step::Stream { status, headers, frames, every: Duration::from_millis(20), cut: true }]);
+    let req = request(&f.setup, "openai-chat", "alpha/m1", chat(&["a"], true), "ak_test", CancellationToken::new());
     let id = req.id.clone();
-    let Answer::Events { mut rx, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else {
+    let Answer::Events { mut rx, .. } = f.setup.engine.text(f.setup.engine.snapshot(), req).await.unwrap() else {
         panic!("events")
     };
     drain(&mut rx).await;
-    settled(&s, &id).await;
-    assert_eq!(s.engine.warm.get(&agent(), "alpha/m1"), None);
+    settled(&f.setup, &id).await;
+
+    // Nothing was cached for the agent: the next request is cold.
+    let id = send_turns(&f, &["a", "b", "c"]).await;
+    let record = settled(&f.setup, &id).await;
+    assert!(record.decision.unwrap().warm.is_none());
 }

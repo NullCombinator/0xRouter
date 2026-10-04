@@ -118,7 +118,7 @@ async fn the_cli_reads_records_and_applies_changes_to_a_running_server() {
     }
     let mut outputs = Vec::new();
 
-    // No server yet: changes are saved for the next start, records are unreachable.
+    // No server yet: changes are saved for the next start, records are read from disk (none yet).
     let out = ok(home, &["accounts", "add", "alpha", "main"], &format!("{SECRET}\n"));
     assert!(out.contains("saved; applies at next start"), "{out}");
     let o = nr(home, &["keys", "issue", "laptop"], "");
@@ -126,7 +126,7 @@ async fn the_cli_reads_records_and_applies_changes_to_a_running_server() {
     assert!(text(&o).contains("saved; applies at next start"), "{}", text(&o));
     let key = String::from_utf8(o.stdout).unwrap().trim().to_owned();
     let o = nr(home, &["records", "list"], "");
-    assert_eq!(o.status.code(), Some(4), "{}", text(&o));
+    assert!(o.status.success(), "{}", text(&o));
     outputs.push(text(&o));
 
     let (_server, base) = serve(home).await;

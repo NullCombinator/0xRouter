@@ -1,0 +1,19 @@
+# expect: must come last
+schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-acme-key"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/messages"
+wire = "anthropic-messages"
+
+[[routing.price]]
+input = 1.0
+
+[[routing.price]]
+when = { days = ["sat", "sun"] }
+input = 0.5

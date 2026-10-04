@@ -57,6 +57,17 @@ async fn keyco_setup() -> Setup {
     setup_signin(|m| vec![("keyco", keyco(m))], &[("keyco", "main"), ("keyco", "spare")], &[], "").await
 }
 
+/// These tests read `main`'s history after sending requests that routing would now spread over
+/// both accounts (spec 006): `spare` takes no cold work, so every request lands on `main`.
+async fn keyco_main_serves() -> Setup {
+    let s = keyco_setup().await;
+    let path = s._dir.path().join(nullrouter_engine::accounts::FILE);
+    let text = std::fs::read_to_string(&path).unwrap().replacen("name = \"spare\"\n", "name = \"spare\"\npriority = 0.0\n", 1);
+    nullrouter_engine::files::write_private(&path, &text).unwrap();
+    s.engine.reload().await.unwrap();
+    s
+}
+
 fn chat_ok(prompt: u64, completion: u64) -> Step {
     Step::json(
         200,
@@ -84,7 +95,7 @@ async fn kept(s: &Setup) -> Vec<Entry> {
 
 #[tokio::test]
 async fn every_poll_is_kept_with_the_tally_since_the_previous_one() {
-    let s = keyco_setup().await;
+    let s = keyco_main_serves().await;
     s.mock.on("/keyco/chat", [chat_ok(10, 2), chat_ok(5, 1), chat_ok(3, 3)]);
     s.mock.on("/keyco/usage", [usage_ok(25.0), Step::json(500, json!({"error": "down"})), usage_ok(30.0)]);
     for _ in 0..2 {
@@ -136,7 +147,7 @@ async fn every_poll_is_kept_with_the_tally_since_the_previous_one() {
 
 #[tokio::test]
 async fn a_graceful_restart_loses_nothing() {
-    let s = keyco_setup().await;
+    let s = keyco_main_serves().await;
     s.engine.history.set_checkpoint_every(Duration::from_millis(50));
     s.mock.on("/keyco/chat", [chat_ok(10, 2), chat_ok(4, 4)]);
     let stop = CancellationToken::new();

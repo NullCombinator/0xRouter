@@ -14,8 +14,8 @@ use crate::floor::{Floor, PatternRisk};
 use crate::schema::{
     AuthScheme, CapabilityKind, Endpoint, EndpointAuth, Forwarding, HeaderValue, KNOWN_OAUTH_PARAMS,
     KNOWN_SECTION_FORMATS, ModelType, ModelsLiveDecl, PluginFile, PluginSource, ProviderEntity, QuotaAccounts,
-    QuotaDecl, QuotaDecoder, QuotaSource, RedirectKind, RouteOp, SignInDecl, SignInFlow, SignInParamValue, Transport,
-    WindowRule, account_urls, endpoint_hosts,
+    QuotaDecl, QuotaDecoder, QuotaSource, RedirectKind, RouteOp, RoutingDecl, SignInDecl, SignInFlow, SignInParamValue, Transport,
+    WindowRule, account_urls, endpoint_hosts, glob_match,
 };
 use crate::template::{FieldPath as Selector, Template};
 
@@ -154,6 +154,7 @@ fn semantic_errors(p: &PluginFile) -> Found {
             ("identity", p.identity.is_some()),
             ("quota", p.quota.is_some()),
             ("models_live", p.models_live.is_some()),
+            ("routing", p.routing.is_some()),
         ];
         for (key, _) in sections.into_iter().filter(|(_, present)| *present) {
             err(FieldPath::of(key), "schema 1 has no `".to_owned() + key + "`; set schema = 2");
@@ -345,9 +346,67 @@ fn schema2_errors(p: &mut PluginFile, ctx: &GateCtx, errors: &mut Found, diags: 
         );
     }
     check_account_sections(p, ctx, &floor, &mut err);
+    if let Some(r) = &p.routing {
+        check_routing(r, p.quota.as_ref(), &mut err);
+    }
     if let Some(f) = p.forwarding.as_mut() {
         check_forwarding(f, &floor, ctx.strict, &mut err, &mut |path, rule| diags.push((path, rule)));
     }
+}
+
+/// `[routing]` (contracts/routing-schema.md § Fields and gate rules). The per-value rules live in
+/// `schema/routing.rs`, shared with the operator's account overrides.
+fn check_routing(r: &RoutingDecl, quota: Option<&QuotaDecl>, err: &mut impl FnMut(FieldPath, String)) {
+    let base = FieldPath::of("routing");
+    if let Some(c) = &r.cache {
+        for (k, rule) in c.problems() {
+            err(base.key("cache").key(k), rule);
+        }
+    }
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    for (i, w) in r.window.iter().enumerate() {
+        let at = base.key("window").index(i);
+        if let Some(&j) = seen.get(w.name.as_str()) {
+            err(at.key("name"), format!("duplicate of window[{j}]"));
+        } else {
+            seen.insert(&w.name, i);
+        }
+        for (k, rule) in w.problems(quota.is_some_and(|q| quota_names(q, &w.name))) {
+            err(at.key(k), rule);
+        }
+    }
+    for (i, pr) in r.price.iter().enumerate() {
+        let at = base.key("price").index(i);
+        for (k, rule) in pr.problems() {
+            err(at.key(k), rule);
+        }
+    }
+    let defaults: Vec<usize> = r.price.iter().enumerate().filter(|(_, p)| p.when.is_none()).map(|(i, _)| i).collect();
+    let at = |i: usize| base.key("price").index(i);
+    match defaults[..] {
+        [] => {}
+        [i] if i + 1 == r.price.len() => {}
+        [i] => err(at(i), "the entry without `when` is the default and must come last".into()),
+        [_, second, ..] => err(at(second), "at most one price entry may omit `when`".into()),
+    }
+}
+
+/// Whether a `[quota]` rule names the window `meter` (a rule's `{…}` holes read as `*`).
+fn quota_names(q: &QuotaDecl, meter: &str) -> bool {
+    let holes = |name: &str| {
+        let mut out = String::new();
+        let mut rest = name;
+        while let Some(open) = rest.find('{') {
+            out.push_str(&rest[..open]);
+            out.push('*');
+            rest = rest[open..].find('}').map_or("", |c| &rest[open + c + 1..]);
+        }
+        out + rest
+    };
+    q.sources().any(|src| {
+        let names = src.windows.iter().map(|w| holes(&w.name)).chain(src.name.clone());
+        names.into_iter().any(|n| glob_match(&n, meter) || glob_match(meter, &n))
+    })
 }
 
 const SECRET: &str = "looks like a secret; plugins can't hold secrets";

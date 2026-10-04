@@ -264,3 +264,22 @@ fn missing_config_means_no_unified_models() {
     assert_eq!(reg.unified_models().count(), 0);
     assert!(reg.settings("openai").allow_uncatalogued_models);
 }
+
+/// Slice 006: `[routing.amortization_for]` keys must name a unified model or a known
+/// `provider/model`; a direct target is stored under the provider's id.
+#[test]
+fn amortization_for_names_known_targets() {
+    let config = format!(
+        "{SONNET}\n[routing]\namortization = \"2h\"\n[routing.amortization_for]\nsonnet = \"1h\"\n\"kr/claude-sonnet-4-5\" = \"24h\"\n"
+    );
+    let r = ok(&config).runtime().routing.clone();
+    assert_eq!(r.amortization.as_secs(), 7200);
+    assert_eq!(r.amortization_for["sonnet"].as_secs(), 3600);
+    assert_eq!(r.amortization_for["kiro/claude-sonnet-4-5"].as_secs(), 86_400);
+
+    let bad = format!("{SONNET}\n[routing.amortization_for]\nnope = \"1h\"\n");
+    let e = errors(&bad);
+    assert!(e.contains("routing.amortization_for.nope") && e.contains("names no unified model"), "{e}");
+    let bad = format!("{SONNET}\n[routing.amortization_for]\n\"kr/no-such-model\" = \"1h\"\n");
+    assert!(errors(&bad).contains("is not declared by provider"), "{}", errors(&bad));
+}

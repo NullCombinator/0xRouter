@@ -17,10 +17,12 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use common::{SECRET, broken_plugin, bundled_at_mock, multi_plugin, reply_by_wire, server_with, signin_server};
+use common::{
+    SECRET, broken_plugin, bundled_at_mock, multi_plugin, reply_by_wire, server_custom, server_with, signin_server,
+};
 use nullrouter_engine::keys::{self, BreakBehaviour, Keys};
 use nullrouter_engine::records::{BreakHandling, Outcome, Query};
-use nullrouter_engine::testkit::{MockUpstream, Received, Step};
+use nullrouter_engine::testkit::{CacheSim, MockUpstream, Received, Step};
 use serde_json::{Value, json};
 
 /// A provider `cutco` on the chat wire with model `m1`.
@@ -186,4 +188,189 @@ fn headroom_chain_kept_the_optimizers_additions(s: &common::Server) {
         .filter(|r| r.attempts.first().is_some_and(|a| a.dropped.iter().any(|d| d.path.contains("x_chain"))))
         .count();
     assert_eq!(dropped, 4, "every cross-style request records the dropped field");
+}
+
+/// `warmco`: one provider on the chat and Messages wires with a prompt cache and a window, so its
+/// accounts are subscriptions. Its model `m1` sits behind the unified model `warm`.
+fn warm_plugin(mock: &MockUpstream) -> (&'static str, String) {
+    let toml = format!(
+        r#"schema = 2
+id = "warmco"
+category = "apikey"
+[auth]
+kind = "apikey"
+[[endpoints.text]]
+url = "{chat}"
+wire = "openai-chat"
+[[endpoints.text]]
+url = "{messages}"
+wire = "anthropic-messages"
+headers = {{ "anthropic-version" = "2023-06-01" }}
+auth = {{ header = "x-api-key", scheme = "raw" }}
+[[models]]
+id = "m1"
+[routing.cache]
+mode = "automatic"
+lifetime = "5m"
+min_tokens = 0
+[[routing.window]]
+name = "5h"
+length = "5h"
+unit = "weighted_tokens"
+capacity = 100000000
+"#,
+        chat = mock.url("/warmco/chat/completions"),
+        messages = mock.url("/warmco/messages"),
+    );
+    ("warmco", toml)
+}
+
+/// SC-009, warm part: two agents on two harnesses (the Python OpenAI SDK over chat, Claude Code
+/// over Messages), each in a multi-turn session through a unified model behind two accounts. No
+/// client error, each agent's requests stay on one account, and the provider reports cache reads
+/// on every request that stayed warm.
+#[tokio::test(flavor = "multi_thread")]
+async fn warm_sessions_stay_on_one_account_through_real_harnesses() {
+    if std::env::var("NR_HARNESS").as_deref() != Ok("1") {
+        eprintln!("skipped: set NR_HARNESS=1 to run the harness scripts");
+        return;
+    }
+    let accounts = format!(
+        "schema = 2\n[[account]]\nprovider = \"warmco\"\nname = \"one\"\nsecret = \"{SECRET}-one\"\n[[account]]\nprovider = \"warmco\"\nname = \"two\"\nsecret = \"{SECRET}-two\"\n"
+    );
+    let unified = "[[unified_model]]\nname = \"warm\"\nmembers = [{ provider = \"warmco\", model = \"m1\" }]\n";
+    let s = server_custom(|m| vec![warm_plugin(m)], &accounts, unified).await;
+    let mut list = Keys::load(&s.home().join(keys::FILE)).unwrap();
+    let (second_key, _) = list.issue("second", None).unwrap();
+    list.save().unwrap();
+    s.engine.reload_blocking().unwrap();
+    let cache = CacheSim::new(Duration::from_secs(300));
+    cache.account(&format!("{SECRET}-one"), "warmco/one");
+    cache.account(&format!("{SECRET}-two"), "warmco/two");
+    s.mock.simulate_cache(&cache);
+
+    let run = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/harness/warm.sh");
+    let (base, key) = (s.base.clone(), s.key.clone());
+    let out = tokio::task::spawn_blocking(move || {
+        std::process::Command::new("bash")
+            .arg(run)
+            .env("NR_BASE", base)
+            .env("NR_KEY", key)
+            .env("NR_KEY_WARM", second_key)
+            .env("NR_MODEL_WARM", "warm")
+            .output()
+            .unwrap()
+    })
+    .await
+    .unwrap();
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    println!("{text}");
+    assert!(out.status.success(), "{text}");
+
+    let records = s.engine.records.query(&Query::default());
+    let records: Vec<_> = records.iter().filter(|r| r.target.as_deref() == Some("warm")).collect();
+    assert!(!records.is_empty(), "the sessions reached the unified model");
+    assert!(records.iter().all(|r| r.outcome == Outcome::Succeeded), "no client error");
+    let mut by_agent: std::collections::BTreeMap<String, HashSet<String>> = Default::default();
+    for r in &records {
+        let agent = r.agent.as_ref().map(|a| a.key.clone()).unwrap_or_default();
+        let account = r.served_by.as_ref().and_then(|b| b.account.clone()).unwrap_or_default();
+        by_agent.entry(agent).or_default().insert(account);
+        let stayed = r.decision.as_ref().and_then(|d| d.warm.as_ref()).is_some_and(|w| w.stayed);
+        if stayed {
+            let reads = r.usage.and_then(|u| u.cache_read).unwrap_or(0);
+            assert!(reads > 0, "a warm request got no cache read: {:?} {:?}", r.decision, r.usage);
+        }
+    }
+    for (agent, accounts) in &by_agent {
+        assert_eq!(accounts.len(), 1, "agent {agent} moved between {accounts:?}");
+    }
+    assert!(records.iter().any(|r| r.decision.as_ref().and_then(|d| d.warm.as_ref()).is_some_and(|w| w.stayed)));
+}
+
+/// `subco` (subscription accounts: a prompt cache and a window) or `payco` (a key with a price) on
+/// the chat and Messages wires, model `m1`.
+fn cold_plugin(mock: &MockUpstream, id: &'static str, routing: &str) -> (&'static str, String) {
+    let toml = format!(
+        r#"schema = 2
+id = "{id}"
+category = "apikey"
+[auth]
+kind = "apikey"
+[[endpoints.text]]
+url = "{chat}"
+wire = "openai-chat"
+[[endpoints.text]]
+url = "{messages}"
+wire = "anthropic-messages"
+headers = {{ "anthropic-version" = "2023-06-01" }}
+auth = {{ header = "x-api-key", scheme = "raw" }}
+[[models]]
+id = "m1"
+{routing}"#,
+        chat = mock.url(&format!("/{id}/chat/completions")),
+        messages = mock.url(&format!("/{id}/messages")),
+    );
+    (id, toml)
+}
+
+/// SC-009, cold part: the Python OpenAI SDK (cold one-shots and an overflow burst), Claude Code
+/// (two cold one-shots) and the Node SDK's standing smoke through a unified model behind three
+/// subscription accounts, each limited after two requests, and one pay-as-you-go key. No client
+/// error, and the key serves only what no subscription could.
+#[tokio::test(flavor = "multi_thread")]
+async fn cold_work_and_overflow_through_real_harnesses() {
+    if std::env::var("NR_HARNESS").as_deref() != Ok("1") {
+        eprintln!("skipped: set NR_HARNESS=1 to run the harness scripts");
+        return;
+    }
+    let subs = "[routing.cache]\nmode = \"automatic\"\nlifetime = \"5m\"\nmin_tokens = 0\n\n[[routing.window]]\nname = \"5h\"\nlength = \"5h\"\nunit = \"weighted_tokens\"\ncapacity = 100000000\n";
+    let pay = "[routing.cache]\nmode = \"automatic\"\nlifetime = \"5m\"\nmin_tokens = 0\n\n[[routing.price]]\ninput = 2.0\noutput = 8.0\n";
+    let mut accounts = String::from("schema = 2\n");
+    for n in ["s1", "s2", "s3"] {
+        accounts += &format!("[[account]]\nprovider = \"subco\"\nname = \"{n}\"\nsecret = \"{SECRET}-{n}\"\n");
+    }
+    accounts += &format!("[[account]]\nprovider = \"payco\"\nname = \"key\"\nsecret = \"{SECRET}-key\"\n");
+    let unified = "[[unified_model]]\nname = \"cold\"\nmembers = [{ provider = \"subco\", model = \"m1\" }, { provider = \"payco\", model = \"m1\" }]\n";
+    let s = server_custom(|m| vec![cold_plugin(m, "subco", subs), cold_plugin(m, "payco", pay)], &accounts, unified).await;
+    let cache = CacheSim::new(Duration::from_secs(300));
+    for n in ["s1", "s2", "s3"] {
+        cache.account(&format!("{SECRET}-{n}"), &format!("subco/{n}"));
+        // Each subscription takes two requests and then answers 429 for the rest of the run.
+        cache.rate_limit(&format!("subco/{n}"), 3, Duration::from_secs(86_400));
+    }
+    cache.account(&format!("{SECRET}-key"), "payco/key");
+    s.mock.simulate_cache(&cache);
+
+    let run = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/harness/cold.sh");
+    let (base, key) = (s.base.clone(), s.key.clone());
+    let out = tokio::task::spawn_blocking(move || {
+        std::process::Command::new("bash")
+            .arg(run)
+            .env("NR_BASE", base)
+            .env("NR_KEY", key)
+            .env("NR_MODEL_COLD", "cold")
+            .output()
+            .unwrap()
+    })
+    .await
+    .unwrap();
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    println!("{text}");
+    assert!(out.status.success(), "{text}");
+
+    let records = s.engine.records.query(&Query::default());
+    let records: Vec<_> = records.iter().filter(|r| r.target.as_deref() == Some("cold")).collect();
+    assert!(!records.is_empty(), "the clients reached the unified model");
+    assert!(records.iter().all(|r| r.outcome == Outcome::Succeeded), "no client error");
+    let by = |provider: &str| records.iter().filter(|r| r.served_by.as_ref().is_some_and(|b| b.provider == provider)).count();
+    assert!(by("subco") >= 6, "the subscriptions took their share first: {}", by("subco"));
+    assert!(by("payco") >= 1, "the burst was more than the subscriptions take");
+    // The key served only what no subscription could: every subscription was resting or had
+    // already failed this very request.
+    for r in records.iter().filter(|r| r.served_by.as_ref().is_some_and(|b| b.provider == "payco")) {
+        let d = r.decision.as_ref().expect("a decision");
+        let subs_open = d.candidates.iter().any(|c| c.provider == "subco" && c.eligible);
+        assert!(!subs_open || r.attempts.len() > 1, "pay-as-you-go served while a subscription could: {d:?}");
+    }
 }

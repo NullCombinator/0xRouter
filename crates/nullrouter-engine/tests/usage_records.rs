@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{Setup, drain, request, settled, setup};
+use common::{Fleet, Setup, drain, request, settled, setup};
 use nullrouter_engine::attempt::{self, Answer, Piece};
 use nullrouter_engine::testkit::{MockUpstream, Received, Step};
 use nullrouter_registry::schema::{Framing, InputSemantics};
@@ -256,4 +256,56 @@ async fn recorded_and_client_usage_equal_the_reported_numbers() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Routed requests (spec 006, T034, SC-011): over several accounts, warm and cold, what each
+/// attempt records is what the provider reported, so the placement and the ledger never change the
+/// numbers.
+#[tokio::test]
+async fn routed_attempts_record_exactly_what_each_account_reported() {
+    let f = Fleet::new()
+        .provider(
+            "alpha",
+            "[routing.cache]\nmode = \"automatic\"\nlifetime = \"5m\"\nmin_tokens = 0\n[[routing.window]]\nname = \"5h\"\nlength = \"5h\"\nunit = \"weighted_tokens\"\ncapacity = 1000000\n",
+            &[],
+        )
+        .account("alpha", "one", 1.0)
+        .account("alpha", "two", 1.0)
+        .unified(&[("alpha", "m1")])
+        .build()
+        .await;
+    // The prompt total, cache reads and output per account: the chat wire reports the prompt as one
+    // number that includes the cache, so the split between input and cache writes isn't compared.
+    let mut recorded: std::collections::BTreeMap<String, [u64; 3]> = Default::default();
+    // Three agents, each with a growing conversation: the first turn is cold, the rest warm.
+    for turns in 1..=3 {
+        for agent in ["ak_a", "ak_b", "ak_c"] {
+            let mut messages = vec![json!({"role": "system", "content": "You are a careful assistant."})];
+            for t in 0..turns {
+                messages.push(json!({"role": if t % 2 == 0 { "user" } else { "assistant" }, "content": format!("turn {t} of {agent}")}));
+            }
+            let body = json!({"model": "u", "stream": false, "messages": messages});
+            let req = request(&f.setup, "openai-chat", "u", body, agent, CancellationToken::new());
+            let id = req.id.clone();
+            assert!(f.setup.engine.text(f.setup.engine.snapshot(), req).await.is_ok());
+            let rec = settled(&f.setup, &id).await;
+            for a in rec.attempts.iter().filter(|a| a.usage.is_some()) {
+                let u = a.usage.unwrap();
+                let at = recorded.entry(format!("{}/{}", a.provider, a.account.clone().unwrap())).or_default();
+                let n = |v: Option<u64>| v.unwrap_or(0);
+                at[0] += match u.input_semantics {
+                    InputSemantics::IncludesCache => n(u.input),
+                    _ => n(u.input) + n(u.cache_read) + n(u.cache_write),
+                };
+                at[1] += n(u.cache_read);
+                at[2] += n(u.output);
+            }
+        }
+    }
+    for label in ["alpha/one", "alpha/two"] {
+        let s = f.cache.served(label);
+        let want = [s.input + s.cache_read + s.cache_write, s.cache_read, s.output];
+        assert_eq!(recorded.get(label).copied().unwrap_or_default(), want, "{label}");
+    }
+    assert!(f.cache.served("alpha/one").requests + f.cache.served("alpha/two").requests >= 9);
 }

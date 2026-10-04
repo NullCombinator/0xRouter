@@ -210,3 +210,22 @@ text_icon = "GC"
 website = "https://x.ai"
 notice = { text = "Sign in with your xAI / Grok account (device code). Uses Grok Build subscription credits.", signup_url = "https://grok.com/supergrok" }
 priority = 275
+
+# Source: Grok Build follows xAI automatic prefix caching; lifetime assumed to match xAI's (5 minutes) until the live check (L7) says otherwise.
+[routing.cache]
+mode = "automatic"
+lifetime = "5m"
+
+# Source: lengths from the billing report (a monthly included allowance and SuperGrok's weekly
+# percent). Capacities are not published; the report carries the limit or a percent, so none is
+# declared. "on-demand" and "prepaid" are left undeclared: they are credit balances that admit
+# while above their floor and never pace (007 fits them if they should).
+[[routing.window]]
+name = "monthly included"
+length = "30d"
+unit = "weighted_tokens"
+
+[[routing.window]]
+name = "weekly SuperGrok"
+length = "7d"
+unit = "weighted_tokens"

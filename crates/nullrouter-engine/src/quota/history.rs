@@ -352,8 +352,8 @@ pub struct History {
     home: PathBuf,
     /// Every account's running tally.
     pub tally: Tally,
-    /// Polls waiting to be written, in order.
-    queue: Mutex<VecDeque<QuotaPoll>>,
+    /// Polls waiting to be written, in order, each with the tally taken when it landed.
+    queue: Mutex<VecDeque<(QuotaPoll, AccountTally)>>,
     /// Held by whoever writes files: one writer at a time, in queue order.
     writer: Mutex<()>,
     checkpoint_ms: AtomicU64,
@@ -404,7 +404,10 @@ impl History {
         let this = Arc::downgrade(self);
         Arc::new(move |poll: &QuotaPoll| {
             let Some(h) = this.upgrade() else { return };
-            lock(&h.queue).push_back(poll.clone());
+            // The tally restarts the moment the poll lands, not when its entry is written: the
+            // estimate between polls must not count traffic the poll already includes.
+            let taken = h.tally.take_poll(&poll.provider, &poll.account, poll.ok());
+            lock(&h.queue).push_back((poll.clone(), taken));
             match tokio::runtime::Handle::try_current() {
                 Ok(rt) => {
                     rt.spawn_blocking(move || h.drain());
@@ -418,8 +421,8 @@ impl History {
     pub fn drain(&self) {
         let _w = lock(&self.writer);
         loop {
-            let Some(poll) = lock(&self.queue).pop_front() else { break };
-            if let Err(e) = self.record_locked(&poll) {
+            let Some((poll, taken)) = lock(&self.queue).pop_front() else { break };
+            if let Err(e) = self.record_locked(&poll, taken) {
                 tracing::warn!(provider = poll.provider, account = poll.account, "quota poll not kept: {e}");
             }
         }
@@ -428,14 +431,14 @@ impl History {
     /// Writes one poll's entry now (the queue is bypassed). Blocking.
     pub fn record(&self, poll: &QuotaPoll) -> Result<Entry, FileError> {
         let _w = lock(&self.writer);
-        self.record_locked(poll)
+        let taken = self.tally.take_poll(&poll.provider, &poll.account, poll.ok());
+        self.record_locked(poll, taken)
     }
 
-    /// Takes the tally, appends the entry, then rewrites the checkpoint past it. A failed
-    /// append puts the tally back for the next entry.
-    fn record_locked(&self, poll: &QuotaPoll) -> Result<Entry, FileError> {
+    /// Appends the entry with the tally taken for it, then rewrites the checkpoint past it. A
+    /// failed append puts the tally back for the next entry.
+    fn record_locked(&self, poll: &QuotaPoll, taken: AccountTally) -> Result<Entry, FileError> {
         let (p, a) = (poll.provider.as_str(), poll.account.as_str());
-        let taken = self.tally.take(p, a);
         let entry = Entry::from_poll(poll, taken);
         if let Err(e) = append(&self.home, p, a, &entry) {
             self.tally.restore(p, a, &entry.tally);
@@ -466,6 +469,74 @@ impl History {
         }
         written
     }
+}
+
+impl History {
+    /// Rebuilds what the journal knows and the checkpoints don't (research R6): the hourly
+    /// counters of the last [`HORIZON`](super::tally::HORIZON) and the traffic after each account's last
+    /// checkpoint or poll entry, so a crash loses no counted traffic. Reads the record journal;
+    /// call it once, before serving. Blocking. Returns how many attempts were counted.
+    pub fn recover_counters(&self, now: SystemTime) -> usize {
+        let since = now.checked_sub(super::tally::HORIZON);
+        let filter = crate::journal::records::Filter { since, ..Default::default() };
+        let mut resume: std::collections::HashMap<(String, String), Option<SystemTime>> = std::collections::HashMap::new();
+        let mut counted = 0;
+        // Oldest first, so each hour's counters and the sliding list fill in order.
+        for r in crate::journal::records::read(&self.home, &filter).iter().rev() {
+            let Some(arrived) = r["arrived"].as_str().and_then(clock::parse_rfc3339) else { continue };
+            for a in r["attempts"].as_array().into_iter().flatten() {
+                let (Some(p), Some(acct), Some(model)) = (a["provider"].as_str(), a["account"].as_str(), a["model"].as_str()) else {
+                    continue;
+                };
+                // A skipped attempt sent nothing; one still running when the process died has no usage.
+                let sent = matches!(a["outcome"]["state"].as_str(), Some("ok" | "failed" | "cancelled"));
+                let Some(ended) = a["ended"].as_f64().filter(|_| sent) else { continue };
+                let at = arrived + Duration::from_secs_f64((ended / 1000.0).max(0.0));
+                let usage = usage_of(&a["usage"]);
+                if usage.is_some_and(|u| u.estimated) {
+                    continue;
+                }
+                let from = *resume
+                    .entry((p.to_owned(), acct.to_owned()))
+                    .or_insert_with(|| resume_point(&self.home, p, acct));
+                self.tally.recover_attempt(p, acct, model, usage.as_ref(), at, from.is_none_or(|f| at > f));
+                counted += 1;
+            }
+        }
+        counted
+    }
+}
+
+/// An attempt's usage as the journal wrote it. `None`: not reported.
+fn usage_of(v: &serde_json::Value) -> Option<crate::records::Usage> {
+    if !v.is_object() {
+        return None;
+    }
+    let n = |k: &str| v[k].as_u64();
+    Some(crate::records::Usage {
+        input: n("input"),
+        output: n("output"),
+        cache_read: n("cache_read"),
+        cache_write: n("cache_write"),
+        reasoning: n("reasoning"),
+        input_semantics: v["input_semantics"]
+            .as_str()
+            .and_then(nullrouter_registry::schema::InputSemantics::parse)
+            .unwrap_or(nullrouter_registry::schema::InputSemantics::ExcludesCache),
+        estimated: v["estimated"].as_bool().unwrap_or(false),
+    })
+}
+
+/// The time the account's reloaded tally is current to: its checkpoint, or its newest poll
+/// entry when that is later. `None`: it has neither, so every journal attempt counts.
+fn resume_point(home: &Path, provider: &str, account: &str) -> Option<SystemTime> {
+    let checkpoint = tally_file(home, provider, account)
+        .ok()
+        .and_then(|p| files::read_private(&p).ok().flatten())
+        .and_then(|t| serde_json::from_str::<Checkpoint>(&t).ok())
+        .and_then(|c| clock::parse_rfc3339(&c.at));
+    let entry = newest_at(home, provider, account).ok().flatten().and_then(|s| clock::parse_rfc3339(&s));
+    checkpoint.max(entry)
 }
 
 /// Lists the accounts with a history under `home`: `(provider, account)` sorted.

@@ -1,0 +1,16 @@
+# expect: must be more than 0 and at most 24h
+schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-acme-key"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/messages"
+wire = "anthropic-messages"
+
+[routing.cache]
+mode = "automatic"
+lifetime = "25h"

@@ -1,0 +1,16 @@
+# expect: only applies to mode "automatic"
+schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-acme-key"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/messages"
+wire = "anthropic-messages"
+
+[routing.cache]
+mode = "explicit"
+min_tokens = 1024

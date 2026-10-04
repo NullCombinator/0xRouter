@@ -1,0 +1,16 @@
+# expect: unknown weekday "funday"
+schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-acme-key"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/messages"
+wire = "anthropic-messages"
+
+[[routing.price]]
+when = { days = ["funday"] }
+input = 1.0

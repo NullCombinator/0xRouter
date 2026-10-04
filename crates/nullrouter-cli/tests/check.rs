@@ -149,3 +149,16 @@ fn a_malformed_tokens_file_is_an_error_without_its_source_line() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("tokens.toml: line 3, column "), "{err}");
 }
+
+#[test]
+fn reported_windows_with_no_meter_are_noted_and_paced_in_their_own_unit() {
+    let dir = tempfile::tempdir().unwrap();
+    let text = String::from_utf8(nr(dir.path(), &["check"]).stdout).unwrap();
+    assert!(
+        text.contains("note: grok-cli reports window prepaid, which no [[routing.window]] meter names"),
+        "a credit balance has no length to declare:\n{text}"
+    );
+    let json: serde_json::Value = serde_json::from_slice(&nr(dir.path(), &["--json", "check"]).stdout).unwrap();
+    let listed = json["unmetered_windows"].as_array().unwrap();
+    assert!(listed.iter().any(|w| w["provider"] == "grok-cli" && w["window"] == "prepaid"), "{listed:?}");
+}

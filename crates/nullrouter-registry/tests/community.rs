@@ -263,3 +263,50 @@ fn the_community_set_carries_no_sign_in_or_quota_section() {
 }
 /// Fitting and refused community plugins since xai and grok-cli moved to the bundle.
 const FIT_REFUSED: (usize, usize) = (33, 81);
+
+/// Slice 006: `[routing]` holds no URL, header or secret, so a community plugin may declare it
+/// and still fit; it loads with its meters and price schedule.
+#[test]
+fn a_community_plugin_may_declare_routing() {
+    let src = r#"
+schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-acme-key"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/messages"
+wire = "anthropic-messages"
+
+[routing.cache]
+mode = "explicit"
+lifetime = "1h"
+
+[[routing.window]]
+name = "daily"
+length = "1d"
+unit = "requests"
+capacity = 1500
+reset = "fixed"
+anchor = "00:00+00:00"
+
+[[routing.price]]
+when = { days = ["sat", "sun"], from = "00:00", to = "12:00" }
+input = 0.5
+
+[[routing.price]]
+input = 1.0
+"#;
+    let home = home();
+    let path = home.path().join("plugins/acme.toml");
+    let verdict = check_user_plugin(src, &path, false).unwrap_or_else(|e| panic!("{e:#?}"));
+    assert!(verdict.fits(), "{verdict:?}");
+    fs::write(&path, src).unwrap();
+    let reg = RegistryHandle::open(OperatorHome::new(home.path())).unwrap().snapshot();
+    let r = reg.provider("acme").unwrap().routing();
+    assert_eq!(r.cache.lifetime.as_secs(), 3600);
+    assert_eq!((r.windows.len(), r.prices.len()), (1, 2));
+}

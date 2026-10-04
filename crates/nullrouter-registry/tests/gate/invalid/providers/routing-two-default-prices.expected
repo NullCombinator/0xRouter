@@ -1,0 +1,1 @@
+providers/routing-two-default-prices.toml:17:1 routing.price[1]: at most one price entry may omit `when`

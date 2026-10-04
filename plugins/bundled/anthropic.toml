@@ -117,3 +117,30 @@ text_icon = "AN"
 website = "https://console.anthropic.com"
 notice = { api_key_url = "https://console.anthropic.com/settings/keys" }
 priority = 30
+
+# Source: Anthropic prompt caching docs: a cache_control marker keeps the prefix up to it for 5 minutes (ttl "1h" extends it), and unmarked requests cache nothing.
+[routing.cache]
+mode = "explicit"
+lifetime = "5m"
+
+# Source: lengths from the provider's usage report (five_hour, seven_day, per-model seven_day).
+# Capacities are not published; the report is percent, so each window counts out of 100 until 007
+# fits one. Names match the [quota] windows above.
+[[routing.window]]
+name = "5-hour"
+length = "5h"
+unit = "weighted_tokens"
+
+[[routing.window]]
+name = "weekly"
+length = "7d"
+unit = "weighted_tokens"
+
+[[routing.window]]
+name = "weekly *"
+length = "7d"
+unit = "weighted_tokens"
+
+# No [[routing.price]]: Anthropic's per-million prices run from $1 to $15 by model (9router's
+# pricing table lists them), and the plugin schema prices a plugin, not a model, so no single
+# default is honest. An API-key account ranks as price 1 until its operator sets a price.

@@ -216,6 +216,12 @@ fn semantic_errors(s: &StyleFile) -> Found {
         err(FieldPath::of("forwarding"), "a style file may not declare forwarding".into());
     }
 
+    if let Some(key) = s.cache_marker.as_ref().and_then(|m| m.ttl.as_deref())
+        && (key.is_empty() || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+    {
+        err(FieldPath::of("cache_marker").key("ttl"), format!("{key:?} must be a plain key name ([A-Za-z0-9_]+)"));
+    }
+
     check_carriers(s, &mut err);
     for (i, route) in s.routes.iter().enumerate() {
         check_route(s, route, &FieldPath::of("routes").index(i), &mut err);
@@ -828,6 +834,7 @@ stream_event = { data = "{error.body}" }
             "route type image has no [image] codec section",
         );
         fails(&format!("{BASE}\n[forwarding]\nx = 1\n"), "a style file may not declare forwarding");
+        fails(&format!("{BASE}\n[cache_marker]\nttl = \"a.b\"\n"), "must be a plain key name");
         fails(
             &BASE.replace(
                 "data = { choices = [{ finish_reason = \"{finish}\" }] }",

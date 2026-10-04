@@ -50,6 +50,21 @@ pub async fn setup(
     accounts: &[(&str, &str)],
     config: &str,
 ) -> Setup {
+    let mut file = String::from("schema = 1\n");
+    for (provider, name) in accounts {
+        file += &format!(
+            "[[account]]\nprovider = \"{provider}\"\nname = \"{name}\"\nsecret = \"{SECRET}-{provider}-{name}\"\n"
+        );
+    }
+    setup_file(plugins, &file, config).await
+}
+
+/// [`setup`] over a ready `accounts.toml`.
+pub async fn setup_file(
+    plugins: impl FnOnce(&MockUpstream) -> Vec<(&'static str, String)>,
+    accounts_toml: &str,
+    config: &str,
+) -> Setup {
     let mock = MockUpstream::start().await;
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("config.toml"), format!("allow_private_endpoints = true\n{config}")).unwrap();
@@ -57,15 +72,17 @@ pub async fn setup(
     for (id, toml) in plugins(&mock) {
         std::fs::write(dir.path().join(format!("plugins/{id}.toml")), toml).unwrap();
     }
-    let mut file = String::from("schema = 1\n");
-    for (provider, name) in accounts {
-        file += &format!(
-            "[[account]]\nprovider = \"{provider}\"\nname = \"{name}\"\nsecret = \"{SECRET}-{provider}-{name}\"\n"
-        );
-    }
-    nullrouter_engine::files::write_private(&dir.path().join(nullrouter_engine::accounts::FILE), &file).unwrap();
-    let (engine, report) = Engine::open(OperatorHome::new(dir.path())).unwrap();
+    nullrouter_engine::files::write_private(&dir.path().join(nullrouter_engine::accounts::FILE), accounts_toml).unwrap();
+    // The parity set: a test's user plugin may declare `[quota]`, open to bundled plugins only.
+    let (engine, report) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
     assert!(report.registry.diagnostics.is_empty(), "{:#?}", report.registry.diagnostics);
+    // A user plugin the gate refuses is skipped, not fatal: say so here, not as an unknown provider.
+    assert!(
+        report.registry.skipped.is_empty() && report.registry.unsupported.is_empty(),
+        "plugins left out: {:#?} {:#?}",
+        report.registry.skipped,
+        report.registry.unsupported
+    );
     Setup { _dir: dir, engine: Arc::new(engine), mock }
 }
 
@@ -160,7 +177,7 @@ pub fn request(
     let client = st.style(client).unwrap().clone();
     let ir = request::decode(&client, &body).unwrap();
     let id = nullrouter_engine::records::new_id();
-    s.engine.records.insert(RequestRecord::new(id.clone(), "2026-09-28T00:00:00Z".into(), client.id.clone()));
+    s.engine.records.insert(RequestRecord::new(id.clone(), nullrouter_engine::clock::now_rfc3339_millis(), client.id.clone()));
     let stream = body.get("stream").and_then(Value::as_bool).unwrap_or(false);
     TextRequest {
         id,
@@ -269,4 +286,125 @@ pub fn accounts_hit(s: &Setup) -> Vec<String> {
             auth.rsplit(&format!("{SECRET}-")[..]).next().unwrap_or("").to_owned()
         })
         .collect()
+}
+
+/// Targets over mock accounts for the routing tests (spec 006): providers on the chat wire,
+/// each with its `[routing]` and `[quota]` declarations, accounts with priorities, an optional
+/// unified model `u` over chosen members. [`build`](Self::build) wires the mock upstream's
+/// prompt cache and the mock quota's windows to one another.
+/// `(provider id, [routing] TOML, [quota] windows as (name, unit))`.
+type FleetProvider = (String, String, Vec<(String, String)>);
+
+#[derive(Default)]
+pub struct Fleet {
+    providers: Vec<FleetProvider>,
+    /// `(provider, account, priority)`.
+    accounts: Vec<(String, String, f64)>,
+    /// `(provider, account)` → the operator's flat input price per million tokens.
+    prices: Vec<(String, String, f64)>,
+    members: Vec<(String, String)>,
+    config: String,
+}
+
+pub struct FleetSetup {
+    pub setup: Setup,
+    /// The prompt cache and rate limits behind every provider.
+    pub cache: nullrouter_engine::testkit::CacheSim,
+    /// The quota endpoint, drawn down by what `cache` serves.
+    pub quota: nullrouter_engine::testkit::SimQuota,
+    pub quota_mock: nullrouter_engine::testkit::MockQuota,
+}
+
+/// The secret of `(provider, account)` in a [`Fleet`].
+pub fn secret_of(provider: &str, account: &str) -> String {
+    format!("{SECRET}-{provider}-{account}")
+}
+
+impl Fleet {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A provider on the chat wire. `routing` is `[routing]` TOML; `quota` the windows the
+    /// provider reports, `(name, unit)`, empty when it reports none.
+    pub fn provider(mut self, id: &str, routing: &str, quota: &[(&str, &str)]) -> Self {
+        let quota = quota.iter().map(|(n, u)| ((*n).to_owned(), (*u).to_owned())).collect();
+        self.providers.push((id.to_owned(), routing.to_owned(), quota));
+        self
+    }
+
+    pub fn account(mut self, provider: &str, name: &str, priority: f64) -> Self {
+        self.accounts.push((provider.to_owned(), name.to_owned(), priority));
+        self
+    }
+
+    /// The operator's flat price for an account: it replaces the plugin's schedule.
+    pub fn price(mut self, provider: &str, name: &str, input: f64) -> Self {
+        self.prices.push((provider.to_owned(), name.to_owned(), input));
+        self
+    }
+
+    /// The unified model `u` over `(provider, model)` members.
+    pub fn unified(mut self, members: &[(&str, &str)]) -> Self {
+        self.members = members.iter().map(|(p, m)| ((*p).to_owned(), (*m).to_owned())).collect();
+        self
+    }
+
+    /// Extra `config.toml` (an `[routing]` amortization, say).
+    pub fn config(mut self, toml: &str) -> Self {
+        self.config += toml;
+        self
+    }
+
+    pub async fn build(self) -> FleetSetup {
+        use nullrouter_engine::testkit::{CacheSim, MockQuota, QuotaRoute, SimQuota};
+        let quota_mock = MockQuota::start().await;
+        let quota = SimQuota::new();
+        quota_mock.simulate(&quota);
+        let cache = CacheSim::new(Duration::from_secs(300));
+        let quota_url = quota_mock.url(QuotaRoute::Sim);
+        let mut accounts = String::from("schema = 2\n");
+        for (provider, name, priority) in &self.accounts {
+            let secret = secret_of(provider, name);
+            accounts += &format!(
+                "[[account]]\nprovider = \"{provider}\"\nname = \"{name}\"\nsecret = \"{secret}\"\npriority = {priority:?}\n"
+            );
+            if let Some((_, _, input)) = self.prices.iter().find(|(p, n, _)| p == provider && n == name) {
+                accounts += &format!("[account.routing]\nprice = {{ input = {input:?} }}\n");
+            }
+            let label = format!("{provider}/{name}");
+            cache.account(&secret, &label);
+            quota.account(&secret, &label);
+        }
+        let providers = self.providers;
+        let mut config = self.config;
+        if !self.members.is_empty() {
+            let members: Vec<(&str, &str)> = self.members.iter().map(|(p, m)| (p.as_str(), m.as_str())).collect();
+            config += &unified(&members);
+        }
+        let setup = setup_file(
+            |mock| {
+                providers
+                    .iter()
+                    .map(|(id, routing, windows)| {
+                        let id: &'static str = Box::leak(id.clone().into_boxed_str());
+                        let mut toml = chat_plugin(mock, id, "");
+                        toml += routing;
+                        toml += "\n";
+                        if !windows.is_empty() {
+                            let w: Vec<(&str, &str)> = windows.iter().map(|(n, u)| (n.as_str(), u.as_str())).collect();
+                            toml += &SimQuota::quota_toml(&quota_url, &w);
+                        }
+                        (id, toml)
+                    })
+                    .collect()
+            },
+            &accounts,
+            &config,
+        )
+        .await;
+        setup.mock.simulate_cache(&cache);
+        quota.follow(&cache);
+        FleetSetup { setup, cache, quota, quota_mock }
+    }
 }

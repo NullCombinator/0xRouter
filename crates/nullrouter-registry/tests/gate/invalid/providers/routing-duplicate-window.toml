@@ -1,0 +1,24 @@
+# expect: duplicate of window[0]
+schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-acme-key"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/messages"
+wire = "anthropic-messages"
+
+[[routing.window]]
+name = "5-hour"
+length = "5h"
+unit = "requests"
+capacity = 100
+
+[[routing.window]]
+name = "5-hour"
+length = "5h"
+unit = "requests"
+capacity = 200

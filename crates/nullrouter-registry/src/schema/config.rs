@@ -1,10 +1,13 @@
 //! `$NULLROUTER_HOME/config.toml` (contracts/operator-config.md).
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use serde::Deserialize;
+use serde::de::{Deserializer, Error as _};
 
 use super::enums::ModelKind;
+use super::duration::{de_duration, parse_duration};
 use super::primitives::BreakBehaviour;
 
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
@@ -24,6 +27,46 @@ pub struct OperatorConfig {
     pub server: ServerSettings,
     #[serde(default)]
     pub pipeline: PipelineSettings,
+    #[serde(default)]
+    pub routing: RoutingSettings,
+}
+
+/// `[routing]`: how long the amortization window is (Clarifications Q4). Cold work is spread over
+/// a window aligned to the Unix epoch; the length is the default or a target's own.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoutingSettings {
+    #[serde(default = "five_hours", deserialize_with = "de_positive_duration")]
+    pub amortization: Duration,
+    /// Target (a unified model name or `provider/model`) → window length.
+    #[serde(default, deserialize_with = "de_duration_map")]
+    pub amortization_for: BTreeMap<String, Duration>,
+}
+
+impl Default for RoutingSettings {
+    fn default() -> Self {
+        Self { amortization: five_hours(), amortization_for: BTreeMap::new() }
+    }
+}
+
+fn five_hours() -> Duration {
+    Duration::from_secs(5 * 3600)
+}
+
+fn de_positive_duration<'de, D: Deserializer<'de>>(d: D) -> Result<Duration, D::Error> {
+    let v = de_duration(d)?;
+    if v.is_zero() { Err(D::Error::custom("an amortization window must be more than 0")) } else { Ok(v) }
+}
+
+fn de_duration_map<'de, D: Deserializer<'de>>(d: D) -> Result<BTreeMap<String, Duration>, D::Error> {
+    BTreeMap::<String, String>::deserialize(d)?
+        .into_iter()
+        .map(|(k, v)| match parse_duration(&v) {
+            Ok(v) if !v.is_zero() => Ok((k, v)),
+            Ok(_) => Err(D::Error::custom(format!("{k:?}: an amortization window must be more than 0"))),
+            Err(e) => Err(D::Error::custom(format!("{k:?}: {e}"))),
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -112,6 +155,26 @@ mod tests {
         assert!(!c.allow_private_endpoints);
         assert_eq!(c.server.listen, "127.0.0.1:20129");
         assert_eq!(c.pipeline.break_behaviour, BreakBehaviour::Restart);
+    }
+
+    #[test]
+    fn routing_settings() {
+        let c: OperatorConfig = toml::from_str("").unwrap();
+        assert_eq!(c.routing.amortization, Duration::from_secs(5 * 3600));
+        let c: OperatorConfig = toml::from_str(
+            "[routing]\namortization = \"2h\"\n[routing.amortization_for]\nsonnet = \"1h\"\n\"anthropic/claude-opus-4-1\" = \"24h\"\n",
+        )
+        .unwrap();
+        assert_eq!(c.routing.amortization, Duration::from_secs(7200));
+        assert_eq!(c.routing.amortization_for["sonnet"], Duration::from_secs(3600));
+        for bad in [
+            "[routing]\namortization = \"0s\"",
+            "[routing]\namortization = \"soon\"",
+            "[routing.amortization_for]\nsonnet = \"0m\"",
+            "[routing]\nwindow = \"5h\"",
+        ] {
+            assert!(toml::from_str::<OperatorConfig>(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

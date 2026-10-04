@@ -1,0 +1,18 @@
+# expect: at most one price entry may omit `when`
+schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-acme-key"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/messages"
+wire = "anthropic-messages"
+
+[[routing.price]]
+input = 1.0
+
+[[routing.price]]
+input = 2.0

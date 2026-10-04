@@ -1,0 +1,19 @@
+# expect: "fixed" needs an anchor
+schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-acme-key"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/messages"
+wire = "anthropic-messages"
+
+[[routing.window]]
+name = "daily"
+length = "1d"
+unit = "requests"
+capacity = 100
+reset = "fixed"

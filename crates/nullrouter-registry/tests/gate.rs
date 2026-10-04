@@ -189,7 +189,7 @@ fn style_corpus_is_rejected_with_one_positioned_error() {
 fn provider_corpus_is_rejected_with_one_positioned_error() {
     let files: Vec<_> =
         corpus("invalid/providers").into_iter().filter(|p| p.extension().is_some_and(|e| e == "toml")).collect();
-    assert_eq!(files.len(), 28);
+    assert_eq!(files.len(), 37);
     let mut goldens = 0;
     for path in &files {
         let src = fs::read_to_string(path).unwrap();
@@ -207,7 +207,7 @@ fn provider_corpus_is_rejected_with_one_positioned_error() {
             assert_eq!(errors[0].to_string(), want.trim_end_matches('\n'), "{rule}");
         }
     }
-    assert_eq!(goldens, 8, "slice 005 cases carry goldens");
+    assert_eq!(goldens, 17, "slice 005 and 006 cases carry goldens");
 }
 
 /// Slice 005: a plugin declaring every new section passes the gate in strict mode as a
@@ -433,4 +433,58 @@ fn shipped_styles_and_hand_maintained_plugins_pass_strict() {
         let g = validate_with(src, PluginSource::Bundled, name, &strict).unwrap_or_else(|e| panic!("{name}: {e:#?}"));
         assert!(g.diagnostics.is_empty(), "{name}: {:?}", g.diagnostics);
     }
+}
+
+/// Slice 006: a window a `[quota]` rule names reports its own reset, so `reset` is refused on it
+/// and allowed on an unreported one. (`[quota]` is bundled-only, so this runs as a bundled plugin.)
+#[test]
+fn routing_reset_is_for_unreported_windows_only() {
+    let src = |reset: &str| {
+        format!(
+            r#"
+schema = 2
+id = "acme"
+category = "oauth"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/messages"
+wire = "anthropic-messages"
+
+[signin]
+flow = "device_code"
+client_id = "b1a00492-073a-47ea-816f-4c329264a828"
+device_url = "https://auth.acme.example/oauth2/device/code"
+token_url = "https://auth.acme.example/oauth2/token"
+refresh_lead = "5m"
+
+[quota]
+accounts = "signin"
+[quota.request]
+url = "https://api.acme.example/v1/usage"
+[[quota.window]]
+path = "five_hour"
+name = "5-hour"
+unit = "percent"
+used = "utilization"
+
+[[routing.window]]
+name = "5-hour"
+length = "5h"
+unit = "weighted_tokens"
+{reset}
+[[routing.window]]
+name = "daily"
+length = "1d"
+unit = "requests"
+capacity = 100
+reset = "rolling"
+"#
+        )
+    };
+    let strict = ctx(true, false);
+    validate_with(&src(""), PluginSource::Bundled, "acme.toml", &strict).unwrap_or_else(|e| panic!("{e:#?}"));
+    let errors = validate_with(&src("reset = \"rolling\""), PluginSource::Bundled, "acme.toml", &strict).unwrap_err();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(errors[0].to_string().contains("routing.window[0].reset"), "{}", errors[0]);
+    assert!(errors[0].to_string().contains("unreported windows"), "{}", errors[0]);
 }

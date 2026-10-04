@@ -46,6 +46,14 @@ pub(crate) enum Command {
         #[arg(long)]
         long: bool,
     },
+    /// Set the priority: how much cold work the account takes, 0 for none.
+    Priority {
+        provider: String,
+        name: String,
+        /// A number of 0 or more; 1 is the default.
+        #[arg(allow_hyphen_values = true)]
+        priority: String,
+    },
     Remove {
         provider: String,
         name: String,
@@ -156,6 +164,7 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     let mut list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
     // What the command did beyond `accounts.toml`, for its line.
     let mut note = None;
+    let mut removed = false;
     let (provider, name) = match cmd {
         Command::List { provider, long } => {
             return Ok(print_list(&home, &list, provider.as_deref(), long, as_json));
@@ -191,8 +200,16 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
             list.add(account).map_err(fail)?;
             (provider, name)
         }
+        Command::Priority { provider, name, priority } => {
+            let n = priority
+                .parse::<f64>()
+                .map_err(|_| fail(format!("{priority:?}: priority must be a number of 0 or more")))?;
+            list.set_priority(&provider, &name, n).map_err(fail)?;
+            (provider, name)
+        }
         Command::Remove { provider, name } => {
             list.remove(&provider, &name).map_err(fail)?;
+            removed = true;
             // Its tokens go too, under the writers' lock; its quota history stays
             // (`quota forget` deletes it).
             if tokens::remove(home.path(), &provider, &name).map_err(fail)? {
@@ -215,6 +232,11 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     };
     list.save().map_err(fail)?;
     let status = super::apply(&home).map_err(fail)?;
+    // A running server drops the account's fingerprints and ledger entries when it reloads; with
+    // none running, the warm file is edited here.
+    if removed && status != "applied" {
+        let _ = nullrouter_engine::journal::state::forget_account(home.path(), &format!("{provider}/{name}"));
+    }
     if as_json {
         println!("{}", json!({"provider": provider, "name": name, "note": note, "status": status}));
     } else if let Some(note) = note {
@@ -376,6 +398,7 @@ fn print_list(home: &OperatorHome, list: &Accounts, provider: Option<&str>, long
                 "name": a.name,
                 "kind": if a.is_signin() { "signin" } else { "key" },
                 "order": a.order,
+                "priority": a.priority,
                 "secret": secret,
                 "state": s.state,
                 "state_since": s.since,
@@ -393,13 +416,14 @@ fn print_list(home: &OperatorHome, list: &Accounts, provider: Option<&str>, long
         return ExitCode::SUCCESS;
     }
     let text = |r: &Value, k: &str| r[k].as_str().unwrap_or("-").to_owned();
-    let mut cells = vec![["provider", "name", "kind", "order", "secret", "state"].map(str::to_owned).to_vec()];
+    let mut cells = vec![["provider", "name", "kind", "order", "priority", "secret", "state"].map(str::to_owned).to_vec()];
     cells.extend(rows.iter().map(|r| {
         vec![
             text(r, "provider"),
             text(r, "name"),
             text(r, "kind"),
             r["order"].to_string(),
+            r["priority"].as_f64().map_or_else(|| "-".into(), |p| p.to_string()),
             text(r, "secret"),
             text(r, "state_text"),
         ]

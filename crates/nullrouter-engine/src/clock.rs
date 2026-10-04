@@ -14,6 +14,12 @@ pub fn now_rfc3339() -> String {
     rfc3339(SystemTime::now())
 }
 
+/// Now with milliseconds: a request's arrival, so the traffic recovered from the journal is
+/// ordered against a checkpoint to within a millisecond.
+pub fn now_rfc3339_millis() -> String {
+    crate::quota::extract::rfc3339_millis(SystemTime::now())
+}
+
 /// An RFC 3339 time (`2026-09-27T15:00:00Z`, fractions and `±hh:mm` offsets allowed).
 pub fn parse_rfc3339(s: &str) -> Option<SystemTime> {
     let b = s.as_bytes();
@@ -56,7 +62,7 @@ pub fn parse_rfc3339(s: &str) -> Option<SystemTime> {
 }
 
 /// Howard Hinnant's civil-to-days algorithm.
-fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+pub(crate) fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
     let yoe = y.rem_euclid(400);
@@ -67,7 +73,7 @@ fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
 }
 
 /// Howard Hinnant's days-to-civil algorithm.
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
+pub(crate) fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);

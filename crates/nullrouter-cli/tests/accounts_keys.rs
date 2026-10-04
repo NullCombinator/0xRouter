@@ -150,8 +150,8 @@ fn accounts_list_shows_sign_in_accounts() {
 
     let text = String::from_utf8(nr(dir.path(), &["accounts", "list"], "").stdout).unwrap();
     let row = |p: &str| text.lines().find(|l| l.starts_with(p)).unwrap().split_whitespace().collect::<Vec<_>>();
-    assert_eq!(row("anthropic")[..5], ["anthropic", "api", "key", "0", "…0003"], "{text}");
-    assert_eq!(row("xai")[..5], ["xai", "main", "signin", "0", "…Zt1c"], "{text}");
+    assert_eq!(row("anthropic")[..6], ["anthropic", "api", "key", "0", "1", "…0003"], "{text}");
+    assert_eq!(row("xai")[..6], ["xai", "main", "signin", "0", "1", "…Zt1c"], "{text}");
     assert!(!text.contains("alice"), "email only with --long: {text}");
 
     let long = String::from_utf8(nr(dir.path(), &["accounts", "list", "--long"], "").stdout).unwrap();
@@ -238,12 +238,12 @@ fn accounts_list_shows_sign_in_states_and_the_command() {
     fn cells(l: &str) -> Vec<&str> {
         l.split("  ").map(str::trim).filter(|c| !c.is_empty()).collect()
     }
-    assert_eq!(cells(lines[0]), ["provider", "name", "kind", "order", "secret", "state"], "{text}");
-    assert_eq!(cells(lines[1]), ["anthropic", "api", "key", "1", "…0003", "active"], "{text}");
-    assert_eq!(cells(lines[2]), ["anthropic", "max", "signin", "0", "…h3Kq", "active"], "{text}");
+    assert_eq!(cells(lines[0]), ["provider", "name", "kind", "order", "priority", "secret", "state"], "{text}");
+    assert_eq!(cells(lines[1]), ["anthropic", "api", "key", "1", "1", "…0003", "active"], "{text}");
+    assert_eq!(cells(lines[2]), ["anthropic", "max", "signin", "0", "1", "…h3Kq", "active"], "{text}");
     assert_eq!(
         cells(lines[3]),
-        ["xai", "main", "signin", "0", "…Zt1c", "needs sign-in since 2026-10-03 14:02 (invalid_grant)"],
+        ["xai", "main", "signin", "0", "1", "…Zt1c", "needs sign-in since 2026-10-03 14:02 (invalid_grant)"],
         "{text}"
     );
     assert_eq!(
@@ -253,6 +253,7 @@ fn accounts_list_shows_sign_in_states_and_the_command() {
             "work",
             "signin",
             "0",
+            "1",
             "…p0Lm",
             "refused by provider since 2026-10-03 14:02 (not for this client)"
         ],

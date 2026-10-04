@@ -9,6 +9,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use std::{env, fs, io};
 
 use url::Url;
@@ -16,7 +17,9 @@ use url::Url;
 use crate::convert;
 use crate::fit::{self, FitVerdict};
 use crate::registry::{Registry, RuntimeSettings, UnifiedMember, UnifiedModel, token_clashes, token_path};
-use crate::schema::{Decision, ModelType, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings, StyleFile};
+use crate::schema::{
+    Decision, ModelType, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings, RoutingSettings, StyleFile,
+};
 use crate::validate::gate::{parse, positioned};
 use crate::validate::{
     FieldPath, GateCtx, Gated, ValidationError, check_route_collisions, validate_style, validate_with,
@@ -406,6 +409,10 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
         allow_private_endpoints: config.allow_private_endpoints,
         server: config.server.clone(),
         pipeline: config.pipeline,
+        routing: RoutingSettings {
+            amortization: config.routing.amortization,
+            amortization_for: outcome.amortization_for,
+        },
     };
     registry.set_operator_state(outcome.unified, outcome.settings, runtime, report);
     Ok(registry)
@@ -530,6 +537,8 @@ pub(crate) struct ConfigOutcome {
     pub(crate) settings: BTreeMap<String, ProviderSettings>,
     pub(crate) errors: Vec<ValidationError>,
     pub(crate) dropped: Vec<DroppedUnifiedModel>,
+    /// `[routing.amortization_for]` with each direct target written as `provider-id/model`.
+    pub(crate) amortization_for: BTreeMap<String, Duration>,
 }
 
 /// Checks `config` against the candidate provider set `reg`. Startup and reload both
@@ -631,6 +640,28 @@ pub(crate) fn validate_config(
         }
     }
 
+    let mut amortization_for = BTreeMap::new();
+    for (key, length) in &config.routing.amortization_for {
+        let at = FieldPath::of("routing.amortization_for").key(key.as_str());
+        if names.contains_key(key.as_str()) {
+            amortization_for.insert(key.clone(), *length);
+            continue;
+        }
+        let direct = key.split_once('/').and_then(|(token, model)| Some((reg.index_of(token)?, token, model)));
+        match direct {
+            Some((p, _, model)) => {
+                let provider = &reg.providers[p];
+                if reg.find_at(p, model).is_some() || provider.passthrough_models || provider.models_live.is_some() {
+                    amortization_for.insert(format!("{}/{model}", provider.id), *length);
+                } else {
+                    err(at, format!("{model:?} is not declared by provider {:?}", provider.id));
+                }
+            }
+            None if key.split_once('/').is_some_and(|(token, _)| excused(token)) => {}
+            None => err(at, "names no unified model and no known provider/model".into()),
+        }
+    }
+
     for id in config.plugin_decisions.keys().filter(|id| !bundled_ids.contains(*id)) {
         err(FieldPath::of("plugin_decisions").key(id.as_str()), "not a bundled provider id".into());
     }
@@ -638,6 +669,7 @@ pub(crate) fn validate_config(
     ConfigOutcome {
         unified,
         settings,
+        amortization_for,
         errors: found.into_iter().map(|(path, rule)| positioned(src, file, path, rule)).collect(),
         dropped,
     }

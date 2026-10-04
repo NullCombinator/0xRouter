@@ -146,3 +146,16 @@ website = "https://openrouter.ai"
 notice = { text = "Free tier: 27+ free models, no credit card needed, 200 req/day. After  0 credit: 1,000 req/day.", api_key_url = "https://openrouter.ai/settings/keys" }
 priority = 10
 has_free = true
+
+# Source: OpenRouter passes through the upstream provider's automatic caching; 5 minutes is the common default, per OpenRouter prompt-caching docs.
+[routing.cache]
+mode = "automatic"
+lifetime = "5m"
+
+# Source: 9router's pricing table (ref/9router/open-sse/providers/pricing.js), OpenRouter's `auto` fallback: $2.00 per million input tokens.
+# OpenRouter prices each model differently and the plugin schema prices a plugin, not a model, so this is
+# the ranking default only; an account's own `price` replaces it.
+[[routing.price]]
+input = 2.00
+output = 8.00
+cache_read = 1.00

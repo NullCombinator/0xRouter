@@ -91,3 +91,17 @@ text_icon = "XA"
 website = "https://x.ai"
 notice = { api_key_url = "https://console.x.ai" }
 priority = 280
+
+# Source: xAI prompt caching docs: shared prefixes are cached automatically, for about 5 minutes; the 1024-token minimum is the documented lower bound.
+[routing.cache]
+mode = "automatic"
+lifetime = "5m"
+min_tokens = 1024
+
+# Source: 9router's pricing table (ref/9router/open-sse/providers/pricing.js), the `grok-*` pattern: $0.50 per million input tokens.
+# xAI's per-model prices differ and the plugin schema prices a plugin, not a model, so this is the
+# ranking default only; an account's own `price` replaces it.
+[[routing.price]]
+input = 0.50
+output = 2.00
+cache_read = 0.25

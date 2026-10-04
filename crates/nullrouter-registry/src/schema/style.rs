@@ -34,6 +34,8 @@ pub struct StyleFile {
     pub stt: Option<TypeCodec>,
     pub video: Option<TypeCodec>,
     pub errors: ErrorShape,
+    /// Where a cache marker keeps its lifetime, for styles whose markers carry one (spec 006, R3).
+    pub cache_marker: Option<CacheMarker>,
     /// Rejected by the gate with a clear rule; parsed only so the message can name it.
     pub forwarding: Option<toml::Value>,
 }
@@ -54,6 +56,14 @@ impl StyleFile {
     pub fn has_codec(&self, t: ModelType) -> bool {
         if t == ModelType::Text { self.text.is_some() } else { self.type_codec(t).is_some() }
     }
+}
+
+/// `[cache_marker]`: what a client's `cache_control` marker says beyond "cache here".
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheMarker {
+    /// The key inside the marker that holds its lifetime (`5m`, `1h`), e.g. `ttl`.
+    pub ttl: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

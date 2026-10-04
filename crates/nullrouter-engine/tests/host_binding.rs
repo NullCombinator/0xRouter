@@ -105,17 +105,26 @@ mod signin {
         assert!(res.is_ok());
         assert_eq!(auth_of(&s), ["Bearer tok-SENTINEL-sso"]);
 
-        // Tokens bound elsewhere: withheld, and the key account serves.
+        // Tokens bound elsewhere: withheld, and the key account serves. The two accounts share cold
+        // work by deficit (spec 006), so two requests make sure one of them reaches `sso` first.
         put(home, entry("sso", &["api.mockco.example"], 3600));
         s.engine.reload().await.unwrap();
-        s.mock.push([ok()]);
-        let (id, res) = send(&s, "mockco/m1").await;
-        assert!(res.is_ok());
-        assert_eq!(auth_of(&s)[1], format!("Bearer {SECRET}-mockco-key"));
-        let r = s.engine.records.get(&id).unwrap();
-        let Some(AttemptOutcome::Skipped { reason, .. }) = &r.attempts[0].outcome else { panic!("{:?}", r.attempts) };
-        assert!(reason.contains("127.0.0.1") && reason.contains("accounts signin mockco sso"), "{reason}");
-        assert!(!format!("{r:?}").contains("tok-SENTINEL"));
+        let mut skipped = false;
+        for _ in 0..2 {
+            s.mock.push([ok()]);
+            let (id, res) = send(&s, "mockco/m1").await;
+            assert!(res.is_ok());
+            let r = s.engine.records.get(&id).unwrap();
+            if let Some(AttemptOutcome::Skipped { reason, .. }) = r.attempts.first().map(|a| &a.outcome).and_then(|o| o.as_ref()) {
+                assert!(reason.contains("127.0.0.1") && reason.contains("accounts signin mockco sso"), "{reason}");
+                skipped = true;
+            }
+            assert!(!format!("{r:?}").contains("tok-SENTINEL"));
+        }
+        assert!(skipped, "a request reached the withheld account first");
+        let auth = auth_of(&s);
+        let key = format!("Bearer {SECRET}-mockco-key");
+        assert_eq!(auth[1..], [key.clone(), key]);
     }
 
     #[tokio::test]

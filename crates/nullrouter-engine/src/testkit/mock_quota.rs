@@ -28,10 +28,12 @@ pub enum QuotaRoute {
     OpencodeZen,
     /// `GET /v1/models`, optionally with `x-ratelimit-*` headers (xai, live check L2).
     Models,
+    /// `GET /sim/quota`: per-account windows a test sets (spec 006, [`SimQuota`]).
+    Sim,
 }
 
 impl QuotaRoute {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::AnthropicUsage,
         Self::GrokBilling,
         Self::GrokUser,
@@ -39,6 +41,7 @@ impl QuotaRoute {
         Self::OpencodeGo,
         Self::OpencodeZen,
         Self::Models,
+        Self::Sim,
     ];
 
     /// The route's path (no query).
@@ -51,6 +54,7 @@ impl QuotaRoute {
             Self::OpencodeGo => "/zen/go/v1/usage",
             Self::OpencodeZen => "/zen/v1/usage",
             Self::Models => "/v1/models",
+            Self::Sim => "/sim/quota",
         }
     }
 
@@ -78,6 +82,7 @@ impl QuotaRoute {
             Self::Models => {
                 Step::json(200, json!({ "object": "list", "data": [{ "id": "grok-4", "object": "model" }] }))
             }
+            Self::Sim => Step::json(200, json!({ "windows": [] })),
         }
     }
 }
@@ -180,6 +185,7 @@ pub mod samples {
 pub struct MockQuota {
     upstream: MockUpstream,
     answers: Arc<Mutex<HashMap<QuotaRoute, Step>>>,
+    sim: Arc<Mutex<Option<SimQuota>>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -193,14 +199,24 @@ impl MockQuota {
         let answers: Arc<Mutex<HashMap<QuotaRoute, Step>>> =
             Arc::new(Mutex::new(QuotaRoute::ALL.into_iter().map(|r| (r, r.sample())).collect()));
         let a = answers.clone();
+        let sim: Arc<Mutex<Option<SimQuota>>> = Arc::default();
+        let simmed = sim.clone();
         upstream.respond(move |r: &Received| {
             let path = r.path_and_query.split('?').next().unwrap_or_default();
             match QuotaRoute::of(path) {
+                Some(QuotaRoute::Sim) if lock(&simmed).is_some() => {
+                    lock(&simmed).as_ref().map_or_else(|| QuotaRoute::Sim.sample(), |s| s.answer(r))
+                }
                 Some(route) => lock(&a).get(&route).cloned().unwrap_or_else(|| route.sample()),
                 None => Step::json(404, json!({ "error": format!("mock quota: nothing at {path}") })),
             }
         });
-        Self { upstream, answers }
+        Self { upstream, answers, sim }
+    }
+
+    /// `/sim/quota` answers from `sim`, per account.
+    pub fn simulate(&self, sim: &SimQuota) {
+        *lock(&self.sim) = Some(sim.clone());
     }
 
     /// `http://127.0.0.1:<port>` + the route's path and query.
@@ -253,6 +269,163 @@ impl MockQuota {
     }
 }
 
+/// One window the simulated provider reports.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SimWindow {
+    pub name: String,
+    /// `tokens`, `requests`, `credits` or `percent` (the `[quota]` units).
+    pub unit: &'static str,
+    pub used: f64,
+    pub limit: f64,
+    pub resets_at: String,
+    /// What a served token costs in this window: `[input, cache_read, cache_write, output]`.
+    pub weights: [f64; 4],
+    /// For a `percent` window, the tokens that make 100%.
+    pub capacity: f64,
+}
+
+impl SimWindow {
+    pub fn new(name: &str, unit: &'static str, limit: f64, resets_at: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+            unit,
+            used: 0.0,
+            limit,
+            resets_at: resets_at.to_owned(),
+            weights: [1.0; 4],
+            capacity: limit,
+        }
+    }
+
+    pub fn weights(mut self, input: f64, cache_read: f64, cache_write: f64, output: f64) -> Self {
+        self.weights = [input, cache_read, cache_write, output];
+        self
+    }
+
+    pub fn capacity(mut self, tokens: f64) -> Self {
+        self.capacity = tokens;
+        self
+    }
+
+    pub fn used(mut self, used: f64) -> Self {
+        self.used = used;
+        self
+    }
+
+    /// What `d` adds to `used`.
+    fn cost(&self, d: &super::mock_upstream::Served) -> f64 {
+        if self.unit == "requests" {
+            return d.requests as f64;
+        }
+        let [i, r, w, o] = self.weights;
+        let tokens = d.input as f64 * i + d.cache_read as f64 * r + d.cache_write as f64 * w + d.output as f64 * o;
+        if self.unit == "percent" { 100.0 * tokens / self.capacity } else { tokens }
+    }
+}
+
+/// The provider side of a quota the router polls: windows per account, set by the test and
+/// drawn down by what a [`CacheSim`](super::mock_upstream::CacheSim) serves, so "the estimate
+/// equals the provider's own figure at every poll" is checkable (SC-008).
+#[derive(Clone, Default)]
+pub struct SimQuota {
+    state: Arc<Mutex<SimQuotaState>>,
+}
+
+#[derive(Default)]
+struct SimQuotaState {
+    tokens: Vec<(String, String)>,
+    windows: std::collections::BTreeMap<String, Vec<SimWindow>>,
+    /// Answer every request with this status.
+    failing: Option<u16>,
+}
+
+impl SimQuota {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Requests carrying `secret` (bearer or `x-api-key`) are the account `label`.
+    pub fn account(&self, secret: &str, label: &str) -> &Self {
+        lock(&self.state).tokens.push((secret.to_owned(), label.to_owned()));
+        self
+    }
+
+    /// Every request fails with `status` until called again with `None`.
+    pub fn fail(&self, status: Option<u16>) {
+        lock(&self.state).failing = status;
+    }
+
+    pub fn set(&self, label: &str, windows: Vec<SimWindow>) {
+        lock(&self.state).windows.insert(label.to_owned(), windows);
+    }
+
+    pub fn windows(&self, label: &str) -> Vec<SimWindow> {
+        lock(&self.state).windows.get(label).cloned().unwrap_or_default()
+    }
+
+    pub fn used(&self, label: &str, window: &str) -> Option<f64> {
+        self.windows(label).iter().find(|w| w.name == window).map(|w| w.used)
+    }
+
+    /// The window reset: nothing used, a new reset time.
+    pub fn reset(&self, label: &str, window: &str, resets_at: &str) {
+        let mut st = lock(&self.state);
+        if let Some(w) = st.windows.get_mut(label).and_then(|ws| ws.iter_mut().find(|w| w.name == window)) {
+            w.used = 0.0;
+            w.resets_at = resets_at.to_owned();
+        }
+    }
+
+    /// Draws every window of an account down by what `sim` serves it.
+    pub fn follow(&self, sim: &super::mock_upstream::CacheSim) {
+        let this = self.clone();
+        sim.on_served(move |label, d| {
+            if let Some(ws) = lock(&this.state).windows.get_mut(label) {
+                ws.iter_mut().for_each(|w| w.used += w.cost(d));
+            }
+        });
+    }
+
+    fn answer(&self, r: &Received) -> Step {
+        let secret = r
+            .headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.strip_prefix("Bearer ").unwrap_or(v).to_owned())
+            .or_else(|| r.headers.get("x-api-key").and_then(|v| v.to_str().ok()).map(str::to_owned))
+            .unwrap_or_default();
+        let st = lock(&self.state);
+        if let Some(status) = st.failing {
+            return Step::json(status, json!({ "error": "mock quota: failing" }));
+        }
+        let Some(label) = st.tokens.iter().find(|(t, _)| *t == secret).map(|(_, l)| l) else {
+            return Step::json(401, json!({ "error": "mock quota: unknown account" }));
+        };
+        let windows: Vec<Value> = st
+            .windows
+            .get(label)
+            .into_iter()
+            .flatten()
+            .map(|w| {
+                json!({ "name": w.name, "unit": w.unit, "used": w.used, "limit": w.limit, "resets_at": w.resets_at })
+            })
+            .collect();
+        Step::json(200, json!({ "windows": windows }))
+    }
+
+    /// The `[quota]` section a test plugin declares to read this endpoint: one rule per
+    /// `(name, unit)`, since a rule's unit is fixed.
+    pub fn quota_toml(url: &str, windows: &[(&str, &str)]) -> String {
+        let mut out = format!("[quota]\naccounts = \"any\"\nrequest = {{ url = \"{url}\" }}\n");
+        for (name, unit) in windows {
+            out += &format!(
+                "[[quota.window]]\npath = \"windows[*]\"\nwhere = {{ name = \"{name}\" }}\nname = \"{name}\"\nunit = \"{unit}\"\nused = \"used\"\nlimit = \"limit\"\nresets_at = \"resets_at\"\nresets_format = \"rfc3339\"\n"
+            );
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,5 +462,43 @@ mod tests {
         assert_eq!(get(q.url(QuotaRoute::GrokBilling)).await.unwrap().status(), 200);
         assert_eq!(q.received(QuotaRoute::GrokBilling)[0].path_and_query, "/v1/billing?format=credits");
         assert_eq!(get(q.upstream().url("/nope")).await.unwrap().status(), 404);
+    }
+
+    #[tokio::test]
+    async fn sim_windows_follow_served_usage_and_reset() {
+        use super::super::mock_upstream::CacheSim;
+        let q = MockQuota::start().await;
+        let sim = SimQuota::new();
+        sim.account("sk-a", "a");
+        sim.set(
+            "a",
+            vec![
+                SimWindow::new("5h", "tokens", 1000.0, "2026-10-04T05:00:00Z").weights(1.0, 0.1, 1.25, 5.0),
+                SimWindow::new("daily", "requests", 10.0, "2026-10-05T00:00:00Z"),
+                SimWindow::new("weekly", "percent", 100.0, "2026-10-11T00:00:00Z").capacity(2000.0),
+            ],
+        );
+        q.simulate(&sim);
+        let up = MockUpstream::start().await;
+        let cache = CacheSim::new(std::time::Duration::from_secs(300));
+        cache.account("sk-a", "a").set_output_tokens(10);
+        up.simulate_cache(&cache);
+        sim.follow(&cache);
+        let c = reqwest::Client::new();
+        let body = json!({ "model": "m", "messages": [{ "role": "user", "content": "x".repeat(400) }] });
+        c.post(up.url("/v1/chat/completions")).bearer_auth("sk-a").body(body.to_string()).send().await.unwrap();
+        // A cold prompt of 100 tokens is written to the cache (weight 1.25); 10 output at 5.
+        assert_eq!(sim.used("a", "5h"), Some(175.0));
+        assert_eq!(sim.used("a", "daily"), Some(1.0));
+        assert!((sim.used("a", "weekly").unwrap() - 100.0 * 110.0 / 2000.0).abs() < 1e-9);
+
+        let get = |key: &str| c.get(q.url(QuotaRoute::Sim)).bearer_auth(key).send();
+        let r = get("sk-a").await.unwrap();
+        let b: Value = serde_json::from_slice(&r.bytes().await.unwrap()).unwrap();
+        assert_eq!(b["windows"][0], json!({ "name": "5h", "unit": "tokens", "used": 175.0, "limit": 1000.0, "resets_at": "2026-10-04T05:00:00Z" }));
+        assert_eq!(get("nobody").await.unwrap().status(), 401);
+        sim.reset("a", "5h", "2026-10-04T10:00:00Z");
+        assert_eq!(sim.windows("a")[0].used, 0.0);
+        assert!(SimQuota::quota_toml("http://x/sim/quota", &[("5h", "tokens")]).contains("where = { name = \"5h\" }"));
     }
 }

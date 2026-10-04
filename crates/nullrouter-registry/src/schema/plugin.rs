@@ -17,6 +17,7 @@ use super::models_live::ModelsLiveDecl;
 use super::oauth::OAuthDecl;
 use super::primitives::ModelType;
 use super::quota::QuotaDecl;
+use super::routing::{EffectiveRouting, RoutingDecl};
 use super::session::ProviderSession;
 use super::signin::SignInDecl;
 use super::transport::Transport;
@@ -61,6 +62,8 @@ pub struct PluginFile {
     pub quota: Option<QuotaDecl>,
     /// Schema 2: the live model list. Bundled plugins only.
     pub models_live: Option<ModelsLiveDecl>,
+    /// Schema 2: prompt-cache behaviour, quota meters and prices (slice 006).
+    pub routing: Option<RoutingDecl>,
     /// Inert names used only by the fit check.
     #[serde(default)]
     pub requires: Vec<String>,
@@ -123,6 +126,7 @@ pub struct ProviderEntity {
     pub identity: Option<IdentityDecl>,
     pub quota: Option<QuotaDecl>,
     pub models_live: Option<ModelsLiveDecl>,
+    pub routing: Option<RoutingDecl>,
     pub requires: Vec<String>,
     pub source: PluginSource,
 }
@@ -217,9 +221,15 @@ impl ProviderEntity {
             identity: f.identity,
             quota: f.quota,
             models_live: f.models_live,
+            routing: f.routing,
             requires: f.requires,
             source,
         }
+    }
+
+    /// The `[routing]` declaration with the contract's defaults filled in (research R16).
+    pub fn routing(&self) -> EffectiveRouting<'_> {
+        EffectiveRouting::of(self.routing.as_ref())
     }
 
     /// Lookup tokens this provider owns: its id, `alias`, and `aliases` (never `ui_alias`).

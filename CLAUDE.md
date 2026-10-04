@@ -102,8 +102,8 @@ Defaults live in `~/.claude-0router/settings.json` (main session: Opus 5.5 @ `hi
 | Tier | Agents |
 |---|---|
 | Opus 5.5 `high` — judgment-heavy, errors are expensive | js-to-rust-porter, streaming-architect, plugin-system-designer, architect-reviewer, security-auditor |
-| Opus 5.5 `medium` — implementation, review, debugging | rust-engineer, code-reviewer, debugger, llm-architect |
-| Sonnet 5.5 `medium` — gated or fanned-out work | performance-engineer, perf-hypothesis-explorer, error-detective, api-designer |
+| Opus 5.5 `medium` — review, debugging | code-reviewer, debugger, llm-architect |
+| Sonnet 5.5 `medium` — spec'd implementation with a test to verify against, gated or fanned-out work | rust-engineer, performance-engineer, perf-hypothesis-explorer, error-detective, api-designer |
 | Sonnet 5.5 `low` — mechanical | test-automator, docker-expert |
 
 Main-session choice by work type (use `s` in `/model` or `/effort` to make it session-only):
@@ -112,6 +112,8 @@ Main-session choice by work type (use `s` in `/model` or `/effort` to make it se
 - **Opus 5.5 `medium`**: `/speckit-implement` and workflow orchestration — the heavy lifting is in pinned subagents.
 - **Sonnet 5.5 `low`**: chores (git, formatting, doc typos). Not `opusplan` for anything that makes claims about `ref/9router`.
 - One hard turn: add `ultrathink` to the prompt instead of raising session effort. Avoid `max`.
+- Never switch model mid-session: each model has its own prompt cache, so the next turn re-writes the whole context. Start a new session or delegate to a pinned subagent instead.
+- Main sessions auto-compact at a 300k window (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`). Run `/compact` yourself between tasks, and don't let one session span a whole slice.
 
 ## Workflows
 

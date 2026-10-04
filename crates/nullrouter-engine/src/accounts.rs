@@ -7,12 +7,12 @@
 //! Schema 2 (spec 005, research R5) adds sign-in accounts: `kind = "signin"`, no secret in
 //! this file; the tokens and the hosts they are bound to live in `tokens.toml`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use nullrouter_registry::schema::parse_duration;
+use nullrouter_registry::schema::{Percent, check_capacity, check_length, check_lifetime, check_price_value, check_reserve, parse_duration};
 use nullrouter_registry::{ProviderEntity, Registry, SecretString};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -47,6 +47,90 @@ pub enum SecretSource {
     Env(String),
 }
 
+/// The priority an account has unless the operator sets one.
+pub const DEFAULT_PRIORITY: f64 = 1.0;
+
+/// An account's routing overrides (`[account.routing]`, research R13): each beats the plugin's
+/// declaration for this account only.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RoutingOverrides {
+    /// How long an idle prefix stays warm on this account.
+    pub cache_lifetime: Option<Duration>,
+    /// The reserve floor of every window.
+    pub reserve: Option<Percent>,
+    /// A flat price that replaces the plugin's whole schedule.
+    pub price: Option<PriceOverride>,
+    /// Per window name: its capacity, length or reserve.
+    pub window: BTreeMap<String, WindowOverride>,
+}
+
+/// A flat price per million tokens.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PriceOverride {
+    pub input: f64,
+    pub output: Option<f64>,
+    pub cache_read: Option<f64>,
+    pub cache_write: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct WindowOverride {
+    pub capacity: Option<f64>,
+    pub length: Option<Duration>,
+    pub reserve: Option<Percent>,
+}
+
+impl RoutingOverrides {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// The first value that breaks a gate rule, worded as the gate words it. The same rules as a
+    /// plugin's `[routing]` (`nullrouter_registry::schema`).
+    pub fn problem(&self) -> Option<String> {
+        let mut found: Vec<String> = Vec::new();
+        let mut note = |at: &str, r: Result<(), String>| {
+            if let Err(e) = r {
+                found.push(format!("{at}: {e}"));
+            }
+        };
+        if let Some(d) = self.cache_lifetime {
+            note("cache_lifetime", check_lifetime(d));
+        }
+        if let Some(p) = self.reserve {
+            note("reserve", check_reserve(p));
+        }
+        if let Some(p) = &self.price {
+            for (k, v) in [("input", Some(p.input)), ("output", p.output), ("cache_read", p.cache_read), ("cache_write", p.cache_write)] {
+                if let Some(v) = v {
+                    note(&format!("price.{k}"), check_price_value(v));
+                }
+            }
+        }
+        for (name, w) in &self.window {
+            if let Some(c) = w.capacity {
+                note(&format!("window.{name}.capacity"), check_capacity(c));
+            }
+            if let Some(l) = w.length {
+                note(&format!("window.{name}.length"), check_length(l));
+            }
+            if let Some(r) = w.reserve {
+                note(&format!("window.{name}.reserve"), check_reserve(r));
+            }
+        }
+        found.into_iter().next()
+    }
+
+    /// Names of overridden windows that the provider's declaration doesn't have.
+    pub fn unknown_windows<'a>(&'a self, declared: &[nullrouter_registry::schema::MeterDecl]) -> Vec<&'a str> {
+        self.window
+            .keys()
+            .filter(|n| !declared.iter().any(|d| d.name == **n))
+            .map(String::as_str)
+            .collect()
+    }
+}
+
 #[derive(Debug)]
 pub struct Account {
     pub provider: String,
@@ -61,6 +145,10 @@ pub struct Account {
     pub disabled: bool,
     /// The quota polling interval as written; see [`Account::poll_interval`].
     pub poll_interval: Option<Duration>,
+    /// Routing weight multiplier: a number of at least 0, default 1. 0 means never cold work.
+    pub priority: f64,
+    /// Overrides of the plugin's `[routing]` declaration for this account.
+    pub routing: RoutingOverrides,
     /// Hosts a `key` account's secret may be sent to. Empty in a hand-written file: bound
     /// to the provider's hosts at load. Always empty for a sign-in account: its tokens
     /// carry their own hosts.
@@ -86,6 +174,8 @@ impl Account {
             order,
             disabled: false,
             poll_interval: None,
+            priority: DEFAULT_PRIORITY,
+            routing: RoutingOverrides::default(),
             hosts,
         }
     }
@@ -164,6 +254,8 @@ pub enum AccountError {
     Duplicate { provider: String, name: String },
     #[error("provider {provider} has no account named {name}")]
     NotFound { provider: String, name: String },
+    #[error("priority must be a number of 0 or more")]
+    BadPriority,
 }
 
 #[derive(Debug, Default)]
@@ -195,8 +287,106 @@ struct RawAccount {
     disabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     poll_interval: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    priority: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    routing: Option<RawRouting>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hosts: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawRouting {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache_lifetime: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reserve: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    price: Option<RawPrice>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    window: BTreeMap<String, RawWindow>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPrice {
+    input: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    output: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache_read: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache_write: Option<f64>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawWindow {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    capacity: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    length: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reserve: Option<String>,
+}
+
+impl RawRouting {
+    fn read(self) -> Result<RoutingOverrides, String> {
+        let duration = |at: &str, v: &str| parse_duration(v).map_err(|e| format!("{at} {e}"));
+        let percent = |at: &str, v: &str| Percent::parse(v).map_err(|e| format!("{at} {e}"));
+        let mut window = BTreeMap::new();
+        for (name, w) in self.window {
+            let at = |k: &str| format!("window.{name}.{k}");
+            window.insert(
+                name.clone(),
+                WindowOverride {
+                    capacity: w.capacity,
+                    length: w.length.as_deref().map(|v| duration(&at("length"), v)).transpose()?,
+                    reserve: w.reserve.as_deref().map(|v| percent(&at("reserve"), v)).transpose()?,
+                },
+            );
+        }
+        Ok(RoutingOverrides {
+            cache_lifetime: self.cache_lifetime.as_deref().map(|v| duration("cache_lifetime", v)).transpose()?,
+            reserve: self.reserve.as_deref().map(|v| percent("reserve", v)).transpose()?,
+            price: self.price.map(|p| PriceOverride {
+                input: p.input,
+                output: p.output,
+                cache_read: p.cache_read,
+                cache_write: p.cache_write,
+            }),
+            window,
+        })
+    }
+
+    fn write(o: &RoutingOverrides) -> Option<Self> {
+        if o.is_empty() {
+            return None;
+        }
+        Some(Self {
+            cache_lifetime: o.cache_lifetime.map(format_duration),
+            reserve: o.reserve.map(|p| p.to_string()),
+            price: o.price.map(|p| RawPrice {
+                input: p.input,
+                output: p.output,
+                cache_read: p.cache_read,
+                cache_write: p.cache_write,
+            }),
+            window: o
+                .window
+                .iter()
+                .map(|(n, w)| {
+                    let raw = RawWindow {
+                        capacity: w.capacity,
+                        length: w.length.map(format_duration),
+                        reserve: w.reserve.map(|p| p.to_string()),
+                    };
+                    (n.clone(), raw)
+                })
+                .collect(),
+        })
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -261,8 +451,29 @@ impl Accounts {
                     AccountError::Duplicate { provider: a.provider, name: a.name }.to_string(),
                 ));
             }
-            if raw.schema == 1 && (a.kind != AccountKind::Key || a.poll_interval.is_some()) {
-                return Err(FileError::invalid(path, format!("{who}: `kind` and `poll_interval` need schema 2")));
+            if raw.schema == 1
+                && (a.kind != AccountKind::Key
+                    || a.poll_interval.is_some()
+                    || a.priority.is_some()
+                    || a.routing.is_some())
+            {
+                return Err(FileError::invalid(
+                    path,
+                    format!("{who}: `kind`, `poll_interval`, `priority` and `routing` need schema 2"),
+                ));
+            }
+            let priority = a.priority.unwrap_or(DEFAULT_PRIORITY);
+            if !priority.is_finite() || priority < 0.0 {
+                return Err(FileError::invalid(path, format!("{who}: priority must be 0 or more")));
+            }
+            let routing = a
+                .routing
+                .map(RawRouting::read)
+                .transpose()
+                .map_err(|e| FileError::invalid(path, format!("{who}: routing.{e}")))?
+                .unwrap_or_default();
+            if let Some(problem) = routing.problem() {
+                return Err(FileError::invalid(path, format!("{who}: routing.{problem}")));
             }
             let poll_interval = a
                 .poll_interval
@@ -301,6 +512,8 @@ impl Accounts {
                 order: a.order,
                 disabled: a.disabled,
                 poll_interval,
+                priority,
+                routing,
                 hosts: a.hosts.into_iter().collect(),
             });
         }
@@ -325,6 +538,8 @@ impl Accounts {
                 order: a.order,
                 disabled: a.disabled,
                 poll_interval: a.poll_interval.map(format_duration),
+                priority: (a.priority != DEFAULT_PRIORITY).then_some(a.priority),
+                routing: RawRouting::write(&a.routing),
                 hosts: if a.is_signin() { Vec::new() } else { a.hosts.iter().cloned().collect() },
             })
             .collect();
@@ -392,6 +607,39 @@ impl Accounts {
         let at = self.position(provider, name)?;
         self.list[at].poll_interval = every;
         Ok(self.list[at].poll_interval())
+    }
+
+    /// Sets the account's priority (0 = never cold work).
+    pub fn set_priority(&mut self, provider: &str, name: &str, priority: f64) -> Result<(), AccountError> {
+        if !priority.is_finite() || priority < 0.0 {
+            return Err(AccountError::BadPriority);
+        }
+        let at = self.position(provider, name)?;
+        self.list[at].priority = priority;
+        Ok(())
+    }
+
+    /// Replaces the account's routing overrides.
+    pub fn set_routing(&mut self, provider: &str, name: &str, routing: RoutingOverrides) -> Result<(), AccountError> {
+        let at = self.position(provider, name)?;
+        self.list[at].routing = routing;
+        Ok(())
+    }
+
+    /// Refuses an override naming a window its provider doesn't declare. Providers that aren't
+    /// loaded are skipped (they are reported as unused accounts).
+    pub fn check_routing(&self, registry: &Registry) -> Result<(), FileError> {
+        for a in &self.list {
+            let Ok(p) = registry.provider(&a.provider) else { continue };
+            let declared = p.routing();
+            if let Some(name) = a.routing.unknown_windows(declared.windows).first() {
+                return Err(FileError::invalid(
+                    &self.path,
+                    format!("account {}/{}: routing.window.{name}: {} declares no window with that name", a.provider, a.name, a.provider),
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn position(&self, provider: &str, name: &str) -> Result<usize, AccountError> {
@@ -676,6 +924,79 @@ poll_interval = "30s"
         assert_eq!(format_duration(Duration::from_secs(7200)), "2h");
         assert_eq!(format_duration(Duration::from_secs(90)), "90s");
         assert_eq!(format_duration(Duration::from_millis(1500)), "1500ms");
+    }
+
+    const ROUTING: &str = r#"
+schema = 2
+[[account]]
+provider = "anthropic"
+name = "max"
+kind = "signin"
+priority = 2.5
+[account.routing]
+cache_lifetime = "1h"
+reserve = "10%"
+price = { input = 3.0, output = 15.0 }
+window."5-hour" = { capacity = 12000000.0, length = "5h", reserve = "8%" }
+[[account]]
+provider = "anthropic"
+name = "pro"
+kind = "signin"
+"#;
+
+    #[test]
+    fn priority_and_routing_overrides_default_round_trip_and_stay_out_of_the_file() {
+        let p = Path::new("accounts.toml");
+        let a = Accounts::parse(ROUTING, p, |_| None).unwrap();
+        let max = a.get("anthropic", "max").unwrap();
+        assert_eq!(max.priority, 2.5);
+        assert_eq!(max.routing.cache_lifetime, Some(Duration::from_secs(3600)));
+        assert_eq!(max.routing.reserve, Some(Percent(10.0)));
+        assert_eq!(max.routing.price.unwrap().output, Some(15.0));
+        let w = max.routing.window["5-hour"];
+        assert_eq!((w.capacity, w.length, w.reserve), (Some(12_000_000.0), Some(Duration::from_secs(5 * 3600)), Some(Percent(8.0))));
+        let pro = a.get("anthropic", "pro").unwrap();
+        assert_eq!(pro.priority, DEFAULT_PRIORITY);
+        assert!(pro.routing.is_empty());
+
+        let text = a.to_toml();
+        let b = Accounts::parse(&text, p, |_| None).unwrap();
+        assert_eq!(b.get("anthropic", "max").unwrap().routing, max.routing);
+        assert_eq!(b.get("anthropic", "max").unwrap().priority, 2.5);
+        // Keys are written only when set.
+        let pro_part = text.split("[[account]]").last().unwrap();
+        assert!(!pro_part.contains("priority") && !pro_part.contains("routing"), "{text}");
+    }
+
+    #[test]
+    fn priority_and_routing_refusals() {
+        let p = Path::new("accounts.toml");
+        let head = "schema = 2\n[[account]]\nprovider=\"x\"\nname=\"m\"\nkind=\"signin\"\n";
+        let cases = [
+            ("priority = -1\n", "priority must be 0 or more"),
+            ("[account.routing]\ncache_lifetime = \"25h\"\n", "at most 24h"),
+            ("[account.routing]\nreserve = \"60%\"\n", "between 0% and 50%"),
+            ("[account.routing]\nreserve = \"5\"\n", "not a percentage"),
+            ("[account.routing]\nprice = { input = -1.0 }\n", "price.input"),
+            ("[account.routing]\nwindow.w = { capacity = 0.0 }\n", "window.w.capacity"),
+            ("[account.routing]\nunknown = 1\n", "unknown field"),
+        ];
+        for (tail, want) in cases {
+            let err = Accounts::parse(&format!("{head}{tail}"), p, |_| None).unwrap_err().to_string();
+            assert!(err.contains(want), "{want}: {err}");
+        }
+        let one = "schema = 1\n[[account]]\nprovider=\"x\"\nname=\"m\"\nsecret=\"sk-0000000000\"\npriority = 2\n";
+        assert!(Accounts::parse(one, p, |_| None).unwrap_err().to_string().contains("need schema 2"));
+    }
+
+    #[test]
+    fn setters_validate() {
+        let mut a = Accounts::parse(ROUTING, Path::new("accounts.toml"), |_| None).unwrap();
+        a.set_priority("anthropic", "pro", 0.0).unwrap();
+        assert_eq!(a.get("anthropic", "pro").unwrap().priority, 0.0);
+        assert_eq!(a.set_priority("anthropic", "pro", -1.0), Err(AccountError::BadPriority));
+        assert_eq!(a.set_priority("anthropic", "pro", f64::NAN), Err(AccountError::BadPriority));
+        assert!(matches!(a.set_priority("anthropic", "nope", 1.0), Err(AccountError::NotFound { .. })));
     }
 
     #[test]

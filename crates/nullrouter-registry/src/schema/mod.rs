@@ -14,6 +14,7 @@ mod oauth_params;
 mod plugin;
 mod primitives;
 mod quota;
+mod routing;
 mod section_formats;
 mod session;
 mod signin;
@@ -22,7 +23,8 @@ mod transport;
 
 pub use capability::{CapabilitySection, ModelRoute, SectionEndpoint, SectionLimits, SectionModel};
 pub use config::{
-    Decision, MemberDecl, OperatorConfig, PipelineSettings, ProviderSettings, ServerSettings, UnifiedModelDecl,
+    Decision, MemberDecl, OperatorConfig, PipelineSettings, ProviderSettings, RoutingSettings, ServerSettings,
+    UnifiedModelDecl,
 };
 pub use duration::parse_duration;
 pub use endpoint::{
@@ -47,6 +49,7 @@ pub use quota::{
     QuotaAccounts, QuotaBody, QuotaDecl, QuotaDecoder, QuotaRequest, QuotaSource, QuotaUnit, ResetsFormat, ValuePath,
     WindowRule,
 };
+pub use routing::*;
 pub use section_formats::KNOWN_SECTION_FORMATS;
 pub use session::ProviderSession;
 pub use signin::{

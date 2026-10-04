@@ -7,6 +7,10 @@ id = "anthropic-messages"
 [access_key]
 carriers = [{ header = "x-api-key", scheme = "raw" }, { header = "authorization", scheme = "bearer" }]
 
+# A `cache_control` marker may carry `ttl` ("5m" or "1h"): the routing decision reads it.
+[cache_marker]
+ttl = "ttl"
+
 [session]
 carriers = [{ extractor = "claude_code_user_id" }, { header = "x-claude-code-session-id" }]
 

@@ -2,13 +2,14 @@
 //! visible while in progress, kept in a bounded ring.
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use nullrouter_registry::schema::{InputSemantics, ModelType, RouteOp};
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::keys::AgentId;
+use crate::routing::{Decision, PlacementReason};
 
 pub use nullrouter_wire::codec::Dropped;
 
@@ -144,6 +145,17 @@ pub struct Attempt {
     pub dropped: Vec<Dropped>,
     /// Provider-forced body parameters this attempt carried (research R8), as sent.
     pub forced: Vec<(String, Value)>,
+    /// Why the placement chose this account (slice 006). `None` for skips and for requests that
+    /// no placement shaped (a continuation, a job poll).
+    pub placement: Option<AttemptPlacement>,
+}
+
+/// Why an attempt went where it did, and where it stood in the placement's order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct AttemptPlacement {
+    pub reason: PlacementReason,
+    /// Position in the decision's attempt order, from 0.
+    pub rank: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -154,6 +166,8 @@ pub enum Outcome {
     Failed,
     Refused,
     Cancelled,
+    /// A crash cut the request short; set when the journal is recovered at start (slice 006).
+    Interrupted,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -198,6 +212,8 @@ pub struct RequestRecord {
     pub total_ms: Option<f64>,
     pub usage: Option<Usage>,
     pub job: Option<JobRef>,
+    /// The placement that chose the attempt order (slice 006).
+    pub decision: Option<Decision>,
 }
 
 impl RequestRecord {
@@ -219,6 +235,7 @@ impl RequestRecord {
             total_ms: None,
             usage: None,
             job: None,
+            decision: None,
         }
     }
 
@@ -284,6 +301,9 @@ impl Ring {
 pub struct RecordStore {
     capacity: usize,
     ring: Mutex<Ring>,
+    /// Where each change to a record is written as journal lines (spec 006). Absent in tests
+    /// that keep records in memory only.
+    journal: Option<Arc<crate::journal::Journal>>,
 }
 
 impl Default for RecordStore {
@@ -302,7 +322,22 @@ pub struct Query {
 
 impl RecordStore {
     pub fn with_capacity(capacity: usize) -> Self {
-        Self { capacity: capacity.max(1), ring: Mutex::new(Ring::default()) }
+        Self { capacity: capacity.max(1), ring: Mutex::new(Ring::default()), journal: None }
+    }
+
+    /// A store that writes every change to `journal` (the live ring stays the in-flight view).
+    pub fn journaled(journal: Arc<crate::journal::Journal>) -> Self {
+        Self { journal: Some(journal), ..Self::default() }
+    }
+
+    /// Queues the lines a record's change needs, under the ring lock so a request's lines keep
+    /// their order.
+    fn write(&self, before: &RequestRecord, after: &RequestRecord, force_open: bool) {
+        let Some(journal) = &self.journal else { return };
+        let target = crate::journal::Target::Records { day: crate::journal::records::day_of(&after.arrived).to_owned() };
+        for (t, fields) in crate::journal::records::lines_for(before, after, force_open) {
+            journal.append(target.clone(), t, fields);
+        }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Ring> {
@@ -311,6 +346,9 @@ impl RecordStore {
 
     pub fn insert(&self, record: RequestRecord) {
         let mut ring = self.lock();
+        if self.journal.is_some() {
+            self.write(&RequestRecord::new(record.id.clone(), record.arrived.clone(), record.style.clone()), &record, true);
+        }
         if ring.records.len() == self.capacity {
             ring.evict();
         }
@@ -327,6 +365,7 @@ impl RecordStore {
         let at = (seq - ring.first) as usize;
         let before = ring.records[at].clone();
         f(&mut ring.records[at]);
+        self.write(&before, &ring.records[at], false);
         for p in before.providers() {
             Ring::unindex(&mut ring.by_provider, p, seq);
         }
@@ -335,6 +374,28 @@ impl RecordStore {
         }
         ring.index(seq);
         true
+    }
+
+    /// Drops the records whose JSON `drop` selects from the live ring (the journal is rewritten
+    /// separately). Returns how many.
+    pub fn forget(&self, drop: impl Fn(&Value) -> bool) -> usize {
+        let mut ring = self.lock();
+        let all: Vec<RequestRecord> = ring.records.drain(..).collect();
+        let first = ring.first + all.len() as u64;
+        *ring = Ring { first, ..Ring::default() };
+        let before = all.len();
+        let mut kept = 0;
+        for r in all {
+            if serde_json::to_value(&r).is_ok_and(|v| drop(&v)) {
+                continue;
+            }
+            let seq = ring.first + ring.records.len() as u64;
+            ring.by_id.insert(r.id.clone(), seq);
+            ring.records.push_back(r);
+            ring.index(seq);
+            kept += 1;
+        }
+        before - kept
     }
 
     pub fn get(&self, id: &str) -> Option<RequestRecord> {
@@ -385,6 +446,7 @@ mod tests {
             usage: None,
             dropped: Vec::new(),
             forced: Vec::new(),
+            placement: None,
         });
         r
     }

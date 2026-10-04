@@ -7,6 +7,9 @@
 # sends one whole and one streamed request and expects the text "Hello". NR_MODEL_FAIL
 # (a model whose every attempt fails) makes each SDK also expect its own API error with
 # the record id.
+# NR_MODEL_WARM (a unified model behind several accounts) with NR_KEY_WARM (a second agent key)
+# adds the warm sessions (warm.sh). NR_MODEL_COLD (subscriptions plus a pay-as-you-go key) adds the
+# cold and overflow scenario (cold.sh).
 # Fails if any harness fails, or if fewer than two ran (SC-001). The cargo test also runs
 # it once per signed-in provider (anthropic, xai, grok-cli; spec 005 SC-002), NR_MODEL only.
 set -u
@@ -46,6 +49,14 @@ if [ -n "${NR_MODEL_CUT:-}" ]; then
 fi
 if command -v claude >/dev/null; then run "claude code" bash "$here/claude.sh"; else echo "skip claude code: claude not on PATH"; fi
 if command -v codex >/dev/null; then run "codex" bash "$here/codex.sh"; else echo "skip codex: codex not on PATH"; fi
+# Warm sessions (spec 006, US1): a unified model behind several accounts, one agent key per harness.
+if [ -n "${NR_MODEL_WARM:-}" ] && [ -n "${NR_KEY_WARM:-}" ]; then
+  run "warm sessions" bash "$here/warm.sh"
+fi
+# Cold work and overflow (spec 006, US3).
+if [ -n "${NR_MODEL_COLD:-}" ]; then
+  run "cold and overflow" bash "$here/cold.sh"
+fi
 # The headroom chain counts only when it ran (77 = skipped).
 if [ -n "${NR_MODEL_MESSAGES:-}" ]; then
   echo "== headroom chain"

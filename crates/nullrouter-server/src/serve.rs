@@ -83,7 +83,7 @@ pub const MAX_BODY: usize = 32 << 20;
 async fn dispatch(State(app): State<Arc<App>>, req: Request) -> Response {
     let id = records::new_id();
     let started = Instant::now();
-    let arrived = clock::now_rfc3339();
+    let arrived = clock::now_rfc3339_millis();
     let st = app.engine.snapshot();
     let table = app.table(&st);
     let (parts, body) = req.into_parts();
@@ -197,6 +197,15 @@ pub async fn run(
     listener: TcpListener,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
+    // A crash left requests open and perhaps a torn last line: make the segments whole before
+    // anything is served (spec 006, FR-037).
+    let engine = app.engine.clone();
+    match tokio::task::spawn_blocking(move || engine.recover_journal()).await {
+        Ok(Ok(0)) => {}
+        Ok(Ok(n)) => tracing::warn!("{n} requests were still open when 0router last stopped; recorded as interrupted"),
+        Ok(Err(e)) => tracing::warn!("the record journal could not be checked: {e}"),
+        Err(e) => tracing::warn!("the record journal check did not finish: {e}"),
+    }
     // Stream frames are small: without TCP_NODELAY, Nagle holds the first one for the
     // client's delayed ACK (~40 ms on Linux).
     let listener = listener.tap_io(|tcp| {

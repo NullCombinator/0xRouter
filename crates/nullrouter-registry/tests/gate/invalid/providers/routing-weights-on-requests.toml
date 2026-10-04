@@ -1,0 +1,19 @@
+# expect: only applies to unit "weighted_tokens"
+schema = 2
+id = "acme"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-acme-key"
+
+[endpoints.text]
+url = "https://api.acme.example/v1/messages"
+wire = "anthropic-messages"
+
+[[routing.window]]
+name = "daily"
+length = "1d"
+unit = "requests"
+capacity = 100
+token_weights = { input = 1.0 }

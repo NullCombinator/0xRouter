@@ -507,3 +507,15 @@ reason = "client identity headers apply to signed-in accounts only, as [identity
 #   include; only an effort-suffixed model id forces reasoning.effort: same file, and
 #   crates/nullrouter-server/tests/signin_serving.rs;
 # - x-grok-agent-id is {install.id}, not a machine-id hash: no_cloaking.rs.
+
+# Routing deviations (spec 006, D-006-1 to D-006-3) have no oracle field either: 9router's
+# fixtures record neither account order nor selection state. They are asserted on the routed
+# requests instead, crates/nullrouter-engine/tests/routing_cold.rs:
+# - D-006-1: account order comes from quota pace, not fill-first. The account whose quota
+#   expires unspent is placed first even when it comes later in the operator's order;
+# - D-006-2: unified members aren't tried in declared order. Member order decides nothing;
+#   pace, deficit and finally the account `order` do;
+# - D-006-3: no sticky round-robin. Equal accounts alternate by deficit rather than sticking to
+#   the last one used;
+# - with equal shares and deficits the order equals 9router's fill-first by priority
+#   (`getProviderCredentials`, src/sse/services/auth.js), mapped to the account `order`.

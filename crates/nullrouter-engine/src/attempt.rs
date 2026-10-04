@@ -51,10 +51,12 @@ use crate::identity::{self, FillContext};
 use crate::inband;
 use crate::jobs::Job;
 use crate::keys::AgentId;
-use crate::plan::{self, Candidate, Step, Warm};
+use crate::plan::{self, Candidate, Step};
 use crate::records::{
-    Attempt, AttemptKind, AttemptOutcome, BreakHandling, ErrorClass, JobRef, Outcome, ServedBy, Usage,
+    Attempt, AttemptKind, AttemptOutcome, AttemptPlacement, BreakHandling, ErrorClass, JobRef, Outcome, ServedBy,
+    Usage,
 };
+use crate::routing::{CandidateKey, PlacementReason, WhyNot};
 use crate::signin::refresh::Refreshed;
 use crate::state::{Engine, EngineState};
 use crate::upstream::{self, RequestParts, SignedIn};
@@ -451,6 +453,13 @@ struct Run {
     /// The running attempt's `(provider, account, upstream model)`, for the traffic tally
     /// (research R15); `None` for an attempt without an account.
     sent: Option<(String, String, String)>,
+    /// The placement of this request, once decided.
+    routed: Option<crate::route::Routed>,
+    /// The step being walked: why the placement chose it and where it ranked.
+    placing: Option<AttemptPlacement>,
+    /// A whole (non-stream) answer, kept until the request's `close` line is written so the
+    /// client never has the end of the body before the journal has the record (FR-037).
+    held: Option<Reply>,
 }
 
 fn cooldown_key<'c>(c: &'c Candidate<'_>) -> (&'c str, &'c str, &'c str) {
@@ -531,6 +540,9 @@ impl Engine {
             segmented: false,
             carried: None,
             sent: None,
+            routed: None,
+            placing: None,
+            held: None,
         };
         tokio::spawn(run.run(st));
         answer.await.unwrap_or_else(|_| Err(Failure::new(500, "0router: the request ended without an answer")))
@@ -547,7 +559,16 @@ impl Run {
     }
 
     async fn run(mut self, st: Arc<EngineState>) {
-        let Err(f) = self.walk(&st).await else { return };
+        let walked = self.walk(&st).await;
+        // The `close` line is queued; the client waits until it is written. A journal that can't
+        // write never fails the request: the ack comes back with an error and the answer goes on.
+        let _ = self.engine.journal.written().wait().await;
+        if let Some(reply) = self.held.take()
+            && let Some(first) = self.first.take()
+        {
+            let _ = first.send(Ok(reply));
+        }
+        let Err(f) = walked else { return };
         if let Some(first) = self.first.take() {
             let _ = first.send(Err(f));
         } else if let Some(tx) = self.tx.take() {
@@ -566,6 +587,8 @@ impl Run {
     }
 
     async fn walk(&mut self, st: &EngineState) -> Result<(), Failure> {
+        // The `open` line is on disk before the first upstream call.
+        let _ = self.engine.journal.written().wait().await;
         let req = &self.req;
         let ty = req.media.as_ref().map_or(ModelType::Text, |m| m.ty);
         let op = match (&req.media, req.count) {
@@ -578,7 +601,6 @@ impl Run {
             r.model_type = Some(ty);
             r.target = Some(req.target.clone());
         });
-        let warm = self.engine.warm.get(&req.agent, &req.target);
         let (mut target, client_style) = (req.target.clone(), req.client.id.clone());
         // 9router's `provider/model/voice` form for a TTS target: the prefix names a model
         // declared as TTS and the whole target doesn't (an undeclared id would pass through).
@@ -610,7 +632,6 @@ impl Run {
             &target,
             ty,
             &client_style,
-            warm.as_ref(),
         ) {
             Ok(p) => p,
             Err(e) => {
@@ -620,17 +641,21 @@ impl Run {
         };
         let unified = plan.unified.clone();
         self.engine.records.update(&self.req.id, |r| r.unified_model = unified);
+        let routed = crate::route::decide(&self.engine, st, &self.req, &plan, SystemTime::now());
+        let (order, decision) = (routed.order.clone(), routed.decision.clone());
+        self.engine.records.update(&self.req.id, |r| r.decision = Some(decision));
+        self.routed = Some(routed);
         let mut tried = Vec::new();
         let mut rested: Vec<(&str, &str, &str)> = Vec::new();
         let mut prev: Option<&str> = None;
+        // What can't be tried at all is recorded first; the rest follows the placement's order.
         for step in &plan.steps {
-            let c = match step {
-                Step::Skip(s) => {
-                    self.skip(&s.provider, s.account.clone(), &s.model, &s.reason, s.class, &mut tried);
-                    continue;
-                }
-                Step::Try(c) => c,
-            };
+            if let Step::Skip(s) = step {
+                self.skip(&s.provider, s.account.clone(), &s.model, &s.reason, s.class, &mut tried);
+            }
+        }
+        for slot in &order {
+            let Step::Try(c) = &plan.steps[slot.step] else { continue };
             let key = cooldown_key(c);
             if let Some(until) = self.engine.cooldowns.cooling(key.0, key.1, key.2) {
                 rested.push(key);
@@ -651,10 +676,31 @@ impl Run {
                 Some(_) => AttemptKind::NextMember,
             };
             prev = Some(&c.provider.id);
+            self.placing = Some(AttemptPlacement { reason: slot.reason, rank: slot.rank });
             if self.candidate(st, c, kind, &mut tried).await? {
                 return Ok(());
             }
             rested.push(key);
+        }
+        // Everyone the placement left out (priority 0, a window at its floor with something else
+        // to try, …) is named with its reason: an error that lists only what was tried would hide
+        // why the rest never were (spec edge case "Every account blocked").
+        let left_out: Vec<_> = self
+            .routed
+            .as_ref()
+            .map(|r| {
+                let d = &r.decision;
+                d.candidates
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, row)| !d.order.contains(i) && row.why_not.is_some_and(|w| w != WhyNot::OutOfService))
+                    .map(|(_, row)| (row.provider.clone(), row.account.clone(), row.model.clone(), row.why_not))
+                    .collect()
+            })
+            .unwrap_or_default();
+        for (provider, account, model, why) in left_out {
+            let reason = format!("not tried: {}", why.map_or(String::new(), |w| w.to_string()));
+            self.skip(&provider, (!account.is_empty()).then_some(account), &model, &reason, None, &mut tried);
         }
         self.end_request(Outcome::Failed, None);
         let summary = format!("0router: no provider could serve {}", self.req.target);
@@ -1105,7 +1151,7 @@ impl Run {
                         return Ended::Cancelled;
                     }
                 }
-                self.tx = None;
+                // The channel stays open: it closes when `run` has the close ack.
                 return Ended::Ok(usage);
             }
             let answer = match response::for_client(&self.req.client, wire, &value, unix_now()) {
@@ -1128,11 +1174,7 @@ impl Run {
             && wire.text().is_ok_and(|t| t.framing != Framing::JsonArray);
         let relay = Relay { frames, drop_usage: frames && usage_unasked(&self.req.client, &self.req.body) };
         self.commit();
-        let end = self.pump(resp, wire, &c.endpoint.errors.stream, relay, stall, st).await;
-        if matches!(end, Ended::Ok(_)) {
-            self.tx = None;
-        }
-        end
+        self.pump(resp, wire, &c.endpoint.errors.stream, relay, stall, st).await
     }
 
     /// A non-text answer with a 2xx status: a job, the provider's bytes relayed as they
@@ -1493,8 +1535,16 @@ impl Run {
 
     /// Hands the client its answer, once.
     fn answer(&mut self, answer: Answer) {
-        if let Some(first) = self.first.take() {
-            let _ = first.send(Ok(Reply { answer, headers: std::mem::take(&mut self.forward) }));
+        if self.first.is_none() {
+            return;
+        }
+        let reply = Reply { answer, headers: std::mem::take(&mut self.forward) };
+        // A stream starts at once. A whole answer waits for the `close` line (see `run`).
+        let whole = !matches!(reply.answer, Answer::Events { .. } | Answer::Media(MediaAnswer::Bytes { .. }));
+        if whole {
+            self.held = Some(reply);
+        } else if let Some(first) = self.first.take() {
+            let _ = first.send(Ok(reply));
         }
     }
 
@@ -1626,8 +1676,19 @@ impl Run {
             usage: None,
             dropped,
             forced,
+            placement: match kind {
+                AttemptKind::SameAccountRetry => self
+                    .placing
+                    .map(|p| AttemptPlacement { reason: PlacementReason::Retry, rank: p.rank }),
+                AttemptKind::Continuation | AttemptKind::Restart => None,
+                _ => self.placing,
+            },
         };
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
+        if let (Some(routed), Some(account)) = (&self.routed, c.account) {
+            let at = CandidateKey::new(&c.provider.id, &account.name, &c.upstream_id);
+            crate::route::start(&self.engine, routed, &at, SystemTime::now());
+        }
     }
 
     /// Ends the running attempt with its provider-reported usage, and tallies it on the
@@ -1643,6 +1704,10 @@ impl Run {
             } else {
                 self.engine.history.tally.attempt(p, a, m, usage.as_ref());
             }
+        }
+        if let Some(routed) = &self.routed {
+            let tokens = usage.as_ref().map_or(0, crate::route::plain_tokens);
+            crate::route::finish(&self.engine, routed, matches!(outcome, AttemptOutcome::Ok), tokens, SystemTime::now());
         }
         self.engine.records.update(self.id(), |r| {
             if let Some(a) = r.attempts.last_mut() {
@@ -1686,6 +1751,7 @@ impl Run {
             usage: None,
             dropped: Vec::new(),
             forced: Vec::new(),
+            placement: None,
         };
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
         tried.push(Tried {
@@ -1722,7 +1788,11 @@ impl Run {
         }
         let (p, a, m) = cooldown_key(c);
         self.engine.cooldowns.succeed(p, a, m);
-        self.engine.warm.set(&self.req.agent, &self.req.target, Warm { provider: c.provider.id.clone(), account });
+        if let Some(routed) = &self.routed {
+            let at = CandidateKey::new(&c.provider.id, account.as_deref().unwrap_or(""), &c.upstream_id);
+            let cache = crate::route::cache_of(c.provider, c.account);
+            crate::route::learn(&self.engine, &self.req.agent.key, routed, &at, cache, usage.as_ref(), SystemTime::now());
+        }
     }
 }
 

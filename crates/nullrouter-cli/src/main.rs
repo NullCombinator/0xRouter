@@ -67,6 +67,8 @@ enum Command {
     Plugins(cmd::plugins::Command),
     /// Provider-reported quota and its poll history.
     Quota(cmd::quota::Args),
+    /// The routing view and per-account routing settings.
+    Routing(cmd::routing::Args),
 }
 
 /// Opens the registry, or prints the startup errors and exits 1.
@@ -93,6 +95,7 @@ fn main() -> ExitCode {
         Command::Records(c) => cmd::records::run(cli.home, c, cli.json),
         Command::Plugins(c) => cmd::plugins::run(cli.home, c, cli.json),
         Command::Quota(c) => cmd::quota::run(cli.home, c, cli.json),
+        Command::Routing(c) => cmd::routing::run(cli.home, c, cli.json),
     };
     result.unwrap_or_else(|code| code)
 }
