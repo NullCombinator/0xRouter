@@ -39,6 +39,16 @@ claude-0router      # launcher at ~/.local/bin/claude-0router
 
 The gate allows rw to `~/.claude-0router`, `~/Desktop/0router`, and standard temp paths (`/tmp`, `/dev/{null,ptmx,tty,pts,shm}`). `~/Desktop` is read-only (project browsing). `/usr`, `/bin`, `/lib`, `/etc`, and other system trees are read-only. Everything else in `$HOME` is denied. See `identity/README.md` for the full ruleset and how to recompile the gate binary.
 
+## Cloud sessions
+
+Heavy, self-contained work runs in a cloud session (`claude --cloud "<task>"`), which has 4 vCPU and 16 GB, against the pushed `main`. If the agentmemory tools are missing, you are in one. Then:
+
+- `ref/9router` is cloned by the SessionStart hook (`tools/cloud/session-start.sh`) at the fixtures' SHA. The MCP servers, headroom, `.cargo/capped` and `.nr-live/` don't exist there; skip the session protocol below.
+- Build with `CARGO_HOME=$PWD/.cargo-home`, as locally; full-workspace runs are fine.
+- Work on a `claude/` branch, never `main`, and put the decisions and lessons the session protocol would have saved under a `## For memory` heading in the PR description. The local session files them in agentmemory after review.
+
+Criterion benches stay local: cloud timings don't compare with the baselines in `target/`.
+
 ## MCP servers
 
 All four are wired in `.mcp.json`, which is gitignored because it holds the agentmemory HMAC secrets. They are enabled in `~/.claude-0router/settings.json` (`enabledMcpjsonServers`).
