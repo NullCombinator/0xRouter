@@ -28,8 +28,9 @@ def anode(name,col,x,y):
     h=hue(name)
     av=f'background:radial-gradient(circle at 20% 25%,hsl({h} 85% 70%),transparent 60%),radial-gradient(circle at 80% 85%,hsl({(h*7)%360} 80% 62%),transparent 55%),hsl({h} 60% 90%)'
     return (f'<div class="tn" {pos(x,y)}><span class="ic" style="border-radius:50%;{av};box-shadow:0 0 0 2px {col}"></span><span class="nm">{name}</span></div>')
-def router(x,y,tip=""):
-    return f'<div class="rn" {pos(x,y)}><span class="i" style="color:var(--brand-500);font-size:22px;margin-right:8px">hub</span><span>0Router</span>{tip}</div>'
+def router(x,y,tip="",active=0):
+    on=" on" if active else ""; bd=f'<span class="bdg">{active}</span>' if active else ""
+    return f'<div class="rn{on}" {pos(x,y)}><span class="i" style="font-size:22px;margin-right:8px">hub</span><span class="lbl">0Router</span>{bd}{tip}</div>'
 def tipbox(inner,cls="tt",extra=""): return f'<div class="{cls}" style="{extra}">{inner}</div>'
 def dial(x,y,frac,label,lines):
     r=17; cx=cy=28
@@ -45,10 +46,21 @@ def dial(x,y,frac,label,lines):
     return f'<div class="gd" {pos(x,y)}>{svg}{tip}</div>'
 def edge(d,stroke,w,op,dash=""):
     return f'<path d="{d}" fill="none" stroke="{stroke}" stroke-width="{w}" opacity="{op}" stroke-linecap="round"{(" stroke-dasharray=%r"%dash).replace(chr(39),chr(34)) if dash else ""}/>'
-def wrap(svg,nodes,h): return f'<div class="tf" style="height:{h}px"><div class="tfi"><svg class="te" width="1" height="1" style="overflow:visible;position:absolute;left:50%;top:50%">{svg}</svg>{nodes}</div></div>'
+def electric(d,i):
+    f=f'ef{i}'
+    s=(f'<defs><filter id="{f}" filterUnits="userSpaceOnUse" x="-700" y="-450" width="1400" height="900"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="2" result="n"><animate attributeName="baseFrequency" values="0.8;1.4;0.8" dur="0.25s" repeatCount="indefinite"/></feTurbulence><feDisplacementMap in="SourceGraphic" in2="n" scale="3.5" xChannelSelector="R" yChannelSelector="G"/></filter></defs>'
+       f'<path class="ek-halo" d="{d}" fill="none" stroke="#22d3ee" stroke-width="10" stroke-opacity=".35" stroke-linecap="round" filter="url(#{f})"/>'
+       f'<path class="ek-plasma" d="{d}" fill="none" stroke="#4ade80" stroke-width="5" stroke-opacity=".85" stroke-linecap="round" filter="url(#{f})"/>'
+       f'<path class="ek-core" d="{d}" fill="none" stroke="#f8fafc" stroke-width="2.2"/>')
+    for k in range(6):
+        col=["#fde047","#67e8f9","#fff"][k%3]
+        s+=f'<circle r="{4 if k%2==0 else 2.5}" fill="{col}" opacity=".95" style="filter:drop-shadow(0 0 4px #22d3ee)"><animateMotion dur="{0.4+k*0.08:.2f}s" repeatCount="indefinite" path="{d}" begin="{k*0.09:.2f}s"/></circle>'
+    return f'<g>{s}</g>'
+CTRL='<div class="rfc"><span class="i">add</span><span class="i">remove</span><span class="i">fit_screen</span></div>'
+def wrap(svg,nodes,h,z=1): return f'<div class="tf" style="height:{h}px"><div class="tfi" style="transform:scale({z})"><svg class="te" width="1" height="1" style="overflow:visible;position:absolute;left:50%;top:50%">{svg}</svg>{nodes}</div>{CTRL}</div>'
 NW,NH,RW,RH=190,56,130,48
 def usage():
-    n=len(PV); rx,ry=330,175; svg=""; nodes=""
+    n=len(PV); rx,ry=320,200; svg=""; nodes=""; na=0
     for i,p in enumerate(PV):
         a=-math.pi/2+2*math.pi*i/n; cx,cy=rx*math.cos(a),ry*math.sin(a)
         if abs(a+math.pi/2)<math.pi/4: s=(0,-RH/2); t=(0,NH/2); dr=(0,-1)
@@ -58,7 +70,8 @@ def usage():
         x0,y0=s; x1,y1=cx+t[0],cy+t[1]; o=0.45*(abs(x1-x0) if dr[0] else abs(y1-y0))
         d=f"M{x0},{y0} C{x0+dr[0]*o},{y0+dr[1]*o} {x1-dr[0]*o},{y1-dr[1]*o} {x1},{y1}"
         st=STATE.get(p)
-        svg+=(edge(d,RED,2.5,.9) if st=="error" else edge(d,CY,3.5,1) if st=="active" else edge(d,AMB,2,.7) if st=="last" else edge(d,"#e5e7eb",1,.3) if False else edge(d,"#e5e7eb",1,.9))
+        if st=="active": na+=1; svg+=electric(d,i)
+        else: svg+=(edge(d,RED,2.5,.9) if st=="error" else edge(d,AMB,2,.7) if st=="last" else edge(d,"#e5e7eb",1,.3))
         ok=st!="error"; c="#22c55e" if ok else RED
         tip=tipbox(f'<span class="dot" style="background:{c}"></span><b>{"Last response resolved" if ok else "Last response failed"}</b><div>{p} · '+("14:01:58 · served" if ok else "14:00:31 · upstream 529, fell back")+'</div>',"tt tp",f"border-color:{c}")
         nodes+=pnode(p,cx,cy,st,tip)
@@ -66,7 +79,7 @@ def usage():
     for a,p,ov,tt,p95,nr,um,ok in FL[:5]:
         boxes+=f'<div class="cx"><b>{p}</b><div>unified model <b>{um}</b></div><div>combo <b>none</b> <span class="m">(not built yet)</span></div></div>'
     rtip=tipbox(f'<div class="cbh">Connections routed now</div>{boxes}',"tt tr")
-    return wrap(svg,nodes+router(0,0,rtip),480)
+    return wrap(svg,nodes+router(0,0,rtip,na),480,.8)
 def landscape():
     ax,px=-400,400; n=len(AG); svg=""; nodes=""; dials=""
     ay={a:-165+i*110 for i,(a,_) in enumerate(AG)}; col=dict(AG)
