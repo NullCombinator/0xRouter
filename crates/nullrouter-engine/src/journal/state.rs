@@ -143,7 +143,39 @@ pub fn forget_agent(home: &Path, agent: &str) -> std::io::Result<usize> {
 
 /// Drops the lines of `provider/account` from the warm file while no server is running.
 pub fn forget_account(home: &Path, account: &str) -> std::io::Result<usize> {
-    rewrite_warm(home, |s| s.at.account_key() == account)
+    let gone = rewrite_warm(home, |s| s.at.account_key() == account)?;
+    rewrite_ledger(home, account)?;
+    Ok(gone)
+}
+
+/// Drops `account`'s deficits from `routing/ledger.jsonl`: a running server does the same in
+/// memory (`route::drop_account`). A line left with no deficits goes; other lines stay as written.
+fn rewrite_ledger(home: &Path, account: &str) -> std::io::Result<()> {
+    let mut changed = false;
+    let mut body = String::new();
+    for raw in text(home, "ledger.jsonl").lines() {
+        let edited = serde_json::from_str::<Value>(raw).ok().and_then(|mut v| {
+            if v["t"] != "ledger" {
+                return None;
+            }
+            v["deficits"].as_object_mut()?.remove(account)?;
+            Some(v)
+        });
+        match edited {
+            Some(v) => {
+                changed = true;
+                if v["deficits"].as_object().is_some_and(|d| !d.is_empty()) {
+                    body += &(v.to_string() + "\n");
+                }
+            }
+            None => body += &(raw.to_owned() + "\n"),
+        }
+    }
+    if !changed {
+        return Ok(());
+    }
+    let _lock = super::records::lock(home, super::records::LOCK_WAIT)?;
+    super::writer::replace_file(&home.join("routing").join("ledger.jsonl"), &body)
 }
 
 fn rewrite_warm(home: &Path, drop: impl Fn(&Stored) -> bool) -> std::io::Result<usize> {
@@ -236,5 +268,29 @@ mod tests {
         assert_eq!(left.len(), 1);
         assert_eq!((left[0].agent.as_str(), left[0].at.account.as_str()), ("k2", "max"));
         assert_eq!(forget_agent(home.path(), "nobody").unwrap(), 0);
+    }
+
+    #[test]
+    fn forgetting_an_account_also_drops_its_ledger_entries() {
+        let home = tempfile::tempdir().unwrap();
+        fs::create_dir_all(home.path().join("routing")).unwrap();
+        let w = clock::parse_rfc3339("2026-10-04T05:00:00Z").unwrap();
+        let at = clock::parse_rfc3339("2026-10-04T09:00:00Z").unwrap();
+        let both = BTreeMap::from([("anthropic/max".to_owned(), 5.0), ("anthropic/pro".to_owned(), -5.0)]);
+        let only = BTreeMap::from([("anthropic/pro".to_owned(), 3.0)]);
+        let body: String = [
+            ledger_line("sonnet", Tier::Subscription, w, &both, at),
+            ledger_line("haiku", Tier::Subscription, w, &only, at),
+        ]
+        .iter()
+        .map(|l| l.to_string() + "\n")
+        .collect();
+        fs::write(home.path().join("routing/ledger.jsonl"), body).unwrap();
+        forget_account(home.path(), "anthropic/pro").unwrap();
+        let left = load(home.path()).ledgers;
+        assert_eq!(left.len(), 1, "a line with no deficits left goes");
+        assert_eq!(left[0].target, "sonnet");
+        assert_eq!(left[0].deficits.keys().collect::<Vec<_>>(), ["anthropic/max"]);
+        assert!(!fs::read_to_string(home.path().join("routing/ledger.jsonl")).unwrap().contains("anthropic/pro"));
     }
 }

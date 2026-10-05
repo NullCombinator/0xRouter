@@ -238,3 +238,43 @@ async fn serve(home: &Path) -> Serving {
     }
     panic!("the server never came up");
 }
+
+#[test]
+fn a_clients_escape_sequences_never_reach_the_terminal() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    segment(
+        h,
+        "2026-10-04",
+        &[
+            json!({"v":1,"t":"open","id":"rq_01","arrived":"2026-10-04T09:00:00Z","agent":"key_a","session":"s\u{1b}[31mred",
+                "style":"anthropic-messages","op":"generate","type":"text","target":"evil\u{1b}]0;owned\u{7}"}),
+            attempt("rq_01", "anthropic", "max", "warm"),
+        ],
+    );
+    for args in [vec!["records", "list"], vec!["records", "show", "rq_01"]] {
+        let o = nr(h, &args);
+        assert!(o.status.success(), "{args:?}: {}", text(&o));
+        assert!(!out(&o).chars().any(|c| c.is_control() && c != '\n'), "{args:?}: {:?}", out(&o));
+        assert!(out(&o).contains("evil]0;owned"), "{args:?}: {}", out(&o));
+    }
+    // JSON keeps the text exactly; its escapes are printable.
+    let o = nr(h, &["--json", "records", "show", "rq_01"]);
+    assert!(out(&o).contains("\\u001b"), "{}", out(&o));
+}
+
+#[test]
+fn forget_says_so_when_the_routing_state_could_not_be_rewritten() {
+    let dir = seeded();
+    let h = dir.path();
+    std::fs::create_dir_all(h.join("routing")).unwrap();
+    let warm = json!({"v":1,"t":"warm","agent":"key_a","hash":"00112233445566778899aabbccddeeff","provider":"anthropic",
+        "account":"max","model":"claude-sonnet-4-5","prefix_tokens":100,"last_used":"2026-10-04T10:00:00Z"});
+    std::fs::write(h.join("routing/warm.jsonl"), warm.to_string() + "\n").unwrap();
+    // The replacement file can't be written: its temporary name is a directory.
+    std::fs::create_dir(h.join("routing/warm.jsonl.tmp")).unwrap();
+    let o = nr(h, &["records", "forget", "--agent", "key_a"]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(text(&o).contains("routing state could not be rewritten"), "{}", text(&o));
+    assert_eq!(state::load(h).warm.len(), 1, "the fingerprint is still there, and the command said so");
+}

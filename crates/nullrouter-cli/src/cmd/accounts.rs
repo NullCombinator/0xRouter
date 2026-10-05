@@ -235,7 +235,9 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     // A running server drops the account's fingerprints and ledger entries when it reloads; with
     // none running, the warm file is edited here.
     if removed && status != "applied" {
-        let _ = nullrouter_engine::journal::state::forget_account(home.path(), &format!("{provider}/{name}"));
+        if let Err(e) = nullrouter_engine::journal::state::forget_account(home.path(), &format!("{provider}/{name}")) {
+            eprintln!("note: the routing state of {provider}/{name} could not be cleaned: {e}");
+        }
     }
     if as_json {
         println!("{}", json!({"provider": provider, "name": name, "note": note, "status": status}));

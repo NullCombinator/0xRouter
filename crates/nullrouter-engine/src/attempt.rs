@@ -598,7 +598,7 @@ impl Run {
         self.engine.records.update(&req.id, |r| {
             r.op = Some(op);
             r.model_type = Some(ty);
-            r.target = Some(req.target.clone());
+            r.target = Some(crate::records::plain(&req.target));
         });
         let (mut target, client_style) = (req.target.clone(), req.client.id.clone());
         // 9router's `provider/model/voice` form for a TTS target: the prefix names a model

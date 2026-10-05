@@ -110,6 +110,7 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
             if as_json {
                 println!("{:#}", Value::Array(found));
             } else {
+                found.iter_mut().for_each(scrub);
                 for r in &found {
                     println!("{}", line(r));
                 }
@@ -124,10 +125,11 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
                 .map(|a| a["record"].clone());
             let mut found = live.or_else(|| records::get(home.path(), &id)).into_iter().collect::<Vec<_>>();
             settle_open(&mut found, running);
-            let Some(record) = found.pop() else { return Err(fail(format!("no record {id}"))) };
+            let Some(mut record) = found.pop() else { return Err(fail(format!("no record {id}"))) };
             if as_json {
                 println!("{record:#}");
             } else {
+                scrub(&mut record);
                 print!("{}", show(&record, &names));
             }
         }
@@ -153,10 +155,13 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
             }
             let gone = records::forget(home.path(), &who, lock_wait()).map_err(|e| fail(lock_message(&e)))?;
             if !running {
-                let _ = match &who {
+                match &who {
                     records::Who::Account(a) => state::forget_account(home.path(), a),
                     records::Who::Agent(k) => state::forget_agent(home.path(), k),
-                };
+                }
+                .map_err(|e| {
+                    fail(format!("{gone} records forgotten, but the routing state could not be rewritten: {e}"))
+                })?;
             }
             println!("forgot {gone} records");
         }
@@ -178,6 +183,17 @@ fn ask(home: &OperatorHome, req: &Value) -> Result<Value, ExitCode> {
         Ok(a) => Err(fail(a["error"].as_str().unwrap_or("the server refused the request"))),
         Err(e @ CallError::NoServer(_)) => Err(fail(e)),
         Err(e) => Err(fail(e)),
+    }
+}
+
+/// Drops control characters from every string in `v`. A record carries text that a client or a
+/// provider chose, and the terminal obeys escape sequences in it.
+fn scrub(v: &mut Value) {
+    match v {
+        Value::String(s) if s.chars().any(char::is_control) => *s = s.chars().filter(|c| !c.is_control()).collect(),
+        Value::Array(a) => a.iter_mut().for_each(scrub),
+        Value::Object(m) => m.values_mut().for_each(scrub),
+        _ => {}
     }
 }
 
