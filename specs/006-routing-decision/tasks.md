@@ -323,7 +323,7 @@ of the same accounts. A unified model with 200k and 128k members prints a note a
 - [ ] T096 `/rust-parity-audit` on `crates/nullrouter-engine/src/attempt.rs` and `src/plan.rs` against 9router's retry and fallback path (`open-sse/handlers/chatCore.js`, `src/sse/services/auth.js`, `open-sse/services/combo.js`); D-006-1..3 are deliberate and must not be reported as gaps; fix High findings.
 - [ ] T097 Security review of the slice diff (`/security-review`): journal and routing file modes, `records.lock`, temp-then-rename rewrites, the salt, fingerprints holding no content, `forget`, redaction of error reasons in journal lines.
 - [ ] T098 Run [quickstart.md](quickstart.md) §1–4 end to end; fix what fails.
-- [ ] T099 `cargo fmt --all`, then `nice cargo clippy -p <crate> -j 2 -- -D warnings` crate by crate.
+- [X] T099 `cargo fmt --all`, then `nice cargo clippy -p <crate> -j 2 -- -D warnings` crate by crate.
 
 ---
 
