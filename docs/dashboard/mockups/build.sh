@@ -3,9 +3,9 @@
 a() { [ "$1" = "$2" ] && echo on; }
 top() { # title subtitle icon activeIdx
 cat <<EOF
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>$1 · 0Router Proxy (mockup)</title><link rel="stylesheet" href="mockup.css?v=$(date +%s)"></head><body>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>$1 · 0Router Proxy (mockup)</title><link rel="icon" type="image/png" href="logo-mark.png"><link rel="stylesheet" href="mockup.css?v=$(date +%s)"></head><body>
 <input type="checkbox" id="nav"><label class="ov" for="nav"></label>
-<aside><div class="logo"><div class="t"><span class="i">hub</span></div><div><b>0Router Proxy</b><small>v0.7.0</small></div></div>
+<aside><div class="logo"><div class="t"><img src="logo-mark.png" alt="0Router"></div><div><b>0Router Proxy</b><small>v0.7.0</small></div></div>
 <nav>
 <a href="endpoint.html" class="$(a 1 $4)"><span class="i">api</span>Endpoint &amp; Key</a>
 <a href="providers.html" class="$(a 2 $4)"><span class="i">dns</span>Providers</a>
@@ -95,7 +95,7 @@ echo '<table><tr><th>When</th><th>Agent</th><th>Model → placed on</th><th>Why<
 bot; } > usage.html
 
 { top "Quota Tracker" "Track your API quota limits" data_usage 5
-for q in "anthropic / personal|62|polled 13:58|resets in 3 h 12 m (17:14)|ok|active" "xai / team|91|polled 14:01|resets in 41 m (14:43)|warn|near limit" "openrouter / main|18|estimated|resets in 2 d (Oct 7)|neu|cooling"; do IFS='|' read n p s r k t <<<"$q"; echo "<div class=\"card\"><div class=\"row\"><b>$n</b><span class=\"badge $k\">$t</span><span class=\"m sp\">$p% used · $s</span></div><div class=\"bar\" style=\"margin:12px 0 8px\"><i style=\"width:$p%\"></i></div><code>$r</code></div>"; done
+python3 quota_page.py
 bot; } > quota.html
 
 { top "Settings" "Read-only view of your configuration" settings 6

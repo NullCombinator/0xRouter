@@ -30,7 +30,7 @@ def anode(name,col,x,y):
     return (f'<div class="tn" {pos(x,y)}><span class="ic" style="border-radius:50%;{av};box-shadow:0 0 0 2px {col}"></span><span class="nm">{name}</span></div>')
 def router(x,y,tip="",active=0):
     on=" on" if active else ""; bd=f'<span class="bdg">{active}</span>' if active else ""
-    return f'<div class="rn{on}" {pos(x,y)}><span class="i" style="font-size:22px;margin-right:8px">hub</span><span class="lbl">0Router</span>{bd}{tip}</div>'
+    return f'<div class="rn{on}" {pos(x,y)}><img class="rlg" src="logo-mark.png" alt=""><span class="lbl">0Router</span>{bd}{tip}</div>'
 def tipbox(inner,cls="tt",extra=""): return f'<div class="{cls}" style="{extra}">{inner}</div>'
 def dial(x,y,frac,label,lines):
     r=17; cx=cy=28
