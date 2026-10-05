@@ -286,7 +286,8 @@ Compare screenshots of each component with 9router's.
   MUST NOT be readable from the home directory, logs, records, CLI output (beyond the one time it
   is issued), or any page.
 - **FR-006**: No dashboard page and no dashboard data MUST be served without a valid token. The
-  only page served without one is the sign-in page.
+  only things served without one are the sign-in page and the static style and font files, which
+  carry no 0router data.
 - **FR-007**: A browser that entered the token once MUST stay signed in until the token is
   replaced or the operator clears the browser's data.
 - **FR-008**: Repeated wrong tokens MUST be slowed down.
@@ -436,8 +437,9 @@ the user, as long as nothing the user sees changes.
   decision)*
 - SC-003's 1 ms bound and SC-007's 1 second page load are targets Claude set at clarify.
   *(technical decision)*
-- The records page shows the same default number of records as `records list`, with paging
-  further back. *(technical decision)*
+- The records page shows 50 records at a time, newest first, with paging further back. Its CLI
+  equivalent is `records list --limit 50 [--before <id>]`; `records list` itself has no default
+  limit. *(technical decision)*
 - The last four characters of an agent key, a provider key or a sign-in token are shown, as the
   CLI shows them (an account added from an environment variable shows the variable's name). They
   identify a secret; they are not enough to use it.

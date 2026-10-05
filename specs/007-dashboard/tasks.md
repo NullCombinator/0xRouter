@@ -76,7 +76,7 @@ workspace runs belong to CI or cloud sessions.
 ### Dashboard skeleton
 
 - [ ] T016 Implement `spawn(engine, settings) -> DashboardHandle` in `crates/nullrouter-dashboard/src/lib.rs`: bind its own `TcpListener` and run its own axum router in its own task. A bind failure is logged and stored as `bound: Err(reason)`, not returned (R8)
-- [ ] T017 Implement the build guard in `crates/nullrouter-dashboard/src/guard.rs`: a semaphore of 2 permits (a waiter gets 503 "busy, reload" after 5 s), a 10 s timeout, and the build run in a spawned task so a panic becomes that page's 500 (contracts/dashboard-http.md "Errors")
+- [ ] T017 Implement the build guard in `crates/nullrouter-dashboard/src/guard.rs`: a semaphore of 2 permits (a waiter gets 503 "busy, reload" after 5 s), a 10 s timeout, and the build run in a spawned task so a panic becomes that page's 500 (contracts/dashboard-http.md "Errors"). Add the `fault-injection` Cargo feature (off by default) with three test hooks in a build: panic, sleep, and pause until the test releases it
 - [ ] T018 Implement the per-build page snapshot in `crates/nullrouter-dashboard/src/frame.rs`: one `engine.snapshot()`, `as_of`, and `Live::InProcess` (R11). Add the shared frame (navigation with the four pages and "Not built yet": Model tests, Combos; the title; the "as of" line), `lang="en"`, and the security headers from R7 on every response
 - [ ] T019 [P] Implement `crates/nullrouter-dashboard/src/time.rs` with `jiff`: render an RFC 3339 instant as `<time datetime="…Z">YYYY-MM-DD HH:MM:SS</time>` in the machine's zone, and the zone label `CEST, Europe/Berlin` (R10). Unit tests use a fixed `TZ` and cover a DST change
 - [ ] T020 Add the `dashboard.status` op to `crates/nullrouter-server/src/operator.rs`, answering `{"ok":true,"enabled","listen","bound","error"?,"token_issued"?}` from a status cell the dashboard handle fills in
@@ -94,7 +94,7 @@ workspace runs belong to CI or cloud sessions.
 - [ ] T023 Write `docs/dashboard/style-guide.md`: palette, type, spacing, radii, shadows, components (button, card, badge, table, input, select, navigation, sidebar, empty state, page header), the status → badge table from contracts/style-guide.md, and "What is not taken from 9router" (layout, dark theme, JS-only effects)
 - [ ] T024 Write the generator test `crates/nullrouter-dashboard/tests/style_guide.rs::tokens_css_is_generated`, which regenerates `style/tokens.css` from `tokens.toml` and fails on any difference, then generate `crates/nullrouter-dashboard/style/tokens.css`
 - [ ] T025 [P] Embed Inter (Latin subset, variable woff2) as `crates/nullrouter-dashboard/assets/inter-latin.woff2`, and about 15 Material Symbols Outlined SVG paths in `crates/nullrouter-dashboard/assets/icons.rs`, with the OFL 1.1 and Apache 2.0 texts in `crates/nullrouter-dashboard/assets/LICENSES/`. Serve them from `/assets/<content-hash>/…` with `Cache-Control: public, max-age=86400, immutable`
-- [ ] T026 Write `crates/nullrouter-dashboard/style/dashboard.css` using only `var(--token)`, keywords, `0`, and layout percentages. Write `crates/nullrouter-dashboard/src/components.rs` (maud): card, badge (variants default, success, warning, error, info), table, empty state (names a CLI command), filter form, pager, page header
+- [ ] T026 Write `crates/nullrouter-dashboard/style/dashboard.css` using only `var(--token)`, keywords, `0`, and layout percentages. Write `crates/nullrouter-dashboard/src/components.rs` (maud): card, badge (variants default, success, warning, error, info), table, empty state (names a CLI command), filter form, pager, page header. A long name (account, unified model, agent key) is either shown in full or truncated with the full name in the element's `title`; truncation keeps the end of the name, so two names that share a long prefix never look the same (spec Edge Cases)
 
 **Checkpoint**: views are shared, the dashboard binds and renders an empty frame, and the style is in place. User stories can start.
 
@@ -152,7 +152,7 @@ plus `check`'s account-related warnings.
 ### Tests for User Story 1 ⚠️
 
 - [ ] T034 [US1] Build the agreement fixture home in `crates/nullrouter-dashboard/tests/common/fixture.rs` using the engine testkit:
-  - accounts: signed in; needs sign-in; refused; cooling on one model; disabled; priority 0; estimated; pay-as-you-go with no price; pending first poll; stale;
+  - accounts: signed in; needs sign-in; refused; cooling on one model; disabled; priority 0; estimated; pay-as-you-go with no price; pending first poll; stale; two accounts whose 60-character names differ only in their last characters;
   - two agent keys, one revoked and one with its own break behaviour;
   - a unified model whose members differ in `context_length`, a dropped unified model, a pending plugin conflict, a skipped plugin;
   - records: warm, cold, overflow, failed then fallback, usage missing, in flight, cut short;
@@ -163,6 +163,8 @@ plus `check`'s account-related warnings.
   - every scalar of `accounts list --long --json` and `quota --json` appears in `/accounts`, with times compared as instants via `datetime`;
   - each account-subject `check --json` item appears in `check`'s words;
   - each needs-sign-in account shows `nullrouter accounts signin <p> <n>`;
+  - the two long-named accounts are told apart: each full name is on the page, and their visible texts differ;
+  - `consistent_snapshot`: with the fault-injection pause (T058's feature) holding a build halfway, a reload is triggered through the operator socket; the finished page carries one generation in every view, the build's, and the "as of" time is the snapshot's (FR-018, spec Edge Cases);
   - an empty home shows the `accounts add` empty state
 
 ### Implementation for User Story 1
@@ -268,7 +270,7 @@ review (quickstart step 7).
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T058 Write the isolation load test `crates/nullrouter-dashboard/tests/isolation.rs` (`#[ignore]`, run with `--release`). It sends 1,000 client requests to the testkit mock provider while 4 workers fetch pages in a loop, and again with a `fault-injection` cfg making every build panic or sleep 20 s. It asserts p95 within 1 ms of the dashboard-off run and 0 extra failures, and that a taken dashboard port still serves clients (SC-003, FR-012, FR-013)
+- [ ] T058 Write the isolation load test `crates/nullrouter-dashboard/tests/isolation.rs` (`#[ignore]`, run with `--release`). It sends 1,000 client requests to the testkit mock provider while 4 workers fetch pages in a loop, and again with the `fault-injection` Cargo feature of `nullrouter-dashboard` (off by default; added in T017; panic, sleep 20 s, or pause until released) making every build panic or sleep 20 s. It asserts p95 within 1 ms of the dashboard-off run and 0 extra failures, and that a taken dashboard port still serves clients (SC-003, FR-012, FR-013)
 - [ ] T059 [P] Extend the secrets sentinel `crates/nullrouter-server/tests/secrets.rs` (or a new `crates/nullrouter-dashboard/tests/secrets.rs` reusing its helpers) to scan every page and response of the fixture, the logs and the home directory for provider secrets beyond last four, OAuth client secrets, full agent keys, the dashboard token, and prompt text (SC-004)
 - [ ] T060 [P] Write `crates/nullrouter-dashboard/tests/offline.rs`: every page's HTML and CSS references only `/assets/…` on the dashboard, with no `http(s)://` URL in `src`, `href` or `url()` (SC-008, FR-011)
 - [ ] T061 [P] Add the Criterion bench `crates/nullrouter-dashboard/benches/pages.rs` (each page on a home with 50 accounts, 20 unified models, 100k records; target < 1 s, SC-007), and add the result to `specs/007-dashboard/bench-baseline.md`
