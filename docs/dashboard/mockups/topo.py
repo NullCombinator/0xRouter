@@ -1,92 +1,89 @@
 #!/usr/bin/env python3
-"""Topology landscape mockup (sample data). mode: gauges (Endpoint & Key) or usage (hover boxes)."""
+"""Traffic graph mockups in 9router's ProviderTopology style (sample traffic, real plugin names and colors).
+usage   : circular layout, router in the middle, providers around it, no agent nodes.
+gauges  : same node/edge styles, agents on the left, providers on the right, latency dials on the hops."""
 import math, sys, hashlib
-AG=[("claude-code","#E56A4A",70),("codex","#3b82f6",150),("hermes-research","#10b981",230),("ci-bot","#a855f7",310)]
-PV=[("anthropic",45,"ok","14:01:58"),("xai",115,"ok","14:01:40"),("openrouter",185,"ok","14:01:12"),("opencode-zen",255,"ok","13:47:03"),("glm",325,"err","14:00:31"),("mistral",395,"ok","yesterday")]
-# flows: agent, provider, router overhead ms, ttft ms, p95 ttft, requests, unified model, last outcome
-FL=[("claude-code","anthropic",4,412,1900,512,"sonnet","ok"),("claude-code","openrouter",5,1900,3100,100,"sonnet","ok"),
-    ("codex","xai",3,690,1500,70,"gpt-5","ok"),("codex","openrouter",4,820,2200,18,"sonnet","ok"),
-    ("hermes-research","anthropic",6,380,1300,30,"sonnet","ok"),("hermes-research","opencode-zen",5,1250,2800,11,"glm-4.6","ok"),
-    ("ci-bot","glm",4,2400,5200,6,"glm-4.6","err")]
-W,H=1000,440; RX,RY=500,205
+from plugdata import color, icon
+PV=["anthropic","xai","grok-cli","openrouter","opencode-zen","elevenlabs"]
+STATE={"anthropic":"active","openrouter":"last","elevenlabs":"error"}   # in flight / last response / failed
+AG=[("claude-code","#E56A4A"),("codex","#3b82f6"),("hermes-research","#10b981"),("ci-bot","#a855f7")]
+# agent, provider, router overhead ms, ttft ms, p95 ttft, requests, unified model, last ok
+FL=[("claude-code","anthropic",4,412,1900,512,"sonnet",True),("claude-code","openrouter",5,1900,3100,100,"sonnet",True),
+    ("codex","xai",3,690,1500,70,"grok",True),("codex","openrouter",4,820,2200,18,"sonnet",True),
+    ("hermes-research","anthropic",6,380,1300,30,"sonnet",True),("hermes-research","opencode-zen",5,1250,2800,11,"glm",True),
+    ("ci-bot","elevenlabs",4,2400,5200,6,"tts-flash",False)]
+CY,AMB,RED="#22d3ee","#f59e0b","#ef4444"
 def hue(n): return int(hashlib.md5(n.encode()).hexdigest(),16)%360
-def bez(p0,p1,p2,p3,t):
-    return tuple((1-t)**3*a+3*(1-t)**2*t*b+3*(1-t)*t*t*c+t**3*d for a,b,c,d in zip(p0,p1,p2,p3))
-def gauge(cx,cy,frac,label,lines,color="#0a0a0a"):
-    r=17
-    def pt(a): return (cx+r*math.cos(math.radians(a)), cy-r*math.sin(math.radians(a)))
-    def arc(a0,a1,col):
-        x0,y0=pt(a0); x1,y1=pt(a1)
-        return f'<path d="M{x0:.1f},{y0:.1f} A{r},{r} 0 0 1 {x1:.1f},{y1:.1f}" fill="none" stroke="{col}" stroke-width="5"/>'
-    z=arc(180,90,"#22c55e")+arc(90,36,"#eab308")+arc(36,0,"#ef4444")
-    a=180-180*min(max(frac,0),1); nx,ny=pt(a); nx=cx+(nx-cx)*.85; ny=cy+(ny-cy)*.85
-    w=max(len(l) for l in lines)*6.1+20; h=len(lines)*16+14
-    tx=cx-w/2; ty=cy-r-h-14
-    tip=f'<g class="tipg"><rect x="{tx:.0f}" y="{ty:.0f}" width="{w:.0f}" height="{h}" rx="8" fill="#fff" stroke="#e5e7eb"/>'+''.join(f'<text x="{tx+10:.0f}" y="{ty+19+i*16:.0f}" font-size="11" fill="{"#0a0a0a" if i==0 else "#6B7280"}" font-weight="{600 if i==0 else 400}">{l}</text>' for i,l in enumerate(lines))+'</g>'
-    return (f'<g class="gw"><circle cx="{cx:.1f}" cy="{cy:.1f}" r="24" fill="#fff" fill-opacity=".92" stroke="#e5e7eb"/>{z}'
-            f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{nx:.1f}" y2="{ny:.1f}" stroke="#0a0a0a" stroke-width="1.6" stroke-linecap="round"/><circle cx="{cx:.1f}" cy="{cy:.1f}" r="2.5" fill="#0a0a0a"/>'
-            f'<text x="{cx:.1f}" y="{cy+17:.1f}" text-anchor="middle" font-size="9" fill="#6B7280">{label}</text>{tip}</g>')
 def fmt(ms): return f"{ms} ms" if ms<1000 else f"{ms/1000:.1f} s"
-def build(mode):
-    out=[f'<svg class="topo" viewBox="0 0 {W} {H}" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Inter,system-ui,sans-serif">']
-    col={a:c for a,c,_ in AG}; ay={a:y for a,_,y in AG}; py={p:y for p,y,_,_ in PV}
-    used_p={}
-    # links
-    for a,p,ov,tt,p95,n,um,last in FL:
-        c=col[a]; y0=ay[a]
-        d=f'M200,{y0} C330,{y0} 370,{RY} {RX-48},{RY}'
-        out.append(f'<path d="{d}" fill="none" stroke="{c}" stroke-width="2" stroke-dasharray="6 5" opacity=".85"/>')
+def bez(p0,c1,c2,p1,t):
+    return tuple((1-t)**3*a+3*(1-t)**2*t*b+3*(1-t)*t*t*c+t**3*d for a,b,c,d in zip(p0,c1,c2,p1))
+def pos(x,y,extra=""): return f'style="left:calc(50% + {x:.0f}px);top:calc(50% + {y:.0f}px);{extra}"'
+def pnode(name,x,y,state=None,tip=""):
+    c=color(name); on=state=="active"
+    st=f"border-color:{c};box-shadow:0 0 16px {c}40;" if on else ""
+    ping=f'<span class="ping"><i style="background:{c}"></i><b style="background:{c}"></b></span>' if on else ""
+    return (f'<div class="tn" {pos(x,y,st)}><span class="ic" style="background:{c}26;color:{c}">{icon(name)}</span>'
+            f'<span class="nm" style="{"color:"+c if on else ""}">{name}</span>{ping}{tip}</div>')
+def anode(name,col,x,y):
+    h=hue(name)
+    av=f'background:radial-gradient(circle at 20% 25%,hsl({h} 85% 70%),transparent 60%),radial-gradient(circle at 80% 85%,hsl({(h*7)%360} 80% 62%),transparent 55%),hsl({h} 60% 90%)'
+    return (f'<div class="tn" {pos(x,y)}><span class="ic" style="border-radius:50%;{av};box-shadow:0 0 0 2px {col}"></span><span class="nm">{name}</span></div>')
+def router(x,y,tip=""):
+    return f'<div class="rn" {pos(x,y)}><span class="i" style="color:var(--brand-500);font-size:22px;margin-right:8px">hub</span><span>0Router</span>{tip}</div>'
+def tipbox(inner,cls="tt",extra=""): return f'<div class="{cls}" style="{extra}">{inner}</div>'
+def dial(x,y,frac,label,lines):
+    r=17; cx=cy=28
+    def pt(a,rr=r): return (cx+rr*math.cos(math.radians(a)), cy-rr*math.sin(math.radians(a)))
+    def arc(a0,a1,c):
+        x0,y0=pt(a0); x1,y1=pt(a1); return f'<path d="M{x0:.1f},{y0:.1f} A{r},{r} 0 0 1 {x1:.1f},{y1:.1f}" fill="none" stroke="{c}" stroke-width="5"/>'
+    z=arc(180,90,"#22c55e")+arc(90,36,"#eab308")+arc(36,0,"#ef4444")
+    nx,ny=pt(180-180*min(max(frac,0),1),r*.85)
+    svg=(f'<svg width="56" height="56" viewBox="0 0 56 56"><circle cx="28" cy="28" r="25" fill="#fff" fill-opacity=".95" stroke="#e5e7eb"/>{z}'
+         f'<line x1="28" y1="28" x2="{nx:.1f}" y2="{ny:.1f}" stroke="#0a0a0a" stroke-width="1.6" stroke-linecap="round"/><circle cx="28" cy="28" r="2.5" fill="#0a0a0a"/>'
+         f'<text x="28" y="48" text-anchor="middle" font-size="9" fill="#6B7280">{label}</text></svg>')
+    tip=tipbox(f'<b>{lines[0]}</b>'+''.join(f'<div>{l}</div>' for l in lines[1:]))
+    return f'<div class="gd" {pos(x,y)}>{svg}{tip}</div>'
+def edge(d,stroke,w,op,dash=""):
+    return f'<path d="{d}" fill="none" stroke="{stroke}" stroke-width="{w}" opacity="{op}" stroke-linecap="round"{(" stroke-dasharray=%r"%dash).replace(chr(39),chr(34)) if dash else ""}/>'
+def wrap(svg,nodes,h): return f'<div class="tf" style="height:{h}px"><div class="tfi"><svg class="te" width="1" height="1" style="overflow:visible;position:absolute;left:50%;top:50%">{svg}</svg>{nodes}</div></div>'
+NW,NH,RW,RH=190,56,130,48
+def usage():
+    n=len(PV); rx,ry=330,175; svg=""; nodes=""
+    for i,p in enumerate(PV):
+        a=-math.pi/2+2*math.pi*i/n; cx,cy=rx*math.cos(a),ry*math.sin(a)
+        if abs(a+math.pi/2)<math.pi/4: s=(0,-RH/2); t=(0,NH/2); dr=(0,-1)
+        elif abs(a-math.pi/2)<math.pi/4: s=(0,RH/2); t=(0,-NH/2); dr=(0,1)
+        elif cx>0: s=(RW/2,0); t=(-NW/2,0); dr=(1,0)
+        else: s=(-RW/2,0); t=(NW/2,0); dr=(-1,0)
+        x0,y0=s; x1,y1=cx+t[0],cy+t[1]; o=0.45*(abs(x1-x0) if dr[0] else abs(y1-y0))
+        d=f"M{x0},{y0} C{x0+dr[0]*o},{y0+dr[1]*o} {x1-dr[0]*o},{y1-dr[1]*o} {x1},{y1}"
+        st=STATE.get(p)
+        svg+=(edge(d,RED,2.5,.9) if st=="error" else edge(d,CY,3.5,1) if st=="active" else edge(d,AMB,2,.7) if st=="last" else edge(d,"#e5e7eb",1,.3) if False else edge(d,"#e5e7eb",1,.9))
+        ok=st!="error"; c="#22c55e" if ok else RED
+        tip=tipbox(f'<span class="dot" style="background:{c}"></span><b>{"Last response resolved" if ok else "Last response failed"}</b><div>{p} · '+("14:01:58 · served" if ok else "14:00:31 · upstream 529, fell back")+'</div>',"tt tp",f"border-color:{c}")
+        nodes+=pnode(p,cx,cy,st,tip)
+    boxes=''
+    for a,p,ov,tt,p95,nr,um,ok in FL[:5]:
+        boxes+=f'<div class="cx"><b>{p}</b><div>unified model <b>{um}</b></div><div>combo <b>none</b> <span class="m">(not built yet)</span></div></div>'
+    rtip=tipbox(f'<div class="cbh">Connections routed now</div>{boxes}',"tt tr")
+    return wrap(svg,nodes+router(0,0,rtip),480)
+def landscape():
+    ax,px=-400,400; n=len(AG); svg=""; nodes=""; dials=""
+    ay={a:-165+i*110 for i,(a,_) in enumerate(AG)}; col=dict(AG)
+    py={p:-200+i*80 for i,p in enumerate(PV)}
+    for a,c in AG:
+        y0=ay[a]; x0=ax+NW/2; x1=-RW/2; o=(x1-x0)*.45
+        svg+=edge(f"M{x0},{y0} C{x0+o},{y0} {x1-o},0 {x1},0",c,2.5,.9,"7 6")
+        nodes+=anode(a,c,ax,y0)
+        v=max(f[2] for f in FL if f[0]==a); gx,gy=bez((x0,y0),(x0+o,y0),(x1-o,0),(x1,0),.38)
+        dials+=dial(gx,gy,v/40,fmt(v),[f"{a} → router",f"router overhead {fmt(v)}","time before the first upstream attempt","includes any middleware","as of 14:02:11"])
     seen={}
-    for a,p,ov,tt,p95,n,um,last in FL:
-        k=seen.get(p,0); seen[p]=k+1; off=(k*7)-3
-        y1=py[p]+off
-        out.append(f'<path d="M{RX+48},{RY} C{RX+170},{RY} {RX+210},{y1} 800,{y1}" fill="none" stroke="{col[a]}" stroke-width="2.4" opacity=".9"/>')
-    # agent nodes
-    for a,c,y in AG:
-        h=hue(a)
-        out.append(f'<g><rect x="30" y="{y-22}" width="170" height="44" rx="10" fill="#fff" stroke="#e5e7eb"/><circle cx="54" cy="{y}" r="13" fill="hsl({h} 70% 75%)"/><circle cx="54" cy="{y}" r="13" fill="none" stroke="{c}" stroke-width="2"/><text x="76" y="{y+4}" font-size="13" font-weight="600" fill="#0a0a0a">{a}</text></g>')
-    # router
-    rtip=''
-    if mode=='usage':
-        rows=[f'{a}  →  {um} (unified)  →  {p}' for a,p,ov,tt,p95,n,um,last in FL]
-        extra=[ "combo: none (combos are not built yet)"]
-        w=max(len(r) for r in rows+extra)*6.2+24; h=(len(rows)+3)*17+16
-        bx=RX-w/2; by=RY-48-h-10
-        body=f'<rect x="{bx:.0f}" y="{by:.0f}" width="{w:.0f}" height="{h}" rx="10" fill="#fff" stroke="#e5e7eb"/><text x="{bx+12:.0f}" y="{by+22:.0f}" font-size="12" font-weight="600">Connections now routed</text>'
-        for i,(a,p,ov,tt,p95,n,um,last) in enumerate(FL):
-            yy=by+42+i*17
-            body+=f'<circle cx="{bx+16:.0f}" cy="{yy-4}" r="4" fill="{col[a]}"/><text x="{bx+28:.0f}" y="{yy}" font-size="11" fill="#0a0a0a">{a}</text><text x="{bx+28+len(a)*6.6+8:.0f}" y="{yy}" font-size="11" fill="#6B7280">→ {um} → {p}</text>'
-        body+=f'<text x="{bx+12:.0f}" y="{by+h-12:.0f}" font-size="11" fill="#a16207">{extra[0]}</text>'
-        rtip=f'<g class="tipg">{body}</g>'
-    out.append(f'<g class="gw"><rect x="{RX-48}" y="{RY-48}" width="96" height="96" rx="20" fill="url(#rg)" stroke="#a64027"/><text x="{RX}" y="{RY+2}" text-anchor="middle" font-size="22" font-weight="700" fill="#fff">0R</text><text x="{RX}" y="{RY+22}" text-anchor="middle" font-size="10" fill="#fff" opacity=".85">router</text>{rtip}</g>')
-    # providers
-    for p,y,st,lastt in PV:
-        h=hue(p); dot="#22c55e" if st=="ok" else "#ef4444"
-        tip=''
-        if mode=='usage':
-            msg="Last response resolved" if st=="ok" else "Last response failed"
-            sub=f"{lastt} · "+("served" if st=="ok" else "upstream error 529, fell back")
-            w=max(len(msg),len(sub))*6.3+24
-            tip=f'<g class="tipg"><rect x="{800+80-w/2:.0f}" y="{y-22-56}" width="{w:.0f}" height="46" rx="10" fill="#fff" stroke="{dot}"/><circle cx="{800+80-w/2+14:.0f}" cy="{y-22-56+18}" r="5" fill="{dot}"/><text x="{800+80-w/2+26:.0f}" y="{y-22-56+22}" font-size="12" font-weight="600">{msg}</text><text x="{800+80-w/2+12:.0f}" y="{y-22-56+38}" font-size="11" fill="#6B7280">{sub}</text></g>'
-        out.append(f'<g class="gw"><rect x="800" y="{y-22}" width="160" height="44" rx="10" fill="#fff" stroke="#e5e7eb"/><rect x="810" y="{y-12}" width="24" height="24" rx="6" fill="hsl({h} 80% 94%)"/><text x="822" y="{y+5}" text-anchor="middle" font-size="12" font-weight="600" fill="hsl({h} 55% 42%)">{p[0]}</text><text x="842" y="{y+4}" font-size="13" font-weight="600" fill="#0a0a0a">{p}</text><circle cx="946" cy="{y}" r="4.5" fill="{dot}"/>{tip}</g>')
-    # gauges
-    if mode=='gauges':
-        for a,p,ov,tt,p95,n,um,last in FL:
-            # left hop gauge, once per agent
-            pass
-        done=set()
-        for a,p,ov,tt,p95,n,um,last in FL:
-            if a not in done:
-                done.add(a); y0=ay[a]
-                gx,gy=bez((200,y0),(330,y0),(370,RY),(RX-48,RY),.42)
-                ovs=[f[2] for f in FL if f[0]==a]; v=max(ovs)
-                out.append(gauge(gx,gy-30,v/40,fmt(v),[f"{a} → router","router overhead p50 "+fmt(v),"time before the first upstream attempt","includes any middleware","last 50 requests · as of 14:02:11"]))
-        seen={}
-        for a,p,ov,tt,p95,n,um,last in FL:
-            k=seen.get(p,0); seen[p]=k+1; y1=py[p]+(k*7)-3
-            gx,gy=bez((RX+48,RY),(RX+170,RY),(RX+210,y1),(800,y1),.58+.17*k)
-            out.append(gauge(gx,gy-30,tt/3000,fmt(tt),[f"router → {p}  ({a})",f"TTFT p50 {fmt(tt)} · p95 {fmt(p95)}",f"{n} requests · unified model {um}","last response "+("resolved" if last=="ok" else "failed")]))
-    out.insert(1,'<defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#E56A4A"/><stop offset="1" stop-color="#a64027"/></linearGradient></defs>')
-    out.append('</svg>')
-    return ''.join(out)
-if __name__=='__main__': print(build(sys.argv[1]))
+    for a,p,ov,tt,p95,nr,um,ok in FL:
+        k=seen.get(p,0); seen[p]=k+1; y1=py[p]+k*14-7; x0=RW/2; x1=px-NW/2; o=(x1-x0)*.45
+        svg+=edge(f"M{x0},0 C{x0+o},0 {x1-o},{y1} {x1},{y1}",col[a],2.5 if ok else 2.5,.9)
+        gx,gy=bez((x0,0),(x0+o,0),(x1-o,y1),(x1,y1),.62+.2*k)
+        dials+=dial(gx,gy,tt/3000,fmt(tt),[f"router → {p} ({a})",f"TTFT p50 {fmt(tt)} · p95 {fmt(p95)}",f"{nr} requests · unified model {um}","last response "+("resolved" if ok else "failed")])
+    for p in PV:
+        st=STATE.get(p); nodes+=pnode(p,px,py[p],"error" if st=="error" else None)
+    return wrap(svg,nodes+router(0,0)+dials,480)
+if __name__=="__main__": print(usage() if sys.argv[1]=="usage" else landscape())
