@@ -116,11 +116,11 @@ def landscape():
     ay={a:-165+i*110 for i,(a,_) in enumerate(AG)}; col=dict(AG)
     py={p:-260+i*104 for i,p in enumerate(PV)}
     LM,RM=-110,110                     # manifold x on each side of the router
-    body=[]; liquid=""; fit=""
+    body=[]; liq=[]; fl=[]; fit=""
     # agent pipes -> left manifold -> router
     for a,c in AG:
         y0=ay[a]; body.append((ax,y0,LM,y0,False))
-        liquid+=f'<line class="fl" x1="{ax+NWL/2}" y1="{y0}" x2="{LM}" y2="{y0}" stroke="{c}" stroke-width="7" stroke-opacity=".85"/>'
+        liq.append((ax+NWL/2,y0,LM,y0,PW,c,.62)); fl.append((ax+NWL/2,y0,LM,y0,"flowR"))
         fit+=collar(ax+NWL/2+5,y0)+collar(LM-PW/2-10,y0)
         v=max(f[2] for f in FL if f[0]==a); gx=(ax+NWL/2+LM)/2
         gauges+=gauge(gx,y0,v/40,fmt(v),[f"{a} → router","router overhead "+fmt(v),"time before the first upstream attempt","includes any middleware","as of 14:02:11"])
@@ -135,7 +135,8 @@ def landscape():
         flows=[f for f in FL if f[1]==p]; k=len(flows)
         for i,f in enumerate(flows):
             oy=y1+(i-(k-1)/2)*6
-            liquid+=f'<line class="fl" x1="{RM}" y1="{oy}" x2="{px-NWL/2}" y2="{oy}" stroke="{col[f[0]]}" stroke-width="4" stroke-opacity=".9"/>'
+            liq.append((RM,oy,px-NWL/2,oy,PW/k+3 if k>1 else PW,col[f[0]],.62))
+        if flows: fl.append((RM,y1,px-NWL/2,y1,"flowR"))
         fit+=collar(RM+PW/2+10,y1)+collar(px-NWL/2-5,y1)
         if flows:
             req=sum(f[5] for f in flows); tt=round(sum(f[3]*f[5] for f in flows)/req); p95=max(f[4] for f in flows); ok=all(f[7] for f in flows)
@@ -143,11 +144,38 @@ def landscape():
             gauges+=gauge((RM+px-NWL/2)/2,y1,tt/3000,fmt(tt),[f"router → {p}",f"TTFT p50 {fmt(tt)} · p95 {fmt(p95)} (all agents)",*rows,"last response "+("resolved" if ok else "failed")])
         st=STATE.get(p)
         nodes+=pnode(p,px,y1,"error" if st=="error" else None).replace('style="','style="width:190px;',1)
+    def mix(cs):
+        rgb=[tuple(int(c[i:i+2],16) for i in (1,3,5)) for c in cs]; return '#%02x%02x%02x'%tuple(round(sum(v[k] for v in rgb)/len(rgb)) for k in range(3))
+    allc=[c for _,c in AG]; mixc=mix(allc)
+    gl=''.join(f'<stop offset="{(ay[a]-min(ay.values()))/(max(ay.values())-min(ay.values())):.3f}" stop-color="{c}"/>' for a,c in AG)
+    pcs={p:mix([col[f[0]] for f in FL if f[1]==p]) for p in PV if any(f[1]==p for f in FL)}
+    pl=''.join(f'<stop offset="{(py[p]-min(py.values()))/(max(py.values())-min(py.values())):.3f}" stop-color="{pcs.get(p,mixc)}"/>' for p in PV)
+    grads=(f'<linearGradient id="lmg" gradientUnits="userSpaceOnUse" x1="0" y1="{min(ay.values())}" x2="0" y2="{max(ay.values())}">{gl}</linearGradient>'
+           f'<linearGradient id="rmg" gradientUnits="userSpaceOnUse" x1="0" y1="{min(py.values())}" x2="0" y2="{max(py.values())}">{pl}</linearGradient>')
+    liq+=[(LM,min(ay.values()),LM,max(ay.values()),PW,"url(#lmg)",.62),(LM,0,-RW/2,0,PW,mixc,.62),(RW/2,0,RM,0,PW,mixc,.62),(RM,min(py.values()),RM,max(py.values()),PW,"url(#rmg)",.62)]
+    fl+=[(LM,min(ay.values()),LM,0,"flowDown"),(LM,max(ay.values()),LM,0,"flowUp"),(LM,0,-RW/2,0,"flowR"),(RW/2,0,RM,0,"flowR"),(RM,0,RM,min(py.values()),"flowUp"),(RM,0,RM,max(py.values()),"flowDown")]
+    def vtx(x0,y0,x1,y1,w,fill,op,cap): return f'<line x1="{x0}" y1="{y0}" x2="{x1}" y2="{y1}" stroke="{fill}" stroke-opacity="{op}" stroke-width="{w}" stroke-linecap="{cap}"/>'
+    liquid=''.join(vtx(*s,"butt") for s in liq)
+    # depth: a lighter band on the upper side and a darker one on the lower side of each horizontal pipe
+    for x0,y0,x1,y1,w,c,o in liq:
+        if y0==y1 and w>=PW-1: liquid+=vtx(x0,y0-6,x1,y1-6,5,"#fff",.28,"butt")+vtx(x0,y0+7,x1,y1+7,4,"#0f172a",.10,"butt")
+    shim=''.join(f'<line x1="{a}" y1="{b}" x2="{c}" y2="{d}" stroke="url(#{g})" stroke-width="{PW}"/>' for a,b,c,d,g in fl)
+    import random; rnd=random.Random(7); bub=""
+    for a,b,c,d,g in fl:
+        ln=abs(c-a)+abs(d-b)
+        for i in range(max(2,int(ln/70))):
+            off=rnd.uniform(-PW/2+5,PW/2-5); r=rnd.uniform(1.3,2.6); dur=rnd.uniform(2.6,4.2)
+            path=f"M{a+(off if a==c else 0)},{b+(off if b==d else 0)} L{c+(off if a==c else 0)},{d+(off if b==d else 0)}"
+            bub+=f'<circle r="{r:.1f}" fill="#fff" fill-opacity=".7" stroke="#fff" stroke-opacity=".3"><animateMotion dur="{dur*ln/200:.1f}s" repeatCount="indefinite" begin="-{rnd.uniform(0,3):.1f}s" path="{path}"/></circle>'
+    flowdefs=''.join(f'<linearGradient id="{i}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="{x}" y2="{y}" spreadMethod="repeat"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".5"/><stop offset="1" stop-color="#fff" stop-opacity="0"/><animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="{tx} {ty}" dur="1.3s" repeatCount="indefinite"/></linearGradient>' for i,x,y,tx,ty in (("flowR",80,0,80,0),("flowDown",0,80,0,80),("flowUp",0,80,0,-80)))
+    lmask=('<mask id="lm" maskUnits="userSpaceOnUse" x="-700" y="-420" width="1400" height="840"><rect x="-700" y="-420" width="1400" height="840" fill="#000"/>'+''.join(f'<line x1="{a}" y1="{b}" x2="{c}" y2="{d}" stroke="#fff" stroke-width="{PW-1}" stroke-linecap="{"round" if v else "butt"}"/>' for a,b,c,d,v in body)+'</mask>'
+           '<filter id="soft" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="1.6"/></filter>')
     walls=''.join(f'<line x1="{a}" y1="{b}" x2="{c}" y2="{d}" stroke="#64748b" stroke-opacity=".6" stroke-width="{PW+4}" stroke-linecap="{"round" if v else "butt"}"/>' for a,b,c,d,v in body)
     holes=''.join(f'<line x1="{a}" y1="{b}" x2="{c}" y2="{d}" stroke="#000" stroke-width="{PW}" stroke-linecap="{"round" if v else "butt"}"/>' for a,b,c,d,v in body)
     glass=''.join(f'<line x1="{a}" y1="{b}" x2="{c}" y2="{d}" stroke="#e2e8f0" stroke-opacity=".5" stroke-width="{PW}" stroke-linecap="{"round" if v else "butt"}"/>' for a,b,c,d,v in body)
     shine=''.join((f'<line x1="{a-7}" y1="{b}" x2="{c-7}" y2="{d}"' if v else f'<line x1="{a}" y1="{b-7}" x2="{c}" y2="{d-7}"')+' stroke="#fff" stroke-opacity=".75" stroke-width="2" stroke-linecap="round"/>' for a,b,c,d,v in body)
     defs='<defs><mask id="pm" maskUnits="userSpaceOnUse" x="-700" y="-420" width="1400" height="840"><rect x="-700" y="-420" width="1400" height="840" fill="#fff"/>'+holes+'</mask></defs>'
-    svg=defs+f'<g mask="url(#pm)">{walls}</g>{glass}{liquid}{shine}{fit}'
+    defs=defs.replace('</defs>','')+'</defs>'
+    svg=defs+f'<defs>{grads}{flowdefs}{lmask}</defs><g mask="url(#pm)">{walls}</g>{glass}<g mask="url(#lm)"><g filter="url(#soft)">{liquid}</g>{shim}{bub}</g>{shine}{fit}'
     return wrap(svg,nodes+router(0,0)+gauges,700)
 if __name__=="__main__": print(usage() if sys.argv[1]=="usage" else landscape())
