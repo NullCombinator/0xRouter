@@ -28,6 +28,9 @@ use serde_json::{Value, json};
 const LIFETIME: Duration = Duration::from_secs(2);
 const SOAK: Duration = Duration::from_secs(46);
 const GAP: Duration = Duration::from_secs(5);
+/// The wait after each whole + streamed pair. Six 3 s bursts send at most 7,200 requests, so
+/// every one keeps its record within `records::CAPACITY` however fast the machine is.
+const PACE: Duration = Duration::from_millis(5);
 
 struct Soak {
     _dir: tempfile::TempDir,
@@ -105,7 +108,7 @@ async fn soak_server() -> Soak {
     Soak { _dir: dir, engine, mock, idp, base, key, stop }
 }
 
-/// Bursts of 3 s of back-to-back requests (whole and streamed), then [`GAP`] idle, until
+/// Bursts of 3 s of requests (whole and streamed, [`PACE`] apart), then [`GAP`] idle, until
 /// [`SOAK`] has passed. Returns `(sent, failed)`.
 async fn in_process(base: &str, key: &str) -> (usize, Vec<String>) {
     let c = reqwest::Client::new();
@@ -142,6 +145,7 @@ async fn in_process(base: &str, key: &str) -> (usize, Vec<String>) {
                     failed.push(format!("request {sent} (stream {stream})"));
                 }
             }
+            tokio::time::sleep(PACE).await;
         }
         tokio::time::sleep(GAP).await;
     }
