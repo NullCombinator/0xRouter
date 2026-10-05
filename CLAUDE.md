@@ -51,7 +51,7 @@ Criterion benches stay local: cloud timings don't compare with the baselines in 
 
 ## MCP servers
 
-All four are wired in `.mcp.json`, which is gitignored because it holds the agentmemory HMAC secrets. They are enabled in `~/.claude-0router/settings.json` (`enabledMcpjsonServers`).
+All five are wired in `.mcp.json`, which is gitignored because it holds the agentmemory HMAC secrets and the GitHub token. They are enabled in `~/.claude-0router/settings.json` (`enabledMcpjsonServers`).
 
 | Server | Port | Purpose |
 |---|---|---|
@@ -59,6 +59,7 @@ All four are wired in `.mcp.json`, which is gitignored because it holds the agen
 | `agentmemory-team` | 3212 | Subagent memory (`TEAM_ID=0router`) |
 | `code-review-graph` | — | Structural graph of `ref/9router` (JS oracle, static at the ref SHA) |
 | `code-review-graph-0router` | — | Structural graph of this repo's tracked files (Rust). `--auto-watch` keeps it current |
+| `github` | — | GitHub's remote MCP server, Actions toolset only: CI runs, job logs, reruns. Uses the repo-scoped token in `.git/nr-github-token`, which also lets `git push` work from this identity |
 
 **The two memory instances are separate stores.** Nothing written to one is visible from the other, and `memory_team_share` does not bridge them. Main sessions use `mcp__agentmemory__*`. Subagents can reach only `mcp__agentmemory-team__*`, according to the `tools:` allowlist in their agent frontmatter. Anything a subagent must know goes to the team instance.
 
