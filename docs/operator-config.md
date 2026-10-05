@@ -580,7 +580,7 @@ NR_LIVE=1 cargo test -p nullrouter-engine --test live -- live_routing_matches_po
 | `live_routing_matches_polls` (L7) | per polled account: one quota poll, one tiny request, a second poll | for each window, the routing view's `remaining_now` beside the poll's figure, and how far it fell after the request beside the cost its meter charged. Any window where the provider charged more than 1% of capacity differently is listed under `METER CORRECTIONS NEEDED`, for a dated fix to the bundled plugin's `[[routing.window]]`. |
 | `quota` (L2, L5) | one quota read per account with `[quota]` (the fallback only when the primary yields no window), and `GET api.x.ai/v1/models` per xai account kind | the raw answer (truncated) next to the extracted windows, and the `x-ratelimit-*` headers xai returned |
 
-A provider with no account in the home is skipped with a message. The checks send their
+A provider with no account in the home is skipped with a message, except for `live_routing_matches_polls`: it fails when no polled account was checked, and the failure names the home it read and the kinds it needs (an anthropic, grok-cli, opencode-go or opencode-zen account that is enabled and answers its quota poll). The checks send their
 requests directly rather than through the attempt loop, so a refusal doesn't take the
 account out of service. Run them while no server uses the same home: the checks refresh
 tokens, and two processes refreshing one rotating token can sign the account out.

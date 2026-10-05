@@ -980,7 +980,8 @@ fn view_windows(
 /// poll then shows what the provider charged; the difference is printed as a meter correction
 /// for `plugins/bundled/*.toml`, never asserted, because a provider rounds its percentages.
 ///
-/// `-- live_routing_matches_polls --nocapture`. Skipped unless `NR_LIVE=1`.
+/// `-- live_routing_matches_polls --nocapture`. Skipped unless `NR_LIVE=1`; with it, a run that
+/// checks no account fails, naming the home it read and the account kinds it needs.
 #[tokio::test]
 async fn live_routing_matches_polls() {
     let _one = SIGNIN_LIVE.lock().await;
@@ -1030,6 +1031,7 @@ async fn live_routing_matches_polls() {
             );
             eprintln!("{who} {}: view {:.0} = poll {reported:.0} {}", w.name, v.remaining_now, v.unit);
         }
+        checked += 1;
 
         // 2. One tiny request: the view's drop is the cost it metered.
         let body = json!({"model": target, "max_tokens": 16, "messages": [{"role": "user", "content": "Reply with the single word: pong"}]});
@@ -1081,14 +1083,16 @@ async fn live_routing_matches_polls() {
                 }
             }
         }
-        checked += 1;
     }
-    if checked == 0 {
-        eprintln!(
-            "live_routing_matches_polls: no polled account is in service under {}",
-            engine.home().path().display()
-        );
-    }
+    // A run that compared nothing proves nothing: say where it looked and what it needs.
+    assert!(
+        checked > 0,
+        "live_routing_matches_polls checked no account. It read the home {} and found no enabled \
+         account with a quota poll that has a live target and answered the poll. Add one of an \
+         anthropic, grok-cli, opencode-go or opencode-zen account to that home (set NULLROUTER_HOME \
+         to point at the right one), then rerun.",
+        engine.home().path().display()
+    );
     if !corrections.is_empty() {
         eprintln!(
             "\nMETER CORRECTIONS NEEDED (over 1% of capacity; record each in plugins/bundled/*.toml with a dated source comment):"
