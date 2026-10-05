@@ -13,6 +13,11 @@
 //! scan: logs, records, client responses, CLI output (sign-in screens, `quota` text, the
 //! `accounts list` token column), operator socket answers, `quota/*.jsonl` and the
 //! plugin-visible registry. Only the `…last4` form may appear.
+//!
+//! Routing (spec 006 T092, SC-012): warm, cold and overflow traffic carrying a sentinel prompt,
+//! then the scan adds the record and routing journals on disk, the routing view (text as the CLI
+//! renders it, and JSON), every record's JSON (what `records show` prints, text or `--json`, is
+//! drawn from its fields) and `routing.health`: no secret and no prompt text anywhere.
 
 mod common;
 
@@ -505,4 +510,131 @@ async fn sign_in_secrets_appear_nowhere() {
 
 fn bearer(r: &Received) -> String {
     r.headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned()
+}
+
+// ---- routing (spec 006 T092, SC-012) -----------------------------------------------------
+
+const PROMPT: &str = "PROMPT-SENTINEL-T092 the operator must never read this";
+const SUB_A: &str = "sk-sub-a-SENTINEL-T092";
+const SUB_B: &str = "sk-sub-b-SENTINEL-T092";
+const PAYG: &str = "sk-pay-SENTINEL-T092";
+
+const METERED: &str = "\n[routing.cache]\nmode = \"automatic\"\nlifetime = \"5m\"\nmin_tokens = 0\n\n[[routing.window]]\nname = \"5h\"\nlength = \"5h\"\nunit = \"weighted_tokens\"\ncapacity = 1000000\nreserve = \"10%\"\n";
+const PRICED: &str = "\n[routing.cache]\nmode = \"automatic\"\nmin_tokens = 0\n\n[[routing.price]]\ninput = 3.0\noutput = 12.0\n";
+
+fn routed_plugin(mock: &MockUpstream, id: &str, extra: &str) -> String {
+    format!(
+        "schema = 2\nid = \"{id}\"\ncategory = \"apikey\"\n[auth]\nkind = \"apikey\"\n[endpoints.text]\nurl = \"{}\"\nwire = \"openai-chat\"\n[[models]]\nid = \"m1\"\n{extra}",
+        mock.url(&format!("/{id}/chat/completions"))
+    )
+}
+
+/// Every file under `dir`, as text, named by its path.
+fn files_under(dir: &std::path::Path) -> Vec<(String, String)> {
+    let Ok(read) = std::fs::read_dir(dir) else { return Vec::new() };
+    let mut out = Vec::new();
+    for e in read.flatten() {
+        let path = e.path();
+        if path.is_dir() {
+            out.extend(files_under(&path));
+        } else if let Ok(bytes) = std::fs::read(&path) {
+            out.push((path.display().to_string(), String::from_utf8_lossy(&bytes).into_owned()));
+        }
+    }
+    out
+}
+
+#[tokio::test]
+async fn routing_keeps_no_secret_and_no_prompt() {
+    use nullrouter_engine::testkit::{MockQuota, SimQuota, SimWindow};
+    let logs = logs();
+    let quota_mock = MockQuota::start().await;
+    let quota = SimQuota::new();
+    quota_mock.simulate(&quota);
+    quota.account(SUB_A, "alpha/a");
+    quota.account(SUB_B, "alpha/b");
+    let reset = nullrouter_engine::clock::rfc3339(SystemTime::now() + Duration::from_secs(3600));
+    let left = |used: f64| vec![SimWindow::new("5h", "tokens", 1_000_000.0, &reset).used(used)];
+    quota.set("alpha/a", left(100_000.0));
+    quota.set("alpha/b", left(300_000.0));
+    let url = quota_mock.url(QuotaRoute::Sim);
+    let accounts = format!(
+        "schema = 2\n[[account]]\nprovider = \"alpha\"\nname = \"a\"\nsecret = \"{SUB_A}\"\n\
+         [[account]]\nprovider = \"alpha\"\nname = \"b\"\nsecret = \"{SUB_B}\"\n\
+         [[account]]\nprovider = \"pay\"\nname = \"key\"\nsecret = \"{PAYG}\"\n"
+    );
+    let s = common::server_custom(
+        |m| {
+            let alpha = format!("{}\n{}", routed_plugin(m, "alpha", METERED), SimQuota::quota_toml(&url, &[("5h", "tokens")]));
+            vec![("alpha", alpha), ("pay", routed_plugin(m, "pay", PRICED))]
+        },
+        &accounts,
+        "[[unified_model]]\nname = \"u\"\nmembers = [{ provider = \"alpha\", model = \"m1\" }, { provider = \"pay\", model = \"m1\" }]\n",
+    )
+    .await;
+    s.mock.respond(|_| chat_stream());
+    s.engine.poll_quota("alpha", "a").await.expect("polled");
+    s.engine.poll_quota("alpha", "b").await.expect("polled");
+
+    let c = reqwest::Client::new();
+    let send = |messages: serde_json::Value| {
+        c.post(format!("{}/v1/chat/completions", s.base))
+            .bearer_auth(&s.key)
+            .body(json!({"model": "u", "stream": true, "messages": messages}).to_string())
+            .send()
+    };
+    let first = json!([{"role": "system", "content": PROMPT}, {"role": "user", "content": PROMPT}]);
+    let follow = json!([
+        {"role": "system", "content": PROMPT}, {"role": "user", "content": PROMPT},
+        {"role": "assistant", "content": "hi"}, {"role": "user", "content": format!("{PROMPT} again")},
+    ]);
+    let mut seen = Vec::new();
+    for body in [first.clone(), follow, json!([{"role": "user", "content": format!("{PROMPT} cold")}])] {
+        let r = send(body).await.unwrap();
+        let head = format!("{} {:?}", r.status(), r.headers());
+        seen.push(format!("{head}\n{}", r.text().await.unwrap()));
+    }
+    // Both subscriptions at their floor: the next cold request overflows to pay-as-you-go.
+    quota.set("alpha/a", left(995_000.0));
+    quota.set("alpha/b", left(995_000.0));
+    s.engine.poll_quota("alpha", "a").await.expect("polled");
+    s.engine.poll_quota("alpha", "b").await.expect("polled");
+    let r = send(json!([{"role": "user", "content": format!("{PROMPT} overflow")}])).await.unwrap();
+    let head = format!("{} {:?}", r.status(), r.headers());
+        seen.push(format!("{head}\n{}", r.text().await.unwrap()));
+
+    let mut records = Vec::new();
+    for r in s.engine.records.query(&Query::default()) {
+        records.push(operator::handle(&s.engine, &json!({"op": "records.get", "id": r.id})).await);
+    }
+    let kinds: Vec<&str> = records.iter().filter_map(|r| r["record"]["decision"]["kind"].as_str()).collect();
+    for kind in ["warm", "cold", "overflow"] {
+        assert!(kinds.contains(&kind), "no {kind} decision among {kinds:?}");
+    }
+    let view = operator::handle(&s.engine, &json!({"op": "routing.view"})).await;
+    assert_eq!(view["ok"], true, "{view:#}");
+    let mut socket = vec![view.to_string(), nullrouter_cli::routing_text::render(&view, SystemTime::now())];
+    for op in ["records.list", "routing.health", "accounts.state"] {
+        socket.push(operator::handle(&s.engine, &json!({"op": op})).await.to_string());
+    }
+    socket.extend(records.iter().map(ToString::to_string));
+    let registry = format!("{:?}", s.engine.snapshot().registry);
+    let journal = s.engine.journal.clone();
+    tokio::task::spawn_blocking(move || journal.flush_blocking()).await.unwrap();
+    let mut on_disk = files_under(&s.home().join("records"));
+    on_disk.extend(files_under(&s.home().join("routing")).into_iter().filter(|(p, _)| !p.ends_with("salt")));
+    assert!(on_disk.iter().any(|(p, _)| p.ends_with(".jsonl") && p.contains("records")), "no record journal: {on_disk:?}");
+    let key = s.key.clone();
+    drop(s);
+
+    let mut places: Vec<(&str, String)> = vec![
+        ("logs", logs.text()),
+        ("client responses", seen.join("\n")),
+        ("operator socket answers and the routing view", socket.join("\n")),
+        ("registry", registry),
+    ];
+    let disk = on_disk.iter().map(|(p, t)| format!("{p}\n{t}")).collect::<Vec<_>>().join("\n");
+    places.push(("records/ and routing/", disk));
+    let leaks = leaks_of(&places, &[SUB_A, SUB_B, PAYG, key.as_str(), "PROMPT-SENTINEL-T092"]);
+    assert!(leaks.is_empty(), "{}", leaks.join("\n"));
 }
