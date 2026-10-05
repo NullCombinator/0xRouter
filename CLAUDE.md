@@ -41,7 +41,7 @@ The gate allows rw to `~/.claude-0router`, `~/Desktop/0router`, and standard tem
 
 ## Cloud sessions
 
-Heavy, self-contained work runs in a cloud session (`claude --cloud "<task>"`), which has 4 vCPU and 16 GB, against the pushed `main`. If the agentmemory tools are missing, you are in one. Then:
+Plain test and clippy runs belong to GitHub Actions (`.github/workflows/ci.yml`), which is free for this public repo and runs on every push to `main` and every PR; don't spend a cloud session on them. Heavy work that needs Claude, such as fixing what CI found or a port fan-out, runs in a cloud session (`claude --cloud "<task>"`), which has 4 vCPU and 16 GB, against the pushed `main`. If the agentmemory tools are missing, you are in one. Then:
 
 - `ref/9router` is cloned by the SessionStart hook (`tools/cloud/session-start.sh`) at the fixtures' SHA. The MCP servers, headroom, `.cargo/capped` and `.nr-live/` don't exist there; skip the session protocol below.
 - Build with `CARGO_HOME=$PWD/.cargo-home`, as locally; full-workspace runs are fine.
