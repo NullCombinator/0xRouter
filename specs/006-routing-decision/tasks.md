@@ -322,7 +322,7 @@ of the same accounts. A unified model with 200k and 128k members prints a note a
 - [X] T095 [P] `docs/plugins.md`: the `[routing]` section for plugin authors (cache modes, meters, admission, balance windows, price schedule, defaults, gate rules), from [contracts/routing-schema.md](contracts/routing-schema.md).
 - [X] T096 `/rust-parity-audit` on `crates/nullrouter-engine/src/attempt.rs` and `src/plan.rs` against 9router's retry and fallback path (`open-sse/handlers/chatCore.js`, `src/sse/services/auth.js`, `open-sse/services/combo.js`); D-006-1..3 are deliberate and must not be reported as gaps; fix High findings.
 - [X] T097 Security review of the slice diff (`/security-review`): journal and routing file modes, `records.lock`, temp-then-rename rewrites, the salt, fingerprints holding no content, `forget`, redaction of error reasons in journal lines.
-- [ ] T098 Run [quickstart.md](quickstart.md) §1–4 end to end; fix what fails.
+- [X] T098 Run [quickstart.md](quickstart.md) §1–4 end to end; fix what fails. (§1–2: CI green with sim_week. §3: `NR_HARNESS=1` harness, 4 of 4 passed locally. §4: no CLI-launchable mock config exists, so each step ran as its automated test: cli `routing`, `operator`, `records`, `check`, and engine `routing_state::deficits_after_a_restart_equal_those_before`; kill -9 is not exercised literally.)
 - [X] T099 `cargo fmt --all`, then `nice cargo clippy -p <crate> -j 2 -- -D warnings` crate by crate.
 
 ---
