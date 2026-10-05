@@ -224,5 +224,8 @@ async fn a_change_applied_to_a_running_server_prints_its_limits_notes() {
     assert!(o.status.success(), "{}", text(&o));
     assert_eq!(String::from_utf8_lossy(&o.stdout), "alpha/main: applied\n", "notes stay off stdout");
     let err = String::from_utf8_lossy(&o.stderr);
-    assert!(err.contains("note: unified model u: members differ in context_length: alpha 200000, beta 128000"), "{err}");
+    assert!(
+        err.contains("note: unified model u: members differ in context_length: alpha 200000, beta 128000"),
+        "{err}"
+    );
 }

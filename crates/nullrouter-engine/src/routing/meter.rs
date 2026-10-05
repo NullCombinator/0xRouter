@@ -164,7 +164,14 @@ pub struct MeterInput<'a> {
 pub fn cost(meter: &MeterDecl, t: &Traffic) -> f64 {
     cost_spent(
         meter,
-        &Spent { model: t.model.clone(), requests: 1, input: t.input, output: t.output, cache_read: t.cache_read, cache_write: t.cache_write },
+        &Spent {
+            model: t.model.clone(),
+            requests: 1,
+            input: t.input,
+            output: t.output,
+            cache_read: t.cache_read,
+            cache_write: t.cache_write,
+        },
     )
 }
 
@@ -286,7 +293,8 @@ fn reported_window(
             }
         }
     };
-    let declared = meter.and_then(|m| capacity_of(m, o)).or_else(|| window_override(o, &r.name).and_then(|w| w.capacity));
+    let declared =
+        meter.and_then(|m| capacity_of(m, o)).or_else(|| window_override(o, &r.name).and_then(|w| w.capacity));
     // A declared capacity is in the meter's unit; a reported one only when the units agree.
     let comparable = matches!(
         (r.unit, unit),
@@ -346,12 +354,7 @@ fn reported_window(
 
 /// A declared meter with no report: an admission limit counted from 0router's own traffic, or the
 /// window of an account that isn't polled yet (full).
-fn declared_window(
-    m: &MeterDecl,
-    o: &RoutingOverrides,
-    recent: &[Traffic],
-    now: SystemTime,
-) -> Option<WindowState> {
+fn declared_window(m: &MeterDecl, o: &RoutingOverrides, recent: &[Traffic], now: SystemTime) -> Option<WindowState> {
     let capacity = capacity_of(m, o)?;
     let length = length_of(Some(m), &m.name, o).unwrap_or(m.length);
     let admission = length < Duration::from_secs(3600);
@@ -436,7 +439,11 @@ fn unix_secs(t: SystemTime) -> i64 {
 }
 
 fn from_unix_secs(s: i64) -> SystemTime {
-    if s >= 0 { UNIX_EPOCH + Duration::from_secs(s.unsigned_abs()) } else { UNIX_EPOCH - Duration::from_secs(s.unsigned_abs()) }
+    if s >= 0 {
+        UNIX_EPOCH + Duration::from_secs(s.unsigned_abs())
+    } else {
+        UNIX_EPOCH - Duration::from_secs(s.unsigned_abs())
+    }
 }
 
 /// The fixed window containing `now`: `anchor + n × length`. A weekly anchor names a weekday
@@ -456,7 +463,8 @@ fn fixed_span(anchor: &str, length: Duration, now: SystemTime) -> Option<(System
             crate::clock::days_from_civil(y, u32::try_from(m).unwrap_or(1), d) * DAY + offset
         };
         let this = at(y, i64::from(m));
-        let (start, next) = if this <= now_s { (this, at(y, i64::from(m) + 1)) } else { (at(y, i64::from(m) - 1), this) };
+        let (start, next) =
+            if this <= now_s { (this, at(y, i64::from(m) + 1)) } else { (at(y, i64::from(m) - 1), this) };
         return Some((from_unix_secs(start), from_unix_secs(next)));
     }
     // 1970-01-01 was a Thursday: weekday 3 counting from Monday.
@@ -471,8 +479,11 @@ fn assume_capacities(windows: &mut [WindowState]) {
     let known: Vec<(Option<Duration>, MeterUnit, f64)> =
         windows.iter().filter(|w| !w.capacity_assumed).map(|w| (w.length, w.unit, w.capacity)).collect();
     for w in windows.iter_mut().filter(|w| w.capacity_assumed) {
-        let mut peers: Vec<f64> =
-            known.iter().filter(|(l, u, _)| *l == w.length && *u == w.unit && l.is_some()).map(|(_, _, c)| *c).collect();
+        let mut peers: Vec<f64> = known
+            .iter()
+            .filter(|(l, u, _)| *l == w.length && *u == w.unit && l.is_some())
+            .map(|(_, _, c)| *c)
+            .collect();
         if peers.is_empty() {
             // Paced in the report's own unit, where the meter's cost means nothing.
             w.cost_since_poll = 0.0;
@@ -482,7 +493,8 @@ fn assume_capacities(windows: &mut [WindowState]) {
         let median = peers[peers.len() / 2];
         // The report's own fraction, or a whole window after a reset, in the median's unit; our
         // traffic is charged against it now that the unit is the meter's.
-        let at_poll = if w.rolled_over { 1.0 } else { w.remaining_at_poll.map_or_else(|| w.fraction_left(), |r| r / w.capacity) };
+        let at_poll =
+            if w.rolled_over { 1.0 } else { w.remaining_at_poll.map_or_else(|| w.fraction_left(), |r| r / w.capacity) };
         w.capacity = median;
         w.remaining_at_poll = w.remaining_at_poll.map(|_| at_poll * median);
         w.remaining_now = (at_poll * median - w.cost_since_poll).max(0.0);
@@ -546,7 +558,16 @@ mod tests {
         polled: Option<(&'a [QuotaWindow], SystemTime)>,
         recent: &'a [Traffic],
     ) -> MeterInput<'a> {
-        MeterInput { declared, overrides: o, report_declared: true, polled, last_poll_failed: false, recent, since_poll: &[], history: &[] }
+        MeterInput {
+            declared,
+            overrides: o,
+            report_declared: true,
+            polled,
+            last_poll_failed: false,
+            recent,
+            since_poll: &[],
+            history: &[],
+        }
     }
 
     #[test]
@@ -557,7 +578,10 @@ mod tests {
         let q = quota_for(&input(&d, &o, Some((&rep, t(1000))), &[]), t(2000));
         assert_eq!(q.state, QuotaState { source: QuotaSource::Polled, pending_first_poll: false, stale: false });
         let w = &q.windows[0];
-        assert_eq!((w.name.as_str(), w.role, w.capacity, w.remaining_now), ("5-hour", Role::Pacing, 9_000_000.0, 5_400_000.0));
+        assert_eq!(
+            (w.name.as_str(), w.role, w.capacity, w.remaining_now),
+            ("5-hour", Role::Pacing, 9_000_000.0, 5_400_000.0)
+        );
         assert_eq!(w.reserve, 0.10);
         assert_eq!(q.windows[1].reserve, DEFAULT_RESERVE, "no reserve declared: 5%");
         assert!(!w.capacity_assumed && !q.at_floor());
@@ -643,7 +667,12 @@ mod tests {
         "#,
         );
         let o = RoutingOverrides::default();
-        let rep = [pct("a", 0.0, Some(36_000)), pct("b", 0.0, Some(36_000)), pct("c", 50.0, Some(36_000)), pct("d", 0.0, Some(36_000))];
+        let rep = [
+            pct("a", 0.0, Some(36_000)),
+            pct("b", 0.0, Some(36_000)),
+            pct("c", 50.0, Some(36_000)),
+            pct("d", 0.0, Some(36_000)),
+        ];
         let q = quota_for(&input(&d, &o, Some((&rep, t(1000))), &[]), t(2000));
         let c = &q.windows[2];
         assert!(c.capacity_assumed);
@@ -679,7 +708,14 @@ mod tests {
             unit = "requests"
         "#,
         );
-        let usage = |model: &str| Traffic { at: t(0), model: model.into(), input: 100, output: 10, cache_read: 1000, cache_write: 80 };
+        let usage = |model: &str| Traffic {
+            at: t(0),
+            model: model.into(),
+            input: 100,
+            output: 10,
+            cache_read: 1000,
+            cache_write: 80,
+        };
         assert_eq!(cost(&meter[1], &usage("x")), 1.0);
         let base = 100.0 + 50.0 + 100.0 + 100.0;
         assert_eq!(cost(&meter[0], &usage("gpt")), base);
@@ -819,16 +855,26 @@ mod tests {
 
     #[test]
     fn a_rolling_window_counts_the_trailing_length() {
-        let d = meters("[[window]]\nname = \"w\"\nlength = \"5h\"\nunit = \"requests\"\ncapacity = 10\nreset = \"rolling\"");
+        let d = meters(
+            "[[window]]\nname = \"w\"\nlength = \"5h\"\nunit = \"requests\"\ncapacity = 10\nreset = \"rolling\"",
+        );
         let o = RoutingOverrides::default();
         // now = 10:30, so the trailing 5 hours begin at 5:30. Hour 4 ended at 5:00 and is out; hour 5
         // ends after 5:30 and counts whole.
-        let h = [hour(4, vec![spent("m", 4, 0, 0)]), hour(5, vec![spent("m", 2, 0, 0)]), hour(9, vec![spent("m", 1, 0, 0)])];
+        let h = [
+            hour(4, vec![spent("m", 4, 0, 0)]),
+            hour(5, vec![spent("m", 2, 0, 0)]),
+            hour(9, vec![spent("m", 1, 0, 0)]),
+        ];
         let q = estimated(&d, &o, &h, 10 * 3600 + 1800);
         assert_eq!(q.state.source, QuotaSource::Estimated);
         let w = &q.windows[0];
         assert_eq!((w.cost_since_poll, w.remaining_now, w.role), (3.0, 7.0, Role::Pacing));
-        assert_eq!(w.resets_at, Some(t(10 * 3600 + 1800 + 5 * 3600)), "a rolling window always has a whole length ahead");
+        assert_eq!(
+            w.resets_at,
+            Some(t(10 * 3600 + 1800 + 5 * 3600)),
+            "a rolling window always has a whole length ahead"
+        );
     }
 
     #[test]
@@ -860,10 +906,16 @@ mod tests {
 
     #[test]
     fn a_first_use_window_starts_with_the_first_request_after_the_previous_one_ended() {
-        let d = meters("[[window]]\nname = \"w\"\nlength = \"5h\"\nunit = \"requests\"\ncapacity = 10\nreset = \"first_use\"");
+        let d = meters(
+            "[[window]]\nname = \"w\"\nlength = \"5h\"\nunit = \"requests\"\ncapacity = 10\nreset = \"first_use\"",
+        );
         let o = RoutingOverrides::default();
         // Used in hour 1 (window 1: hours 1-6), then hour 8 starts window 2 (8-13).
-        let h = [hour(1, vec![spent("m", 3, 0, 0)]), hour(4, vec![spent("m", 2, 0, 0)]), hour(8, vec![spent("m", 1, 0, 0)])];
+        let h = [
+            hour(1, vec![spent("m", 3, 0, 0)]),
+            hour(4, vec![spent("m", 2, 0, 0)]),
+            hour(8, vec![spent("m", 1, 0, 0)]),
+        ];
         let w = &estimated(&d, &o, &h, 10 * 3600).windows[0];
         assert_eq!((w.cost_since_poll, w.remaining_now), (1.0, 9.0));
         assert_eq!(w.resets_at, Some(t(13 * 3600)));

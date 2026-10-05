@@ -334,7 +334,8 @@ impl RecordStore {
     /// their order.
     fn write(&self, before: &RequestRecord, after: &RequestRecord, force_open: bool) {
         let Some(journal) = &self.journal else { return };
-        let target = crate::journal::Target::Records { day: crate::journal::records::day_of(&after.arrived).to_owned() };
+        let target =
+            crate::journal::Target::Records { day: crate::journal::records::day_of(&after.arrived).to_owned() };
         for (t, fields) in crate::journal::records::lines_for(before, after, force_open) {
             journal.append(target.clone(), t, fields);
         }
@@ -347,7 +348,11 @@ impl RecordStore {
     pub fn insert(&self, record: RequestRecord) {
         let mut ring = self.lock();
         if self.journal.is_some() {
-            self.write(&RequestRecord::new(record.id.clone(), record.arrived.clone(), record.style.clone()), &record, true);
+            self.write(
+                &RequestRecord::new(record.id.clone(), record.arrived.clone(), record.style.clone()),
+                &record,
+                true,
+            );
         }
         if ring.records.len() == self.capacity {
             ring.evict();

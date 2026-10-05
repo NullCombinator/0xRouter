@@ -65,13 +65,16 @@ fn defs() -> Defs {
         }
     };
     let tokens = |name: &str, length: &str, capacity: u64, extra: &str| {
-        format!("[[window]]\nname = \"{name}\"\nlength = \"{length}\"\nunit = \"weighted_tokens\"\ncapacity = {capacity}\n{WEIGHTS}\n{extra}\n")
+        format!(
+            "[[window]]\nname = \"{name}\"\nlength = \"{length}\"\nunit = \"weighted_tokens\"\ncapacity = {capacity}\n{WEIGHTS}\n{extra}\n"
+        )
     };
     let max = tokens("5-hour", "5h", CAP.max_5h, "reserve = \"10%\"")
         + &tokens("weekly", "7d", CAP.max_week, "")
         + "[[window]]\nname = \"per-minute\"\nlength = \"1m\"\nunit = \"requests\"\ncapacity = 5\n";
     let pro = tokens("5-hour", "5h", CAP.pro_5h, "reserve = \"10%\"") + &tokens("weekly", "7d", CAP.pro_week, "");
-    let daily = format!("[[window]]\nname = \"daily\"\nlength = \"1d\"\nunit = \"requests\"\ncapacity = {}\n", CAP.kimi_day);
+    let daily =
+        format!("[[window]]\nname = \"daily\"\nlength = \"1d\"\nunit = \"requests\"\ncapacity = {}\n", CAP.kimi_day);
     let glm = tokens("daily", "1d", CAP.glm_day, "reset = \"fixed\"\nanchor = \"00:00+00:00\"");
     Defs {
         accounts: vec![
@@ -79,8 +82,16 @@ fn defs() -> Defs {
             sub("anthropic/pro", 1, pro, true),
             sub("kimi/daily", 2, daily, true),
             sub("glm/plan", 3, glm, false),
-            payg("openrouter/key", 4, "[[price]]\nwhen = { from = \"14:00\", to = \"22:00\" }\ninput = 3.0\n[[price]]\ninput = 1.5\n"),
-            payg("deepseek/key", 5, "[[price]]\nwhen = { from = \"01:00\", to = \"09:00\" }\ninput = 0.8\n[[price]]\ninput = 1.6\n"),
+            payg(
+                "openrouter/key",
+                4,
+                "[[price]]\nwhen = { from = \"14:00\", to = \"22:00\" }\ninput = 3.0\n[[price]]\ninput = 1.5\n",
+            ),
+            payg(
+                "deepseek/key",
+                5,
+                "[[price]]\nwhen = { from = \"01:00\", to = \"09:00\" }\ninput = 0.8\n[[price]]\ninput = 1.6\n",
+            ),
         ],
         target: "sonnet".into(),
         amortization: Duration::from_secs(5 * 3600),
@@ -155,7 +166,9 @@ fn read_all(home: &Path, defs: &Defs, mut f: impl FnMut(Rec)) -> usize {
             count += 1;
             let Ok(d) = serde_json::from_value::<Decision>(r["decision"].clone()) else { continue };
             let index = |a: &Value| {
-                defs.accounts.iter().position(|d| a["provider"] == d.key.provider.as_str() && a["account"] == d.key.account.as_str())
+                defs.accounts
+                    .iter()
+                    .position(|d| a["provider"] == d.key.provider.as_str() && a["account"] == d.key.account.as_str())
             };
             let attempts: Vec<_> = r["attempts"]
                 .as_array()
@@ -221,12 +234,14 @@ fn name(defs: &Defs, i: usize) -> String {
 /// The account the recorded rows choose for the first attempt: among the eligible rows of the
 /// tier cold work went to, the largest deficit, then the higher share, then the operator's order.
 fn recomputed(d: &Decision) -> usize {
-    let tier = if d.candidates.iter().any(|c| c.eligible && c.tier == Tier::Subscription && c.weight.unwrap_or(0.0) > 0.0) {
-        Tier::Subscription
-    } else {
-        Tier::Payg
-    };
-    let mut rows: Vec<(usize, &CandidateRow)> = d.candidates.iter().enumerate().filter(|(_, c)| c.eligible && c.tier == tier).collect();
+    let tier =
+        if d.candidates.iter().any(|c| c.eligible && c.tier == Tier::Subscription && c.weight.unwrap_or(0.0) > 0.0) {
+            Tier::Subscription
+        } else {
+            Tier::Payg
+        };
+    let mut rows: Vec<(usize, &CandidateRow)> =
+        d.candidates.iter().enumerate().filter(|(_, c)| c.eligible && c.tier == tier).collect();
     rows.sort_by(|(i, a), (j, b)| {
         b.deficit_before
             .unwrap_or(0)
@@ -247,12 +262,15 @@ impl Analysis {
         let d = &r.d;
         let rows = &d.candidates;
         self.requests += 1;
-        *self.kinds.entry(match d.kind {
-            DecisionKind::Warm => "warm",
-            DecisionKind::Cold => "cold",
-            DecisionKind::Overflow => "overflow",
-            DecisionKind::None => "none",
-        }).or_default() += 1;
+        *self
+            .kinds
+            .entry(match d.kind {
+                DecisionKind::Warm => "warm",
+                DecisionKind::Cold => "cold",
+                DecisionKind::Overflow => "overflow",
+                DecisionKind::None => "none",
+            })
+            .or_default() += 1;
         match r.served {
             Some(i) => self.served_by[i] += 1,
             None => self.unserved += 1,
@@ -266,8 +284,14 @@ impl Analysis {
             let sub = |c: &CandidateRow| c.eligible && c.tier == Tier::Subscription && c.share.unwrap_or(0.0) > 0.0;
             let placed_on = rows.iter().position(|c| defs.index_of(&c.key()) == acct);
             if reason != PlacementReason::Warm && placed_on.is_some_and(|i| sub(&rows[i])) {
-                let key = u64::try_from(d.amortization_window.start.duration_since(at(0)).unwrap_or_default().as_millis()).unwrap_or(0);
-                let w = self.windows.entry(key).or_insert_with(|| Window { target: vec![0.0; n], received: vec![0.0; n], ..Window::default() });
+                let key =
+                    u64::try_from(d.amortization_window.start.duration_since(at(0)).unwrap_or_default().as_millis())
+                        .unwrap_or(0);
+                let w = self.windows.entry(key).or_insert_with(|| Window {
+                    target: vec![0.0; n],
+                    received: vec![0.0; n],
+                    ..Window::default()
+                });
                 w.count += 1;
                 w.total += plain as f64;
                 w.largest = w.largest.max(plain as f64);
@@ -285,11 +309,14 @@ impl Analysis {
         if let Some(h) = &d.warm {
             self.warm_hits += 1;
             let at_ = rows.iter().find(|c| c.provider == h.provider && c.account == h.account).expect("the warm row");
-            let sub_can_serve = rows.iter().any(|c| c.eligible && c.tier == Tier::Subscription && c.weight.unwrap_or(0.0) > 0.0);
+            let sub_can_serve =
+                rows.iter().any(|c| c.eligible && c.tier == Tier::Subscription && c.weight.unwrap_or(0.0) > 0.0);
             if h.stayed {
                 self.warm_stays += 1;
                 let first = d.order.first().map(|i| &rows[*i]);
-                if first.is_none_or(|f| f.provider != h.provider || f.account != h.account) || d.kind != DecisionKind::Warm {
+                if first.is_none_or(|f| f.provider != h.provider || f.account != h.account)
+                    || d.kind != DecisionKind::Warm
+                {
                     self.bad_warm.push(format!("{id}: stayed but was placed elsewhere"));
                 }
                 if at_.tier == Tier::Payg && sub_can_serve {
@@ -314,10 +341,12 @@ impl Analysis {
         }
 
         // SC-003: pay-as-you-go serves only when no subscription could.
-        if let Some(s) = r.served.filter(|s| rows.iter().any(|c| defs.index_of(&c.key()) == *s && c.tier == Tier::Payg)) {
+        if let Some(s) = r.served.filter(|s| rows.iter().any(|c| defs.index_of(&c.key()) == *s && c.tier == Tier::Payg))
+        {
             self.payg_served += 1;
             let first = d.order.first().map(|i| defs.index_of(&rows[*i].key()));
-            let sub_can_serve = rows.iter().any(|c| c.eligible && c.tier == Tier::Subscription && c.weight.unwrap_or(0.0) > 0.0);
+            let sub_can_serve =
+                rows.iter().any(|c| c.eligible && c.tier == Tier::Subscription && c.weight.unwrap_or(0.0) > 0.0);
             match (first == Some(s), d.kind) {
                 (true, DecisionKind::Warm) => self.payg_warm += 1,
                 (true, _) => self.payg_overflow += 1,
@@ -333,7 +362,10 @@ impl Analysis {
         if matches!(d.kind, DecisionKind::Cold | DecisionKind::Overflow)
             && let Some(first) = d.order.first().map(|i| &rows[*i])
         {
-            let eligible: Vec<&CandidateRow> = rows.iter().filter(|c| c.eligible && c.tier == Tier::Subscription && c.weight.unwrap_or(0.0) > 0.0).collect();
+            let eligible: Vec<&CandidateRow> = rows
+                .iter()
+                .filter(|c| c.eligible && c.tier == Tier::Subscription && c.weight.unwrap_or(0.0) > 0.0)
+                .collect();
             let chosen = if first.tier == Tier::Subscription { first.deficit_before.unwrap_or(0) } else { i64::MIN };
             for c in eligible {
                 if c.deficit_before.unwrap_or(0) > chosen.saturating_add(1) {
@@ -346,12 +378,21 @@ impl Analysis {
             let want = recomputed(d);
             let got = d.order[0];
             if want != got {
-                let top = rows.iter().filter(|c| c.eligible && c.tier == rows[got].tier).filter_map(|c| c.deficit_before).max().unwrap_or(0);
+                let top = rows
+                    .iter()
+                    .filter(|c| c.eligible && c.tier == rows[got].tier)
+                    .filter_map(|c| c.deficit_before)
+                    .max()
+                    .unwrap_or(0);
                 if rows[got].deficit_before.unwrap_or(0) >= top - 1 {
                     // The ledger compares unrounded deficits; the record keeps whole tokens.
                     self.within_rounding += 1;
                 } else {
-                    self.bad_recompute.push(format!("{id}: rows choose {} but it went to {}", name(defs, want), name(defs, got)));
+                    self.bad_recompute.push(format!(
+                        "{id}: rows choose {} but it went to {}",
+                        name(defs, want),
+                        name(defs, got)
+                    ));
                 }
             }
         }
@@ -388,7 +429,12 @@ impl Analysis {
         bad.extend(self.bad_recompute.iter().map(|s| format!("SC-006 {s}")));
         // SC-004: a window that ended with quota to spare while cold work went elsewhere.
         for e in events {
-            if e.left_frac > e.reserve + 0.05 && self.passed_over.iter().any(|(t, i)| *i == account_of(defs, e) && *t >= e.started_ms && *t <= e.at_ms) {
+            if e.left_frac > e.reserve + 0.05
+                && self
+                    .passed_over
+                    .iter()
+                    .any(|(t, i)| *i == account_of(defs, e) && *t >= e.started_ms && *t <= e.at_ms)
+            {
                 bad.push(format!(
                     "SC-004: {} {} ended at +{}h with {:.0}% left while cold work went to an account owed less",
                     name(defs, e.account),
@@ -399,7 +445,12 @@ impl Analysis {
             }
             // The floor holds: no window ends more than 5% of its capacity under it.
             if e.left_frac < e.reserve - 0.05 {
-                bad.push(format!("SC-004: {} {} ended at {:.0}% left, under its floor", name(defs, e.account), e.window, e.left_frac * 100.0));
+                bad.push(format!(
+                    "SC-004: {} {} ended at {:.0}% left, under its floor",
+                    name(defs, e.account),
+                    e.window,
+                    e.left_frac * 100.0
+                ));
             }
         }
         bad
@@ -413,8 +464,18 @@ impl Analysis {
             s.push_str(&line);
             s.push('\n');
         };
-        w(&mut out, format!("requests {}  unserved {}  failed attempts {}", self.requests, self.unserved, self.failed_attempts));
-        w(&mut out, format!("decisions {:?}; cold work passed over an account that owed more: {}", self.kinds, self.passed_over.len()));
+        w(
+            &mut out,
+            format!("requests {}  unserved {}  failed attempts {}", self.requests, self.unserved, self.failed_attempts),
+        );
+        w(
+            &mut out,
+            format!(
+                "decisions {:?}; cold work passed over an account that owed more: {}",
+                self.kinds,
+                self.passed_over.len()
+            ),
+        );
         w(&mut out, format!("warm: {} hits, {} stayed, moved {:?}", self.warm_hits, self.warm_stays, self.moves));
         w(
             &mut out,
@@ -461,11 +522,24 @@ impl Analysis {
             if names.is_empty() {
                 w(
                     &mut out,
-                    format!("{:<16} {:<11} {:>6} {target:>9.1} {actual:>9.1} {:>8} {:>8} {:>8} {:>8}", d.key.account_key(), "-", 0, "-", "-", "-", self.served_by[i]),
+                    format!(
+                        "{:<16} {:<11} {:>6} {target:>9.1} {actual:>9.1} {:>8} {:>8} {:>8} {:>8}",
+                        d.key.account_key(),
+                        "-",
+                        0,
+                        "-",
+                        "-",
+                        "-",
+                        self.served_by[i]
+                    ),
                 );
             }
             for window in names {
-                let left: Vec<f64> = events.iter().filter(|e| e.account == i && e.window == window).map(|e| e.left_frac * 100.0).collect();
+                let left: Vec<f64> = events
+                    .iter()
+                    .filter(|e| e.account == i && e.window == window)
+                    .map(|e| e.left_frac * 100.0)
+                    .collect();
                 let avg = left.iter().sum::<f64>() / left.len() as f64;
                 let (min, max) = left.iter().fold((f64::MAX, f64::MIN), |(a, b), x| (a.min(*x), b.max(*x)));
                 w(
@@ -507,7 +581,11 @@ fn a_simulated_week_meets_every_target_and_survives_a_restart() {
     let defs = defs();
     let reqs = plan(SEED);
     let sessions = reqs.iter().filter(|r| r.session).count();
-    assert!((50_000..70_000).contains(&reqs.len()), "about 60,000 requests, got {} ({sessions} in sessions)", reqs.len());
+    assert!(
+        (50_000..70_000).contains(&reqs.len()),
+        "about 60,000 requests, got {} ({sessions} in sessions)",
+        reqs.len()
+    );
     assert!(reqs.windows(2).all(|p| p[0].at_ms <= p[1].at_ms) && reqs.last().is_some_and(|r| r.at_ms < WEEK_MS));
     assert!(units_of(&defs) >= 2);
 
@@ -572,7 +650,12 @@ fn a_simulated_week_meets_every_target_and_survives_a_restart() {
     assert_eq!(control_a.unserved, 0, "every request was served");
 
     let bad = control_a.failures(&defs, events);
-    assert!(bad.is_empty(), "{} failures, the first ten:\n{}", bad.len(), bad.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
+    assert!(
+        bad.is_empty(),
+        "{} failures, the first ten:\n{}",
+        bad.len(),
+        bad.iter().take(10).cloned().collect::<Vec<_>>().join("\n")
+    );
 }
 
 #[test]
@@ -616,9 +699,19 @@ fn a_power_loss_leaves_at_most_the_last_simulated_second_missing() {
     });
     let missing: Vec<&Req> = reqs[..cut].iter().filter(|r| !present.contains(&r.at_ms)).collect();
     for r in &missing {
-        assert!(r.at_ms / 1000 >= last_second, "request {} at second {} is gone; the last second is {last_second}", r.n, r.at_ms / 1000);
+        assert!(
+            r.at_ms / 1000 >= last_second,
+            "request {} at second {} is gone; the last second is {last_second}",
+            r.n,
+            r.at_ms / 1000
+        );
     }
-    println!("power loss at +{:.2}h: {} of the {} requests before it are missing, all from the last simulated second", cut_ms as f64 / HOUR as f64, missing.len(), cut);
+    println!(
+        "power loss at +{:.2}h: {} of the {} requests before it are missing, all from the last simulated second",
+        cut_ms as f64 / HOUR as f64,
+        missing.len(),
+        cut
+    );
     // The routing state still loads, and holds the work of every earlier second.
     let loaded = state::load(dir.path());
     assert!(!loaded.warm.is_empty() && !loaded.ledgers.is_empty());

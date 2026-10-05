@@ -53,8 +53,7 @@ use crate::jobs::Job;
 use crate::keys::AgentId;
 use crate::plan::{self, Candidate, Step};
 use crate::records::{
-    Attempt, AttemptKind, AttemptOutcome, AttemptPlacement, BreakHandling, ErrorClass, JobRef, Outcome, ServedBy,
-    Usage,
+    Attempt, AttemptKind, AttemptOutcome, AttemptPlacement, BreakHandling, ErrorClass, JobRef, Outcome, ServedBy, Usage,
 };
 use crate::routing::{CandidateKey, PlacementReason, WhyNot};
 use crate::signin::refresh::Refreshed;
@@ -624,15 +623,8 @@ impl Run {
             }
             target = model;
         }
-        let plan = match plan::plan(
-            &st.registry,
-            &st.accounts,
-            &st.tokens,
-            &st.live_models,
-            &target,
-            ty,
-            &client_style,
-        ) {
+        let plan = match plan::plan(&st.registry, &st.accounts, &st.tokens, &st.live_models, &target, ty, &client_style)
+        {
             Ok(p) => p,
             Err(e) => {
                 self.end_request(Outcome::Failed, None);
@@ -1677,9 +1669,9 @@ impl Run {
             dropped,
             forced,
             placement: match kind {
-                AttemptKind::SameAccountRetry => self
-                    .placing
-                    .map(|p| AttemptPlacement { reason: PlacementReason::Retry, rank: p.rank }),
+                AttemptKind::SameAccountRetry => {
+                    self.placing.map(|p| AttemptPlacement { reason: PlacementReason::Retry, rank: p.rank })
+                }
                 AttemptKind::Continuation | AttemptKind::Restart => None,
                 _ => self.placing,
             },
@@ -1707,7 +1699,13 @@ impl Run {
         }
         if let Some(routed) = &self.routed {
             let tokens = usage.as_ref().map_or(0, crate::route::plain_tokens);
-            crate::route::finish(&self.engine, routed, matches!(outcome, AttemptOutcome::Ok), tokens, SystemTime::now());
+            crate::route::finish(
+                &self.engine,
+                routed,
+                matches!(outcome, AttemptOutcome::Ok),
+                tokens,
+                SystemTime::now(),
+            );
         }
         self.engine.records.update(self.id(), |r| {
             if let Some(a) = r.attempts.last_mut() {
@@ -1791,7 +1789,15 @@ impl Run {
         if let Some(routed) = &self.routed {
             let at = CandidateKey::new(&c.provider.id, account.as_deref().unwrap_or(""), &c.upstream_id);
             let cache = crate::route::cache_of(c.provider, c.account);
-            crate::route::learn(&self.engine, &self.req.agent.key, routed, &at, cache, usage.as_ref(), SystemTime::now());
+            crate::route::learn(
+                &self.engine,
+                &self.req.agent.key,
+                routed,
+                &at,
+                cache,
+                usage.as_ref(),
+                SystemTime::now(),
+            );
         }
     }
 }

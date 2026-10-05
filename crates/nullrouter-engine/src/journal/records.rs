@@ -164,7 +164,9 @@ impl Folding {
                 }
             }
             "close" => {
-                for key in ["outcome", "served_by", "ttft_ms", "total_ms", "usage", "break_handling", "job", "recovered_at"] {
+                for key in
+                    ["outcome", "served_by", "ttft_ms", "total_ms", "usage", "break_handling", "job", "recovered_at"]
+                {
                     if let Some(v) = line.get(key) {
                         self.record.insert(key.into(), v.clone());
                     }
@@ -214,7 +216,8 @@ pub fn segments(home: &Path) -> Vec<(String, PathBuf)> {
         .filter_map(|e| {
             let name = e.file_name().into_string().ok()?;
             let day = name.strip_suffix(".jsonl")?;
-            (day.len() == 10 && day.as_bytes()[4] == b'-' && day.as_bytes()[7] == b'-').then(|| (day.to_owned(), e.path()))
+            (day.len() == 10 && day.as_bytes()[4] == b'-' && day.as_bytes()[7] == b'-')
+                .then(|| (day.to_owned(), e.path()))
         })
         .collect();
     out.sort();
@@ -241,9 +244,7 @@ impl Filter {
     pub fn matches(&self, r: &Value) -> bool {
         let attempts = r["attempts"].as_array().map(Vec::as_slice).unwrap_or_default();
         let touches = |want: &dyn Fn(&str, Option<&str>) -> bool| {
-            attempts
-                .iter()
-                .any(|a| want(a["provider"].as_str().unwrap_or(""), a["account"].as_str()))
+            attempts.iter().any(|a| want(a["provider"].as_str().unwrap_or(""), a["account"].as_str()))
                 || r["served_by"]["provider"].as_str().is_some_and(|p| want(p, r["served_by"]["account"].as_str()))
         };
         if let Some(p) = &self.provider
@@ -422,7 +423,9 @@ pub fn prune(home: &Path, before: SystemTime, wait: Duration) -> io::Result<usiz
             break;
         }
         if boundary {
-            gone += rewrite(&path, |r| r["arrived"].as_str().is_some_and(|a| clock::parse_rfc3339(a).is_some_and(|t| t < before)))?;
+            gone += rewrite(&path, |r| {
+                r["arrived"].as_str().is_some_and(|a| clock::parse_rfc3339(a).is_some_and(|t| t < before))
+            })?;
         } else {
             let text = fs::read_to_string(&path).unwrap_or_default();
             gone += fold(&text).len();
@@ -448,9 +451,7 @@ pub fn forget(home: &Path, who: &Who, wait: Duration) -> io::Result<usize> {
 fn belongs(r: &Value, who: &Who) -> bool {
     match who {
         Who::Agent(k) => r["agent"]["key"].as_str() == Some(k),
-        Who::Account(a) => {
-            Filter { account: Some(a.clone()), ..Filter::default() }.matches(r)
-        }
+        Who::Account(a) => Filter { account: Some(a.clone()), ..Filter::default() }.matches(r),
     }
 }
 
@@ -467,7 +468,8 @@ fn rewrite(path: &Path, drop: impl Fn(&Value) -> bool) -> io::Result<usize> {
     let kept: Vec<&str> = text
         .lines()
         .filter(|l| {
-            serde_json::from_str::<Value>(l).ok().and_then(|v| v["id"].as_str().map(|id| ids.contains(id))) != Some(true)
+            serde_json::from_str::<Value>(l).ok().and_then(|v| v["id"].as_str().map(|id| ids.contains(id)))
+                != Some(true)
         })
         .collect();
     if kept.is_empty() {
@@ -533,7 +535,8 @@ mod tests {
         let start = record(id, arrived);
         let mut done = start.clone();
         done.attempts.push(attempt(1, account));
-        done.served_by = Some(ServedBy { provider: "anthropic".into(), account: Some(account.into()), model: "m".into() });
+        done.served_by =
+            Some(ServedBy { provider: "anthropic".into(), account: Some(account.into()), model: "m".into() });
         done.outcome = Outcome::Succeeded;
         done.total_ms = Some(12.0);
         let mut lines = lines_for(&RequestRecord::new(id.into(), arrived.into(), "anthropic-messages"), &start, true);
@@ -546,7 +549,8 @@ mod tests {
         let start = record("rq_1", "2026-10-04T09:12:03.120Z");
         let mut done = start.clone();
         done.attempts.push(attempt(1, "max"));
-        done.served_by = Some(ServedBy { provider: "anthropic".into(), account: Some("max".into()), model: "m".into() });
+        done.served_by =
+            Some(ServedBy { provider: "anthropic".into(), account: Some("max".into()), model: "m".into() });
         done.outcome = Outcome::Succeeded;
         done.ttft_ms = Some(4.0);
         done.total_ms = Some(12.0);
@@ -602,7 +606,8 @@ mod tests {
         let mut body = text(&lifecycle("rq_1", "2026-10-04T09:00:00Z", "max"));
         body += &text(&lifecycle("rq_2", "2026-10-04T10:00:00Z", "pro"));
         fs::write(home.path().join("records/2026-10-04.jsonl"), body).unwrap();
-        let ids = |f: Filter| read(home.path(), &f).iter().map(|r| r["id"].as_str().unwrap().to_owned()).collect::<Vec<_>>();
+        let ids =
+            |f: Filter| read(home.path(), &f).iter().map(|r| r["id"].as_str().unwrap().to_owned()).collect::<Vec<_>>();
         assert_eq!(ids(Filter::default()), ["rq_2", "rq_1"], "newest first");
         assert_eq!(ids(Filter { account: Some("anthropic/pro".into()), ..Filter::default() }), ["rq_2"]);
         assert_eq!(ids(Filter { account: Some("max".into()), ..Filter::default() }), ["rq_1"]);
@@ -654,7 +659,9 @@ mod tests {
     fn prune_removes_older_days_whole_and_rewrites_the_boundary_day() {
         let home = tempfile::tempdir().unwrap();
         fs::create_dir_all(home.path().join("records")).unwrap();
-        let day = |d: &str, lines: Vec<(&str, Value)>| fs::write(home.path().join(format!("records/{d}.jsonl")), text(&lines)).unwrap();
+        let day = |d: &str, lines: Vec<(&str, Value)>| {
+            fs::write(home.path().join(format!("records/{d}.jsonl")), text(&lines)).unwrap()
+        };
         day("2026-10-02", lifecycle("rq_a", "2026-10-02T09:00:00Z", "max"));
         let mut mid = lifecycle("rq_b", "2026-10-03T08:00:00Z", "max");
         mid.extend(lifecycle("rq_c", "2026-10-03T20:00:00Z", "max"));
@@ -662,7 +669,8 @@ mod tests {
         day("2026-10-04", lifecycle("rq_d", "2026-10-04T09:00:00Z", "max"));
         let cut = clock::parse_rfc3339("2026-10-03T12:00:00Z").unwrap();
         assert_eq!(prune(home.path(), cut, Duration::from_secs(1)).unwrap(), 2);
-        let ids: Vec<_> = read(home.path(), &Filter::default()).iter().map(|r| r["id"].as_str().unwrap().to_owned()).collect();
+        let ids: Vec<_> =
+            read(home.path(), &Filter::default()).iter().map(|r| r["id"].as_str().unwrap().to_owned()).collect();
         assert_eq!(ids, ["rq_d", "rq_c"]);
         assert!(!home.path().join("records/2026-10-02.jsonl").exists());
     }

@@ -416,7 +416,8 @@ fn print_list(home: &OperatorHome, list: &Accounts, provider: Option<&str>, long
         return ExitCode::SUCCESS;
     }
     let text = |r: &Value, k: &str| r[k].as_str().unwrap_or("-").to_owned();
-    let mut cells = vec![["provider", "name", "kind", "order", "priority", "secret", "state"].map(str::to_owned).to_vec()];
+    let mut cells =
+        vec![["provider", "name", "kind", "order", "priority", "secret", "state"].map(str::to_owned).to_vec()];
     cells.extend(rows.iter().map(|r| {
         vec![
             text(r, "provider"),

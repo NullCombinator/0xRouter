@@ -33,7 +33,11 @@ async fn crash_child() {
     }
     let s = Arc::new(setup(|m| vec![("alpha", chat_plugin(m, "alpha", ""))], &[("alpha", "a")], "").await);
     s.mock.respond(|r| {
-        if String::from_utf8_lossy(&r.body).contains("STALL") { Step::StallHeaders { hold: Duration::from_secs(120) } } else { ok() }
+        if String::from_utf8_lossy(&r.body).contains("STALL") {
+            Step::StallHeaders { hold: Duration::from_secs(120) }
+        } else {
+            ok()
+        }
     });
     println!("HOME {}", s._dir.path().display());
     {
@@ -48,7 +52,14 @@ async fn crash_child() {
         let s = s.clone();
         workers.push(tokio::spawn(async move {
             for i in 0.. {
-                let req = request(&s, "openai-chat", "alpha/m1", body(&format!("hello {w} {i}")), &format!("ak_{w}"), CancellationToken::new());
+                let req = request(
+                    &s,
+                    "openai-chat",
+                    "alpha/m1",
+                    body(&format!("hello {w} {i}")),
+                    &format!("ak_{w}"),
+                    CancellationToken::new(),
+                );
                 let id = req.id.clone();
                 if s.engine.text(s.engine.snapshot(), req).await.is_ok() {
                     println!("OK {id}");
@@ -112,7 +123,8 @@ fn a_killed_server_loses_no_finished_record_and_the_open_ones_become_interrupted
 
         // Scenario 2: the request that was in flight has its open and attempt lines, and recovery
         // closes it as interrupted. Nothing stays in progress.
-        let open_before = records::read(&home, &Filter::default()).into_iter().filter(|r| r["outcome"] == "in_progress").count();
+        let open_before =
+            records::read(&home, &Filter::default()).into_iter().filter(|r| r["outcome"] == "in_progress").count();
         assert!(open_before >= 1, "the stalled request was in flight");
         let interrupted = records::recover(&home, SystemTime::now()).unwrap();
         assert_eq!(interrupted, open_before);
@@ -131,7 +143,11 @@ fn a_killed_server_loses_no_finished_record_and_the_open_ones_become_interrupted
             "the stalled request's attempt line survived"
         );
         for id in &acked {
-            assert_eq!(records::get(&home, id).unwrap()["outcome"], "succeeded", "recovery leaves finished records alone");
+            assert_eq!(
+                records::get(&home, id).unwrap()["outcome"],
+                "succeeded",
+                "recovery leaves finished records alone"
+            );
         }
         let _ = std::fs::remove_dir_all(&home);
     }
@@ -151,7 +167,11 @@ async fn a_torn_final_line_is_cut_and_the_next_line_is_whole() {
 
     records::recover(&home, SystemTime::now()).unwrap();
     let journal = Journal::start(&home, Options::default()).unwrap();
-    journal.append(Target::Records { day: segment.file_stem().unwrap().to_str().unwrap().into() }, "open", json!({"id": "rq_next"}));
+    journal.append(
+        Target::Records { day: segment.file_stem().unwrap().to_str().unwrap().into() },
+        "open",
+        json!({"id": "rq_next"}),
+    );
     journal.flush_blocking();
     let text = std::fs::read_to_string(&segment).unwrap();
     assert!(text.ends_with('\n'));
@@ -166,7 +186,8 @@ async fn a_torn_final_line_is_cut_and_the_next_line_is_whole() {
 fn a_power_loss_keeps_everything_older_than_the_sync_interval_across_a_new_day() {
     let home = tempfile::tempdir().unwrap();
     let sync = Duration::from_millis(40);
-    let journal = Journal::start(home.path(), Options { sync_every: sync, retry_every: Duration::from_secs(60) }).unwrap();
+    let journal =
+        Journal::start(home.path(), Options { sync_every: sync, retry_every: Duration::from_secs(60) }).unwrap();
     let started = std::time::Instant::now();
     let mut written = Vec::new();
     for i in 0..60 {
@@ -196,7 +217,11 @@ fn a_power_loss_keeps_everything_older_than_the_sync_interval_across_a_new_day()
     for (i, at) in &written {
         // `open` lines alone fold into records; anything older than a few sync rounds must be there.
         if lost_at.saturating_sub(*at) > sync * 6 {
-            assert!(kept.contains(&format!("rq_{i:03}")), "rq_{i:03} written {:?} before the loss is missing", lost_at - *at);
+            assert!(
+                kept.contains(&format!("rq_{i:03}")),
+                "rq_{i:03} written {:?} before the loss is missing",
+                lost_at - *at
+            );
         }
     }
     assert!(kept.len() >= 20, "most of the run is there: {}", kept.len());

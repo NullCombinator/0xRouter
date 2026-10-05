@@ -959,7 +959,12 @@ async fn quota() {
 // Slice 006, L7 (T085, SC-007): the routing view matches the provider's own polls.
 
 /// Every window of the view's account `provider/account` for `target`.
-fn view_windows(engine: &Engine, target: &str, provider: &str, account: &str) -> Vec<nullrouter_engine::routing::view::WindowView> {
+fn view_windows(
+    engine: &Engine,
+    target: &str,
+    provider: &str,
+    account: &str,
+) -> Vec<nullrouter_engine::routing::view::WindowView> {
     let st = engine.snapshot();
     nullrouter_engine::route::view_all(engine, &st, Some(target), std::time::SystemTime::now())
         .into_iter()
@@ -989,7 +994,8 @@ async fn live_routing_matches_polls() {
         if nullrouter_engine::quota::poll::reported(entity, account).is_none() {
             continue;
         }
-        let Some(target) = targets().into_iter().find(|t| t.split('/').next() == Some(account.provider.as_str())) else {
+        let Some(target) = targets().into_iter().find(|t| t.split('/').next() == Some(account.provider.as_str()))
+        else {
             eprintln!("{who}: skipped, no live target for {}", account.provider);
             continue;
         };
@@ -1010,7 +1016,12 @@ async fn live_routing_matches_polls() {
                 continue;
             };
             let reported = v.remaining_at_poll.expect("a polled window has a remaining");
-            assert!(v.cost_since_poll.abs() < 1e-6, "{who} {}: cost since the poll is {} right after it", w.name, v.cost_since_poll);
+            assert!(
+                v.cost_since_poll.abs() < 1e-6,
+                "{who} {}: cost since the poll is {} right after it",
+                w.name,
+                v.cost_since_poll
+            );
             assert!(
                 (v.remaining_now - reported).abs() <= reported.abs() * 1e-6 + 1e-6,
                 "{who} {}: the view says {} left, the poll says {reported}",
@@ -1025,7 +1036,9 @@ async fn live_routing_matches_polls() {
         let (_, rec) = send(&engine, "openai-chat", &target, body).await;
         assert_eq!(rec.outcome, Outcome::Succeeded, "{who}: {rec:#?}");
         let served = rec.served_by.as_ref().map(|s| (s.provider.clone(), s.account.clone().unwrap_or_default()));
-        if served.as_ref().map(|(p, a)| (p.as_str(), a.as_str())) != Some((account.provider.as_str(), account.name.as_str())) {
+        if served.as_ref().map(|(p, a)| (p.as_str(), a.as_str()))
+            != Some((account.provider.as_str(), account.name.as_str()))
+        {
             eprintln!("{who}: the request went to {served:?}; the drop is checked for that account on its own turn");
             continue;
         }
@@ -1045,11 +1058,19 @@ async fn live_routing_matches_polls() {
         tokio::time::sleep(Duration::from_secs(3)).await;
         if let Some(second) = engine.poll_quota(&account.provider, &account.name).await.filter(|p| p.ok()) {
             for (w0, w1) in first.windows.iter().zip(&second.windows) {
-                let (Some(r0), Some(r1), Some(a)) = (w0.remaining.or(w0.used.map(|u| 100.0 - u)), w1.remaining.or(w1.used.map(|u| 100.0 - u)), after.iter().find(|a| a.name == w1.name)) else {
+                let (Some(r0), Some(r1), Some(a)) = (
+                    w0.remaining.or(w0.used.map(|u| 100.0 - u)),
+                    w1.remaining.or(w1.used.map(|u| 100.0 - u)),
+                    after.iter().find(|a| a.name == w1.name),
+                ) else {
                     continue;
                 };
                 // A percent window is converted through the meter's capacity.
-                let provider_drop = if w1.unit == nullrouter_registry::schema::QuotaUnit::Percent { (r0 - r1) / 100.0 * a.capacity } else { r0 - r1 };
+                let provider_drop = if w1.unit == nullrouter_registry::schema::QuotaUnit::Percent {
+                    (r0 - r1) / 100.0 * a.capacity
+                } else {
+                    r0 - r1
+                };
                 let line = format!(
                     "{who} {}: provider charged {provider_drop:.0}, the meter charged {:.0} ({} capacity {:.0})",
                     w1.name, a.cost_since_poll, a.unit, a.capacity
@@ -1063,10 +1084,15 @@ async fn live_routing_matches_polls() {
         checked += 1;
     }
     if checked == 0 {
-        eprintln!("live_routing_matches_polls: no polled account is in service under {}", engine.home().path().display());
+        eprintln!(
+            "live_routing_matches_polls: no polled account is in service under {}",
+            engine.home().path().display()
+        );
     }
     if !corrections.is_empty() {
-        eprintln!("\nMETER CORRECTIONS NEEDED (over 1% of capacity; record each in plugins/bundled/*.toml with a dated source comment):");
+        eprintln!(
+            "\nMETER CORRECTIONS NEEDED (over 1% of capacity; record each in plugins/bundled/*.toml with a dated source comment):"
+        );
         for c in &corrections {
             eprintln!("  {c}");
         }

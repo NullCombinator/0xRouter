@@ -234,11 +234,7 @@ impl Engine {
         };
         let st = engine.snapshot();
         let restored = crate::route::restore(&engine, &st, SystemTime::now());
-        tracing::info!(
-            "routing state restored: {} fingerprints, {} ledgers",
-            restored.fingerprints,
-            restored.ledgers
-        );
+        tracing::info!("routing state restored: {} fingerprints, {} ledgers", restored.fingerprints, restored.ledgers);
         Ok((engine, report))
     }
 
@@ -318,7 +314,8 @@ impl Engine {
             .accounts
             .iter()
             .filter(|a| {
-                !a.disabled && old.accounts.get(&a.provider, &a.name).is_none_or(|o| o.disabled || o.priority != a.priority)
+                !a.disabled
+                    && old.accounts.get(&a.provider, &a.name).is_none_or(|o| o.disabled || o.priority != a.priority)
             })
             .map(|a| format!("{}/{}", a.provider, a.name))
             .collect();

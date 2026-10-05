@@ -452,14 +452,17 @@ impl CacheSim {
         let model = body.get("model").and_then(|m| m.as_str()).unwrap_or_default().to_owned();
         let anthropic = r.path_and_query.contains("/messages");
         let mut st = lock(&self.inner);
-        let label = st.tokens.iter().find(|(t, _)| *t == secret).map_or_else(|| "unknown".to_owned(), |(_, l)| l.clone());
+        let label =
+            st.tokens.iter().find(|(t, _)| *t == secret).map_or_else(|| "unknown".to_owned(), |(_, l)| l.clone());
         let count = st.served.entry(label.clone()).or_default();
         count.requests += 1;
         let nth = count.requests;
         let now = st.now;
-        if let Some(l) = st.limits.iter_mut().find(|l| {
-            l.label == label && nth >= l.from_nth && l.from.is_none_or(|from| now < from + l.duration)
-        }) {
+        if let Some(l) = st
+            .limits
+            .iter_mut()
+            .find(|l| l.label == label && nth >= l.from_nth && l.from.is_none_or(|from| now < from + l.duration))
+        {
             let from = *l.from.get_or_insert(now);
             let left = (from + l.duration).saturating_sub(now).as_secs().max(1);
             return Step::rate_limited(left, serde_json::json!({ "error": { "message": "rate limited" } }));
@@ -522,7 +525,9 @@ fn segments(body: &serde_json::Value) -> Vec<Segment> {
     }
     fn content(out: &mut Vec<Segment>, v: &Value) {
         match v {
-            Value::String(s) => out.push(Segment { tokens: (s.len() as u64).div_ceil(4), text: s.clone(), marker: false }),
+            Value::String(s) => {
+                out.push(Segment { tokens: (s.len() as u64).div_ceil(4), text: s.clone(), marker: false })
+            }
             Value::Array(blocks) => blocks.iter().for_each(|b| piece(out, b)),
             Value::Null => {}
             other => piece(out, other),
@@ -573,11 +578,23 @@ fn reply(anthropic: bool, streaming: bool, u: &Served) -> Step {
         if streaming {
             return Step::sse(
                 &[
-                    (Some("message_start"), json!({"type": "message_start", "message": {"id": "msg_sim", "type": "message", "role": "assistant", "content": [], "model": "sim", "usage": usage}})),
-                    (Some("content_block_start"), json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})),
-                    (Some("content_block_delta"), json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "ok"}})),
+                    (
+                        Some("message_start"),
+                        json!({"type": "message_start", "message": {"id": "msg_sim", "type": "message", "role": "assistant", "content": [], "model": "sim", "usage": usage}}),
+                    ),
+                    (
+                        Some("content_block_start"),
+                        json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+                    ),
+                    (
+                        Some("content_block_delta"),
+                        json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "ok"}}),
+                    ),
                     (Some("content_block_stop"), json!({"type": "content_block_stop", "index": 0})),
-                    (Some("message_delta"), json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": u.output}})),
+                    (
+                        Some("message_delta"),
+                        json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": u.output}}),
+                    ),
                     (Some("message_stop"), json!({"type": "message_stop"})),
                 ],
                 false,
@@ -597,8 +614,14 @@ fn reply(anthropic: bool, streaming: bool, u: &Served) -> Step {
     if streaming {
         return Step::sse(
             &[
-                (None, json!({"id": "c1", "object": "chat.completion.chunk", "model": "sim", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "ok"}, "finish_reason": null}]})),
-                (None, json!({"id": "c1", "object": "chat.completion.chunk", "model": "sim", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": usage})),
+                (
+                    None,
+                    json!({"id": "c1", "object": "chat.completion.chunk", "model": "sim", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "ok"}, "finish_reason": null}]}),
+                ),
+                (
+                    None,
+                    json!({"id": "c1", "object": "chat.completion.chunk", "model": "sim", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": usage}),
+                ),
             ],
             true,
         );
@@ -616,7 +639,6 @@ impl MockUpstream {
         self.respond(move |r| sim.answer(r));
     }
 }
-
 
 #[cfg(test)]
 mod tests {

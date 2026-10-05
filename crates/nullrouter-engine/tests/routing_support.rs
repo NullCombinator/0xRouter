@@ -41,4 +41,3 @@ async fn a_fleet_serves_with_cache_usage_and_draws_its_quota_down() {
     let snap = f.setup.engine.snapshot();
     assert_eq!(snap.accounts.iter().map(|a| a.priority).collect::<Vec<_>>(), [1.0, 2.0]);
 }
-

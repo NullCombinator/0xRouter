@@ -18,7 +18,8 @@ use crate::convert;
 use crate::fit::{self, FitVerdict};
 use crate::registry::{Registry, RuntimeSettings, UnifiedMember, UnifiedModel, token_clashes, token_path};
 use crate::schema::{
-    Decision, Model, ModelType, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings, RoutingSettings, StyleFile,
+    Decision, Model, ModelType, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings, RoutingSettings,
+    StyleFile,
 };
 use crate::validate::gate::{parse, positioned};
 use crate::validate::{

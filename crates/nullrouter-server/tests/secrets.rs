@@ -520,7 +520,8 @@ const SUB_B: &str = "sk-sub-b-SENTINEL-T092";
 const PAYG: &str = "sk-pay-SENTINEL-T092";
 
 const METERED: &str = "\n[routing.cache]\nmode = \"automatic\"\nlifetime = \"5m\"\nmin_tokens = 0\n\n[[routing.window]]\nname = \"5h\"\nlength = \"5h\"\nunit = \"weighted_tokens\"\ncapacity = 1000000\nreserve = \"10%\"\n";
-const PRICED: &str = "\n[routing.cache]\nmode = \"automatic\"\nmin_tokens = 0\n\n[[routing.price]]\ninput = 3.0\noutput = 12.0\n";
+const PRICED: &str =
+    "\n[routing.cache]\nmode = \"automatic\"\nmin_tokens = 0\n\n[[routing.price]]\ninput = 3.0\noutput = 12.0\n";
 
 fn routed_plugin(mock: &MockUpstream, id: &str, extra: &str) -> String {
     format!(
@@ -601,7 +602,7 @@ async fn routing_keeps_no_secret_and_no_prompt() {
     s.engine.poll_quota("alpha", "b").await.expect("polled");
     let r = send(json!([{"role": "user", "content": format!("{PROMPT} overflow")}])).await.unwrap();
     let head = format!("{} {:?}", r.status(), r.headers());
-        seen.push(format!("{head}\n{}", r.text().await.unwrap()));
+    seen.push(format!("{head}\n{}", r.text().await.unwrap()));
 
     let mut records = Vec::new();
     for r in s.engine.records.query(&Query::default()) {
@@ -623,7 +624,10 @@ async fn routing_keeps_no_secret_and_no_prompt() {
     tokio::task::spawn_blocking(move || journal.flush_blocking()).await.unwrap();
     let mut on_disk = files_under(&s.home().join("records"));
     on_disk.extend(files_under(&s.home().join("routing")).into_iter().filter(|(p, _)| !p.ends_with("salt")));
-    assert!(on_disk.iter().any(|(p, _)| p.ends_with(".jsonl") && p.contains("records")), "no record journal: {on_disk:?}");
+    assert!(
+        on_disk.iter().any(|(p, _)| p.ends_with(".jsonl") && p.contains("records")),
+        "no record journal: {on_disk:?}"
+    );
     let key = s.key.clone();
     drop(s);
 

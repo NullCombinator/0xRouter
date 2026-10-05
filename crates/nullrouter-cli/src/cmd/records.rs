@@ -80,7 +80,8 @@ fn fail(msg: impl std::fmt::Display) -> ExitCode {
 /// `2026-10-04` or an RFC 3339 time.
 fn parse_when(text: &str) -> Result<SystemTime, ExitCode> {
     let full = if text.len() == 10 { format!("{text}T00:00:00Z") } else { text.to_owned() };
-    clock::parse_rfc3339(&full).ok_or_else(|| fail(format!("{text:?} is not a date; use 2026-10-04 or 2026-10-04T09:00:00Z")))
+    clock::parse_rfc3339(&full)
+        .ok_or_else(|| fail(format!("{text:?} is not a date; use 2026-10-04 or 2026-10-04T09:00:00Z")))
 }
 
 /// What a request with no `close` is called: in flight with a server, cut short without one.
@@ -102,7 +103,8 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     match cmd {
         Command::List { provider, account, agent, model, reason, since, limit } => {
             let since = since.as_deref().map(parse_when).transpose()?;
-            let filter = records::Filter { provider, account, agent, model, reason, since, limit, ..Default::default() };
+            let filter =
+                records::Filter { provider, account, agent, model, reason, since, limit, ..Default::default() };
             let mut found = records::read(home.path(), &filter);
             settle_open(&mut found, running);
             if as_json {
@@ -256,10 +258,11 @@ fn placed(a: &Value) -> String {
 
 /// `  in 18,210 · out 512 · cache w 18,100`, for the counts the provider reported.
 fn attempt_usage(u: &Value) -> String {
-    let parts: Vec<String> = [("in", "input"), ("out", "output"), ("cache r", "cache_read"), ("cache w", "cache_write")]
-        .iter()
-        .filter_map(|(label, key)| u[*key].as_u64().map(|n| format!("{label} {}", grouped_comma(n))))
-        .collect();
+    let parts: Vec<String> =
+        [("in", "input"), ("out", "output"), ("cache r", "cache_read"), ("cache w", "cache_write")]
+            .iter()
+            .filter_map(|(label, key)| u[*key].as_u64().map(|n| format!("{label} {}", grouped_comma(n))))
+            .collect();
     if parts.is_empty() { String::new() } else { format!("  {}", parts.join(" · ")) }
 }
 
@@ -282,7 +285,13 @@ fn decision(d: &Value, o: &mut String) {
     };
     let warm = &d["warm"];
     let named = |w: &Value| format!("{}/{}", s(&w["provider"]), s(&w["account"]));
-    let prefix = |w: &Value| format!("prefix {} · idle {:.0} s", routing_text::si(w["prefix_tokens"].as_f64().unwrap_or(0.0)), w["idle_s"].as_f64().unwrap_or(0.0));
+    let prefix = |w: &Value| {
+        format!(
+            "prefix {} · idle {:.0} s",
+            routing_text::si(w["prefix_tokens"].as_f64().unwrap_or(0.0)),
+            w["idle_s"].as_f64().unwrap_or(0.0)
+        )
+    };
     if d["kind"] == "warm" && !warm.is_null() {
         let _ = writeln!(o, "decision    warm on {} · {} · stayed", named(warm), prefix(warm));
     } else {
@@ -294,18 +303,27 @@ fn decision(d: &Value, o: &mut String) {
         );
         if !warm.is_null() {
             let because = warm["moved_because"].as_str().unwrap_or("not usable");
-            let _ = writeln!(o, "            warm on {} · {} · moved: {because} on {}", named(warm), prefix(warm), named(warm));
+            let _ = writeln!(
+                o,
+                "            warm on {} · {} · moved: {because} on {}",
+                named(warm),
+                prefix(warm),
+                named(warm)
+            );
         }
     }
     let rows = d["candidates"].as_array().cloned().unwrap_or_default();
     if rows.is_empty() {
         return;
     }
-    let order: Vec<usize> = d["order"].as_array().into_iter().flatten().filter_map(|i| i.as_u64().map(|i| i as usize)).collect();
+    let order: Vec<usize> =
+        d["order"].as_array().into_iter().flatten().filter_map(|i| i.as_u64().map(|i| i as usize)).collect();
     // The attempt order first, then the candidates it left out.
-    let mut seq: Vec<(Option<usize>, &Value)> = order.iter().enumerate().filter_map(|(rank, i)| rows.get(*i).map(|r| (Some(rank), r))).collect();
+    let mut seq: Vec<(Option<usize>, &Value)> =
+        order.iter().enumerate().filter_map(|(rank, i)| rows.get(*i).map(|r| (Some(rank), r))).collect();
     seq.extend(rows.iter().enumerate().filter(|(i, _)| !order.contains(i)).map(|(_, r)| (None, r)));
-    let mut cells = vec![["#", "account", "tier", "eligible", "pace", "share", "deficit", "price"].map(str::to_owned).to_vec()];
+    let mut cells =
+        vec![["#", "account", "tier", "eligible", "pace", "share", "deficit", "price"].map(str::to_owned).to_vec()];
     for (rank, r) in seq {
         let dash = || String::new();
         cells.push(vec![
@@ -481,7 +499,10 @@ mod tests {
         let mut warm = cold.clone();
         warm["decision"]["kind"] = json!("warm");
         warm["decision"]["warm"] = json!({"provider": "anthropic", "account": "max", "model": "m", "prefix_tokens": 41_200, "idle_s": 38.0, "stayed": true});
-        assert!(show(&warm, &Default::default()).contains("decision    warm on anthropic/max · prefix 41.2k · idle 38 s · stayed"));
+        assert!(
+            show(&warm, &Default::default())
+                .contains("decision    warm on anthropic/max · prefix 41.2k · idle 38 s · stayed")
+        );
         warm["decision"]["kind"] = json!("cold");
         warm["decision"]["warm"]["stayed"] = json!(false);
         warm["decision"]["warm"]["moved_because"] = json!("reserve_floor");

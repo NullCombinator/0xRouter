@@ -12,8 +12,8 @@ use std::time::SystemTime;
 use clap::{Args as ClapArgs, Subcommand};
 use nullrouter_cli::routing_text;
 use nullrouter_engine::accounts::{self, Accounts, PriceOverride, RoutingOverrides, WindowOverride};
-use nullrouter_registry::schema::{OperatorConfig, Percent, parse_duration};
 use nullrouter_registry::OperatorHome;
+use nullrouter_registry::schema::{OperatorConfig, Percent, parse_duration};
 use nullrouter_server::operator::{self, CallError};
 use serde_json::json;
 
@@ -96,10 +96,11 @@ fn edit_account(
     change: impl FnOnce(&mut RoutingOverrides) -> Result<(), String>,
 ) -> Result<ExitCode, ExitCode> {
     let mut list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
-    let mut routing = list.get(provider, name).ok_or_else(|| fail(accounts::AccountError::NotFound {
-        provider: provider.to_owned(),
-        name: name.to_owned(),
-    }))?.routing.clone();
+    let mut routing = list
+        .get(provider, name)
+        .ok_or_else(|| fail(accounts::AccountError::NotFound { provider: provider.to_owned(), name: name.to_owned() }))?
+        .routing
+        .clone();
     change(&mut routing).map_err(fail)?;
     if let Some(problem) = routing.problem() {
         return Err(fail(problem));
@@ -147,11 +148,17 @@ fn set(home: &OperatorHome, provider: &str, name: &str, settings: &[String]) -> 
                 "reserve" => r.reserve = Some(percent(key, value)?),
                 "price.input" => {
                     let input = number(key, value)?;
-                    price = Some(PriceOverride { input, ..price.unwrap_or(PriceOverride { input, output: None, cache_read: None, cache_write: None }) });
+                    price = Some(PriceOverride {
+                        input,
+                        ..price.unwrap_or(PriceOverride { input, output: None, cache_read: None, cache_write: None })
+                    });
                 }
-                "price.output" | "price.cache_read" | "price.cache_write" => price_extra.push((key, number(key, value)?)),
+                "price.output" | "price.cache_read" | "price.cache_write" => {
+                    price_extra.push((key, number(key, value)?))
+                }
                 _ => {
-                    let (w, field) = window_key(key).ok_or_else(|| format!("{key}: unknown setting; allowed: {KEYS}"))?;
+                    let (w, field) =
+                        window_key(key).ok_or_else(|| format!("{key}: unknown setting; allowed: {KEYS}"))?;
                     let o = r.window.entry(w.to_owned()).or_default();
                     match field {
                         "capacity" => o.capacity = Some(number(key, value)?),
@@ -162,7 +169,9 @@ fn set(home: &OperatorHome, provider: &str, name: &str, settings: &[String]) -> 
             }
         }
         if !price_extra.is_empty() {
-            let p = price.as_mut().ok_or_else(|| format!("{}: set price.input too; a price starts with its input", price_extra[0].0))?;
+            let p = price
+                .as_mut()
+                .ok_or_else(|| format!("{}: set price.input too; a price starts with its input", price_extra[0].0))?;
             for (key, v) in price_extra {
                 match key {
                     "price.output" => p.output = Some(v),
@@ -242,7 +251,8 @@ fn window(home: &OperatorHome, args: &[String]) -> Result<ExitCode, ExitCode> {
         Some(t) => edit_key(&text, "[routing.amortization_for]", t, value.map(|v| format!("\"{v}\"")).as_deref()),
     };
     // The file must still load: a config the server would refuse is never written.
-    toml::from_str::<OperatorConfig>(&text).map_err(|e| fail(format!("{}: the edit would not load: {e}", path.display())))?;
+    toml::from_str::<OperatorConfig>(&text)
+        .map_err(|e| fail(format!("{}: the edit would not load: {e}", path.display())))?;
     std::fs::create_dir_all(home.path()).map_err(fail)?;
     let tmp = path.with_extension("toml.tmp");
     std::fs::write(&tmp, &text)
@@ -300,10 +310,16 @@ mod tests {
             edit_key(with, "[routing]", "amortization", Some("\"2h\"")),
             "schema = 1\n[routing]\n# note\namortization = \"2h\"\n[server]\nlisten = \"x\"\n"
         );
-        assert_eq!(edit_key(with, "[routing]", "amortization", None), "schema = 1\n[routing]\n# note\n[server]\nlisten = \"x\"\n");
+        assert_eq!(
+            edit_key(with, "[routing]", "amortization", None),
+            "schema = 1\n[routing]\n# note\n[server]\nlisten = \"x\"\n"
+        );
         assert_eq!(edit_key("a = 1\n", "[routing]", "amortization", None), "a = 1\n");
         let targets = "[routing.amortization_for]\n\"sonnet\" = \"1h\"\n";
-        assert_eq!(edit_key(targets, "[routing.amortization_for]", "sonnet", Some("\"2h\"")), "[routing.amortization_for]\n\"sonnet\" = \"2h\"\n");
+        assert_eq!(
+            edit_key(targets, "[routing.amortization_for]", "sonnet", Some("\"2h\"")),
+            "[routing.amortization_for]\n\"sonnet\" = \"2h\"\n"
+        );
         assert_eq!(edit_key(targets, "[routing.amortization_for]", "sonnet", None), "[routing.amortization_for]\n");
         assert_eq!(
             edit_key("a = 1", "[routing.amortization_for]", "x/y", Some("\"1h\"")),

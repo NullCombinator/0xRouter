@@ -67,7 +67,11 @@ fn close(id: &str, provider: &str, account: &str) -> Value {
 /// A finished request: (id, arrival, agent, target), served by (provider, account) for `reason`.
 fn done(home: &Path, day: &str, req: (&str, &str, &str, &str), by: (&str, &str), reason: &str) {
     let ((id, at, agent, target), (provider, account)) = (req, by);
-    segment(home, day, &[open(id, at, agent, target), attempt(id, provider, account, reason), close(id, provider, account)]);
+    segment(
+        home,
+        day,
+        &[open(id, at, agent, target), attempt(id, provider, account, reason), close(id, provider, account)],
+    );
 }
 
 fn ids(o: &str) -> Vec<String> {
@@ -77,7 +81,13 @@ fn ids(o: &str) -> Vec<String> {
 fn seeded() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let h = dir.path();
-    done(h, "2026-10-02", ("rq_01", "2026-10-02T09:00:00Z", "key_a", "sonnet"), ("anthropic", "max"), "cold_by_deficit");
+    done(
+        h,
+        "2026-10-02",
+        ("rq_01", "2026-10-02T09:00:00Z", "key_a", "sonnet"),
+        ("anthropic", "max"),
+        "cold_by_deficit",
+    );
     done(h, "2026-10-03", ("rq_02", "2026-10-03T09:00:00Z", "key_b", "sonnet"), ("anthropic", "pro"), "warm");
     done(h, "2026-10-04", ("rq_03", "2026-10-04T09:00:00Z", "key_a", "opus"), ("openrouter", "main"), "payg_overflow");
     done(h, "2026-10-04", ("rq_04", "2026-10-04T10:00:00Z", "key_a", "sonnet"), ("anthropic", "max"), "warm");

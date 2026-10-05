@@ -96,7 +96,8 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
                 for a in &r.unused_accounts {
                     tracing::warn!("account {a} names a provider that isn't loaded");
                 }
-                let notes: Vec<String> = engine.snapshot().registry.report().notes.iter().map(ToString::to_string).collect();
+                let notes: Vec<String> =
+                    engine.snapshot().registry.report().notes.iter().map(ToString::to_string).collect();
                 for n in &notes {
                     tracing::info!("{n}");
                 }
@@ -132,13 +133,17 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
             let fingerprints = match (&account, &agent) {
                 (Some(a), None) => match a.split_once('/') {
                     Some((p, n)) => {
-                        engine.records.forget(|r| records::Filter { account: Some(a.clone()), ..Default::default() }.matches(r));
+                        engine
+                            .records
+                            .forget(|r| records::Filter { account: Some(a.clone()), ..Default::default() }.matches(r));
                         nullrouter_engine::route::drop_account(engine, &st, p, n, now)
                     }
                     None => return json!({"ok": false, "error": "--account is provider/name"}),
                 },
                 (None, Some(k)) => {
-                    engine.records.forget(|r| records::Filter { agent: Some(k.clone()), ..Default::default() }.matches(r));
+                    engine
+                        .records
+                        .forget(|r| records::Filter { agent: Some(k.clone()), ..Default::default() }.matches(r));
                     nullrouter_engine::route::drop_agent(engine, &st, k, now)
                 }
                 _ => return json!({"ok": false, "error": "name an account or an agent, not both"}),
@@ -218,7 +223,8 @@ async fn records_list(engine: &Arc<Engine>, req: &Value) -> Value {
         .filter_map(|r| serde_json::to_value(r).ok())
         .filter(|r| filter.matches(r))
         .collect();
-    let ids: std::collections::BTreeSet<String> = live.iter().filter_map(|r| r["id"].as_str().map(str::to_owned)).collect();
+    let ids: std::collections::BTreeSet<String> =
+        live.iter().filter_map(|r| r["id"].as_str().map(str::to_owned)).collect();
     disk.retain(|r| r["id"].as_str().is_none_or(|id| !ids.contains(id)));
     disk.extend(live);
     disk.sort_by(|a, b| b["id"].as_str().cmp(&a["id"].as_str()));

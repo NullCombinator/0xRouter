@@ -119,7 +119,10 @@ fn routing_set_and_unset_write_the_overrides_and_the_gate_refuses_bad_ones() {
     assert_eq!(r.cache_lifetime, Some(Duration::from_secs(1800)));
     assert_eq!(r.reserve.map(|p| p.0), Some(10.0));
 
-    ok(dir.path(), &["routing", "unset", "anthropic", "pro", "reserve", "window.5-hour", "price", "window.weekly.reserve"]);
+    ok(
+        dir.path(),
+        &["routing", "unset", "anthropic", "pro", "reserve", "window.5-hour", "price", "window.weekly.reserve"],
+    );
     let r = load(dir.path()).get("anthropic", "pro").unwrap().routing.clone();
     assert_eq!(r.cache_lifetime, Some(Duration::from_secs(1800)));
     assert!(r.reserve.is_none() && r.price.is_none() && r.window.is_empty(), "{r:?}");
@@ -154,7 +157,11 @@ fn config(home: &Path) -> OperatorConfig {
 #[test]
 fn routing_window_sets_the_default_or_a_targets_length() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("config.toml"), "# my settings\nschema = 1\n\n[pipeline]\nbreak_behaviour = \"restart\"\n").unwrap();
+    std::fs::write(
+        dir.path().join("config.toml"),
+        "# my settings\nschema = 1\n\n[pipeline]\nbreak_behaviour = \"restart\"\n",
+    )
+    .unwrap();
     let out = ok(dir.path(), &["routing", "window", "2h"]);
     assert!(out.contains("saved; applies at next start"), "{out}");
     assert_eq!(config(dir.path()).routing.amortization, Duration::from_secs(2 * 3600));
@@ -173,7 +180,9 @@ fn routing_window_sets_the_default_or_a_targets_length() {
     assert_eq!(config(dir.path()).routing.amortization, Duration::from_secs(5 * 3600));
 
     let before = std::fs::read(dir.path().join("config.toml")).unwrap();
-    for bad in [&["routing", "window", "0s"][..], &["routing", "window", "soon"], &["routing", "window", "sonnet", "0m"]] {
+    for bad in
+        [&["routing", "window", "0s"][..], &["routing", "window", "soon"], &["routing", "window", "sonnet", "0m"]]
+    {
         let msg = refused(dir.path(), bad);
         assert!(msg.contains("amortization") || msg.contains("duration") || msg.contains("0"), "{bad:?}: {msg}");
     }
@@ -254,7 +263,18 @@ async fn the_view_prints_the_contracts_columns_and_a_change_applies_to_the_runni
     let view = ok(home, &["routing"]);
     let lines: Vec<&str> = view.lines().collect();
     assert!(lines[0].starts_with("amortization 5h (") && lines[0].contains("records kept"), "{view}");
-    for want in ["subscription tier", "pay-as-you-go tier", "account", "source", "pace", "share", "deficit", "priority", "cache", "windows"] {
+    for want in [
+        "subscription tier",
+        "pay-as-you-go tier",
+        "account",
+        "source",
+        "pace",
+        "share",
+        "deficit",
+        "priority",
+        "cache",
+        "windows",
+    ] {
         assert!(view.contains(want), "{want:?} missing from:\n{view}");
     }
     let a = lines.iter().find(|l| l.contains("alpha/a")).unwrap();

@@ -12,7 +12,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use nullrouter_registry::schema::{Percent, check_capacity, check_length, check_lifetime, check_price_value, check_reserve, parse_duration};
+use nullrouter_registry::schema::{
+    Percent, check_capacity, check_length, check_lifetime, check_price_value, check_reserve, parse_duration,
+};
 use nullrouter_registry::{ProviderEntity, Registry, SecretString};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -101,7 +103,12 @@ impl RoutingOverrides {
             note("reserve", check_reserve(p));
         }
         if let Some(p) = &self.price {
-            for (k, v) in [("input", Some(p.input)), ("output", p.output), ("cache_read", p.cache_read), ("cache_write", p.cache_write)] {
+            for (k, v) in [
+                ("input", Some(p.input)),
+                ("output", p.output),
+                ("cache_read", p.cache_read),
+                ("cache_write", p.cache_write),
+            ] {
                 if let Some(v) = v {
                     note(&format!("price.{k}"), check_price_value(v));
                 }
@@ -123,11 +130,7 @@ impl RoutingOverrides {
 
     /// Names of overridden windows that the provider's declaration doesn't have.
     pub fn unknown_windows<'a>(&'a self, declared: &[nullrouter_registry::schema::MeterDecl]) -> Vec<&'a str> {
-        self.window
-            .keys()
-            .filter(|n| !declared.iter().any(|d| d.name == **n))
-            .map(String::as_str)
-            .collect()
+        self.window.keys().filter(|n| !declared.iter().any(|d| d.name == **n)).map(String::as_str).collect()
     }
 }
 
@@ -635,7 +638,10 @@ impl Accounts {
             if let Some(name) = a.routing.unknown_windows(declared.windows).first() {
                 return Err(FileError::invalid(
                     &self.path,
-                    format!("account {}/{}: routing.window.{name}: {} declares no window with that name", a.provider, a.name, a.provider),
+                    format!(
+                        "account {}/{}: routing.window.{name}: {} declares no window with that name",
+                        a.provider, a.name, a.provider
+                    ),
                 ));
             }
         }
@@ -954,7 +960,10 @@ kind = "signin"
         assert_eq!(max.routing.reserve, Some(Percent(10.0)));
         assert_eq!(max.routing.price.unwrap().output, Some(15.0));
         let w = max.routing.window["5-hour"];
-        assert_eq!((w.capacity, w.length, w.reserve), (Some(12_000_000.0), Some(Duration::from_secs(5 * 3600)), Some(Percent(8.0))));
+        assert_eq!(
+            (w.capacity, w.length, w.reserve),
+            (Some(12_000_000.0), Some(Duration::from_secs(5 * 3600)), Some(Percent(8.0)))
+        );
         let pro = a.get("anthropic", "pro").unwrap();
         assert_eq!(pro.priority, DEFAULT_PRIORITY);
         assert!(pro.routing.is_empty());

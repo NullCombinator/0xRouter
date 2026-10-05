@@ -116,7 +116,13 @@ pub fn warm_line(s: &Stored) -> Value {
 }
 
 /// The `ledger` line for a ledger's standing.
-pub fn ledger_line(target: &str, tier: Tier, window: SystemTime, deficits: &BTreeMap<String, f64>, at: SystemTime) -> Value {
+pub fn ledger_line(
+    target: &str,
+    tier: Tier,
+    window: SystemTime,
+    deficits: &BTreeMap<String, f64>,
+    at: SystemTime,
+) -> Value {
     let deficits: BTreeMap<&String, i64> = deficits.iter().map(|(k, v)| (k, v.round() as i64)).collect();
     json!({
         "v": 1,
@@ -174,7 +180,12 @@ mod tests {
         let a1 = stored("k", 1, "max", "2026-10-04T09:00:00Z");
         let a2 = stored("k", 1, "max", "2026-10-04T09:30:00Z");
         let b = stored("k", 2, "pro", "2026-10-04T09:10:00Z");
-        let body = format!("{}\nnot json\n{{\"v\":1,\"t\":\"warm\"}}\n{}\n{}\n", warm_line(&a1), warm_line(&b), warm_line(&a2));
+        let body = format!(
+            "{}\nnot json\n{{\"v\":1,\"t\":\"warm\"}}\n{}\n{}\n",
+            warm_line(&a1),
+            warm_line(&b),
+            warm_line(&a2)
+        );
         fs::write(home.path().join("routing/warm.jsonl"), body).unwrap();
         let loaded = load(home.path());
         assert_eq!(loaded.warm.len(), 2);

@@ -495,7 +495,10 @@ mod tests {
         let get = |key: &str| c.get(q.url(QuotaRoute::Sim)).bearer_auth(key).send();
         let r = get("sk-a").await.unwrap();
         let b: Value = serde_json::from_slice(&r.bytes().await.unwrap()).unwrap();
-        assert_eq!(b["windows"][0], json!({ "name": "5h", "unit": "tokens", "used": 175.0, "limit": 1000.0, "resets_at": "2026-10-04T05:00:00Z" }));
+        assert_eq!(
+            b["windows"][0],
+            json!({ "name": "5h", "unit": "tokens", "used": 175.0, "limit": 1000.0, "resets_at": "2026-10-04T05:00:00Z" })
+        );
         assert_eq!(get("nobody").await.unwrap().status(), 401);
         sim.reset("a", "5h", "2026-10-04T10:00:00Z");
         assert_eq!(sim.windows("a")[0].used, 0.0);

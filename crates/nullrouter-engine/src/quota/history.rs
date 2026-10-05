@@ -479,13 +479,16 @@ impl History {
     pub fn recover_counters(&self, now: SystemTime) -> usize {
         let since = now.checked_sub(super::tally::HORIZON);
         let filter = crate::journal::records::Filter { since, ..Default::default() };
-        let mut resume: std::collections::HashMap<(String, String), Option<SystemTime>> = std::collections::HashMap::new();
+        let mut resume: std::collections::HashMap<(String, String), Option<SystemTime>> =
+            std::collections::HashMap::new();
         let mut counted = 0;
         // Oldest first, so each hour's counters and the sliding list fill in order.
         for r in crate::journal::records::read(&self.home, &filter).iter().rev() {
             let Some(arrived) = r["arrived"].as_str().and_then(clock::parse_rfc3339) else { continue };
             for a in r["attempts"].as_array().into_iter().flatten() {
-                let (Some(p), Some(acct), Some(model)) = (a["provider"].as_str(), a["account"].as_str(), a["model"].as_str()) else {
+                let (Some(p), Some(acct), Some(model)) =
+                    (a["provider"].as_str(), a["account"].as_str(), a["model"].as_str())
+                else {
                     continue;
                 };
                 // A skipped attempt sent nothing; one still running when the process died has no usage.
@@ -496,9 +499,8 @@ impl History {
                 if usage.is_some_and(|u| u.estimated) {
                     continue;
                 }
-                let from = *resume
-                    .entry((p.to_owned(), acct.to_owned()))
-                    .or_insert_with(|| resume_point(&self.home, p, acct));
+                let from =
+                    *resume.entry((p.to_owned(), acct.to_owned())).or_insert_with(|| resume_point(&self.home, p, acct));
                 self.tally.recover_attempt(p, acct, model, usage.as_ref(), at, from.is_none_or(|f| at > f));
                 counted += 1;
             }

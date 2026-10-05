@@ -72,7 +72,9 @@ async fn a_stream_is_relayed_up_to_its_ending_and_the_ending_waits() {
     let mut r = reqwest::Client::new()
         .post(format!("{}/v1/chat/completions", s.base))
         .bearer_auth(&s.key)
-        .body(json!({"model": "mockco/m1", "stream": true, "messages": [{"role": "user", "content": "hi"}]}).to_string())
+        .body(
+            json!({"model": "mockco/m1", "stream": true, "messages": [{"role": "user", "content": "hi"}]}).to_string(),
+        )
         .send()
         .await
         .unwrap();

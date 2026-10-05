@@ -320,7 +320,6 @@ mod duration_serde {
     }
 }
 
-
 #[cfg(test)]
 mod no_io {
     /// Source text of every pure routing file, paired with its name for the failure message.

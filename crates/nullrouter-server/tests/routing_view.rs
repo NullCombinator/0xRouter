@@ -149,7 +149,8 @@ async fn the_view_carries_every_number_the_operator_reads_and_a_priority_applies
 
     // Scenario 1: priority 3 on alpha/b, saved and reloaded, changes its share without a restart.
     let before = row(&view, "alpha/b")["share"].as_f64().unwrap();
-    let text = accounts(1.0).replace("name = \"b\"\nsecret = \"sk-view-b\"\n", "name = \"b\"\nsecret = \"sk-view-b\"\npriority = 3.0\n");
+    let text = accounts(1.0)
+        .replace("name = \"b\"\nsecret = \"sk-view-b\"\n", "name = \"b\"\nsecret = \"sk-view-b\"\npriority = 3.0\n");
     nullrouter_engine::files::write_private(&s.home().join(nullrouter_engine::accounts::FILE), &text).unwrap();
     let reloaded = operator::handle(&s.engine, &json!({"op": "reload"})).await;
     assert_eq!(reloaded["ok"], true, "{reloaded:#}");

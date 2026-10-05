@@ -109,19 +109,18 @@ async fn a_moved_warm_request_names_the_warm_account_and_why_it_left() {
 /// The account the recorded rows choose for the first attempt: among the eligible rows of the
 /// tier cold work went to, the largest deficit, then the higher share, then the operator's order.
 fn recomputed(d: &nullrouter_engine::routing::Decision) -> String {
-    let tier = if d.candidates.iter().any(|c| c.eligible && c.tier == Tier::Subscription && c.weight.unwrap_or(0.0) > 0.0) {
-        Tier::Subscription
-    } else {
-        Tier::Payg
-    };
+    let tier =
+        if d.candidates.iter().any(|c| c.eligible && c.tier == Tier::Subscription && c.weight.unwrap_or(0.0) > 0.0) {
+            Tier::Subscription
+        } else {
+            Tier::Payg
+        };
     let mut rows: Vec<(usize, &CandidateRow)> =
         d.candidates.iter().enumerate().filter(|(_, c)| c.eligible && c.tier == tier).collect();
     // Candidates are listed in the operator's order, so the index is the order.
     rows.sort_by(|(i, a), (j, b)| {
         let (da, db) = (a.deficit_before.unwrap_or(0), b.deficit_before.unwrap_or(0));
-        db.cmp(&da)
-            .then(b.share.unwrap_or(0.0).total_cmp(&a.share.unwrap_or(0.0)))
-            .then(i.cmp(j))
+        db.cmp(&da).then(b.share.unwrap_or(0.0).total_cmp(&a.share.unwrap_or(0.0))).then(i.cmp(j))
     });
     let (_, c) = rows[0];
     format!("{}/{}", c.provider, c.account)

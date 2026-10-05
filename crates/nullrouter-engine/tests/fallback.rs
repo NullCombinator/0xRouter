@@ -208,7 +208,8 @@ async fn a_timeout_or_a_refused_connection_on_the_placed_account_falls_back_too(
     // Nothing listening: the first provider can't be reached, the second serves.
     let s = setup(
         |m| {
-            let dead = chat_plugin(m, "dead", NO_RETRY).replace(&m.url("/dead/chat/completions"), "http://127.0.0.1:1/chat");
+            let dead =
+                chat_plugin(m, "dead", NO_RETRY).replace(&m.url("/dead/chat/completions"), "http://127.0.0.1:1/chat");
             vec![("dead", dead), ("alpha", chat_plugin(m, "alpha", NO_RETRY))]
         },
         &[("dead", "main"), ("dead", "backup"), ("alpha", "main")],

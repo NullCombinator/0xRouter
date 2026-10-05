@@ -332,7 +332,8 @@ async fn cold_work_and_overflow_through_real_harnesses() {
     }
     accounts += &format!("[[account]]\nprovider = \"payco\"\nname = \"key\"\nsecret = \"{SECRET}-key\"\n");
     let unified = "[[unified_model]]\nname = \"cold\"\nmembers = [{ provider = \"subco\", model = \"m1\" }, { provider = \"payco\", model = \"m1\" }]\n";
-    let s = server_custom(|m| vec![cold_plugin(m, "subco", subs), cold_plugin(m, "payco", pay)], &accounts, unified).await;
+    let s =
+        server_custom(|m| vec![cold_plugin(m, "subco", subs), cold_plugin(m, "payco", pay)], &accounts, unified).await;
     let cache = CacheSim::new(Duration::from_secs(300));
     for n in ["s1", "s2", "s3"] {
         cache.account(&format!("{SECRET}-{n}"), &format!("subco/{n}"));
@@ -363,7 +364,9 @@ async fn cold_work_and_overflow_through_real_harnesses() {
     let records: Vec<_> = records.iter().filter(|r| r.target.as_deref() == Some("cold")).collect();
     assert!(!records.is_empty(), "the clients reached the unified model");
     assert!(records.iter().all(|r| r.outcome == Outcome::Succeeded), "no client error");
-    let by = |provider: &str| records.iter().filter(|r| r.served_by.as_ref().is_some_and(|b| b.provider == provider)).count();
+    let by = |provider: &str| {
+        records.iter().filter(|r| r.served_by.as_ref().is_some_and(|b| b.provider == provider)).count()
+    };
     assert!(by("subco") >= 6, "the subscriptions took their share first: {}", by("subco"));
     assert!(by("payco") >= 1, "the burst was more than the subscriptions take");
     // The key served only what no subscription could: every subscription was resting or had
