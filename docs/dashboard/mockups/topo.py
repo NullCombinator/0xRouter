@@ -80,23 +80,74 @@ def usage():
         boxes+=f'<div class="cx"><b>{p}</b><div>unified model <b>{um}</b></div><div>combo <b>none</b> <span class="m">(not built yet)</span></div></div>'
     rtip=tipbox(f'<div class="cbh">Connections routed now</div>{boxes}',"tt tr")
     return wrap(svg,nodes+router(0,0,rtip,na),480,.72)
+PW=24   # pipe bore in px
+def lerp(c0,c1,u): return tuple(round(a+(b-a)*u) for a,b in zip(c0,c1))
+def gauge(x,y,frac,label,lines):
+    """Pressure gauge screwed into a pipe: dial on a short neck with a hex nut and a threaded stub; (x,y) is the pipe's centre line.
+    Scale runs white to red only (low latency white, high red)."""
+    cx,cy,r=30,30,19; a0,a1=210,-30; n=26
+    def pt(a,rr): return (cx+rr*math.cos(math.radians(a)), cy-rr*math.sin(math.radians(a)))
+    segs=""
+    for i in range(n):
+        u0,u1=i/n,(i+1)/n; p0=pt(a0+(a1-a0)*u0,r); p1=pt(a0+(a1-a0)*u1,r)
+        c=lerp((255,255,255),(239,68,68),min(1,(u0*1.15)**1.6))
+        segs+=f'<path d="M{p0[0]:.1f},{p0[1]:.1f} A{r},{r} 0 0 1 {p1[0]:.1f},{p1[1]:.1f}" fill="none" stroke="rgb{c}" stroke-width="5"/>'
+    p0=pt(a0,r); p1=pt(a1,r)
+    under=f'<path d="M{p0[0]:.1f},{p0[1]:.1f} A{r},{r} 0 1 1 {p1[0]:.1f},{p1[1]:.1f}" fill="none" stroke="#cbd5e1" stroke-width="8" stroke-linecap="round"/>'
+    ticks="".join(f'<line x1="{pt(a0+(a1-a0)*k/8,r-5)[0]:.1f}" y1="{pt(a0+(a1-a0)*k/8,r-5)[1]:.1f}" x2="{pt(a0+(a1-a0)*k/8,r-8)[0]:.1f}" y2="{pt(a0+(a1-a0)*k/8,r-8)[1]:.1f}" stroke="#94a3b8" stroke-width="1"/>' for k in range(9))
+    nx,ny=pt(a0+(a1-a0)*min(max(frac,0),1),r-3)
+    svg=(f'<svg width="54" height="77" viewBox="0 0 60 86">'
+         f'<rect x="26" y="56" width="8" height="12" fill="#94a3b8"/>'                                   # neck
+         f'<rect x="21" y="66" width="18" height="8" rx="1.5" fill="#cbd5e1" stroke="#64748b"/>'         # hex nut
+         f'<rect x="25" y="74" width="10" height="12" fill="#94a3b8"/>'
+         +"".join(f'<line x1="25" y1="{78+k*3}" x2="35" y2="{78+k*3}" stroke="#64748b" stroke-width="1"/>' for k in range(3))+   # thread
+         f'<circle cx="30" cy="30" r="28" fill="#e2e8f0" stroke="#64748b" stroke-width="2"/><circle cx="30" cy="30" r="25" fill="#f8fafc" stroke="#cbd5e1"/>'
+         f'{under}{segs}{ticks}<line x1="30" y1="30" x2="{nx:.1f}" y2="{ny:.1f}" stroke="#0a0a0a" stroke-width="1.8" stroke-linecap="round"/><circle cx="30" cy="30" r="3" fill="#0a0a0a"/>'
+         f'<text x="30" y="46" text-anchor="middle" font-size="8" font-weight="600" fill="#475569">{label}</text></svg>')
+    tip=tipbox(f'<b>{lines[0]}</b>'+''.join(f'<div>{l}</div>' for l in lines[1:]))
+    return f'<div class="gp" style="left:calc(50% + {x:.0f}px);top:calc(50% + {y-PW/2+2:.0f}px)">{svg}{tip}</div>'
+def collar(x,y,vertical=False):
+    w,h=9,PW+10
+    if vertical: w,h=h,w
+    bolts="".join(f'<circle cx="{x+dx:.1f}" cy="{y+dy:.1f}" r="1.5" fill="#475569"/>' for dx,dy in ([(-(PW/2+1),0),((PW/2+1),0)] if vertical else [(0,-(PW/2+1)),(0,PW/2+1)]))
+    return f'<rect x="{x-w/2:.1f}" y="{y-h/2:.1f}" width="{w}" height="{h}" rx="2" fill="#cbd5e1" fill-opacity=".92" stroke="#64748b"/>{bolts}'
 def landscape():
-    ax,px=-400,400; n=len(AG); svg=""; nodes=""; dials=""
+    ax,px=-400,400; NWL=190; svg=""; nodes=""; gauges=""
     ay={a:-165+i*110 for i,(a,_) in enumerate(AG)}; col=dict(AG)
-    py={p:-200+i*80 for i,p in enumerate(PV)}
+    py={p:-260+i*104 for i,p in enumerate(PV)}
+    LM,RM=-110,110                     # manifold x on each side of the router
+    body=[]; liquid=""; fit=""
+    # agent pipes -> left manifold -> router
     for a,c in AG:
-        y0=ay[a]; x0=ax+NW/2; x1=-RW/2; o=(x1-x0)*.45
-        svg+=edge(f"M{x0},{y0} C{x0+o},{y0} {x1-o},0 {x1},0",c,2.5,.9,"7 6")
-        nodes+=anode(a,c,ax,y0)
-        v=max(f[2] for f in FL if f[0]==a); gx,gy=bez((x0,y0),(x0+o,y0),(x1-o,0),(x1,0),.38)
-        dials+=dial(gx,gy,v/40,fmt(v),[f"{a} → router",f"router overhead {fmt(v)}","time before the first upstream attempt","includes any middleware","as of 14:02:11"])
-    seen={}
-    for a,p,ov,tt,p95,nr,um,ok in FL:
-        k=seen.get(p,0); seen[p]=k+1; y1=py[p]+k*14-7; x0=RW/2; x1=px-NW/2; o=(x1-x0)*.45
-        svg+=edge(f"M{x0},0 C{x0+o},0 {x1-o},{y1} {x1},{y1}",col[a],2.5 if ok else 2.5,.9)
-        gx,gy=bez((x0,0),(x0+o,0),(x1-o,y1),(x1,y1),.62+.2*k)
-        dials+=dial(gx,gy,tt/3000,fmt(tt),[f"router → {p} ({a})",f"TTFT p50 {fmt(tt)} · p95 {fmt(p95)}",f"{nr} requests · unified model {um}","last response "+("resolved" if ok else "failed")])
+        y0=ay[a]; body.append((ax,y0,LM,y0,False))
+        liquid+=f'<line class="fl" x1="{ax+NWL/2}" y1="{y0}" x2="{LM}" y2="{y0}" stroke="{c}" stroke-width="7" stroke-opacity=".85"/>'
+        fit+=collar(ax+NWL/2+5,y0)+collar(LM-PW/2-10,y0)
+        v=max(f[2] for f in FL if f[0]==a); gx=(ax+NWL/2+LM)/2
+        gauges+=gauge(gx,y0,v/40,fmt(v),[f"{a} → router","router overhead "+fmt(v),"time before the first upstream attempt","includes any middleware","as of 14:02:11"])
+        nodes+=anode(a,c,ax,y0).replace('class="tn"','class="tn" ',1).replace('style="','style="width:190px;',1)
+    body.append((LM,min(ay.values()),LM,max(ay.values()),True)); body.append((LM,0,-RW/2,0,False))
+    fit+=collar(LM+PW/2+10,0)+collar(-RW/2-8,0)
+    # router -> right manifold -> one pipe per provider
+    body.append((RW/2,0,RM,0,False)); body.append((RM,min(py.values()),RM,max(py.values()),True))
+    fit+=collar(RW/2+8,0)+collar(RM-PW/2-10,0)
     for p in PV:
-        st=STATE.get(p); nodes+=pnode(p,px,py[p],"error" if st=="error" else None)
-    return wrap(svg,nodes+router(0,0)+dials,480)
+        y1=py[p]; body.append((RM,y1,px,y1,False))
+        flows=[f for f in FL if f[1]==p]; k=len(flows)
+        for i,f in enumerate(flows):
+            oy=y1+(i-(k-1)/2)*6
+            liquid+=f'<line class="fl" x1="{RM}" y1="{oy}" x2="{px-NWL/2}" y2="{oy}" stroke="{col[f[0]]}" stroke-width="4" stroke-opacity=".9"/>'
+        fit+=collar(RM+PW/2+10,y1)+collar(px-NWL/2-5,y1)
+        if flows:
+            req=sum(f[5] for f in flows); tt=round(sum(f[3]*f[5] for f in flows)/req); p95=max(f[4] for f in flows); ok=all(f[7] for f in flows)
+            rows=[f'<span class="dot" style="background:{col[f[0]]}"></span>{f[0]} · {f[5]} req · TTFT {fmt(f[3])}' for f in flows]
+            gauges+=gauge((RM+px-NWL/2)/2,y1,tt/3000,fmt(tt),[f"router → {p}",f"TTFT p50 {fmt(tt)} · p95 {fmt(p95)} (all agents)",*rows,"last response "+("resolved" if ok else "failed")])
+        st=STATE.get(p)
+        nodes+=pnode(p,px,y1,"error" if st=="error" else None).replace('style="','style="width:190px;',1)
+    walls=''.join(f'<line x1="{a}" y1="{b}" x2="{c}" y2="{d}" stroke="#64748b" stroke-opacity=".6" stroke-width="{PW+4}" stroke-linecap="{"round" if v else "butt"}"/>' for a,b,c,d,v in body)
+    holes=''.join(f'<line x1="{a}" y1="{b}" x2="{c}" y2="{d}" stroke="#000" stroke-width="{PW}" stroke-linecap="{"round" if v else "butt"}"/>' for a,b,c,d,v in body)
+    glass=''.join(f'<line x1="{a}" y1="{b}" x2="{c}" y2="{d}" stroke="#e2e8f0" stroke-opacity=".5" stroke-width="{PW}" stroke-linecap="{"round" if v else "butt"}"/>' for a,b,c,d,v in body)
+    shine=''.join((f'<line x1="{a-7}" y1="{b}" x2="{c-7}" y2="{d}"' if v else f'<line x1="{a}" y1="{b-7}" x2="{c}" y2="{d-7}"')+' stroke="#fff" stroke-opacity=".75" stroke-width="2" stroke-linecap="round"/>' for a,b,c,d,v in body)
+    defs='<defs><mask id="pm" maskUnits="userSpaceOnUse" x="-700" y="-420" width="1400" height="840"><rect x="-700" y="-420" width="1400" height="840" fill="#fff"/>'+holes+'</mask></defs>'
+    svg=defs+f'<g mask="url(#pm)">{walls}</g>{glass}{liquid}{shine}{fit}'
+    return wrap(svg,nodes+router(0,0)+gauges,700)
 if __name__=="__main__": print(usage() if sys.argv[1]=="usage" else landscape())

@@ -172,3 +172,8 @@ details.add .pop{position:absolute;right:0;top:36px;width:380px;background:var(-
 .mn{display:flex;align-items:center;gap:6px;padding-left:4px;margin-top:4px}.mn i{font-size:9px;color:rgba(107,114,128,.7)}.mrow .cp{font-size:14px;color:var(--muted);margin-left:auto}
 .mb:has(input[value=chat]:checked) .mrow:not(.k-chat),.mb:has(input[value=embedding]:checked) .mrow:not(.k-embedding),.mb:has(input[value=image]:checked) .mrow:not(.k-image),.mb:has(input[value=tts]:checked) .mrow:not(.k-tts),.mb:has(input[value=stt]:checked) .mrow:not(.k-stt),.mb:has(input[value=video]:checked) .mrow:not(.k-video),.mb:has(input[value=decision]:checked) .mrow:not(.k-decision){display:none}
 .badge.dot:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:6px}
+/* pipeline landscape: gauges screwed into pipes */
+.gp{position:absolute;transform:translate(-50%,-100%);z-index:3;line-height:0}.gp svg{display:block}.gp .tt{bottom:calc(100% + 2px)}.gp:hover .tt{display:block}
+.fl{stroke-dasharray:10 8;animation:fd .9s linear infinite}@keyframes fd{to{stroke-dashoffset:-18}}
+.gp:hover{z-index:30}
+.gp .tt{line-height:1.45}
