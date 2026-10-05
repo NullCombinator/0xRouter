@@ -543,7 +543,7 @@ configuration still loads.
 
 - **SC-001**: In the simulated week, for every account and amortization window, the cold work the
   account received differs from its target by at most 5% of all the cold work placed in that
-  window. The target is the sum, over the window's cold placements, of the account's share at
+  window, or by the window's largest cold request if that is more. The target is the sum, over the window's cold placements, of the account's share at
   that moment times the work placed. Work is counted in tokens (input, cache read, cache write
   and output, unweighted), the same for every account.
 - **SC-002**: In the simulated week and in harness tests, 0 warm requests are moved for any
@@ -610,7 +610,9 @@ be revised in planning without asking the user, as long as nothing the user sees
     pay-as-you-go, rather than failing the client (FR-025a).
   - Priority 0 outranks FR-039: a priority-0 account is never a fallback for cold work.
   - SC-001's tolerance is 5% of the window's total cold work, not 5% of each account's target,
-    because a relative tolerance on a small share is mostly noise.
+    because a relative tolerance on a small share is mostly noise. It is never tighter than the
+    window's largest cold request: a request is placed whole, so a window of a few requests can't
+    be split closer than one of them.
 - The per-agent warm map of slice 003 (last-serving account per agent and target, in memory) is
   replaced by persistent prefix fingerprints.
 - 9router's account selection (fill-first and round-robin with a sticky limit) and combo

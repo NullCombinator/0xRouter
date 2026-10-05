@@ -274,7 +274,7 @@ impl<'a> Sim<'a> {
         w.roll(t);
         w.sweep(t);
         self.warm.sweep(now, |_| Some(Duration::from_millis(CACHE_MS)));
-        if t % DAY == 0 {
+        if t.is_multiple_of(DAY) {
             self.compact(now);
         }
         let mut accounts = serde_json::Map::new();
