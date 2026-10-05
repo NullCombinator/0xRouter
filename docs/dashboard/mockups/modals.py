@@ -2,27 +2,43 @@
 """Detail modals for provider and agent cards (sample data)."""
 import sys, hashlib, re
 from topo import FL, AG
-from plugdata import models as pmodels, color as pcolor, icon as picon
+from plugdata import models as pmodels, color as pcolor, icon as picon, logo_html
 def hue(n): return int(hashlib.md5(n.encode()).hexdigest(),16)%360
 def shell(mid,title,sub,logo,body,foot=""):
+    if not logo: return (f'<input type="checkbox" id="{mid}" class="mt"><div class="modal"><label for="{mid}" class="mo"></label><div class="mb wide"><div class="mh slim"><span class="m" style="font-size:12px">{sub}</span><label for="{mid}" class="mx"><span class="i">close</span></label></div><div class="msc">{body}</div></div></div>')
     return (f'<input type="checkbox" id="{mid}" class="mt"><div class="modal"><label for="{mid}" class="mo"></label><div class="mb">'
             f'<div class="mh"><div class="row">{logo}<div><b>{title}</b><div class="m" style="font-size:12px;font-weight:400">{sub}</div></div></div><label for="{mid}" class="mx"><span class="i">close</span></label></div>'
             f'<div class="msc">{body}</div><div class="mf"><label for="{mid}" class="btn2">Close</label></div></div></div>')
 def tiles(items): return '<div class="tiles" style="grid-template-columns:repeat(%d,1fr);margin-bottom:16px">%s</div>'%(len(items),''.join(f'<div class="tl"><small>{a}</small><b style="font-size:18px">{b}</b></div>' for a,b in items))
+KINDS=[("chat","Text","smart_toy"),("embedding","Embedding","data_array"),("image","Text to Image","brush"),("tts","Text to Speech","record_voice_over"),("stt","Speech to Text","mic"),("video","Video","movie"),("decision","Decisions","psychology")]
+KI={k:(l,i) for k,l,i in KINDS}
 def prov(name,conns,mid):
-    h=hue(name); n=int(re.match(r'(\d+)',conns).group(1)) if re.match(r'\d',conns) else 0
-    c=pcolor(name)
-    logo=f'<div class="lg" style="width:32px;height:32px;border-radius:6px;display:grid;place-items:center;font-weight:700;font-size:13px;background:{c}26;color:{c}">{picon(name)}</div>'
-    rows=''.join(f'<tr><td><b>{name}</b> / {nm}</td><td class="m">{au}</td><td>{st}</td><td class="n m">{i}</td></tr>' for i,(nm,au,st) in enumerate([("personal","OAuth",'<span class="badge ok">active</span>'),("work","key …a91f",'<span class="badge err">needs sign-in</span>')][:n],1)) or '<tr><td colspan="4" class="m" style="text-align:center">No connections. Add one with <code>nullrouter accounts add '+name+' &lt;name&gt;</code></td></tr>'
-    ms=pmodels(name); mc=len(ms)
-    body=tiles([("Connections",str(n)),("Models",str(mc) if mc else "plugin not installed"),("Last response","failed" if name=="elevenlabs" else "resolved")])
-    body+=f'<div class="ch"><div class="tile"><span class="i">group</span></div><div><h3>Connections</h3><p>Same as <code>nullrouter accounts list --long</code></p></div></div><table><tr><th>Account</th><th>Auth</th><th>Status</th><th class="n">Priority</th></tr>{rows}</table>'
-    shown=ms[:12]
-    mrows=''.join(f'<tr><td><b>{m.get("name",m["id"])}</b></td><td><code>{m["id"]}</code></td><td class="m">{m.get("kind","chat")}</td><td class="n m">{m.get("context_length","—")}</td></tr>' for m in shown) or '<tr><td colspan="4" class="m" style="text-align:center">Install this plugin to see its models</td></tr>'
-    more=f'<div class="m" style="font-size:12px;margin-top:8px">and {mc-12} more. Full list: <code>nullrouter providers {name}</code></div>' if mc>12 else ''
-    body+=f'<div class="ch" style="margin-top:20px"><div class="tile"><span class="i">model_training</span></div><div><h3>Models served</h3><p>What this provider offers, as its plugin declares them</p></div></div><table><tr><th>Model</th><th>Id</th><th>Type</th><th class="n">Context</th></tr>{mrows}</table>{more}'
-    body+='<div class="ch" style="margin-top:20px"><div class="tile"><span class="i">sell</span></div><div><h3>Limits notes</h3><p>Same as <code>nullrouter providers</code></p></div></div><div class="inset m" style="font-size:13px">Context length differs between two models on this provider; the smaller one is used for unified model sonnet.</div>'
-    return shell(mid,name,"provider plugin · schema 2",logo,body)
+    """Provider detail in 9router's provider-page layout (header, Connections card, Available Models card).
+    Models of every kind (text, embedding, image, speech, video, decisions) sit in one list with a kind filter."""
+    n=int(re.match(r'(\d+)',conns).group(1)) if re.match(r'\d',conns) else 0
+    c=pcolor(name); ms=pmodels(name)
+    cr=[("personal","OAuth","lock",'<span class="badge ok dot">active</span>',"warm cache, 612 requests today"),
+        ("work","API key …a91f","key",'<span class="badge err dot">needs sign-in</span>',"401 from provider at 13:42")][:n]
+    if cr:
+        conn=''.join(f'<div class="cr"><span class="i m">{ic}</span><div style="flex:1;min-width:0"><div class="cn">{nm}</div><div class="cb2">{st}<span class="badge neu" style="font-size:10px">{au}</span><span class="m" style="font-size:12px">#{i}</span><span class="m" style="font-size:12px;color:var(--muted)">{note}</span></div></div></div>' for i,(nm,au,ic,st,note) in enumerate(cr,1))
+    else:
+        conn=f'<div class="row" style="gap:12px"><div class="tile" style="border-radius:50%;background:rgba(229,106,74,.1);color:var(--brand-500)"><span class="i" style="font-size:18px">key</span></div><div><div class="m" style="font-size:14px">No connections yet</div><div class="m" style="font-size:12px">Add one in the CLI: <code>nullrouter accounts add {name} &lt;name&gt;</code></div></div></div>'
+    cnt={k:sum(1 for x in ms if x.get("kind","chat")==k) for k,_,_ in KINDS}
+    chips='<label class="kc"><input type="radio" name="k'+mid+'" value="all" checked><span>All <i>'+str(len(ms))+'</i></span></label>'
+    for k,l,ic in KINDS:
+        chips+=f'<label class="kc{" z" if not cnt[k] else ""}"><input type="radio" name="k{mid}" value="{k}"><span><span class="i">{ic}</span>{l} <i>{cnt[k]}</i></span></label>'
+    def mrow(x):
+        k=x.get("kind","chat"); l,ic=KI.get(k,(k,"smart_toy")); cl=x.get("context_length")
+        extra=f'<span class="badge neu" style="font-size:10px">{cl:,} ctx</span>' if cl else ''
+        return (f'<div class="mrow k-{k}"><span class="i m" style="font-size:16px">{ic}</span><div style="min-width:0;flex:1"><code>{x["id"]}</code>'
+                f'<div class="mn"><i>{x.get("name",x["id"])}</i><span class="badge neu" style="font-size:9px">{l}</span>{extra}</div></div><span class="i cp">content_copy</span></div>')
+    grid=''.join(mrow(x) for x in ms) or '<div class="m" style="font-size:13px;padding:8px 0">Install this plugin to see its models</div>'
+    body=''
+    body+=f'<div class="ph"><div class="phl">{logo_html(name,48,8)}</div><div><div class="phn">{name}<a class="getkey"><span class="i" style="font-size:14px">open_in_new</span>Get API Key</a></div><div class="m">{n} connection{"" if n==1 else "s"} · {len(ms)} model{"" if len(ms)==1 else "s"}</div></div></div>'
+    body+=f'<div class="card pc2"><div class="pch"><h2>Connections</h2><span class="badge {"err" if name=="elevenlabs" else "ok"} dot">last response {"failed" if name=="elevenlabs" else "resolved"}</span></div>{conn}</div>'
+    body+=f'<div class="card pc2"><div class="pch"><h2>Available Models</h2></div><div class="kf">{chips}</div><div class="mgrid">{grid}</div></div>'
+    body+='<div class="card pc2"><div class="pch"><h2>Limits notes</h2><span class="m" style="font-size:12px">same as <code>nullrouter providers</code></span></div><div class="m" style="font-size:13px">Context length differs between two models on this provider; the smaller one is used for unified model sonnet.</div></div>'
+    return shell(mid,name,"provider plugin · schema 2","",body)
 def agent(name,harness,mid):
     h=hue(name); fl=[f for f in FL if f[0]==name]; col=dict((a,c) for a,c in AG).get(name,"#9CA3AF")
     av=f'<div class="av" style="background:radial-gradient(circle at 20% 25%,hsl({h} 85% 70%),transparent 60%),radial-gradient(circle at 80% 85%,hsl({(h*7)%360} 80% 62%),transparent 55%),hsl({h} 60% 90%)"></div>'

@@ -36,7 +36,7 @@ chk() { echo "<label class=\"chk\"><span class=\"cb $2\">$([ "$2" = on ] && echo
 ch() { echo "<div class=\"ch\"><div class=\"tile\"><span class=\"i\">$1</span></div><div><h3>$2</h3><p>$3</p></div>$4</div>"; }
 # deterministic "random" avatar from a name: same name, same picture, nothing fetched
 avatar() { local h=$(( $(printf %s "$1" | cksum | cut -d' ' -f1) )); local a=$((h%360)) b=$(((h/7)%360)) r=$((h%5*20+10)); echo "<div class=\"av\" style=\"background:radial-gradient(circle at ${r}% 25%,hsl($a 85% 70%),transparent 60%),radial-gradient(circle at 80% 85%,hsl($b 80% 62%),transparent 55%),hsl($a 60% 90%)\"></div>"; }
-logo() { python3 -c "import sys;from plugdata import color,icon;n=sys.argv[1];c=color(n);print(f'<div class=\"lg\" style=\"border-radius:6px;background:{c}26;color:{c}\">{icon(n)}</div>')" "$1"; }
+logo() { python3 -c "import sys;from plugdata import logo_html;print(logo_html(sys.argv[1],32,6,\"lg\"))" "$1"; }
 
 { top "Endpoint" "API endpoint configuration" api 1
 echo '<div class="plain">'; ch hub "Agent traffic" "Each color is one agent. Dashed: agent to router. Solid: router to provider. Dial: latency of that hop; hover for the numbers." '<span class="badge neu r">as of 14:02:11</span>'; python3 topo.py gauges; echo '<div class="legend"><span><i style="background:#E56A4A"></i>claude-code</span><span><i style="background:#3b82f6"></i>codex</span><span><i style="background:#10b981"></i>hermes-research</span><span><i style="background:#a855f7"></i>ci-bot</span></div></div>
@@ -55,7 +55,7 @@ echo '</div><div class="card">'; ch lock "Require API key" "Requests without a v
 bot; } > endpoint.html
 
 { top "Providers" "Manage your AI provider connections" dns 2
-echo '<div class="topr" style="justify-content:flex-end;margin:-16px 0 16px"><div class="search"><span class="i" style="font-size:16px">search</span>Search providers...</div><span class="btn2">All <span class="i">expand_more</span></span></div>'
+echo '<div class="topr" style="justify-content:flex-end;margin:-16px 0 16px"><div class="search"><span class="i" style="font-size:16px">search</span>Search providers...</div><span class="btn2">All kinds <span class="i">expand_more</span></span></div>'
 echo '<div class="secbar"><h2>Custom Providers (OpenAI/Anthropic Compatible)</h2><div class="g"><span class="btn2 p"><span class="i">add</span>Add Anthropic Compatible</span><span class="btn2"><span class="i">add</span>Add OpenAI Compatible</span></div></div>
 <div class="card" style="text-align:center;color:var(--muted);padding:14px;margin-bottom:28px"><span class="i" style="font-size:18px">extension</span> No custom providers — use buttons above to add compatible endpoints</div>'
 echo '<div class="secbar"><h2>OAuth Providers</h2><div class="g"><span class="btn2"><span class="i">play_arrow</span>Test All</span></div></div><div class="g3">'

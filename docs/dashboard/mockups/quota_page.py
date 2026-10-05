@@ -2,7 +2,7 @@
 """Quota Tracker in 9router's layout (ProviderLimits): filter row, two-column grid of compact account cards,
 thin bars coloured by REMAINING % (>70 green, 30-70 yellow, <30 red), pagination footer. Look-only: no toggle,
 edit, delete, refresh or bulk buttons. 0router adds polled/estimated, priority, and the needs-sign-in state."""
-from plugdata import color, icon
+from plugdata import color, icon, logo_html
 def col(r): return ("g","🟢") if r>70 else ("y","🟡") if r>=30 else ("r","🔴")
 def row(name,used,total,reset,unl=False):
     if unl:
@@ -14,7 +14,7 @@ def card(prov,acct,state,badge,bk,rows,msg=None,prio=1,off=False):
     c=color(prov)
     body=(f'<div class="qx"><span class="i" style="color:#ef4444;font-size:28px">error</span><p>{msg}</p></div>' if msg
           else f'<div class="qcount">{len(rows)} quota{"s" if len(rows)>1 else ""}</div>'+"".join(rows))
-    return (f'<div class="card qc{" off" if off else ""}"><div class="qh"><div class="lg" style="width:32px;height:32px;border-radius:6px;background:{c}26;color:{c}">{icon(prov)}</div>'
+    return (f'<div class="card qc{" off" if off else ""}"><div class="qh">{logo_html(prov,32,6)}'
             f'<div style="min-width:0"><h3>{prov}</h3><p>{acct}</p><p class="s">priority {prio}</p></div>'
             f'<div class="qbadge"><span class="badge {bk}" style="font-size:10px">{badge}</span><small>{state}</small></div></div><div class="qbody">{body}</div></div>')
 cards=[

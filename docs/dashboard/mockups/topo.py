@@ -3,7 +3,7 @@
 usage   : circular layout, router in the middle, providers around it, no agent nodes.
 gauges  : same node/edge styles, agents on the left, providers on the right, latency dials on the hops."""
 import math, sys, hashlib
-from plugdata import color, icon
+from plugdata import color, icon, logo_html
 PV=["anthropic","xai","grok-cli","openrouter","opencode-zen","elevenlabs"]
 STATE={"anthropic":"active","openrouter":"last","elevenlabs":"error"}   # in flight / last response / failed
 AG=[("claude-code","#E56A4A"),("codex","#3b82f6"),("hermes-research","#10b981"),("ci-bot","#a855f7")]
@@ -22,7 +22,7 @@ def pnode(name,x,y,state=None,tip=""):
     c=color(name); on=state=="active"
     st=f"border-color:{c};box-shadow:0 0 16px {c}40;" if on else ""
     ping=f'<span class="ping"><i style="background:{c}"></i><b style="background:{c}"></b></span>' if on else ""
-    return (f'<div class="tn" {pos(x,y,st)}><span class="ic" style="background:{c}26;color:{c}">{icon(name)}</span>'
+    return (f'<div class="tn" {pos(x,y,st)}>{logo_html(name,32,6,"ic")}'
             f'<span class="nm" style="{"color:"+c if on else ""}">{name}</span>{ping}{tip}</div>')
 def anode(name,col,x,y):
     h=hue(name)
