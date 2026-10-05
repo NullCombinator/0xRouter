@@ -68,4 +68,4 @@ in `tests/parity/deviations.toml`, and finding 1 a line in R26.
 | 2 | Accepted. | — |
 | 3 | Accepted. | — |
 | 4 | Accepted. | — |
-| 5 | Open: add D-006-4 to `deviations.toml` and assert it in `routing_cold.rs`. | — |
+| 5 | Fixed: recorded as D-006-4 in `tests/parity/deviations.toml`. | `routing_cold::d_006_4_a_priority_zero_account_is_not_tried_even_when_everything_else_failed` |
