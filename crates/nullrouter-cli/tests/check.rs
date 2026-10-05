@@ -162,3 +162,53 @@ fn reported_windows_with_no_meter_are_noted_and_paced_in_their_own_unit() {
     let listed = json["unmetered_windows"].as_array().unwrap();
     assert!(listed.iter().any(|w| w["provider"] == "grok-cli" && w["window"] == "prepaid"), "{listed:?}");
 }
+
+/// A home with a user plugin and a unified model whose members declare different limits.
+fn mixed_home() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    fs::create_dir(h.join("plugins")).unwrap();
+    let blue = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/community/bluesminds.toml");
+    fs::copy(blue, h.join("plugins/bluesminds.toml")).unwrap();
+    fs::write(
+        h.join("config.toml"),
+        "schema = 1\n[[unified_model]]\nname = \"mixed\"\nmembers = [\n\
+         { provider = \"grok-cli\", model = \"grok-build\" },\n\
+         { provider = \"bluesminds\", model = \"claude-sonnet-4-5\" },\n]\n",
+    )
+    .unwrap();
+    dir
+}
+
+const NOTE: &str = "note: unified model mixed: members differ in context_length: grok-cli 500000, bluesminds 200000";
+
+#[test]
+fn check_and_resolve_note_members_with_different_limits() {
+    let dir = mixed_home();
+    let h = dir.path();
+    let out = nr(h, &["check"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains(NOTE), "{text}");
+    assert!(text.contains("members differ in max_output_tokens: grok-cli 64000, bluesminds undeclared"), "{text}");
+    // A note is not a failure: the model loads and the check passes.
+    assert_eq!(out.status.code(), Some(0), "{text}");
+
+    let out = nr(h, &["resolve", "mixed"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.starts_with("unified mixed:"), "{text}");
+    assert!(text.contains(NOTE), "{text}");
+    assert_eq!(out.status.code(), Some(0));
+
+    let json: serde_json::Value = serde_json::from_slice(&nr(h, &["--json", "check"]).stdout).unwrap();
+    let notes = json["limits_notes"].as_array().unwrap();
+    assert_eq!(notes[0]["unified"], "mixed");
+    assert_eq!(notes[0]["limit"], "context_length");
+    assert_eq!(notes[0]["values"][1]["provider"], "bluesminds");
+    assert_eq!(notes[0]["values"][1]["value"], 200000);
+    let json: serde_json::Value = serde_json::from_slice(&nr(h, &["--json", "resolve", "mixed"]).stdout).unwrap();
+    assert_eq!(json["limits_notes"].as_array().unwrap().len(), 2);
+
+    // Another target's resolve says nothing about it.
+    let text = String::from_utf8(nr(h, &["resolve", "grok-cli/grok-build"]).stdout).unwrap();
+    assert!(!text.contains("differ"), "{text}");
+}

@@ -1,17 +1,23 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use nullrouter_registry::{Resolution, UnifiedMember};
+use nullrouter_registry::{LimitsNote, Resolution, UnifiedMember};
 use serde_json::{Value, json};
 
 fn member(m: &UnifiedMember) -> Value {
     json!({ "provider": m.provider, "requested": m.requested, "upstream_id": m.upstream_id, "catalogued": m.catalogued })
 }
 
+pub(crate) fn note_json(n: &LimitsNote) -> Value {
+    json!({ "unified": n.unified, "limit": n.limit,
+            "values": n.values.iter().map(|(p, v)| json!({ "provider": p, "value": v })).collect::<Vec<_>>() })
+}
+
 /// `--json` shape (stable; the quickstart parses it):
 /// `{"kind":"direct","provider","requested","upstream_id","catalogued"}`,
 /// `{"kind":"unified","name","model_kind","members":[{"provider","requested","upstream_id","catalogued"}]}`,
-/// or `{"kind":"not_found","error"}`.
+/// or `{"kind":"not_found","error"}`. A unified answer also carries `"limits_notes":[{"unified","limit",
+/// "values":[{"provider","value"}]}]`, empty when its members' limits agree.
 pub(crate) fn run(home: Option<PathBuf>, target: &str, as_json: bool) -> Result<ExitCode, ExitCode> {
     let reg = crate::open(home)?.snapshot();
     let (out, code) = match reg.resolve(target) {
@@ -22,7 +28,8 @@ pub(crate) fn run(home: Option<PathBuf>, target: &str, as_json: bool) -> Result<
         ),
         Ok(Resolution::Unified(u)) => (
             json!({ "kind": "unified", "name": u.name, "model_kind": u.kind.map(|k| k.as_str()),
-                    "members": u.members.iter().map(member).collect::<Vec<_>>() }),
+                    "members": u.members.iter().map(member).collect::<Vec<_>>(),
+                    "limits_notes": reg.report().notes.iter().filter(|n| n.unified == u.name).map(note_json).collect::<Vec<_>>() }),
             0,
         ),
         Err(e) => (json!({ "kind": "not_found", "error": e.to_string() }), 2),
@@ -47,6 +54,9 @@ pub(crate) fn run(home: Option<PathBuf>, target: &str, as_json: bool) -> Result<
                         m["requested"].as_str().unwrap_or_default(),
                         m["upstream_id"].as_str().unwrap_or_default()
                     );
+                }
+                for n in reg.report().notes.iter().filter(|n| n.unified == target) {
+                    println!("note: {n}");
                 }
             }
             _ => eprintln!("not found: {}", out["error"].as_str().unwrap_or_default()),

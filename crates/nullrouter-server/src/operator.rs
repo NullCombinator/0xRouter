@@ -4,7 +4,7 @@
 //!
 //! | Request | Response |
 //! |---|---|
-//! | `{"op":"reload"}` | `{"ok":true,"generation":N}`, or the error with the old snapshot kept |
+//! | `{"op":"reload"}` | `{"ok":true,"generation":N}` (plus `"notes":[…]` when unified models' limits differ), or the error with the old snapshot kept |
 //! | `{"op":"records.list","provider"?,"unified_model"?,"account"?,"agent"?,"model"?,"reason"?,"since"?,"limit"?}` | `{"ok":true,"records":[…]}`: the journal's records plus those still in flight, newest first |
 //! | `{"op":"records.get","id":"rq_…"}` | `{"ok":true,"record":{…}}` |
 //! | `{"op":"records.forget","account"?:"P/N","agent"?:KEY}` | `{"ok":true,"fingerprints":N}`: the agent's fingerprints (or the account's fingerprints and ledger entries) leave memory and `routing/warm.jsonl`, and the live ring; the CLI then rewrites the record segments |
@@ -96,7 +96,15 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
                 for a in &r.unused_accounts {
                     tracing::warn!("account {a} names a provider that isn't loaded");
                 }
-                json!({"ok": true, "generation": r.generation})
+                let notes: Vec<String> = engine.snapshot().registry.report().notes.iter().map(ToString::to_string).collect();
+                for n in &notes {
+                    tracing::info!("{n}");
+                }
+                let mut answer = json!({"ok": true, "generation": r.generation});
+                if !notes.is_empty() {
+                    answer["notes"] = json!(notes);
+                }
+                answer
             }
             Err(e) => {
                 let error = engine.snapshot().redactor.redact(&e.to_string()).into_owned();

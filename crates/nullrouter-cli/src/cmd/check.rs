@@ -48,6 +48,7 @@ pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, Exit
             })).collect::<Vec<_>>(),
             "dropped_unified_models": r.dropped_unified_models.iter()
                 .map(|d| json!({ "name": d.name, "provider": d.provider })).collect::<Vec<_>>(),
+            "limits_notes": r.notes.iter().map(crate::cmd::resolve::note_json).collect::<Vec<_>>(),
             "journal": journal,
             "unmetered_windows": unmetered.iter().map(|(p, w)| json!({ "provider": p, "window": w })).collect::<Vec<_>>(),
             "signin": {
@@ -91,6 +92,9 @@ pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, Exit
         }
         for d in &r.dropped_unified_models {
             println!("dropped unified model {}: member provider {} was skipped", d.name, d.provider);
+        }
+        for n in &r.notes {
+            println!("note: {n}");
         }
         if let Some(line) = &journal_line {
             println!("warning: {line}");

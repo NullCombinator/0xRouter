@@ -302,14 +302,14 @@ of the same accounts. A unified model with 200k and 128k members prints a note a
 
 ### Tests for User Story 8 ⚠️
 
-- [ ] T086 [P] [US8] Direct-target test in `crates/nullrouter-engine/tests/routing_direct.rs` (new): `provider/model` with three accounts gets the same decisions as a unified model of the same accounts for a fixed warm and cold sequence, and the routing view lists the direct target (scenario 1). A request the placed member refuses for its size moves on through ordinary fallback (scenario 3, FR-032).
-- [ ] T087 [P] [US8] Limits-note tests in `crates/nullrouter-registry/tests/unified.rs`: members with different `context_length` or `max_output_tokens` produce `note: unified model sonnet: members differ in context_length: kiro 200000, openrouter 128000`; a member without a value is `undeclared`; the model loads. CLI tests in `crates/nullrouter-cli/tests/check.rs`: `check`, `resolve <unified>` and the reload answer of `model` commands print the note.
+- [X] T086 [P] [US8] Direct-target test in `crates/nullrouter-engine/tests/routing_direct.rs` (new): `provider/model` with three accounts gets the same decisions as a unified model of the same accounts for a fixed warm and cold sequence, and the routing view lists the direct target (scenario 1). A request the placed member refuses for its size moves on through ordinary fallback (scenario 3, FR-032).
+- [X] T087 [P] [US8] Limits-note tests in `crates/nullrouter-registry/tests/unified.rs`: members with different `context_length` or `max_output_tokens` produce `note: unified model sonnet: members differ in context_length: kiro 200000, openrouter 128000`; a member without a value is `undeclared`; the model loads. CLI tests in `crates/nullrouter-cli/tests/check.rs`: `check`, `resolve <unified>` and the reload answer of `model` commands print the note.
 
 ### Implementation for User Story 8
 
-- [ ] T088 [US8] Limits note in `crates/nullrouter-registry/src/load.rs`: `LoadReport` gains `notes: Vec<LimitsNote {unified, limit, values}>` per [data-model § Unified-model limits note](data-model.md#unified-model-limits-note-load-report-r14), computed at load and reload; never an error.
-- [ ] T089 [US8] Print the note in `crates/nullrouter-cli/src/cmd/check.rs`, `cmd/resolve.rs` and the reload answers of the mutating commands in `cmd/model.rs`.
-- [ ] T090 [US8] Green run, crate by crate.
+- [X] T088 [US8] Limits note in `crates/nullrouter-registry/src/load.rs`: `LoadReport` gains `notes: Vec<LimitsNote {unified, limit, values}>` per [data-model § Unified-model limits note](data-model.md#unified-model-limits-note-load-report-r14), computed at load and reload; never an error.
+- [X] T089 [US8] Print the note in `crates/nullrouter-cli/src/cmd/check.rs`, `cmd/resolve.rs` and the reload answers of the mutating commands in `cmd/model.rs`.
+- [X] T090 [US8] Green run, crate by crate.
 
 ---
 

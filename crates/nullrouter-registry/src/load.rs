@@ -18,7 +18,7 @@ use crate::convert;
 use crate::fit::{self, FitVerdict};
 use crate::registry::{Registry, RuntimeSettings, UnifiedMember, UnifiedModel, token_clashes, token_path};
 use crate::schema::{
-    Decision, ModelType, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings, RoutingSettings, StyleFile,
+    Decision, Model, ModelType, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings, RoutingSettings, StyleFile,
 };
 use crate::validate::gate::{parse, positioned};
 use crate::validate::{
@@ -76,6 +76,59 @@ pub struct LoadReport {
     pub diagnostics: Vec<ValidationError>,
     /// User plugins this core can't support, skipped whole (R19).
     pub unsupported: Vec<UnsupportedPlugin>,
+    /// Unified models whose members declare different limits. Never an error (R14).
+    pub notes: Vec<LimitsNote>,
+}
+
+/// One limit that differs between a unified model's members.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LimitsNote {
+    pub unified: String,
+    /// `context_length` or `max_output_tokens`.
+    pub limit: String,
+    /// Provider id and declared value, in member order; `None` is undeclared.
+    pub values: Vec<(String, Option<u64>)>,
+}
+
+impl fmt::Display for LimitsNote {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unified model {}: members differ in {}: ", self.unified, self.limit)?;
+        for (i, (provider, value)) in self.values.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            match value {
+                Some(v) => write!(f, "{provider} {v}")?,
+                None => write!(f, "{provider} undeclared")?,
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The notes for `unified`, from each member's catalog entry.
+fn limits_notes(reg: &Registry, unified: &[UnifiedModel]) -> Vec<LimitsNote> {
+    type Pick = fn(&Model) -> Option<u64>;
+    let limits: [(&str, Pick); 2] =
+        [("context_length", |m| m.context_length), ("max_output_tokens", |m| m.max_output_tokens)];
+    let mut notes = Vec::new();
+    for u in unified {
+        for (limit, pick) in limits {
+            let values: Vec<(String, Option<u64>)> = u
+                .members
+                .iter()
+                .map(|m| {
+                    let found = reg.index_of(&m.provider).and_then(|p| reg.find_at(p, &m.requested));
+                    (m.provider.clone(), found.and_then(pick))
+                })
+                .collect();
+            let first = values.first().and_then(|v| v.1);
+            if values.iter().any(|v| v.1 != first) {
+                notes.push(LimitsNote { unified: u.name.clone(), limit: limit.to_owned(), values });
+            }
+        }
+    }
+    notes
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -404,6 +457,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
     }
     report.dropped_unified_models = outcome.dropped;
     report.unified_models = outcome.unified.len();
+    report.notes = limits_notes(&registry, &outcome.unified);
     report.withheld_credentials = registry.withheld_credentials();
     let runtime = RuntimeSettings {
         allow_private_endpoints: config.allow_private_endpoints,

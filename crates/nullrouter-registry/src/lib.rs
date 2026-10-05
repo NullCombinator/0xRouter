@@ -30,7 +30,7 @@ pub use credentials::{ResolvedCredential, SecretString};
 #[cfg(feature = "parity")]
 pub use load::parity_set;
 pub use load::{
-    DroppedUnifiedModel, LoadReport, OperatorHome, PluginConflict, ReloadError, SkippedPlugin, StartupError,
+    DroppedUnifiedModel, LimitsNote, LoadReport, OperatorHome, PluginConflict, ReloadError, SkippedPlugin, StartupError,
     UnsupportedPlugin, WithheldCredential, bundled_gate_ctx, bundled_style_sources, check_user_plugin,
     validate_user_plugin,
 };
