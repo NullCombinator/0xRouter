@@ -79,7 +79,7 @@ def usage():
     for a,p,ov,tt,p95,nr,um,ok in FL[:5]:
         boxes+=f'<div class="cx"><b>{p}</b><div>unified model <b>{um}</b></div><div>combo <b>none</b> <span class="m">(not built yet)</span></div></div>'
     rtip=tipbox(f'<div class="cbh">Connections routed now</div>{boxes}',"tt tr")
-    return wrap(svg,nodes+router(0,0,rtip,na),480,.8)
+    return wrap(svg,nodes+router(0,0,rtip,na),480,.72)
 def landscape():
     ax,px=-400,400; n=len(AG); svg=""; nodes=""; dials=""
     ay={a:-165+i*110 for i,(a,_) in enumerate(AG)}; col=dict(AG)

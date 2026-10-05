@@ -39,7 +39,7 @@ avatar() { local h=$(( $(printf %s "$1" | cksum | cut -d' ' -f1) )); local a=$((
 logo() { python3 -c "import sys;from plugdata import color,icon;n=sys.argv[1];c=color(n);print(f'<div class=\"lg\" style=\"border-radius:6px;background:{c}26;color:{c}\">{icon(n)}</div>')" "$1"; }
 
 { top "Endpoint" "API endpoint configuration" api 1
-echo '<div class="card">'; ch hub "Agent traffic" "Each color is one agent. Dashed: agent to router. Solid: router to provider. Dial: latency of that hop; hover for the numbers." '<span class="badge neu r">as of 14:02:11</span>'; python3 topo.py gauges; echo '<div class="legend"><span><i style="background:#E56A4A"></i>claude-code</span><span><i style="background:#3b82f6"></i>codex</span><span><i style="background:#10b981"></i>hermes-research</span><span><i style="background:#a855f7"></i>ci-bot</span></div></div>
+echo '<div class="plain">'; ch hub "Agent traffic" "Each color is one agent. Dashed: agent to router. Solid: router to provider. Dial: latency of that hop; hover for the numbers." '<span class="badge neu r">as of 14:02:11</span>'; python3 topo.py gauges; echo '<div class="legend"><span><i style="background:#E56A4A"></i>claude-code</span><span><i style="background:#3b82f6"></i>codex</span><span><i style="background:#10b981"></i>hermes-research</span><span><i style="background:#a855f7"></i>ci-bot</span></div></div>
 <div class="card">'; ch api "API Endpoint" "Point your agents here" ""
 echo '<div class="row"><span class="m mono" style="width:60px">Local</span><div class="inset mono" style="flex:1;display:flex;align-items:center">http://127.0.0.1:20129/v1<span class="i sp m" style="font-size:18px">content_copy</span></div></div></div>'
 echo '<div class="secbar"><h2>Agents</h2><div class="g"><span class="m" style="font-size:13px;align-self:center">One key per agent, so each one is routed and recorded on its own</span>
@@ -86,9 +86,8 @@ echo '<div class="card"><div class="empty"><div class="tile"><span class="i" sty
 bot; } > console-log.html
 
 { top "Usage & Analytics" "Request records, token use and latency as recorded" bar_chart 4
-echo '<div class="tabs"><span class="on">Overview</span><span>Details</span></div>
-<div class="tiles"><div class="tl"><small>Total requests</small><b>1,284</b></div><div class="tl"><small>Input tokens</small><b style="color:#3b82f6">4.2M</b></div><div class="tl"><small>Cached tokens</small><b style="color:var(--brand-500)">2.9M</b></div><div class="tl"><small>Output tokens</small><b style="color:#16a34a">611k</b></div></div>
-<div class="card">'; ch hub "Traffic" "Hover the router for the live connections, a provider for its last response" ""; python3 topo.py usage; echo '</div><div class="card">'; ch history "Requests" "Newest first, 50 at a time · same as nullrouter records list --limit 50" '<span class="badge neu r">no prompts or secrets</span>'
+python3 usage_head.py
+echo '<div class="card">'; ch history "Requests" "Newest first, 50 at a time · same as nullrouter records list --limit 50" '<span class="badge neu r">no prompts or secrets</span>'
 echo '<table><tr><th>When</th><th>Agent</th><th>Model → placed on</th><th>Why</th><th class="n">TTFT</th><th class="n">Total</th><th>Result</th></tr>
 <tr><td class="m">14:01:58</td><td>claude-code</td><td><b>sonnet</b> → anthropic / personal</td><td class="m">warm cache</td><td class="n">412 ms</td><td class="n">3.1 s</td><td><span class="badge ok">served</span></td></tr>
 <tr><td class="m">14:01:40</td><td>codex</td><td><b>sonnet</b> → openrouter / main</td><td class="m">pace deficit</td><td class="n">690 ms</td><td class="n">5.4 s</td><td><span class="badge ok">served</span></td></tr>
