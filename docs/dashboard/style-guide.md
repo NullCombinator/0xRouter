@@ -17,7 +17,7 @@ Source: `app/globals.css`, the `:root` block (about lines 14 to 67). The `.dark`
 | Page | bg-alt | #F7F3EE |
 | Card | surface | #ffffff |
 | Fills | surface-2 / surface-3 | #f4f4f5 / #e7e7e9 |
-| Sidebar | sidebar | rgba(244, 241, 236, 0.85) |
+| Sidebar | vibrancy | rgba(255, 255, 255, 0.72) with a 20 px blur (`.bg-vibrancy`, `globals.css:308-312`). The `--color-sidebar` token exists but the sidebar does not use it. |
 | Lines | border / border-subtle | #e5e7eb / #f1f1f3 |
 | Text | text-main | #0a0a0a |
 | Text | text-muted / text-subtle | #6B7280 / #9CA3AF |
@@ -28,7 +28,7 @@ The status tokens above exist but 9router's badges do not use them. Badges use T
 ## Type
 
 - Family: Inter, then the system stack (`globals.css`, `--font-sans`, line 199). Embedded in the dashboard, never fetched (FR-011).
-- Page title: `text-base lg:text-2xl font-semibold tracking-tight` (`Header.js`).
+- Page title: `text-base lg:text-2xl (24 px) font-semibold tracking-tight` (`Header.js`).
 - Card title: `font-semibold` at the base size; subtitle `text-sm text-text-muted` (`Card.js`).
 - Nav label: `text-[13px] font-medium` (`Sidebar.js`).
 - Table header: `uppercase text-xs text-text-muted` (usage `UsageTable.js`).
@@ -42,6 +42,7 @@ The status tokens above exist but 9router's badges do not use them. Badges use T
 - Card section (nested panel): `p-4 rounded-[10px] bg-bg border border-border-subtle`.
 - Card icon tile: `p-2 rounded-[10px] bg-bg`, icon 20 px.
 - Radius scale in use: 8 px (small button), 10 px (button, input, select, tile), 14 px (card), full (badge).
+- Sidebar: 288 px wide (`w-72`), `border-r border-border-subtle`. Under 1024 px it is a fixed drawer that slides in over a `bg-black/20` overlay (`DashboardLayout.js`).
 - Sidebar item: `px-3 py-1 rounded-lg gap-3`, list gap `space-y-0.5`, container `px-4 py-2` (`Sidebar.js`).
 
 ## Shadows
@@ -60,7 +61,7 @@ The status tokens above exist but 9router's badges do not use them. Badges use T
 
 **Table** (usage `UsageTable.js`): header `uppercase text-xs text-text-muted` on a faint fill; cells `px-6 py-3`; numbers right-aligned in muted text; the key column `font-medium`.
 
-**Navigation** (`Sidebar.js`): item `text-text-muted`, hover `bg-surface-2 text-text-main`, active `bg-primary/10 text-primary` with a filled icon. Logo tile 36 px, `rounded-[10px]`, brand gradient 500 to 700.
+**Navigation** (`Sidebar.js`): item `text-text-muted`, hover `bg-surface-2 text-text-main` and the icon turns primary (`group-hover:text-primary`), active `bg-primary/10 text-primary` with a filled icon. Logo tile 36 px, `rounded-[10px]`, brand gradient 500 to 700.
 
 **Empty state**: icon tile, a bold title, a muted one-line hint, centered in a card (seen on Combos and Quota).
 
@@ -85,7 +86,7 @@ The `dark:` classes in the source are dropped.
 ## Page
 
 - Background: `bg` (#FDFAF6), with the optional grid overlay above.
-- Content column: centered, about 1000 px wide on the pages seen (Endpoint, Usage, Combos), with the sidebar fixed at about 240 px on the left.
+- Content column: `max-w-7xl` (1280 px), centered, `p-10` (`p-6` under 1024 px); the sidebar is 288 px.
 
 ## Open
 

@@ -1,22 +1,30 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Endpoint · 0router (mockup)</title><link rel="stylesheet" href="mockup.css"></head><body>
-<aside><div class="logo"><div class="t"><span class="i">hub</span></div><div><b>0router</b><small>v0.7.0 · read only</small></div></div>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Endpoint · 0Router Proxy (mockup)</title><link rel="stylesheet" href="mockup.css"></head><body>
+<input type="checkbox" id="nav"><label class="ov" for="nav"></label>
+<aside><div class="logo"><div class="t"><span class="i">hub</span></div><div><b>0Router Proxy</b><small>v0.7.0</small></div></div>
 <nav>
 <a href="endpoint.html" class="on"><span class="i">api</span>Endpoint &amp; Key</a>
 <a href="providers.html" class=""><span class="i">dns</span>Providers</a>
-<a href="combos.html" class=""><span class="i">layers</span>Combo &amp; Vision Adapter<span class="soon">soon</span></a>
+<a href="combos.html" class=""><span class="i">layers</span>Combo &amp; Vision Adapter</a>
 <a href="usage.html" class=""><span class="i">bar_chart</span>Usage</a>
 <a href="quota.html" class=""><span class="i">data_usage</span>Quota Tracker</a>
 <h6>System</h6>
+<a href="proxy-pools.html" class=""><span class="i">lan</span>Proxy Pools</a>
+<a href="console-log.html" class=""><span class="i">terminal</span>Console Log</a>
 <a href="settings.html" class=""><span class="i">settings</span>Settings</a></nav>
-<div class="foot">Local mode · all data stays on this machine</div></aside>
-<main><div class="bar-top"><div class="pt"><span class="i">api</span><div><h1>Endpoint</h1><p>API endpoint configuration</p></div></div><span class="asof"><span class="i" style="font-size:16px">schedule</span>as of 14:02:11 · reload to refresh</span></div><div class="col">
+</aside>
+<main><div class="bar-top"><div class="pt"><label for="nav" class="menu"><span class="i">menu</span></label><span class="i">api</span><div><h1>Endpoint</h1><p>API endpoint configuration</p></div></div><span class="asof"><span class="i" style="font-size:16px">schedule</span>as of 14:02:11 · reload to refresh</span></div><div class="col">
 <div class="card">
-<div class="ch"><div class="tile"><span class="i">api</span></div><div><h3>API Endpoint</h3><p>Point your clients here</p></div></div>
+<div class="ch"><div class="tile"><span class="i">api</span></div><div><h3>API Endpoint</h3><p>Point your agents here</p></div></div>
 <div class="row"><span class="m mono" style="width:60px">Local</span><div class="inset mono" style="flex:1;display:flex;align-items:center">http://127.0.0.1:20129/v1<span class="i sp m" style="font-size:18px">content_copy</span></div></div></div>
-<div class="card">
-<div class="ch"><div class="tile"><span class="i">key</span></div><div><h3>API Keys</h3><p>Same as nullrouter keys list</p></div><span class="badge neu r">issued from the CLI</span></div>
-<div class="kv"><div><b>Require API key</b><small>Requests without a valid key are rejected</small></div><span class="badge ok">on</span></div>
-<div class="kv"><div><b>claude-code</b><small class="mono">nr_…9f2a · created Oct 1 · last used 14:01</small></div><span class="badge ok">enabled</span></div>
-<div class="kv"><div><b>codex</b><small class="mono">nr_…77c0 · created Oct 3 · last used yesterday</small></div><span class="badge ok">enabled</span></div>
-<div class="kv"><div><b>old-laptop</b><small class="mono">nr_…1be4 · created Sep 20 · never used</small></div><span class="badge neu">revoked</span></div></div>
-</div></main><div class="mock">MOCKUP · sample data · navigation follows 9router</div></body></html>
+<div class="secbar"><h2>Agents</h2><div class="g"><span class="m" style="font-size:13px;align-self:center">One key per agent, so each one is routed and recorded on its own</span>
+<details class="add"><summary><span class="btn2 p"><span class="i">add</span>Add Agent</span></summary><div class="pop"><b>Add an agent</b><p class="m" style="margin:6px 0 10px;font-size:13px">Agents are added from the CLI. Run:</p><div class="inset mono" style="font-size:12px">nullrouter keys issue &lt;name&gt; --harness claude-code</div><p class="m" style="margin:10px 0 0;font-size:12px">harness: hermes, claude-code, codex, or other. Reload this page to see it.</p></div></details></div></div>
+<div class="g3">
+<div class="pcard" style="align-items:flex-start"><div class="av" style="background:radial-gradient(circle at 30% 25%,hsl(66 85% 70%),transparent 60%),radial-gradient(circle at 80% 85%,hsl(318 80% 62%),transparent 55%),hsl(66 60% 90%)"></div><div style="min-width:0"><b>claude-code</b><span class="hp">claude-code</span><small style="display:block;margin:4px 0 6px" class="mono">nr_…9f2a</small><span class="badge ok" style="font-size:10px;padding:0 8px">enabled</span><small style="display:block;margin-top:6px">last used 14:01 · 612 requests today</small></div></div>
+<div class="pcard" style="align-items:flex-start"><div class="av" style="background:radial-gradient(circle at 70% 25%,hsl(133 85% 70%),transparent 60%),radial-gradient(circle at 80% 85%,hsl(276 80% 62%),transparent 55%),hsl(133 60% 90%)"></div><div style="min-width:0"><b>codex</b><span class="hp">codex</span><small style="display:block;margin:4px 0 6px" class="mono">nr_…77c0</small><span class="badge ok" style="font-size:10px;padding:0 8px">enabled</span><small style="display:block;margin-top:6px">last used yesterday · 88 requests today</small></div></div>
+<div class="pcard" style="align-items:flex-start"><div class="av" style="background:radial-gradient(circle at 50% 25%,hsl(137 85% 70%),transparent 60%),radial-gradient(circle at 80% 85%,hsl(328 80% 62%),transparent 55%),hsl(137 60% 90%)"></div><div style="min-width:0"><b>hermes-research</b><span class="hp">hermes</span><small style="display:block;margin:4px 0 6px" class="mono">nr_…c3d1</small><span class="badge ok" style="font-size:10px;padding:0 8px">enabled</span><small style="display:block;margin-top:6px">last used 13:47 · 41 requests today</small></div></div>
+<div class="pcard" style="align-items:flex-start"><div class="av" style="background:radial-gradient(circle at 10% 25%,hsl(180 85% 70%),transparent 60%),radial-gradient(circle at 80% 85%,hsl(128 80% 62%),transparent 55%),hsl(180 60% 90%)"></div><div style="min-width:0"><b>ci-bot</b><span class="hp">other</span><small style="display:block;margin:4px 0 6px" class="mono">nr_…52aa</small><span class="badge neu" style="font-size:10px;padding:0 8px">idle</span><small style="display:block;margin-top:6px">last used 3 days ago · 0 requests today</small></div></div>
+<div class="pcard" style="align-items:flex-start"><div class="av" style="background:radial-gradient(circle at 50% 25%,hsl(7 85% 70%),transparent 60%),radial-gradient(circle at 80% 85%,hsl(1 80% 62%),transparent 55%),hsl(7 60% 90%)"></div><div style="min-width:0"><b>old-laptop</b><span class="hp">claude-code</span><small style="display:block;margin:4px 0 6px" class="mono">nr_…1be4</small><span class="badge neu" style="font-size:10px;padding:0 8px">revoked</span><small style="display:block;margin-top:6px">last used never · 0 requests today</small></div></div>
+</div><div class="card">
+<div class="ch"><div class="tile"><span class="i">lock</span></div><div><h3>Require API key</h3><p>Requests without a valid key are rejected</p></div><span class="badge ok r">on</span></div>
+</div>
+</div></main><div class="mock">MOCKUP · sample data</div></body></html>

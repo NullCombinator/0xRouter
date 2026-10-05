@@ -1,34 +1,38 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Providers · 0router (mockup)</title><link rel="stylesheet" href="mockup.css"></head><body>
-<aside><div class="logo"><div class="t"><span class="i">hub</span></div><div><b>0router</b><small>v0.7.0 · read only</small></div></div>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Providers · 0Router Proxy (mockup)</title><link rel="stylesheet" href="mockup.css"></head><body>
+<input type="checkbox" id="nav"><label class="ov" for="nav"></label>
+<aside><div class="logo"><div class="t"><span class="i">hub</span></div><div><b>0Router Proxy</b><small>v0.7.0</small></div></div>
 <nav>
 <a href="endpoint.html" class=""><span class="i">api</span>Endpoint &amp; Key</a>
 <a href="providers.html" class="on"><span class="i">dns</span>Providers</a>
-<a href="combos.html" class=""><span class="i">layers</span>Combo &amp; Vision Adapter<span class="soon">soon</span></a>
+<a href="combos.html" class=""><span class="i">layers</span>Combo &amp; Vision Adapter</a>
 <a href="usage.html" class=""><span class="i">bar_chart</span>Usage</a>
 <a href="quota.html" class=""><span class="i">data_usage</span>Quota Tracker</a>
 <h6>System</h6>
+<a href="proxy-pools.html" class=""><span class="i">lan</span>Proxy Pools</a>
+<a href="console-log.html" class=""><span class="i">terminal</span>Console Log</a>
 <a href="settings.html" class=""><span class="i">settings</span>Settings</a></nav>
-<div class="foot">Local mode · all data stays on this machine</div></aside>
-<main><div class="bar-top"><div class="pt"><span class="i">dns</span><div><h1>Providers</h1><p>Manage your AI provider connections</p></div></div><span class="asof"><span class="i" style="font-size:16px">schedule</span>as of 14:02:11 · reload to refresh</span></div><div class="col">
-<div class="sec"><span class="i" style="color:var(--brand-500)">verified_user</span>Connected</div><div class="grid4" style="margin-bottom:20px">
-<div class="pc"><div class="d" style="background:var(--brand-50);color:var(--brand-500)">K</div><div><b>kiro</b><small>2 accounts</small><br><span class="badge err" style="font-size:10px;padding:0 8px">1 needs sign-in</span></div></div>
-<div class="pc"><div class="d" style="background:var(--brand-50);color:var(--brand-500)">O</div><div><b>openrouter</b><small>1 account</small><br><span class="badge warn" style="font-size:10px;padding:0 8px">cooling</span></div></div>
-<div class="pc"><div class="d" style="background:var(--brand-50);color:var(--brand-500)">C</div><div><b>openai-codex</b><small>1 account</small><br><span class="badge ok" style="font-size:10px;padding:0 8px">active</span></div></div>
-<div class="pc"><div class="d" style="background:var(--brand-50);color:var(--brand-500)">G</div><div><b>glm</b><small>1 account</small><br><span class="badge neu" style="font-size:10px;padding:0 8px">pay-as-you-go</span></div></div>
-</div><div class="card">
-<div class="ch"><div class="tile"><span class="i">group</span></div><div><h3>Accounts</h3><p>Same as nullrouter accounts list --long</p></div></div>
-<table><tr><th>Provider / name</th><th>Auth</th><th>Status</th><th class="n">Priority</th></tr>
-<tr><td><b>kiro</b> / personal</td><td class="m">OAuth</td><td><span class="badge ok">active</span></td><td class="n m">1</td></tr>
-<tr><td><b>kiro</b> / work-kiro</td><td class="m">OAuth</td><td><span class="badge err">needs sign-in</span><br><code>nullrouter accounts login kiro work-kiro</code></td><td class="n m">2</td></tr>
-<tr><td><b>openrouter</b> / main</td><td class="m">key <code>…a91f</code></td><td><span class="badge warn">cooling</span> <code>until 14:09</code></td><td class="n m">1</td></tr>
-<tr><td><b>openai-codex</b> / team</td><td class="m">OAuth</td><td><span class="badge ok">active</span></td><td class="n m">1</td></tr>
-<tr><td><b>glm</b> / env</td><td class="m"><code>env:GLM_KEY</code></td><td><span class="badge neu">pay-as-you-go</span></td><td class="n m">3</td></tr></table></div>
-<div class="sec"><span class="i" style="color:var(--brand-500)">extension</span>Available plugins</div><div class="grid4">
-<div class="pc"><div class="d" style="background:var(--surface-2);color:var(--muted)">a</div><div><b>anthropic</b><small>No connections</small></div></div>
-<div class="pc"><div class="d" style="background:var(--surface-2);color:var(--muted)">g</div><div><b>gemini-cli</b><small>No connections</small></div></div>
-<div class="pc"><div class="d" style="background:var(--surface-2);color:var(--muted)">g</div><div><b>github-copilot</b><small>No connections</small></div></div>
-<div class="pc"><div class="d" style="background:var(--surface-2);color:var(--muted)">c</div><div><b>cursor</b><small>No connections</small></div></div>
-<div class="pc"><div class="d" style="background:var(--surface-2);color:var(--muted)">m</div><div><b>mistral</b><small>No connections</small></div></div>
-<div class="pc"><div class="d" style="background:var(--surface-2);color:var(--muted)">g</div><div><b>groq</b><small>No connections</small></div></div>
+</aside>
+<main><div class="bar-top"><div class="pt"><label for="nav" class="menu"><span class="i">menu</span></label><span class="i">dns</span><div><h1>Providers</h1><p>Manage your AI provider connections</p></div></div><span class="asof"><span class="i" style="font-size:16px">schedule</span>as of 14:02:11 · reload to refresh</span></div><div class="col">
+<div class="topr" style="justify-content:flex-end;margin:-16px 0 16px"><div class="search"><span class="i" style="font-size:16px">search</span>Search providers...</div><span class="btn2">All <span class="i">expand_more</span></span></div>
+<div class="secbar"><h2>Custom Providers (OpenAI/Anthropic Compatible)</h2><div class="g"><span class="btn2 p"><span class="i">add</span>Add Anthropic Compatible</span><span class="btn2"><span class="i">add</span>Add OpenAI Compatible</span></div></div>
+<div class="card" style="text-align:center;color:var(--muted);padding:14px;margin-bottom:28px"><span class="i" style="font-size:18px">extension</span> No custom providers — use buttons above to add compatible endpoints</div>
+<div class="secbar"><h2>OAuth Providers</h2><div class="g"><span class="btn2"><span class="i">play_arrow</span>Test All</span></div></div><div class="g3">
+<div class="pcard"><div class="lg" style="background:hsl(127 80% 94%);color:hsl(127 55% 42%)">a</div><div><b>anthropic</b><small>2 connections</small></div></div>
+<div class="pcard"><div class="lg" style="background:hsl(88 80% 94%);color:hsl(88 55% 42%)">x</div><div><b>xai</b><small>1 connection</small></div></div>
+<div class="pcard"><div class="lg" style="background:hsl(343 80% 94%);color:hsl(343 55% 42%)">g</div><div><b>grok-cli</b><small>No connections</small></div></div>
 </div>
-</div></main><div class="mock">MOCKUP · sample data · navigation follows 9router</div></body></html>
+<div class="secbar"><h2>Free Tier Providers</h2><div class="g"><span class="btn2"><span class="i">play_arrow</span>Test All</span></div></div><div class="g3">
+<div class="pcard"><div class="lg" style="background:hsl(81 80% 94%);color:hsl(81 55% 42%)">o</div><div><b>opencode-zen</b><small>Ready</small></div></div>
+<div class="pcard"><div class="lg" style="background:hsl(114 80% 94%);color:hsl(114 55% 42%)">o</div><div><b>opencode-go</b><small>No connections</small></div></div>
+</div>
+<div class="secbar"><h2>API Key Providers</h2><div class="g"><span class="btn2"><span class="i">play_arrow</span>Test All</span></div></div><div class="g3">
+<div class="pcard"><div class="lg" style="background:hsl(47 80% 94%);color:hsl(47 55% 42%)">o</div><div><b>openrouter</b><small>1 connection · cooling</small></div></div>
+<div class="pcard"><div class="lg" style="background:hsl(201 80% 94%);color:hsl(201 55% 42%)">e</div><div><b>elevenlabs</b><small>No connections</small></div></div>
+<div class="pcard"><div class="lg" style="background:hsl(127 80% 94%);color:hsl(127 55% 42%)">a</div><div><b>anthropic</b><small>1 connection</small></div></div>
+<div class="pcard"><div class="lg" style="background:hsl(54 80% 94%);color:hsl(54 55% 42%)">g</div><div><b>gemini</b><small>No connections</small></div></div>
+<div class="pcard"><div class="lg" style="background:hsl(265 80% 94%);color:hsl(265 55% 42%)">m</div><div><b>mistral</b><small>No connections</small></div></div>
+<div class="pcard"><div class="lg" style="background:hsl(168 80% 94%);color:hsl(168 55% 42%)">g</div><div><b>groq</b><small>No connections</small></div></div>
+<div class="pcard"><div class="lg" style="background:hsl(330 80% 94%);color:hsl(330 55% 42%)">d</div><div><b>deepseek</b><small>No connections</small></div></div>
+<div class="pcard"><div class="lg" style="background:hsl(8 80% 94%);color:hsl(8 55% 42%)">g</div><div><b>glm</b><small>1 connection</small></div></div>
+</div>
+</div></main><div class="mock">MOCKUP · sample data</div></body></html>
