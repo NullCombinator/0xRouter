@@ -239,7 +239,7 @@ fn window_override<'a>(o: &'a RoutingOverrides, name: &str) -> Option<&'a Window
 }
 
 /// The window's capacity in its meter's unit: the account's override, else the meter's.
-fn capacity_of(m: &MeterDecl, o: &RoutingOverrides) -> Option<f64> {
+pub fn capacity_of(m: &MeterDecl, o: &RoutingOverrides) -> Option<f64> {
     window_override(o, &m.name).and_then(|w| w.capacity).or(m.capacity)
 }
 

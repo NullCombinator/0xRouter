@@ -212,3 +212,67 @@ fn check_and_resolve_note_members_with_different_limits() {
     let text = String::from_utf8(nr(h, &["resolve", "grok-cli/grok-build"]).stdout).unwrap();
     assert!(!text.contains("differ"), "{text}");
 }
+
+/// A user plugin with no quota, meter or price, whose only endpoint speaks Gemini, declaring
+/// cache mode `explicit` (T093).
+const MUTE: &str = r#"schema = 2
+id = "mute"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-goog-api-key"
+
+[endpoints.text]
+url = "https://mute.example/v1beta/models/{model}:generateContent"
+wire = "gemini"
+
+[[models]]
+id = "m1"
+
+[routing.cache]
+mode = "explicit"
+"#;
+
+#[test]
+fn routing_declarations_that_cant_work_are_warned() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    fs::create_dir(h.join("plugins")).unwrap();
+    fs::write(h.join("plugins/mute.toml"), MUTE).unwrap();
+    write_private(
+        &h.join("accounts.toml"),
+        "schema = 2\n[[account]]\nprovider = \"mute\"\nname = \"a\"\nsecret = \"k\"\n\
+         [[account]]\nprovider = \"mute\"\nname = \"priced\"\nsecret = \"k\"\n\
+         [account.routing]\nprice = { input = 1.0 }\n",
+    )
+    .unwrap();
+    fs::create_dir_all(h.join("routing")).unwrap();
+    fs::write(h.join("routing/salt"), [0u8; 32]).unwrap();
+    chmod(&h.join("routing/salt"), 0o644);
+    chmod(&h.join("routing"), 0o755);
+
+    let out = nr(h, &["check"]);
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(0), "warnings only: {text}");
+    assert!(text.contains("warning: mute/a is pay-as-you-go with no price in its plugin or account"), "{text}");
+    assert!(!text.contains("mute/priced"), "an account price is a price: {text}");
+    assert!(
+        text.contains(
+            "warning: mute declares cache mode explicit, but none of its endpoints speaks a style with cache markers"
+        ),
+        "{text}"
+    );
+    assert!(text.contains("routing/salt has mode 644, expected 0600"), "{text}");
+    assert!(text.lines().any(|l| l.contains("/routing has mode 755, expected 0700")), "{text}");
+
+    let json: serde_json::Value = serde_json::from_slice(&nr(h, &["--json", "check"]).stdout).unwrap();
+    assert_eq!(json["routing_warnings"].as_array().unwrap().len(), 2, "{json:#}");
+}
+
+#[test]
+fn bundled_plugins_raise_no_routing_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&nr(dir.path(), &["--json", "check"]).stdout).unwrap();
+    assert_eq!(json["routing_warnings"], serde_json::json!([]));
+}
