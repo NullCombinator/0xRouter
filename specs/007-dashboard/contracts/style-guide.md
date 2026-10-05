@@ -18,9 +18,9 @@ value = "#E56A4A"
 source = "src/app/globals.css:24"            # relative to ref/9router
 
 [token.radius-card]
-value = "10px"
-source = "src/shared/components/Card.js:40"
-class = "rounded-[10px]"                     # present when the value came from a Tailwind class
+value = "14px"
+source = "src/shared/components/Card.js:29"
+class = "rounded-[14px]"                     # present when the value came from a Tailwind class
 
 [token.green-600]                            # Tailwind palette colors resolve against the v4 theme (oklch)
 value = "oklch(62.7% 0.194 149.214)"
