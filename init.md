@@ -26,7 +26,7 @@ To make 9router faster, customizable, and to enrich it:
 - **Plugin safety by design** — a third-party plugin is data, not code: it cannot install binaries, make network requests, or execute commands. Endpoints, auth schemes, and request translations are declared; the core alone acts on them.
 - **Beyond text generation** — a model manager, not a text-generation manager: first-class image, audio, embedding, decision, and other model types.
 - **A clean upstream for optimizers** — token-optimization tools sit before the router (Agent → Optimizer → 0router, e.g. rtk, ponytail, caveman, headroom), and the router keeps that chain working: a clean standard API surface that accepts requests an optimizer already rewrote.
-- **A familiar face for migration** — the dashboard keeps 9router's information architecture — same look, layout, and concepts, rebuilt on 0router's own stack — so moving over feels like an upgrade, not a relearning. Where scope changed, sections change with it: no optimizer surfaces, unified models and model types instead of per-modality pages.
+- **A familiar face for migration** — the dashboard keeps 9router's look and concepts, rebuilt on 0router's own stack, so moving over feels like an upgrade, not a relearning. The look comes from a style guide taken from 9router's code: colors, type, spacing, and component styles. The layout is 0router's own and follows 0router's scope: no optimizer surfaces, unified models and model types instead of per-modality pages.
 
 ## Hard constraints
 
