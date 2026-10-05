@@ -23,7 +23,9 @@ mutating command (`plugins install`, `accounts add`, `keys issue`, …) sends it
 Full reference: [`specs/003-request-pipeline/contracts/provider-schema-v2.md`](../specs/003-request-pipeline/contracts/provider-schema-v2.md),
 which extends slice 002's [`plugin-schema.md`](../specs/002-provider-model-registry/contracts/plugin-schema.md).
 Slice 005's sign-in, identity, quota and live-model sections are in
-[`signin-quota-schema.md`](../specs/005-account-sign-in/contracts/signin-quota-schema.md).
+[`signin-quota-schema.md`](../specs/005-account-sign-in/contracts/signin-quota-schema.md), and
+slice 006's `[routing]` section in
+[`routing-schema.md`](../specs/006-routing-decision/contracts/routing-schema.md).
 
 ## The smallest plugin
 
@@ -480,7 +482,7 @@ are optional, and all are 0 or more. An entry with `when` applies on those `days
 and `nullrouter check` warns about each one until the plugin or the operator sets a price.
 
 Only schema 2 has `[routing]`; a schema 1 plugin that declares it is refused with
-`schema 1 has no `routing`; set schema = 2`.
+``schema 1 has no `routing`; set schema = 2``.
 
 ## Schema 1
 
