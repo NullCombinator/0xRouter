@@ -9,7 +9,7 @@ cat <<EOF
 <nav>
 <a href="endpoint.html" class="$(a 1 $4)"><span class="i">api</span>Endpoint &amp; Key</a>
 <a href="providers.html" class="$(a 2 $4)"><span class="i">dns</span>Providers</a>
-<a href="combos.html" class="$(a 3 $4)"><span class="i">layers</span>Combo &amp; Vision Adapter</a>
+<a href="combos.html" class="$(a 3 $4)"><span class="i">layers</span>Combo</a>
 <a href="usage.html" class="$(a 4 $4)"><span class="i">bar_chart</span>Usage</a>
 <a href="quota.html" class="$(a 5 $4)"><span class="i">data_usage</span>Quota Tracker</a>
 <h6>System</h6>
@@ -20,12 +20,15 @@ cat <<EOF
 <main><div class="bar-top"><div class="pt"><label for="nav" class="menu"><span class="i">menu</span></label><span class="i">$3</span><div><h1>$1</h1><p>$2</p></div></div><span class="asof"><span class="i" style="font-size:16px">schedule</span>as of 14:02:11 · reload to refresh</span></div><div class="col">
 EOF
 }
-bot() { echo "</div></main>${RS}<div class=\"mock\">MOCKUP · sample data</div></body></html>"; RS=""; }
+bot() { echo "</div></main>${RS}${MODALS}<div class=\"mock\">MOCKUP · sample data</div></body></html>"; RS=""; MODALS=""; }
 
 prow() { echo "<div class=\"prow\">$(logo "$1")<div style=\"min-width:0\"><b>$1</b><small>$2</small></div><span class=\"badge $4 sp\" style=\"font-size:10px\">$3</span></div>"; }
 tg() { echo "<span class=\"tg $1\"><i></i></span>"; }
 mock_note() { echo "<div class=\"mnote\">MOCKUP NOTE: these controls need a write path. 007 is look-only (brief, FR-010), so they stay a design until you decide.</div>"; }
 panel_head() { echo "<div class=\"rh\"><span class=\"i\">$1</span><b>$2</b><label for=\"nav\" class=\"x\"><span class=\"i\">chevron_right</span></label></div><div class=\"srow\"><div class=\"search\" style=\"flex:1;width:auto\"><span class=\"i\" style=\"font-size:16px\">search</span>$3</div><label for=\"$4\" class=\"gear\" title=\"Settings\"><span class=\"i\">settings</span></label></div>"; }
+MODALS=""; PM=0
+cardprov() { PM=$((PM+1)); MODALS+="$(python3 modals.py prov "$1" "$2" pm$PM)"; echo "<label for=pm$PM class=\"pcard$3\">$(logo $1)<div><b>$1</b><small>$2</small></div></label>"; }
+cardagent() { PM=$((PM+1)); MODALS+="$(python3 modals.py agent "$1" "$2" pm$PM)"; echo "<label for=pm$PM class=\"pcard$5\" style=\"align-items:flex-start\">$(avatar "$1")<div style=\"min-width:0\"><b>$1</b><span class=\"hp\">$2</span><small style=\"display:block;margin:4px 0 6px\" class=\"mono\">$3</small><span class=\"badge $4\" style=\"font-size:10px;padding:0 8px\">$6</span><small style=\"display:block;margin-top:6px\">$7</small></div></label>"; }
 ps() { echo "<div class=\"ps\"><h5>$1</h5>$2</div>"; }
 act() { echo "<div class=\"act\"><div><b>$1</b><small>$2</small></div><span class=\"badge $3\" style=\"font-size:10px\">$4</span></div>"; }
 chk() { echo "<label class=\"chk\"><span class=\"cb $2\">$([ "$2" = on ] && echo '<span class="i">check</span>')</span>$1<span class=\"m sp\" style=\"font-size:12px\">$3</span></label>"; }
@@ -35,12 +38,13 @@ avatar() { local h=$(( $(printf %s "$1" | cksum | cut -d' ' -f1) )); local a=$((
 logo() { local h=$(( $(printf %s "$1" | cksum | cut -d' ' -f1) % 360 )); echo "<div class=\"lg\" style=\"background:hsl($h 80% 94%);color:hsl($h 55% 42%)\">${1:0:1}</div>"; }
 
 { top "Endpoint" "API endpoint configuration" api 1
-echo '<div class="card">'; ch api "API Endpoint" "Point your agents here" ""
+echo '<div class="card">'; ch hub "Agent traffic" "Each color is one agent. Dashed: agent to router. Solid: router to provider. Dial: latency of that hop; hover for the numbers." '<span class="badge neu r">as of 14:02:11</span>'; python3 topo.py gauges; echo '<div class="legend"><span><i style="background:#E56A4A"></i>claude-code</span><span><i style="background:#3b82f6"></i>codex</span><span><i style="background:#10b981"></i>hermes-research</span><span><i style="background:#a855f7"></i>ci-bot</span></div></div>
+<div class="card">'; ch api "API Endpoint" "Point your agents here" ""
 echo '<div class="row"><span class="m mono" style="width:60px">Local</span><div class="inset mono" style="flex:1;display:flex;align-items:center">http://127.0.0.1:20129/v1<span class="i sp m" style="font-size:18px">content_copy</span></div></div></div>'
 echo '<div class="secbar"><h2>Agents</h2><div class="g"><span class="m" style="font-size:13px;align-self:center">One key per agent, so each one is routed and recorded on its own</span>
 <details class="add"><summary><span class="btn2 p"><span class="i">add</span>Add Agent</span></summary><div class="pop"><b>Add an agent</b><p class="m" style="margin:6px 0 10px;font-size:13px">Agents are added from the CLI. Run:</p><div class="inset mono" style="font-size:12px">nullrouter keys issue &lt;name&gt; --harness claude-code</div><p class="m" style="margin:10px 0 0;font-size:12px">harness: hermes, claude-code, codex, or other. Reload this page to see it.</p></div></details></div></div>
 <div class="g3">'
-for p in "claude-code|claude-code|nr_…9f2a|14:01|612|ok|enabled" "codex|codex|nr_…77c0|yesterday|88|ok|enabled" "hermes-research|hermes|nr_…c3d1|13:47|41|ok|enabled" "ci-bot|other|nr_…52aa|3 days ago|0|neu|idle" "old-laptop|claude-code|nr_…1be4|never|0|neu|revoked"; do IFS='|' read n hk k lu rq b t <<<"$p"; sel=""; [ "$n" = claude-code ] && [ "$k" = "nr_…9f2a" ] && sel=" sel"; echo "<div class=\"pcard$sel\" style=\"align-items:flex-start\">$(avatar "$n")<div style=\"min-width:0\"><b>$n</b><span class=\"hp\">$hk</span><small style=\"display:block;margin:4px 0 6px\" class=\"mono\">$k</small><span class=\"badge $b\" style=\"font-size:10px;padding:0 8px\">$t</span><small style=\"display:block;margin-top:6px\">last used $lu · $rq requests today</small></div></div>"; done
+for p in "claude-code|claude-code|nr_…9f2a|14:01|612|ok|enabled" "codex|codex|nr_…77c0|yesterday|88|ok|enabled" "hermes-research|hermes|nr_…c3d1|13:47|41|ok|enabled" "ci-bot|other|nr_…52aa|3 days ago|0|neu|idle" "old-laptop|claude-code|nr_…1be4|never|0|neu|revoked"; do IFS='|' read n hk k lu rq b t <<<"$p"; sel=""; [ "$n" = claude-code ] && [ "$k" = "nr_…9f2a" ] && sel=" sel"; cardagent "$n" "$hk" "$k" "$b" "$sel" "$t" "last used $lu · $rq requests today"; done
 RS="<aside class=\"rs\">$(panel_head terminal 'Client adapters' 'Search adapters...' m2)$(ps 'Built in' "$(prow hermes 'core code · always on' live ok)")$(ps 'Third party · sandboxed' "$(prow example-claude 'sample · reviewed v1.2' live ok)$(prow example-codex 'sample · v2.0 awaiting review' 'v1.9 serving' warn)")$(ps 'How adapters work' '<div class=\"m\" style=\"font-size:12px;line-height:1.5\">An adapter handles one client harness quirks. A new version goes live only after you review it, and the previous version keeps serving meanwhile.</div>')</aside><input type=\"checkbox\" id=\"m2\" class=\"mt\"><div class=\"modal\"><label for=\"m2\" class=\"mo\"></label><div class=\"mb\"><div class=\"mh\"><b>Client adapter settings</b><label for=\"m2\" class=\"mx\"><span class=\"i\">close</span></label></div><div class=\"msc\"><table><tr><th>Adapter</th><th>Source</th><th>State</th><th>Enabled</th><th></th></tr>
 <tr><td><b>hermes</b></td><td class=\"m\">built in</td><td><span class=\"badge ok\">live</span></td><td>$(tg on)</td><td></td></tr>
 <tr><td><b>example-claude</b></td><td class=\"m\">third party</td><td><span class=\"badge ok\">live v1.2</span></td><td>$(tg on)</td><td><span class=\"btn2\">Remove</span></td></tr>
@@ -54,9 +58,9 @@ echo '<div class="topr" style="justify-content:flex-end;margin:-16px 0 16px"><di
 echo '<div class="secbar"><h2>Custom Providers (OpenAI/Anthropic Compatible)</h2><div class="g"><span class="btn2 p"><span class="i">add</span>Add Anthropic Compatible</span><span class="btn2"><span class="i">add</span>Add OpenAI Compatible</span></div></div>
 <div class="card" style="text-align:center;color:var(--muted);padding:14px;margin-bottom:28px"><span class="i" style="font-size:18px">extension</span> No custom providers — use buttons above to add compatible endpoints</div>'
 echo '<div class="secbar"><h2>OAuth Providers</h2><div class="g"><span class="btn2"><span class="i">play_arrow</span>Test All</span></div></div><div class="g3">'
-for p in "anthropic|2 connections" "xai|1 connection" "grok-cli|No connections"; do IFS='|' read n c <<<"$p"; sel=""; [ "$n" = anthropic ] && sel=" sel"; echo "<div class=\"pcard$sel\">$(logo $n)<div><b>$n</b><small>$c</small></div></div>"; done; echo '</div>'
+for p in "anthropic|2 connections" "xai|1 connection" "grok-cli|No connections"; do IFS='|' read n c <<<"$p"; sel=""; [ "$n" = anthropic ] && sel=" sel"; cardprov "$n" "$c" "$sel"; done; echo '</div>'
 echo '<div class="secbar"><h2>Free Tier Providers</h2><div class="g"><span class="btn2"><span class="i">play_arrow</span>Test All</span></div></div><div class="g3">'
-for p in "opencode-zen|Ready" "opencode-go|No connections"; do IFS='|' read n c <<<"$p"; echo "<div class=\"pcard\">$(logo $n)<div><b>$n</b><small>$c</small></div></div>"; done; echo '</div>'
+for p in "opencode-zen|Ready" "opencode-go|No connections"; do IFS='|' read n c <<<"$p"; cardprov "$n" "$c" ""; done; echo '</div>'
 echo '<div class="secbar"><h2>API Key Providers</h2><div class="g"><span class="btn2"><span class="i">play_arrow</span>Test All</span></div></div><div class="g3">'
 RS="<aside class=\"rs\">$(panel_head extension 'Provider plugins' 'Search plugins...' m1)$(ps 'Bundled · 7' "$(prow anthropic 'schema 2 · 14 models' loaded ok)$(prow xai 'schema 2 · 9 models' loaded ok)$(prow grok-cli 'schema 2 · 3 models' loaded ok)$(prow openrouter 'schema 2 · 210 models' loaded ok)$(prow opencode-go 'schema 2 · 6 models' loaded ok)$(prow opencode-zen 'schema 2 · 5 models' loaded ok)$(prow elevenlabs 'schema 2 · 4 models' loaded ok)")$(ps 'Installed from community · 2' "$(prow mistral 'community · 11 models' loaded ok)$(prow groq 'community · 8 models' hidden neu)")$(ps 'Community · not installed' '<div class=\"m\" style=\"font-size:12px\">114 available. Open settings to browse and install.</div>')</aside><input type=\"checkbox\" id=\"m1\" class=\"mt\"><div class=\"modal\"><label for=\"m1\" class=\"mo\"></label><div class=\"mb\"><div class=\"mh\"><b>Provider plugin settings</b><label for=\"m1\" class=\"mx\"><span class=\"i\">close</span></label></div><div class=\"msc\"><table><tr><th>Plugin</th><th>Source</th><th>Show on page</th><th>Enabled</th><th></th></tr>
 <tr><td><b>anthropic</b></td><td class=\"m\">bundled</td><td>$(tg on)</td><td>$(tg on)</td><td><span class=\"btn2\">Update</span></td></tr>
@@ -65,10 +69,10 @@ RS="<aside class=\"rs\">$(panel_head extension 'Provider plugins' 'Search plugin
 <tr><td><b>mistral</b></td><td class=\"m\">community</td><td>$(tg on)</td><td>$(tg on)</td><td><span class=\"btn2\">Uninstall</span></td></tr>
 <tr><td><b>groq</b></td><td class=\"m\">community</td><td>$(tg off)</td><td>$(tg on)</td><td><span class=\"btn2\">Uninstall</span></td></tr></table>
 <div class=\"secbar\" style=\"margin-top:20px\"><h2 style=\"font-size:15px\">Install a community plugin</h2></div><div class=\"row\"><div class=\"search\" style=\"flex:1;width:auto\"><span class=\"i\" style=\"font-size:16px\">search</span>Search 114 community plugins...</div><span class=\"btn2 p\">Install</span></div>$(mock_note)</div><div class=\"mf\"><span class=\"btn2\">Cancel</span><span class=\"btn2 p\">Save</span></div></div></div>"
-for p in "openrouter|1 connection · cooling" "elevenlabs|No connections" "anthropic|1 connection" "gemini|No connections" "mistral|No connections" "groq|No connections" "deepseek|No connections" "glm|1 connection"; do IFS='|' read n c <<<"$p"; echo "<div class=\"pcard\">$(logo $n)<div><b>$n</b><small>$c</small></div></div>"; done; echo '</div>'
+for p in "openrouter|1 connection · cooling" "elevenlabs|No connections" "anthropic|1 connection" "gemini|No connections" "mistral|No connections" "groq|No connections" "deepseek|No connections" "glm|1 connection"; do IFS='|' read n c <<<"$p"; cardprov "$n" "$c" ""; done; echo '</div>'
 bot; } > providers.html
 
-{ top "Combo & Vision Adapter" "Model combos with fallback" layers 3
+{ top "Combo" "Model combos with fallback" layers 3
 echo '<div class="card"><div class="empty"><div class="tile"><span class="i" style="font-size:28px">layers</span></div><h3>Combos are not built yet</h3><p>Declare unified models today with <code>[[unified_model]]</code> in config.toml and list them with <code>nullrouter unified</code>.</p></div></div>'
 bot; } > combos.html
 
@@ -83,7 +87,7 @@ bot; } > console-log.html
 { top "Usage & Analytics" "Request records, token use and latency as recorded" bar_chart 4
 echo '<div class="tabs"><span class="on">Overview</span><span>Details</span></div>
 <div class="tiles"><div class="tl"><small>Total requests</small><b>1,284</b></div><div class="tl"><small>Input tokens</small><b style="color:#3b82f6">4.2M</b></div><div class="tl"><small>Cached tokens</small><b style="color:var(--brand-500)">2.9M</b></div><div class="tl"><small>Output tokens</small><b style="color:#16a34a">611k</b></div></div>
-<div class="card">'; ch history "Requests" "Newest first, 50 at a time · same as nullrouter records list --limit 50" '<span class="badge neu r">no prompts or secrets</span>'
+<div class="card">'; ch hub "Traffic" "Hover the router for the live connections, a provider for its last response" ""; python3 topo.py usage; echo '</div><div class="card">'; ch history "Requests" "Newest first, 50 at a time · same as nullrouter records list --limit 50" '<span class="badge neu r">no prompts or secrets</span>'
 echo '<table><tr><th>When</th><th>Agent</th><th>Model → placed on</th><th>Why</th><th class="n">TTFT</th><th class="n">Total</th><th>Result</th></tr>
 <tr><td class="m">14:01:58</td><td>claude-code</td><td><b>sonnet</b> → anthropic / personal</td><td class="m">warm cache</td><td class="n">412 ms</td><td class="n">3.1 s</td><td><span class="badge ok">served</span></td></tr>
 <tr><td class="m">14:01:40</td><td>codex</td><td><b>sonnet</b> → openrouter / main</td><td class="m">pace deficit</td><td class="n">690 ms</td><td class="n">5.4 s</td><td><span class="badge ok">served</span></td></tr>
