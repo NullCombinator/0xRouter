@@ -21,6 +21,14 @@ revisit the brief.
   check them against the files? → A: Add read-only CLI views for both (FR-016a).
 - Q: 9router has light and dark themes with a switch. Which does the dashboard support? → A:
   Light only (FR-034).
+- Q: Should each page show everything its matching CLI read commands show, or only the facts the
+  spec lists? → A: Everything those commands show, including cooldowns and `check`'s warnings
+  and notes; quota poll history stays out (FR-019a, FR-019b).
+- Q: Pages run no code in the browser, so they can't learn its time zone. What time zone should
+  the dashboard show times in? → A: This machine's local time zone, named on each page (FR-017a).
+- Q: When `serve` starts and nothing was set up for the dashboard, should its port be open? → A:
+  Yes, on by default; until a token is issued the only page names the CLI command that issues
+  one; the operator can turn the dashboard off (FR-003).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -256,8 +264,8 @@ Compare screenshots of each component with 9router's.
   the full name available on the page, never cut so that two names look the same.
 - **A record of a request that was cut short** (server killed mid-request). It is shown as
   `records` shows it ("cut short"), not as in flight.
-- **Times.** Every time is shown in the browser's local time, and the "as of" time names its
-  time zone. The CLI's UTC times and the page's local times are the same instant.
+- **Times.** Every time is shown in this machine's local time zone, and each page names that
+  zone. The CLI's UTC times and the page's local times are the same instant.
 
 ## Requirements *(mandatory)*
 
@@ -268,8 +276,8 @@ Compare screenshots of each component with 9router's.
 - **FR-001**: The running server MUST serve the dashboard on its own port, separate from the port
   clients use.
 - **FR-002**: The dashboard port MUST accept connections only from this machine.
-- **FR-003**: The operator MUST be able to choose the dashboard port, and to turn the dashboard
-  off.
+- **FR-003**: The dashboard MUST be on by default whenever `nullrouter serve` runs. The operator
+  MUST be able to choose the dashboard port, and to turn the dashboard off.
 - **FR-003a**: The dashboard MUST be written in Rust and server-rendered: the server builds each
   page, and no application code runs in the browser (brief rows 3 and 4).
 - **FR-004**: The CLI MUST issue a dashboard token. It is printed once. Issuing a new one replaces
@@ -309,6 +317,9 @@ Compare screenshots of each component with 9router's.
   machine-readable output. Neither changes anything.
 - **FR-017**: Each page MUST show the time its state was read (its "as of" time). A page MUST NOT
   change after it loads. The operator reloads to see newer state.
+- **FR-017a**: Every time on a page MUST be shown in this machine's local time zone, and each
+  page MUST name that zone. A page's time and the CLI's UTC time for the same fact MUST be the
+  same instant.
 - **FR-018**: Each page MUST show one consistent state, never a mix of before and after a reload
   or a change.
 
@@ -316,8 +327,24 @@ Compare screenshots of each component with 9router's.
 
 - **FR-019**: The dashboard MUST have four pages: accounts and quota; routing and requests;
   models and providers; keys and behaviour. Every page MUST be reachable from every other.
+- **FR-019a**: Each page MUST show everything its matching CLI read commands show (the listed
+  facts in FR-020 to FR-024 are a minimum):
+  - accounts and quota: `accounts list --long`, `quota`;
+  - routing and requests: `routing`, `records list`, `records show`;
+  - models and providers: `providers`, `model <provider> <model>` for each model of an active
+    provider, `plugins list --community`, the unified-model list (FR-016a);
+  - keys and behaviour: `keys list`, the behaviour view (FR-016a).
+  `quota history` is the exception: it is not on any page.
+- **FR-019b**: Every warning, note and error `check` prints MUST appear on the page whose
+  subject it concerns, in `check`'s words: plugin conflicts, withheld credentials, skipped
+  plugins, dropped unified models and limits notes on models and providers; unmetered quota
+  windows, pay-as-you-go accounts with no price, sign-in tokens without an account and sign-in
+  accounts without tokens on accounts and quota; records not being kept on routing and requests;
+  routing warnings on routing and requests; each file-mode warning on the page of the file's
+  subject.
 - **FR-020**: The accounts and quota page MUST show, per account: provider, name, enabled or
-  disabled, sign-in status, whether it needs signing in again, sign-in email and tier where
+  disabled, kind (sign-in or key), order, sign-in status and since when, any cooldown per model
+  with the time left, whether it needs signing in again, sign-in email and tier where
   `accounts list --long` shows them, priority, and per quota window: quota left, source (polled,
   estimated, pay-as-you-go, pending first poll, stale), last poll time, and reset time.
 - **FR-021**: The routing and requests page MUST show the routing view (per target and account:
@@ -340,8 +367,8 @@ Compare screenshots of each component with 9router's.
 
 **Privacy**
 
-- **FR-028**: No page MUST show a secret: provider API keys, sign-in tokens, OAuth client secrets,
-  agent keys beyond their last four characters, or the dashboard token.
+- **FR-028**: No page MUST show a secret: provider API keys, sign-in tokens and agent keys beyond
+  the last four characters the CLI shows, OAuth client secrets, or the dashboard token.
 - **FR-029**: No page MUST show prompt or response content. Records hold none, and the dashboard
   MUST NOT add any.
 
@@ -381,7 +408,7 @@ Compare screenshots of each component with 9router's.
 - **SC-002**: 100% of requests for a page or page data without a valid token get only the sign-in
   page; 0 connections from another machine succeed.
 - **SC-003**: While pages are loaded continuously, and while the dashboard is made to fail,
-  client requests show no rise in failures and no measurable rise in latency at the 95th
+  client requests show 0 additional failures and no more than 1 ms added latency at the 95th
   percentile, compared with the dashboard turned off.
 - **SC-004**: A scan of every page, every dashboard response, the logs, and the home directory
   from the full test suite finds 0 secrets and 0 prompt text.
@@ -400,8 +427,6 @@ Compare screenshots of each component with 9router's.
 Items marked *(technical decision)* are Claude's. They may be revised in planning without asking
 the user, as long as nothing the user sees changes.
 
-- The dashboard runs whenever `nullrouter serve` runs, with the dashboard on by default. Until a
-  token is issued, it shows only the page that says how to issue one. *(technical decision)*
 - The token is entered once per browser and kept by that browser until the token is replaced.
   There is no time-based expiry, because the dashboard is local-only and read-only.
   *(technical decision)*
@@ -409,10 +434,13 @@ the user, as long as nothing the user sees changes.
 - The page reads the same server state the CLI reads through the operator socket and the files
   in the home, so "agrees with the CLI" can be tested against one snapshot. *(technical
   decision)*
+- SC-003's 1 ms bound and SC-007's 1 second page load are targets Claude set at clarify.
+  *(technical decision)*
 - The records page shows the same default number of records as `records list`, with paging
   further back. *(technical decision)*
-- The last four characters of an agent key are shown, as the CLI shows them. They identify a key;
-  they are not enough to use it.
+- The last four characters of an agent key, a provider key or a sign-in token are shown, as the
+  CLI shows them (an account added from an environment variable shows the variable's name). They
+  identify a secret; they are not enough to use it.
 - Sign-in email and tier are shown, as `accounts list --long` shows them. They are not secrets.
 - Quota history (`quota history`) is not on the accounts page. It was not in the confirmed scope.
 - 9router loads its font (Inter) and icon font from Google. The dashboard serves both from the
