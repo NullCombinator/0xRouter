@@ -33,7 +33,7 @@ pub(crate) enum Command {
         /// The target the client named, the unified model it resolved to, or the model that served it.
         #[arg(long)]
         model: Option<String>,
-        /// A placement reason, such as `warm_stay` or `cold_by_deficit`.
+        /// A placement reason, such as `warm`, `cold_by_deficit` or `overflow`.
         #[arg(long)]
         reason: Option<String>,
         /// A date (`2026-10-04`) or time (`2026-10-04T09:00:00Z`), UTC.

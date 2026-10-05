@@ -230,7 +230,7 @@ pub struct Filter {
     pub agent: Option<String>,
     /// The target the client named, the unified model it resolved to, or the model that served it.
     pub model: Option<String>,
-    /// A placement reason (`cold_by_deficit`, `warm_stay`, …) of any attempt.
+    /// A placement reason (`warm`, `cold_by_deficit`, …) of any attempt.
     pub reason: Option<String>,
     pub since: Option<SystemTime>,
     pub unified_model: Option<String>,

@@ -380,6 +380,108 @@ refresh = "6h"
 The list is read with a signed-in account (so it needs `[signin]`). Listed models join the
 static `[[models]]`, which stay as the fallback.
 
+## Routing: cache, quota meters and prices
+
+`[routing]` tells the routing decision how the provider caches prompts, how its quota windows
+count, and what it charges. It holds no URL, header, credential or code, so **any schema 2
+plugin may declare it**, bundled or not. Every key is optional; an unknown key or value is
+refused by the gate. An operator can override any value per account
+(`nullrouter routing set`, see `docs/operator-config.md`).
+
+```toml
+[routing.cache]
+mode = "explicit"          # explicit | automatic | none
+lifetime = "5m"
+# min_tokens = 1024        # automatic only
+
+[[routing.window]]
+name = "5-hour"            # matches a [quota] window name when the provider reports one
+length = "5h"
+unit = "weighted_tokens"   # weighted_tokens | requests
+capacity = 9_000_000       # in unit; omitted = assumed from peers (shown as such)
+token_weights = { input = 1.0, output = 5.0, cache_read = 0.1, cache_write = 1.25 }
+model_multiplier = { "claude-opus-*" = 5.0 }
+reserve = "5%"
+
+[[routing.window]]         # a window the provider doesn't report, counted by 0router
+name = "daily requests"
+length = "1d"
+unit = "requests"
+capacity = 1500
+reset = "fixed"
+anchor = "00:00+00:00"
+
+[[routing.window]]         # admission only (length under 1h)
+name = "per-minute"
+length = "1m"
+unit = "requests"
+capacity = 50
+
+[[routing.price]]          # first match wins; per million tokens
+when = { days = ["mon", "tue", "wed", "thu", "fri"], from = "16:30", to = "00:30", offset = "+00:00" }
+input = 0.135
+output = 0.55
+cache_read = 0.035
+
+[[routing.price]]          # the default, last
+input = 0.27
+output = 1.10
+cache_read = 0.07
+```
+
+### `[routing.cache]`
+
+An agent stays on the account where its prompt prefix is cached. The cache mode says when a
+prefix counts as cached after a request succeeds:
+
+- `explicit` (Anthropic Messages): only up to the last part or tool the request marked with
+  `cache_control`. A request with no marker caches nothing. The mode needs an endpoint whose
+  style carries cache markers (`anthropic-messages`, or `openai-chat` for OpenRouter's
+  extension); `nullrouter check` warns otherwise. A marker's own `ttl` (`"1h"`) overrides
+  `lifetime`.
+- `automatic` (OpenAI-style, Gemini implicit caching): every prefix of at least `min_tokens`
+  tokens (default 1024).
+- `none`: nothing is cached; every request is cold.
+
+`lifetime` is how long an idle prefix stays cached (more than 0, at most 24h). Without the
+section, the mode is `automatic`, with a 5-minute lifetime and a 1024-token minimum.
+
+### `[[routing.window]]`: quota meters
+
+A meter describes one quota window, so routing can pace the account through it. Name it after
+the window the provider's `[quota]` reports (`*` matches several, as in `weekly *`), and the
+meter supplies what the report lacks: the window's length, its size in tokens, and what a
+request costs in it.
+
+| Key | Rule |
+|---|---|
+| `name` | required; unique in the plugin; 1–64 characters; may use `*` |
+| `length` | required; more than 0. Under 1 hour, the window only admits or refuses requests and never paces. |
+| `unit` | required; `weighted_tokens` or `requests` (1 per request) |
+| `capacity` | more than 0, in `unit`. Converts a reported percentage into tokens. Without it, the window is paced in the provider's own unit, which is enough between accounts of the same provider; across providers 0router assumes the median of other windows of the same length and the routing view says `capacity assumed`. |
+| `token_weights` | `weighted_tokens` only; keys `input`, `output`, `cache_read`, `cache_write`, values 0 or more |
+| `model_multiplier` | model-id glob → a number more than 0; the first match multiplies the cost |
+| `reserve` | 0–50%, default 5%: the floor below which the account takes no new cold work |
+| `reset` | only for a window no `[quota]` report names: `rolling`, `fixed` (needs `anchor`, `HH:MM±hh:mm`, or `D HH:MM±hh:mm` for a weekly or monthly window) or `first_use` |
+
+Between polls, 0router subtracts each request's cost, by this meter, from the last poll. An
+account with no `[quota]` report but meters with a capacity is **estimated**: 0router counts
+its traffic against them. An account with neither is **pay-as-you-go**. A reported window that
+no meter names is listed by `nullrouter check`.
+
+### `[[routing.price]]`
+
+Pay-as-you-go accounts serve overflow, shared by priority divided by the price in effect now.
+Prices are per million tokens: `input` is required; `output`, `cache_read` and `cache_write`
+are optional, and all are 0 or more. An entry with `when` applies on those `days`
+(`mon`…`sun`) from `from` to `to` (`HH:MM`; a `to` before `from` runs past midnight) at
+`offset` (default `+00:00`). The first entry that matches wins; at most one entry has no
+`when`, and it comes last. A plugin with no price ranks its pay-as-you-go accounts as price 1,
+and `nullrouter check` warns about each one until the plugin or the operator sets a price.
+
+Only schema 2 has `[routing]`; a schema 1 plugin that declares it is refused with
+`schema 1 has no `routing`; set schema = 2`.
+
 ## Schema 1
 
 Schema 1 (slice 002's format, and most of the community set) declares `[transport]` and
