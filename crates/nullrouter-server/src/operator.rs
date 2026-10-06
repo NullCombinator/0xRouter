@@ -11,6 +11,7 @@
 //! | `{"op":"accounts.state"}` | `{"ok":true,"accounts":[…]}`: per account `kind`, `state`, `state_since`, `state_reason`, `expires_at`, cooldowns |
 //! | `{"op":"routing.view","target"?}` | `{"ok":true,"amortization":{start,length},"journal":{…},"targets":[…],"warnings":[…]}`: per target and account the pace, share, deficit, priority, cache lifetime, quota source and each window's remaining amount, unit, reset and reserve |
 //! | `{"op":"routing.health"}` | `{"ok":true,"journal":{kept,since,unkept_requests,held_lines,last_sync,last_sync_age_s}}` |
+//! | `{"op":"server.status"}` | `{"ok":true,"client_listen":"…"\|null,"dashboard":{enabled,listen,serving,error}}`: the address `serve` bound for clients, and the dashboard listener's state |
 //! | `{"op":"quota.list"}`, `{"op":"quota.poll"}`, `{"op":"quota.checkpoint"}` | see [`crate::quota`] |
 
 use std::future::Future;
@@ -85,6 +86,16 @@ async fn connection(engine: Arc<Engine>, stream: UnixStream) {
             return;
         }
     }
+}
+
+/// The listeners `serve` bound (spec 009, R8).
+fn server_status(engine: &Engine) -> Value {
+    let d = engine.status.dashboard();
+    json!({
+        "ok": true,
+        "client_listen": engine.status.client_listen(),
+        "dashboard": { "enabled": d.enabled, "listen": d.listen, "serving": d.serving, "error": d.error },
+    })
 }
 
 /// One request's answer.
@@ -190,6 +201,7 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         }
         Some("routing.view") => routing_view(engine, str_of("target").as_deref()),
         Some("routing.health") => json!({"ok": true, "journal": journal_health(engine)}),
+        Some("server.status") => server_status(engine),
         Some("quota.list") => crate::quota::list(engine, req),
         Some("quota.poll") => crate::quota::poll_now(engine, req).await,
         Some("quota.checkpoint") => crate::quota::checkpoint(engine).await,

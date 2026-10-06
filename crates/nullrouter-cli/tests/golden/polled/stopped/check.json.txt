@@ -2,6 +2,8 @@ exit: 0
 --- stdout
 {
   "home": "<HOME>",
+  "endpoint": "http://127.0.0.1:20129/v1",
+  "endpoint_source": "config",
   "providers": {
     "bundled": 7,
     "user": 0
@@ -29,6 +31,23 @@ exit: 0
     }
   ],
   "routing_warnings": [],
+  "notices": [
+    {
+      "level": "note",
+      "subject": "quota",
+      "text": "note: grok-cli reports window on-demand, which no [[routing.window]] meter names; it is paced in its own unit"
+    },
+    {
+      "level": "note",
+      "subject": "quota",
+      "text": "note: grok-cli reports window prepaid, which no [[routing.window]] meter names; it is paced in its own unit"
+    },
+    {
+      "level": "note",
+      "subject": "quota",
+      "text": "note: grok-cli reports window credits, which no [[routing.window]] meter names; it is paced in its own unit"
+    }
+  ],
   "signin": {
     "errors": [],
     "tokens_without_account": [],

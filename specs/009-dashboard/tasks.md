@@ -19,9 +19,9 @@ workspace test and clippy. Check `git branch --show-current` is `009-dashboard` 
 commit. CLI goldens (`crates/nullrouter-cli/tests/golden/`) change only in the commit that changes
 the read, re-blessed with `NR_BLESS=1 cargo test -p nullrouter-cli --test read_golden`.
 
-**Gate**: security Low L1 (research R7) must be decided by the user before Phase 2 starts, because
-it sets T009's default listen address. If the user moves the Linux default to `127.0.0.2`, T009,
-T015 and T025 use it.
+**Gate (closed)**: security Low L1 (research R7) was decided by the user on 2026-10-06: accept and
+document. The default listen address stays `127.0.0.1:20130` on every OS; T025 writes the
+cookie-scope note.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -45,11 +45,11 @@ T015 and T025 use it.
 
 ### `check` notices and the endpoint (research R5, R6; carries 007 T011)
 
-- [ ] T004 Write `crates/nullrouter-server/src/views/check.rs` unit tests: for the `dashboard()` home, `notices` has one entry per line `check` prints after `unified models:`, in print order, each `{"level","subject","text"}` with `level` in `error|warning|note` and `subject` in `endpoint|providers|combo|usage|quota|settings` per the research R5 table; a skipped plugin's indented error lines are joined to its `skipped:` line with `\n`; a notice kind not in the table gets `settings`
-- [ ] T005 Move the line building from `crates/nullrouter-cli/src/cmd/check.rs` into `views::check` as `notices`, keep every existing JSON field, and make the CLI print `home:`, then `endpoint:` (T007), `providers:`, `unified models:`, then each `notices[].text`. Text output for the existing goldens must be byte-identical except the new `endpoint:` line
-- [ ] T006 Add the `server.status` op to `crates/nullrouter-server/src/operator.rs`: `{"ok":true,"client_listen":"…","dashboard":{"enabled":bool,"listen":"…","serving":bool,"error":"…"|null}}`, with `client_listen` the address `serve` actually bound (pass it into the engine or server state at startup in `crates/nullrouter-cli/src/cmd/serve.rs`); `dashboard` is `{"enabled":false,…}` until T012 wires the listener
-- [ ] T007 Add `endpoint` and `endpoint_source` to `views::check` (`check::NEEDS` gains `server.status`): from `client_listen` with `"server"`, else `config.toml [server] listen` with `"config"`; `0.0.0.0` shown as `127.0.0.1`, `::` as `[::1]`; always `http://<host:port>/v1`. Text: `endpoint: <url>`, plus ` (configured; no server running)` for `config`. Unit tests for both sources and both unspecified hosts
-- [ ] T008 Re-bless the CLI goldens (`check` gains `endpoint:` and `notices`) in one commit, and check the diff contains nothing else
+- [X] T004 Write `crates/nullrouter-server/src/views/check.rs` unit tests: for the `dashboard()` home, `notices` has one entry per line `check` prints after `unified models:`, in print order, each `{"level","subject","text"}` with `level` in `error|warning|note` and `subject` in `endpoint|providers|combo|usage|quota|settings` per the research R5 table; a skipped plugin's indented error lines are joined to its `skipped:` line with `\n`; a notice kind not in the table gets `settings`
+- [X] T005 Move the line building from `crates/nullrouter-cli/src/cmd/check.rs` into `views::check` as `notices`, keep every existing JSON field, and make the CLI print `home:`, then `endpoint:` (T007), `providers:`, `unified models:`, then each `notices[].text`. Text output for the existing goldens must be byte-identical except the new `endpoint:` line
+- [X] T006 Add the `server.status` op to `crates/nullrouter-server/src/operator.rs`: `{"ok":true,"client_listen":"…","dashboard":{"enabled":bool,"listen":"…","serving":bool,"error":"…"|null}}`, with `client_listen` the address `serve` actually bound (pass it into the engine or server state at startup in `crates/nullrouter-cli/src/cmd/serve.rs`); `dashboard` is `{"enabled":false,…}` until T012 wires the listener
+- [X] T007 Add `endpoint` and `endpoint_source` to `views::check` (`check::NEEDS` gains `server.status`): from `client_listen` with `"server"`, else `config.toml [server] listen` with `"config"`; `0.0.0.0` shown as `127.0.0.1`, `::` as `[::1]`; always `http://<host:port>/v1`. Text: `endpoint: <url>`, plus ` (configured; no server running)` for `config`. Unit tests for both sources and both unspecified hosts
+- [X] T008 Re-bless the CLI goldens (`check` gains `endpoint:` and `notices`) in one commit, and check the diff contains nothing else
 
 ### Config and home files
 
@@ -256,7 +256,7 @@ Every page needs the frame. The style suite and the full component set finish in
 - **Setup (T001–T003)** first.
 - **Foundational (T004–T016)** blocks everything. Within it: T004 before T005; T006 before T007;
   T005 and T007 before T008; T012 before T013–T016 are wired.
-- **US1 (T017–T025)** next: every page needs access. L1 is decided before Phase 2 (T009).
+- **US1 (T017–T025)** next: every page needs access. L1 is decided: accepted and documented (T025).
 - **US7 part 1 (T026–T031)** before any page: the frame.
 - **US2 (T032–T034)** is the MVP page. T032's helper is used by US3, US4 and US5 tests.
 - **US3, US4, US6, US5** each need T031 and T032's helper, and are otherwise independent.

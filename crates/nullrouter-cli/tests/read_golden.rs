@@ -1,7 +1,8 @@
 //! The byte-for-byte gate for spec 008 (research R4): every listed CLI read, with and without
 //! `--json`, on each fixture home with the server stopped and running, compared with the files
 //! under `tests/golden/`. `NR_BLESS=1` writes them instead. The clock is pinned with
-//! `NULLROUTER_TEST_NOW`; the home's path is printed as `<HOME>`. Nothing else is masked.
+//! `NULLROUTER_TEST_NOW`; the home's path is printed as `<HOME>` and a served home's port as `<PORT>`.
+//! Nothing else is masked.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
@@ -84,9 +85,16 @@ fn run(home: &Path, args: &[String], json: bool) -> Output {
     c.args(args).env("NULLROUTER_TEST_NOW", NOW).env_remove("NULLROUTER_HOME").stdin(Stdio::null()).output().unwrap()
 }
 
-fn render(o: &Output, home: &Path) -> String {
+fn render(o: &Output, home: &Path, port: Option<u16>) -> String {
     let h = home.display().to_string();
-    let clean = |b: &[u8]| String::from_utf8_lossy(b).replace(&h, "<HOME>");
+    let bound = port.map(|p| format!("127.0.0.1:{p}"));
+    let clean = |b: &[u8]| {
+        let text = String::from_utf8_lossy(b).replace(&h, "<HOME>");
+        match &bound {
+            Some(b) => text.replace(b, "127.0.0.1:<PORT>"),
+            None => text,
+        }
+    };
     format!(
         "exit: {}\n--- stdout\n{}--- stderr\n{}",
         o.status.code().map_or("signal".to_owned(), |c| c.to_string()),
@@ -95,7 +103,7 @@ fn render(o: &Output, home: &Path) -> String {
     )
 }
 
-struct Serving(Child);
+struct Serving(Child, u16);
 
 impl Drop for Serving {
     fn drop(&mut self) {
@@ -116,7 +124,7 @@ fn serve(home: &Path) -> Serving {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    let serving = Serving(child);
+    let serving = Serving(child, port);
     for _ in 0..500 {
         if home.join("run/operator.sock").exists() && std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
             return serving;
@@ -126,7 +134,7 @@ fn serve(home: &Path) -> Serving {
     panic!("the server did not start");
 }
 
-fn check(fixture: &Fixture, state: &str, home: &Path) {
+fn check(fixture: &Fixture, state: &str, home: &Path, port: Option<u16>) {
     let bless = std::env::var_os("NR_BLESS").is_some();
     let mut failures = Vec::new();
     for args in reads() {
@@ -136,7 +144,7 @@ fn check(fixture: &Fixture, state: &str, home: &Path) {
                 slug(&args),
                 if json { ".json" } else { "" }
             ));
-            let got = render(&run(home, &args, json), home);
+            let got = render(&run(home, &args, json), home, port);
             if bless {
                 std::fs::create_dir_all(file.parent().unwrap()).unwrap();
                 std::fs::write(&file, &got).unwrap();
@@ -159,14 +167,14 @@ fn every_read_matches_its_golden() {
         if fixture.name == "full" {
             homes::unfinished(dir.path());
         }
-        check(fixture, "stopped", dir.path());
+        check(fixture, "stopped", dir.path(), None);
         if fixture.can_serve {
             let dir = (fixture.build)();
             let _serving = serve(dir.path());
             if fixture.name == "full" {
                 homes::unfinished(dir.path());
             }
-            check(fixture, "running", dir.path());
+            check(fixture, "running", dir.path(), Some(_serving.1));
         }
     }
 }

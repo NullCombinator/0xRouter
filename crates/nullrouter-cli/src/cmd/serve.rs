@@ -44,6 +44,9 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
             eprintln!("cannot listen on {listen}: {e}");
             ExitCode::from(1)
         })?;
+        if let Ok(addr) = listener.local_addr() {
+            engine.status.set_client_listen(addr.to_string());
+        }
         let socket = operator::bind(&home).map_err(|e| {
             eprintln!("cannot open the operator socket: {e}");
             ExitCode::from(1)

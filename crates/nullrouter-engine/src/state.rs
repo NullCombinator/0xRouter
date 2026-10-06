@@ -123,6 +123,8 @@ pub struct Engine {
     pub history: Arc<crate::quota::history::History>,
     /// Live model lists, shared with every snapshot.
     pub live_models: Arc<LiveModels>,
+    /// The listeners `serve` bound, for the operator socket's `server.status`.
+    pub status: crate::status::ServerStatus,
     /// Wakes the maintenance task after a reload or a token change.
     pub(crate) changed: tokio::sync::Notify,
     install_id: OnceLock<String>,
@@ -228,6 +230,7 @@ impl Engine {
             history,
             live_models,
             changed: tokio::sync::Notify::new(),
+            status: Default::default(),
             install_id: OnceLock::new(),
             generation: AtomicU64::new(1),
             reload: Mutex::new(()),

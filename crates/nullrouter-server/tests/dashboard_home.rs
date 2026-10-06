@@ -11,13 +11,13 @@ fn dashboard_home_has_every_stopped_notice_kind() {
     let dir = homes::dashboard();
     let home = OperatorHome::new(dir.path());
     let view = views::check::build(&home, &json!({}), &Live::none()).unwrap();
-    let (r, x) = (&view.json, &view.extra);
+    let r = &view.json;
     let some = |v: &serde_json::Value| v.as_array().is_some_and(|a| !a.is_empty());
     assert!(some(&r["pending_conflicts"]), "pending conflict");
     assert!(some(&r["declined"]), "declined");
     assert!(some(&r["skipped"]), "skipped plugin");
     assert!(some(&r["dropped_unified_models"]), "dropped unified model");
-    assert!(some(&x["notes"]), "limits note");
+    assert!(some(&r["limits_notes"]), "limits note");
     assert!(some(&r["unmetered_windows"]), "unmetered window");
     assert!(some(&r["routing_warnings"]), "routing warning");
     assert!(some(&r["signin"]["tokens_without_account"]), "token without account");
