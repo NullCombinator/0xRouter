@@ -357,7 +357,7 @@ fn side(ctx: &Ctx<'_>) -> Markup {
     let not_installed = of(plugins, "community").filter(|r| r["status"] != "installed").count();
     let is_installed = |r: &Value| installed.iter().any(|i| i["id"] == r["id"]);
     let bundled: Vec<&Value> = of(plugins, "bundled").collect();
-    let own: Vec<&Value> = of(plugins, "user").filter(|r| !is_installed(*r)).collect();
+    let own: Vec<&Value> = of(plugins, "user").filter(|r| !is_installed(r)).collect();
     // An installed community plugin is loaded as a user plugin: that row says how it loaded.
     let state_of = |r: &Value| -> String {
         of(plugins, "user")
@@ -373,7 +373,7 @@ fn side(ctx: &Ctx<'_>) -> Markup {
             @for r in &bundled { (plugin_row(ctx, r, r["status"].as_str().unwrap_or_default(), false)) }
         }))
         (components::side_section(&format!("Installed from community · {}", installed.len()), html! {
-            @for r in &installed { (plugin_row(ctx, r, &state_of(*r), true)) }
+            @for r in &installed { (plugin_row(ctx, r, &state_of(r), true)) }
         }))
         @if !own.is_empty() {
             (components::side_section(&format!("Your own · {}", own.len()), html! {
