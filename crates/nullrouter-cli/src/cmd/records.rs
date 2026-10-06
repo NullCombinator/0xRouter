@@ -13,9 +13,9 @@ use clap::Subcommand;
 use nullrouter_cli::routing_text;
 use nullrouter_engine::clock;
 use nullrouter_engine::journal::{records, state};
-use nullrouter_engine::keys::{self, Keys};
 use nullrouter_registry::OperatorHome;
 use nullrouter_server::operator::{self, CallError};
+use nullrouter_server::views;
 use serde_json::{Value, json};
 
 #[derive(Subcommand)]
@@ -68,68 +68,46 @@ fn lock_wait() -> Duration {
         .map_or(records::LOCK_WAIT, Duration::from_millis)
 }
 
-fn server_runs(home: &OperatorHome) -> bool {
-    std::os::unix::net::UnixStream::connect(operator::socket_path(home)).is_ok()
-}
-
 fn fail(msg: impl std::fmt::Display) -> ExitCode {
     eprintln!("{msg}");
     ExitCode::from(1)
 }
 
-/// `2026-10-04` or an RFC 3339 time.
 fn parse_when(text: &str) -> Result<SystemTime, ExitCode> {
-    let full = if text.len() == 10 { format!("{text}T00:00:00Z") } else { text.to_owned() };
-    clock::parse_rfc3339(&full)
-        .ok_or_else(|| fail(format!("{text:?} is not a date; use 2026-10-04 or 2026-10-04T09:00:00Z")))
-}
-
-/// What a request with no `close` is called: in flight with a server, cut short without one.
-fn settle_open(records: &mut [Value], running: bool) {
-    for r in records {
-        if r["outcome"] == "in_progress" && r["job"].is_null() && !running {
-            r["outcome"] = json!("interrupted");
-        }
-    }
+    views::records::parse_when(text).map_err(|e| fail(e.message))
 }
 
 pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
-    // Records name keys by id; the operator knows them by name.
-    let names = Keys::load(&home.path().join(keys::FILE))
-        .map(|k| k.iter().map(|k| (k.id.clone(), k.name.clone())).collect())
-        .unwrap_or_default();
-    let running = server_runs(&home);
+    let running = views::server_runs(&home);
     match cmd {
         Command::List { provider, account, agent, model, reason, since, limit } => {
-            let since = since.as_deref().map(parse_when).transpose()?;
-            let filter =
-                records::Filter { provider, account, agent, model, reason, since, limit, ..Default::default() };
-            let mut found = records::read(home.path(), &filter);
-            settle_open(&mut found, running);
+            let args = json!({
+                "provider": provider, "account": account, "agent": agent, "model": model,
+                "reason": reason, "since": since, "limit": limit,
+            });
+            let view = super::read(&home, views::records::NEEDS, &args, views::records::build)?;
             if as_json {
-                println!("{:#}", Value::Array(found));
+                println!("{:#}", view.json);
             } else {
-                found.iter_mut().for_each(scrub);
-                for r in &found {
+                let mut found = view.json;
+                scrub(&mut found);
+                for r in found.as_array().into_iter().flatten() {
                     println!("{}", line(r));
                 }
             }
         }
         Command::Show { id } => {
-            // A running server knows the freshest copy of an unfinished request.
-            let live = running
-                .then(|| operator::call(&home, &json!({"op": "records.get", "id": id})).ok())
-                .flatten()
-                .filter(|a| a["ok"] == true)
-                .map(|a| a["record"].clone());
-            let mut found = live.or_else(|| records::get(home.path(), &id)).into_iter().collect::<Vec<_>>();
-            settle_open(&mut found, running);
-            let Some(mut record) = found.pop() else { return Err(fail(format!("no record {id}"))) };
+            let view = super::read(&home, views::records::RECORD_NEEDS, &json!({"id": id}), views::records::record)?;
+            let mut record = view.json;
             if as_json {
                 println!("{record:#}");
             } else {
                 scrub(&mut record);
+                let names = view.extra["key_names"]
+                    .as_object()
+                    .map(|m| m.iter().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned()))).collect())
+                    .unwrap_or_default();
                 print!("{}", show(&record, &names));
             }
         }
