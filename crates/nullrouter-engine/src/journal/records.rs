@@ -315,6 +315,10 @@ pub fn read(home: &Path, filter: &Filter) -> Vec<Value> {
         if out.len() >= limit {
             break;
         }
+        if filter.before.is_some() && filter.limit.is_some() {
+            out.extend(read_indexed(&path, filter, limit - out.len()));
+            continue;
+        }
         if filter.limit.is_some() {
             out.extend(read_tail(&path, filter, limit - out.len()));
             continue;
@@ -371,6 +375,27 @@ const OPEN_MARGIN_MS: u64 = 60_000;
 
 /// The block a segment is read backwards in.
 const BLOCK: u64 = 64 * 1024;
+
+/// A page behind a cursor: the segment's in-memory index (`journal::index`) gives each request's
+/// lines, so only the requests the page can show are read, however far back the cursor is. The
+/// first read of a segment indexes it whole; later ones read only what was appended.
+fn read_indexed(path: &Path, filter: &Filter, want: usize) -> Vec<Value> {
+    use std::ops::Bound::{Excluded, Unbounded};
+    let paged = super::index::with(path, |seg, file| {
+        let upto = filter.before.as_deref().map_or(Unbounded, Excluded);
+        let mut kept = Vec::new();
+        for (id, entry) in seg.entries.range::<str, _>((Unbounded, upto)).rev() {
+            if kept.len() >= want {
+                break;
+            }
+            if entry.opened {
+                kept.extend(fold(&seg.text(file, id)).into_iter().filter(|r| filter.matches(r)));
+            }
+        }
+        kept
+    });
+    paged.unwrap_or_else(|| read_tail(path, filter, want))
+}
 
 /// The records of one segment matching `filter`, newest first, at most `want`, reading the file
 /// backwards in blocks and stopping once they are certain.

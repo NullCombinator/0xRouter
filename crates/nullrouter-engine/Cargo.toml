@@ -46,5 +46,9 @@ nullrouter-engine = { path = ".", features = ["testkit"] }
 name = "engine"
 harness = false
 
+[[bench]]
+name = "records_page"
+harness = false
+
 [lints]
 workspace = true

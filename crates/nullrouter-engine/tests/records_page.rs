@@ -35,7 +35,7 @@ fn lines(ms: u64, n: u64) -> String {
         json!({"v":1,"t":"attempt","id":i,"attempt":{"n":1,"provider":"anthropic","account":"max","model":"m","kind":"initial",
         "placement":{"reason":"warm","rank":0},"started":0.4,"ended":900.0,"outcome":{"state":"ok"},"dropped":[],"forced":[]}}),
     );
-    if n % 7 != 0 {
+    if !n.is_multiple_of(7) {
         put(
             json!({"v":1,"t":"close","id":i,"outcome":"succeeded","served_by":{"provider":"anthropic","account":"max","model":"m"},
             "ttft_ms":120.0,"total_ms":900.0,"usage":null,"break_handling":{"kind":"none"},"job":null}),
