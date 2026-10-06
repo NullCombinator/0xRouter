@@ -1,8 +1,8 @@
-# Dashboard style guide (draft baseline)
+# Dashboard style guide
 
-Taken from 9router's code, light theme only (spec FR-030 to FR-034). Paths are under `ref/9router/src`. This is the human-readable baseline written before slice 007's `tokens.toml` exists. T022 turns every row into a token with a verified source line, and a test fails if a line no longer contains its value. Where a line number is not given below, T022 fills it in.
+Taken from 9router's code, light theme only (spec 009 FR-045 to FR-048). Paths are under `ref/9router/src`. This is the human-readable guide. `crates/nullrouter-dashboard/style/tokens.toml` holds every value as a token with its verified source line, and `tests/style_guide.rs` fails when a line no longer contains its value, when a line sits inside `.dark {}`, or when `dashboard.css` uses anything but tokens (FR-046).
 
-Not taken: page structure, navigation entries, routes, the dark theme, and anything that needs JavaScript (animations, hover-only affordances).
+Not taken: routes and data (the dashboard shows 0router's facts, not 9router's), the dark theme (FR-048), and anything that needs JavaScript (animations, copy buttons, hover-only content, live updates).
 
 ## Palette (light)
 
@@ -27,7 +27,7 @@ The status tokens above exist but 9router's badges do not use them. Badges use T
 
 ## Type
 
-- Family: Inter, then the system stack (`globals.css`, `--font-sans`, line 199). Embedded in the dashboard, never fetched (FR-011).
+- Family: Inter, then the system stack (`globals.css`, `--font-sans`, line 199). Embedded in the dashboard, never fetched (FR-015).
 - Page title: `text-base lg:text-2xl (24 px) font-semibold tracking-tight` (`Header.js`).
 - Card title: `font-semibold` at the base size; subtitle `text-sm text-text-muted` (`Card.js`).
 - Nav label: `text-[13px] font-medium` (`Sidebar.js`).
@@ -78,17 +78,33 @@ The status tokens above exist but 9router's badges do not use them. Badges use T
 
 The `dark:` classes in the source are dropped.
 
-## Corrections this extraction made to slice 007's documents
+## Frame
 
-- The style-guide contract's example used `radius-card = 10px` from `Card.js:40`. The card radius is **14 px**, at `Card.js:29`. 10 px is the button, input, and tile radius. The example in `specs/briefs/superseded/007-dashboard/contracts/style-guide.md` needs fixing.
-- The faint grid behind pages is `.landing-grid` in `app/globals.css` (about lines 464 to 471): 40 px cells of 1 px lines in the brand color at 8% opacity. A soft coral glow, `.dot-grid-bg` (lines 451 to 456), also exists. Both are decoration; they are listed under Page below.
+**Sidebar** (`Sidebar.js:112`): `w-72` (288 px), `border-r border-border-subtle`, `.bg-vibrancy` (`globals.css:308` to 312: white at 72% under a 20 px blur). Brand row `px-6 py-4`: the 36 px gradient tile with `shadow-warm`, the name in `text-lg font-semibold tracking-tight`, the version in `text-xs text-text-muted`. Entries as under Navigation, `text-[13px] font-medium` with 18 px icons, in 9router's order and names. The "System" heading (`Sidebar.js:187`): `text-xs font-semibold uppercase tracking-wider`, muted text at 60%.
+
+**Page header** (`Header.js:230` to 296): `px-8 pt-3 pb-2`, a bottom border in border-subtle; the page icon in primary at 24 px, the title `text-2xl font-semibold tracking-tight`, the subtitle `text-sm text-text-muted`. The dashboard adds an "as of" chip on the right: when the facts were read.
+
+**Modal** (`Modal.js`): fixed, `z-50`, a black 50% backdrop under a 2 px blur; the box `max-w-4xl`, surface, `rounded-[14px]`, `shadow-elev`; the header `border-b` with the title `text-lg font-semibold` and a close button `p-1.5 rounded-[10px]`; the body `p-6`, at most `calc(85vh - 100px)` tall. The dashboard opens a modal by its address (a provider window, a record); the backdrop and the close button are links back.
+
+**Side panel** (`Drawer.js`): 400 px, surface, `border-l border-border-subtle`; the header `p-6 border-b` with the title `text-lg font-semibold`; the body `p-6`. The dashboard keeps it in the page's flow on the right (Client adapters, Provider plugins) and folds it with a `<details>` chevron, so it needs no script.
+
+**Floating button and panel** (new, from existing tokens): a 56 px round button at the bottom right in the brand tile's gradient and `shadow-warm`, `z-40`; above it, the housekeeping panel in the modal box's look (`max-w-sm`, `rounded-[14px]`, `shadow-elev`). It lists `check`'s notices and the accounts that need action.
+
+**Background grid** (`globals.css:465` to 471, `.landing-grid`): 40 px cells of 1 px lines in the accent color at 8% opacity, fixed behind every page.
+
+**Slot** (new, from existing tokens): a place kept for slice 2, in the card shape (`rounded-[14px]`, `p-6`) with a dashed border, muted text and no numbers (`combos/page.js:1067`'s dashed box).
+
+**Disabled control with hint** (new, from existing tokens): a control the dashboard can't offer (FR-014) is drawn disabled at 50% opacity (`Button.js:7`), with the CLI command that does it beside it in the input hint style (`Input.js:61`).
 
 ## Page
 
-- Background: `bg` (#FDFAF6), with the optional grid overlay above.
-- Content column: `max-w-7xl` (1280 px), centered, `p-10` (`p-6` under 1024 px); the sidebar is 288 px.
+- Background: `bg` (#FDFAF6), with the grid above.
+- Content column: `max-w-7xl` (1280 px), centered, `p-10`, sections `gap-8`.
 
-## Open
+## Decisions
 
-- Whether to keep the grid overlay (it is pure CSS, so it fits the no-JS rule). SC-006 is judged side by side, so you decide when you see both.
+- The grid overlay is kept on every page: it is pure CSS, so it fits the no-script rule.
+- One status → badge mapping, in `specs/009-dashboard/contracts/style-guide.md` "Status → badge". Each variant's source is `Badge.js:6` to 11, with its dot at lines 41 to 46.
+- Buttons appear only for sign-in, filters and paging links, size sm (md for sign-in).
+- The card radius is 14 px (`Card.js:29`). 10 px is the button, input and tile radius.
 - The Overview and layout decisions live in `docs/dashboard/9router-inventory.md`.
