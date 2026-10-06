@@ -1,0 +1,7 @@
+exit: 0
+--- stdout
+{
+  "unified": [],
+  "dropped": []
+}
+--- stderr

@@ -486,6 +486,9 @@ pub fn view_cases() -> Vec<(&'static str, &'static [&'static str], Value, Build)
         ("resolve direct", resolve::NEEDS, json!({"target": "grok-cli/grok-build"}), resolve::build),
         ("resolve unified", resolve::NEEDS, json!({"target": "mixed"}), resolve::build),
         ("resolve unknown", resolve::NEEDS, json!({"target": "nope"}), resolve::build),
+        ("unified", unified::NEEDS, json!({"name": null}), unified::build),
+        ("unified mixed", unified::NEEDS, json!({"name": "mixed"}), unified::build),
+        ("unified unknown", unified::NEEDS, json!({"name": "nope"}), unified::build),
     ];
     for n in [1, 2, 5, 6] {
         v.push(("record", records::RECORD_NEEDS, json!({"id": r(n)}), records::record));

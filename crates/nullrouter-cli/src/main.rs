@@ -37,6 +37,8 @@ enum Command {
     },
     /// Resolve `provider/model` or a unified model name. Exit 2 if not found.
     Resolve { target: String },
+    /// List unified models, or one. Exit 2 if NAME isn't loaded.
+    Unified { name: Option<String> },
     /// Show what a provider declares about a model. Exit 2 if the provider is unknown.
     Model { provider: String, model: String },
     /// List providers.
@@ -86,6 +88,7 @@ fn main() -> ExitCode {
         Command::Check => cmd::check::run(cli.home, cli.json),
         Command::Validate { files } => cmd::validate::run(&files),
         Command::Resolve { target } => cmd::resolve::run(cli.home, &target, cli.json),
+        Command::Unified { name } => cmd::unified::run(cli.home, name.as_deref(), cli.json),
         Command::Model { provider, model } => cmd::model::run(cli.home, &provider, &model, cli.json),
         Command::Providers { capability } => cmd::providers::run(cli.home, capability.as_deref(), cli.json),
         Command::Serve { listen } => cmd::serve::run(cli.home, listen),

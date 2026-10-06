@@ -1,0 +1,62 @@
+exit: 0
+--- stdout
+{
+  "unified": [
+    {
+      "kind": "unified",
+      "name": "mixed",
+      "model_kind": null,
+      "members": [
+        {
+          "provider": "grok-cli",
+          "requested": "grok-build",
+          "upstream_id": "grok-build",
+          "catalogued": true
+        },
+        {
+          "provider": "bluesminds",
+          "requested": "claude-sonnet-4-5",
+          "upstream_id": "claude-sonnet-4-5",
+          "catalogued": true
+        }
+      ],
+      "limits_notes": [
+        {
+          "unified": "mixed",
+          "limit": "context_length",
+          "values": [
+            {
+              "provider": "grok-cli",
+              "value": 500000
+            },
+            {
+              "provider": "bluesminds",
+              "value": 200000
+            }
+          ]
+        },
+        {
+          "unified": "mixed",
+          "limit": "max_output_tokens",
+          "values": [
+            {
+              "provider": "grok-cli",
+              "value": 64000
+            },
+            {
+              "provider": "bluesminds",
+              "value": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "dropped": [
+    {
+      "name": "lost",
+      "reason": "member provider broken was skipped"
+    }
+  ]
+}
+--- stderr

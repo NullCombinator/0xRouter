@@ -159,7 +159,7 @@ crate's tests, then commit, one read per commit. While moving, look for facts th
 
 ### Tests for User Story 3
 
-- [ ] T035 [P] [US3] Write `crates/nullrouter-cli/tests/unified.rs` per `specs/008-read-model/contracts/cli.md`:
+- [X] T035 [P] [US3] Write `crates/nullrouter-cli/tests/unified.rs` per `specs/008-read-model/contracts/cli.md`:
   - text and `--json` on the T003 home with unified models;
   - `unified <name> --json` equals `resolve <name> --json` byte for byte (FR-009);
   - `unified nope` exits 2 with `not found: …`;
@@ -168,9 +168,9 @@ crate's tests, then commit, one read per commit. While moving, look for facts th
 
 ### Implementation for User Story 3
 
-- [ ] T036 [US3] Implement `crates/nullrouter-server/src/views/unified.rs`. Each entry is the object `views::resolve` builds for a unified model (data-model.md, `unified` view); `dropped` comes from the load report's skipped unified models with their reason. No live ops
-- [ ] T037 [US3] Add `crates/nullrouter-cli/src/cmd/unified.rs` and register `Unified { name: Option<String> }` in `crates/nullrouter-cli/src/main.rs` with the doc line "List unified models, or one. Exit 2 if NAME isn't loaded." Text format per contracts/cli.md
-- [ ] T038 [US3] Add `unified` to `crates/nullrouter-server/tests/views_routes.rs`, and add its goldens to `crates/nullrouter-cli/tests/read_golden.rs` (bless only the new files)
+- [X] T036 [US3] Implement `crates/nullrouter-server/src/views/unified.rs`. Each entry is the object `views::resolve` builds for a unified model (data-model.md, `unified` view); `dropped` comes from the load report's skipped unified models with their reason. No live ops
+- [X] T037 [US3] Add `crates/nullrouter-cli/src/cmd/unified.rs` and register `Unified { name: Option<String> }` in `crates/nullrouter-cli/src/main.rs` with the doc line "List unified models, or one. Exit 2 if NAME isn't loaded." Text format per contracts/cli.md
+- [X] T038 [US3] Add `unified` to `crates/nullrouter-server/tests/views_routes.rs`, and add its goldens to `crates/nullrouter-cli/tests/read_golden.rs` (bless only the new files)
 
 **Checkpoint**: US3 complete.
 

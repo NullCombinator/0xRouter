@@ -48,6 +48,10 @@ fn reads() -> Vec<Vec<String>> {
         "resolve mixed",
         "resolve lost",
         "resolve nope",
+        "unified",
+        "unified mixed",
+        "unified lost",
+        "unified nope",
     ]
     .iter()
     .map(|c| c.split(' ').map(str::to_owned).collect())

@@ -22,6 +22,7 @@ pub mod quota;
 pub mod records;
 pub mod resolve;
 pub mod routing;
+pub mod unified;
 
 use crate::operator::{self, CallError};
 

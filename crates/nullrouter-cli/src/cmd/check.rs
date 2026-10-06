@@ -7,7 +7,7 @@ use nullrouter_registry::OperatorHome;
 use nullrouter_server::views;
 use serde_json::{Value, json};
 
-fn lines<'a>(v: &'a Value) -> impl Iterator<Item = &'a str> {
+fn lines(v: &Value) -> impl Iterator<Item = &str> {
     v.as_array().into_iter().flatten().filter_map(Value::as_str)
 }
 

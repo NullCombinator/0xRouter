@@ -1,0 +1,8 @@
+exit: 0
+--- stdout
+mixed
+  0. grok-cli grok-build → upstream grok-build
+  1. bluesminds claude-sonnet-4-5 → upstream claude-sonnet-4-5
+  note: unified model mixed: members differ in context_length: grok-cli 500000, bluesminds 200000
+  note: unified model mixed: members differ in max_output_tokens: grok-cli 64000, bluesminds undeclared
+--- stderr
