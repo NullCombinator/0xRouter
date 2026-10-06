@@ -12,6 +12,8 @@ use nullrouter_engine::state::Engine;
 use nullrouter_registry::OperatorHome;
 use serde_json::{Value, json};
 
+pub mod keys;
+
 use crate::operator::{self, CallError};
 
 /// What a view answers: the value `--json` prints, and the facts only the text shows.
@@ -152,10 +154,7 @@ mod tests {
         let args = json!({"target": "sonnet", "id": "rq_1", "provider": "xai", "name": null, "other": 1});
         assert_eq!(request("routing.view", &args), json!({"op": "routing.view", "target": "sonnet"}));
         assert_eq!(request("records.get", &args), json!({"op": "records.get", "id": "rq_1"}));
-        assert_eq!(
-            request("quota.list", &args),
-            json!({"op": "quota.list", "provider": "xai", "name": null})
-        );
+        assert_eq!(request("quota.list", &args), json!({"op": "quota.list", "provider": "xai", "name": null}));
         assert_eq!(request("accounts.state", &args), json!({"op": "accounts.state"}));
     }
 

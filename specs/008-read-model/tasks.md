@@ -61,16 +61,16 @@ commit.
 
 ### The read-model skeleton (contracts/read-model.md)
 
-- [ ] T007 In `crates/nullrouter-server/src/views/mod.rs`, define:
+- [X] T007 In `crates/nullrouter-server/src/views/mod.rs`, define:
   - `View { json: serde_json::Value, extra: serde_json::Value }`;
   - `ViewError { message: String, code: u8 }`, carrying the CLI's exact message and exit code;
   - `Live { answers: BTreeMap<&'static str, Option<Value>>, running: bool }`, where `None` means "no server".
-- [ ] T008 In `crates/nullrouter-server/src/views/mod.rs`, add the two route helpers:
+- [X] T008 In `crates/nullrouter-server/src/views/mod.rs`, add the two route helpers:
   - `fetch_socket(home, needs, args) -> Live` (the CLI route), which uses `operator::call` per op and treats a refused connection as "no server". It sets `running` by connecting to the socket, as today's `server_runs` in `crates/nullrouter-cli/src/cmd/records.rs` does, even when `needs` is empty;
   - `async fn fetch_in_process(engine, needs, args) -> Live` (the in-server route), which uses `operator::handle` with `running = true`.
 
   Each builds an op's request from the view's arguments (for example `routing.view` with `target`, `quota.list` with `provider`/`name`). Unit tests use a fake answer map.
-- [ ] T009 Add `async fn run_in_process<F>(engine, needs, args, build: F)` to `crates/nullrouter-server/src/views/mod.rs`. It fetches with `fetch_in_process`, then calls the sync `build` in `tokio::task::spawn_blocking` (constitution: no blocking I/O on the executor)
+- [X] T009 Add `async fn run_in_process<F>(engine, needs, args, build: F)` to `crates/nullrouter-server/src/views/mod.rs`. It fetches with `fetch_in_process`, then calls the sync `build` in `tokio::task::spawn_blocking` (constitution: no blocking I/O on the executor)
 
 **Checkpoint**: goldens committed and green; the view types exist. Stories can start.
 
@@ -95,7 +95,7 @@ crate's tests, then commit, one read per commit. While moving, look for facts th
 `json` lacks. Put each one in `extra`, and add a row to the "Text-only facts found" table in
 `specs/008-read-model/contracts/read-model.md` and to the `extra` column in `data-model.md`.
 
-- [ ] T011 [US1] Move `keys list` to `crates/nullrouter-server/src/views/keys.rs` (no live ops) from `crates/nullrouter-cli/src/cmd/keys.rs`; it is the smallest read and proves the pattern
+- [X] T011 [US1] Move `keys list` to `crates/nullrouter-server/src/views/keys.rs` (no live ops) from `crates/nullrouter-cli/src/cmd/keys.rs`; it is the smallest read and proves the pattern
 - [ ] T012 [US1] Move `accounts list [--long]` (`shown`, cooling, needs-sign-in hints) to `crates/nullrouter-server/src/views/accounts.rs` from `crates/nullrouter-cli/src/cmd/accounts.rs`; live op `accounts.state`
 - [ ] T013 [US1] Move `quota [provider [name]]` to `crates/nullrouter-server/src/views/quota.rs` from `crates/nullrouter-cli/src/cmd/quota.rs`; live op `quota.list`. Keep the text rendering in `crates/nullrouter-cli/src/quota_text.rs`, reading only the view
 - [ ] T014 [US1] Move `quota history` to `crates/nullrouter-server/src/views/quota.rs` (as `history`); live op `quota.checkpoint`, sent before reading, as today
