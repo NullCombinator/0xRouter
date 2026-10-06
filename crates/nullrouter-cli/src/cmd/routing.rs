@@ -13,7 +13,7 @@ use nullrouter_cli::routing_text;
 use nullrouter_engine::accounts::{self, Accounts, PriceOverride, RoutingOverrides, WindowOverride};
 use nullrouter_registry::OperatorHome;
 use nullrouter_registry::schema::{OperatorConfig, Percent, parse_duration};
-use nullrouter_server::operator::{self, CallError};
+use nullrouter_server::views;
 use serde_json::json;
 
 /// `routing [target]` shows the routing view; the subcommands change the settings.
@@ -69,19 +69,11 @@ pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<Ex
 }
 
 fn view(home: &OperatorHome, target: Option<&str>, as_json: bool) -> Result<ExitCode, ExitCode> {
-    let answer = match operator::call(home, &json!({"op": "routing.view", "target": target})) {
-        Ok(a) if a["ok"] == true => a,
-        Ok(a) => return Err(fail(a["error"].as_str().unwrap_or("the server refused the request"))),
-        Err(e @ CallError::NoServer(_)) => {
-            eprintln!("{e}; the routing view is the running server's (start it with `nullrouter serve`)");
-            return Err(ExitCode::from(4));
-        }
-        Err(e) => return Err(fail(e)),
-    };
+    let view = super::read(home, views::routing::NEEDS, &json!({"target": target}), views::routing::build)?;
     if as_json {
-        println!("{answer:#}");
+        println!("{:#}", view.json);
     } else {
-        print!("{}", routing_text::render(&answer, nullrouter_engine::clock::now()));
+        print!("{}", routing_text::render(&view.json, nullrouter_engine::clock::now()));
     }
     Ok(ExitCode::SUCCESS)
 }

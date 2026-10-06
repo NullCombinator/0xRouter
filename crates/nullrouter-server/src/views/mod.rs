@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 pub mod accounts;
 pub mod keys;
 pub mod quota;
+pub mod routing;
 
 use crate::operator::{self, CallError};
 
