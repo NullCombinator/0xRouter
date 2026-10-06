@@ -642,3 +642,55 @@ async fn routing_keeps_no_secret_and_no_prompt() {
     let leaks = leaks_of(&places, &[SUB_A, SUB_B, PAYG, key.as_str(), "PROMPT-SENTINEL-T092"]);
     assert!(leaks.is_empty(), "{}", leaks.join("\n"));
 }
+
+/// Spec 008 (FR-007, SC-006, research R9): every view, by both routes, on a home whose files
+/// hold secret values: no `json` or `extra` carries more of one than its last four characters.
+#[tokio::test(flavor = "multi_thread")]
+async fn views_show_no_secret_beyond_its_last_four() {
+    use nullrouter_engine::testkit::homes;
+    use nullrouter_server::views;
+
+    // The values `homes::full` plants in accounts.toml and tokens.toml.
+    let planted = [
+        "sk-fixture-main-AAAA0001",
+        "sk-fixture-spare-BBBB0002",
+        "xai-access-fixture-WORK1111",
+        "xai-refresh-fixture-WORK2222",
+        "xai-access-fixture-OLD33333",
+        "xai-access-fixture-GONE4444",
+    ];
+    let dir = homes::full();
+    let home = OperatorHome::new(dir.path());
+    let (engine, _) = Engine::open(home.clone()).unwrap();
+    let engine = Arc::new(engine);
+    let listener = operator::bind(&home).unwrap();
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let task = tokio::spawn(operator::serve(engine.clone(), listener, async move {
+        let _ = stopped.await;
+    }));
+    let mut scanned = 0;
+    for (name, needs, args, build) in common::view_cases() {
+        let by_socket = {
+            let (home, args) = (home.clone(), args.clone());
+            tokio::task::spawn_blocking(move || build(&home, &args, &views::fetch_socket(&home, needs, &args)))
+                .await
+                .unwrap()
+        };
+        let by_server = {
+            let (home, args2) = (home.clone(), args.clone());
+            views::run_in_process(&engine, needs, &args, move |live| build(&home, &args2, live)).await
+        };
+        for view in [by_socket, by_server].into_iter().flatten() {
+            let text = format!("{}{}", view.json, view.extra);
+            for secret in planted {
+                // The last four characters are what listings show; anything longer is a leak.
+                let beyond = &secret[secret.len() - 5..];
+                assert!(!text.contains(beyond), "{name}: a view shows more of {secret:?} than its last four");
+            }
+            scanned += 1;
+        }
+    }
+    assert!(scanned > 30, "the scan ran over {scanned} answers");
+    stop.send(()).unwrap();
+    task.await.unwrap();
+}

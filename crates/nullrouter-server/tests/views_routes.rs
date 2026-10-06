@@ -6,53 +6,16 @@
 
 use std::sync::Arc;
 
+mod common;
+
+use common::view_cases as cases;
 use nullrouter_engine::clock::parse_rfc3339;
 use nullrouter_engine::state::Engine;
 use nullrouter_engine::testkit::homes;
 use nullrouter_registry::OperatorHome;
 use nullrouter_server::operator;
-use nullrouter_server::views::{self, Live, View, ViewError};
-use serde_json::{Value, json};
-
-type Build = fn(&OperatorHome, &Value, &Live) -> Result<View, ViewError>;
-
-/// Every view moved so far, with the arguments it is exercised with.
-fn cases() -> Vec<(&'static str, &'static [&'static str], Value, Build)> {
-    use views::*;
-    let r = homes::record_id;
-    let mut v: Vec<(&'static str, &'static [&'static str], Value, Build)> = vec![
-        ("keys", keys::NEEDS, json!({}), keys::build),
-        ("accounts", accounts::NEEDS, json!({"provider": null}), accounts::build),
-        ("accounts xai", accounts::NEEDS, json!({"provider": "xai"}), accounts::build),
-        ("quota", quota::NEEDS, json!({"provider": null, "name": null}), quota::build),
-        ("quota xai work", quota::NEEDS, json!({"provider": "xai", "name": "work"}), quota::build),
-        (
-            "quota history",
-            quota::HISTORY_NEEDS,
-            json!({"provider": "xai", "name": "work", "since": null, "limit": null}),
-            quota::history,
-        ),
-        ("routing", routing::NEEDS, json!({"target": null}), routing::build),
-        ("routing mixed", routing::NEEDS, json!({"target": "mixed"}), routing::build),
-        ("records", records::NEEDS, json!({}), records::build),
-        ("records filtered", records::NEEDS, json!({"agent": "ak_fixture1", "limit": 2}), records::build),
-        ("providers", providers::NEEDS, json!({"capability": null}), providers::build),
-        ("providers tts", providers::NEEDS, json!({"capability": "tts"}), providers::build),
-        ("model", model::NEEDS, json!({"provider": "xai", "model": "grok-4"}), model::build),
-        ("model unknown", model::NEEDS, json!({"provider": "nope", "model": "m"}), model::build),
-        ("plugins", plugins::NEEDS, json!({"community": false}), plugins::build),
-        ("plugins community", plugins::NEEDS, json!({"community": true}), plugins::build),
-        ("check", check::NEEDS, json!({}), check::build),
-        ("resolve direct", resolve::NEEDS, json!({"target": "grok-cli/grok-build"}), resolve::build),
-        ("resolve unified", resolve::NEEDS, json!({"target": "mixed"}), resolve::build),
-        ("resolve unknown", resolve::NEEDS, json!({"target": "nope"}), resolve::build),
-    ];
-    for n in [1, 2, 5, 6] {
-        v.push(("record", records::RECORD_NEEDS, json!({"id": r(n)}), records::record));
-    }
-    v.push(("record unknown", records::RECORD_NEEDS, json!({"id": "rq_missing"}), records::record));
-    v
-}
+use nullrouter_server::views;
+use serde_json::Value;
 
 /// Equal, except `now` (seconds since the other read) within `slack_s`.
 fn same(name: &str, a: &Value, b: &Value) {
@@ -107,4 +70,43 @@ async fn every_view_is_the_same_by_both_routes() {
         stop.send(()).unwrap();
         task.await.unwrap();
     }
+}
+
+/// No view reads the engine's loaded snapshot (spec 008 Edge Cases): after an edit the server has
+/// not applied, the in-server route still answers from the files.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unapplied_edit_shows_in_the_in_server_answer() {
+    let dir = homes::full();
+    let home = OperatorHome::new(dir.path());
+    let (engine, _) = Engine::open(home.clone()).unwrap();
+    let engine = Arc::new(engine);
+
+    let config = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    std::fs::write(
+        dir.path().join("config.toml"),
+        config + "\n[[unified_model]]\nname = \"fresh\"\nmembers = [{ provider = \"xai\", model = \"grok-4\" }]\n",
+    )
+    .unwrap();
+    let accounts = std::fs::read_to_string(dir.path().join("accounts.toml")).unwrap();
+    std::fs::write(
+        dir.path().join("accounts.toml"),
+        accounts
+            + "\n[[account]]\nprovider = \"anthropic\"\nname = \"added\"\nsecret = \"sk-added-0000ZZZZ\"\norder = 9\n",
+    )
+    .unwrap();
+    assert!(engine.snapshot().registry.resolve("fresh").is_err(), "the server has not applied the edit");
+
+    let resolve = |home: OperatorHome| {
+        views::run_in_process(&engine, views::resolve::NEEDS, &Value::Null, move |live| {
+            views::resolve::build(&home, &serde_json::json!({"target": "fresh"}), live)
+        })
+    };
+    assert_eq!(resolve(home.clone()).await.unwrap().json["kind"], "unified");
+    let accounts = views::run_in_process(&engine, views::accounts::NEEDS, &Value::Null, {
+        let home = home.clone();
+        move |live| views::accounts::build(&home, &serde_json::json!({"provider": null}), live)
+    })
+    .await
+    .unwrap();
+    assert!(accounts.json.as_array().unwrap().iter().any(|a| a["name"] == "added"), "{}", accounts.json);
 }

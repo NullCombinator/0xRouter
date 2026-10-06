@@ -85,7 +85,7 @@ each move, and `cargo test -p nullrouter-server -j 2 --test views_routes` passes
 
 ### Tests for User Story 1
 
-- [ ] T010 [US1] Write `crates/nullrouter-server/tests/views_routes.rs` (research R5). It uses the fixture homes of T003 (`nullrouter_engine::testkit::homes`). For each view moved so far, it starts a `testkit` server, builds the view by both routes, and asserts `json` and `extra` are equal. Self-changing fields are compared within the elapsed seconds, as research R5 says. Each later move task adds its view to this test
+- [X] T010 [US1] Write `crates/nullrouter-server/tests/views_routes.rs` (research R5). It uses the fixture homes of T003 (`nullrouter_engine::testkit::homes`). For each view moved so far, it starts a `testkit` server, builds the view by both routes, and asserts `json` and `extra` are equal. Self-changing fields are compared within the elapsed seconds, as research R5 says. Each later move task adds its view to this test
 
 ### Implementation for User Story 1
 
@@ -110,9 +110,9 @@ crate's tests, then commit, one read per commit. While moving, look for facts th
 
 ### Gates for User Story 1
 
-- [ ] T023 [US1] Extend `crates/nullrouter-server/tests/secrets.rs` (research R9): on a home with planted secret values, run every view by both routes and assert no `json` or `extra` contains a planted value beyond its last four characters (SC-006)
-- [ ] T024 [US1] Add a test to `crates/nullrouter-server/tests/views_routes.rs` that checks no view reads the engine snapshot: a server whose loaded snapshot differs from the home's files (an unapplied edit) still gives, in-server, the files' answer (Edge Cases)
-- [ ] T025 [US1] Review every file in `crates/nullrouter-cli/src/cmd/`. Every listed read only fetches, calls its view and renders; `validate` is the only command left as it was. Record the result in `specs/008-read-model/checklists/sc-003-review.md` (SC-003)
+- [X] T023 [US1] Extend `crates/nullrouter-server/tests/secrets.rs` (research R9): on a home with planted secret values, run every view by both routes and assert no `json` or `extra` contains a planted value beyond its last four characters (SC-006)
+- [X] T024 [US1] Add a test to `crates/nullrouter-server/tests/views_routes.rs` that checks no view reads the engine snapshot: a server whose loaded snapshot differs from the home's files (an unapplied edit) still gives, in-server, the files' answer (Edge Cases)
+- [X] T025 [US1] Review every file in `crates/nullrouter-cli/src/cmd/`. Every listed read only fetches, calls its view and renders; `validate` is the only command left as it was. Record the result in `specs/008-read-model/checklists/sc-003-review.md` (SC-003)
 
 **Checkpoint**: US1 complete. The goldens are unchanged since T006 (`git diff <T006 commit> -- crates/nullrouter-cli/tests/golden` is empty).
 
