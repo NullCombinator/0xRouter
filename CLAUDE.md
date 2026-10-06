@@ -14,9 +14,10 @@ Workspace layout:
 | `crates/nullrouter-wire` | API-style interpreter: translates client bodies ↔ IR ↔ provider wire bodies; no I/O, no async runtime |
 | `crates/nullrouter-engine` | Request engine: operator state snapshot, attempt loop (classification, retry, fallback, stay-warm), upstream calls, request records |
 | `crates/nullrouter-server` | HTTP surface over the engine: style-built routes, access-key check, streaming relay, model lists, token counts, operator socket, read model (`views`) |
+| `crates/nullrouter-dashboard` | Read-only web dashboard served by `serve`: access, pages, style tokens, assets |
 | `crates/nullrouter-cli` | `nullrouter` CLI: `serve`, `accounts`, `keys`, `behaviour`, `records`, `plugins`, `check`, `validate`, `resolve`, `unified`, `model`, `providers` |
-| `plugins/bundled/` | The five chosen providers (schema 2 TOML): seeded from `ref/9router` by the generator, then maintained by hand |
-| `plugins/community/` | The other 116 providers, generated from `ref/9router`; embedded, fit-checked, and installed on request |
+| `plugins/bundled/` | The seven bundled providers (schema 2 TOML): seeded from `ref/9router` by the generator, then maintained by hand |
+| `plugins/community/` | The other 114 providers, generated from `ref/9router`; embedded, fit-checked, and installed on request |
 | `styles/bundled/` | The four client API styles (Chat Completions, Messages, Responses, Gemini): data files read by `nullrouter-wire` |
 | `tools/gen-bundled/` | Generator for the bundled plugins, credentials, and parity oracle |
 | `tests/fixtures/9router/` | Parity oracle snapshots (generated; never hand-edit) |

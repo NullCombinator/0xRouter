@@ -220,6 +220,85 @@ members = [
     dir
 }
 
+/// The dashboard suite's home (spec 009, T003): [`full`] plus an estimated account, a sign-in
+/// account with no tokens, a token with no account, a key never used, a request that fell back
+/// with dropped and forced parameters, a plugin shadowing a bundled id (pending), one declined,
+/// and a record segment with a loose file mode.
+///
+/// What a home on disk can't hold: a cooldown (the engine keeps it in memory; the suite makes one
+/// by failing a mock upstream), the records-not-kept and dashboard-not-listening warnings (both
+/// come from a running server), a sign-in error (`serve` refuses to start with one), and a
+/// withheld credential (it needs a user plugin with its own sign-in, which the fit check refuses).
+/// T022 and T062 add the dashboard port and the bad logo.
+pub fn dashboard() -> TempDir {
+    let dir = full();
+    let h = dir.path();
+    let read = |rel: &str| fs::read_to_string(h.join(rel)).unwrap();
+    let bundled = |file: &str| {
+        fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/bundled/").to_owned() + file).unwrap()
+    };
+
+    // anthropic/main gets a declared capacity, so its quota is estimated; anthropic/spare (disabled)
+    // and openrouter/envkey stay pay-as-you-go.
+    let accounts = read(accounts::FILE)
+        .replace(
+            "secret = \"sk-fixture-main-AAAA0001\"\norder = 1\n",
+            "secret = \"sk-fixture-main-AAAA0001\"\norder = 1\n\n[account.routing]\nwindow.\"5-hour\" = { capacity = 12_000_000 }\n",
+        );
+    put(
+        h,
+        accounts::FILE,
+        &(accounts + "\n[[account]]\nprovider = \"xai\"\nname = \"fresh\"\nkind = \"signin\"\norder = 7\n"),
+    );
+    put(
+        h,
+        tokens::FILE,
+        &(read(tokens::FILE)
+            + "\n[[token]]\nprovider = \"xai\"\nname = \"orphan\"\naccess_token = \"xai-access-fixture-ORPH5555\"\nexpires_at = \"2026-10-03T20:23:00Z\"\nhosts = [\"auth.x.ai\"]\nsigned_in_at = \"2026-10-01T09:00:00Z\"\n"),
+    );
+    put(
+        h,
+        keys::FILE,
+        &(read(keys::FILE)
+            + "\n[[key]]\nid = \"ak_fixture3\"\nname = \"unused\"\ndigest = \"0000000000000000000000000000000000000000000000000000000000000003\"\nlast4 = \"U3U3\"\ncreated = \"2026-10-02T08:00:00Z\"\n"),
+    );
+
+    put(h, "plugins/elevenlabs.toml", &bundled("elevenlabs.toml"));
+    put(h, "plugins/openrouter.toml", &bundled("openrouter.toml"));
+    put(h, "config.toml", &(read("config.toml") + "\n[plugin_decisions]\nopenrouter = \"decline\"\n"));
+
+    // A request that fell back: the first account was rate limited, the second served it. The
+    // second attempt dropped a field the style can't carry and forced a parameter.
+    let at = "2026-10-03T10:00:00Z";
+    let i = fallback_id();
+    let first = serde_json::json!({"v":1,"t":"attempt","id":i,"attempt":{"n":1,"provider":"anthropic","account":"main","model":"claude-sonnet-4-5","kind":"initial",
+        "placement":{"reason":"warm","rank":0},"started":0.4,"ended":310.0,
+        "outcome":{"state":"failed","status":429,"class":"rate_limited","reason":"rate limited"},"dropped":[],"forced":[]}});
+    let second = serde_json::json!({"v":1,"t":"attempt","id":i,"attempt":{"n":2,"provider":"xai","account":"work","model":"grok-4","kind":"next_account",
+        "placement":{"reason":"fallback","rank":1},"started":311.0,"ended":1500.0,"outcome":{"state":"ok"},
+        "dropped":[{"path":"messages[0].x_opt","reason":"no place in openai-chat"}],"forced":[["reasoning.effort","high"]]}});
+    let usage = serde_json::json!({"input":900,"output":210,"cache_read":0,"cache_write":null,"estimated":false});
+    let text = open(&i, at, "ak_fixture1", "sonnet")
+        + &line(first)
+        + &line(second)
+        + &close(&i, "xai", "work", "grok-4", usage);
+    let path = "records/2026-10-03.jsonl";
+    put(h, path, &(read(path) + &text));
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(h.join("records/2026-10-01.jsonl"), fs::Permissions::from_mode(0o644)).unwrap();
+    }
+    check_loads(h);
+    dir
+}
+
+/// The id of the [`dashboard`] home's request with a failed first attempt.
+pub fn fallback_id() -> String {
+    id("2026-10-03T10:00:00Z", 7)
+}
+
 /// A signed-in account of a provider that polls quota, with its history. Stopped-only.
 pub fn polled() -> TempDir {
     let dir = tempfile::tempdir().unwrap();

@@ -35,10 +35,14 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ulid = "1"
 httpdate = "1"
+maud = "0.27"
+jiff = "0.2"
+subtle = "2.6"
 nullrouter-registry = { path = "crates/nullrouter-registry" }
 nullrouter-wire = { path = "crates/nullrouter-wire" }
 nullrouter-engine = { path = "crates/nullrouter-engine" }
 nullrouter-server = { path = "crates/nullrouter-server" }
+nullrouter-dashboard = { path = "crates/nullrouter-dashboard" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
