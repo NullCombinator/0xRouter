@@ -157,7 +157,11 @@ async fn quota_tracker_agrees_with_accounts_quota_and_routing() {
     for t in list(&routing["targets"]) {
         for r in list(&t["accounts"]) {
             rows += 1;
-            let (provider, name) = (r["provider"].as_str().unwrap(), r["account"].as_str().unwrap());
+            let (provider, name) = (r["provider"].as_str().unwrap(), r["account"].as_str().unwrap_or_default());
+            // A member with no account (grok-cli in `mixed`) has a routing row and no card.
+            if !accounts.iter().any(|a| a["provider"] == provider && a["name"] == name) {
+                continue;
+            }
             let who = format!("{provider}/{name} in {}", t["target"]);
             let card = card_of(&html, provider, name);
             let text = text_of(&card);
