@@ -38,5 +38,6 @@ the routes; tests compare their results for every view (research R5).
 |---|---|---|
 | `record` | agent key name for the record's key id | `--json` has always carried the id only |
 | `accounts` | `warnings`: a `tokens.toml` that doesn't load, which the CLI prints on stderr in text and `--json` alike | the warning goes to stderr, not into the `--json` rows |
+| `quota` | `offline`: no server answered, so the CLI adds its "no server is running" line on stderr | `--json` prints the same rows whether or not a server answered |
 
 Add a row for each case found while moving the reads.

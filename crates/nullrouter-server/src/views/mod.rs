@@ -9,11 +9,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use nullrouter_engine::state::Engine;
-use nullrouter_registry::OperatorHome;
+use nullrouter_registry::{OperatorHome, RegistryHandle};
 use serde_json::{Value, json};
 
 pub mod accounts;
 pub mod keys;
+pub mod quota;
 
 use crate::operator::{self, CallError};
 
@@ -83,6 +84,12 @@ impl Live {
             None => Ok(None),
         }
     }
+}
+
+/// Opens the registry from the home's files. A failure is the startup error the CLI prints, so
+/// every registry-backed view reports it the same way.
+pub fn open_registry(home: &OperatorHome) -> Result<RegistryHandle, ViewError> {
+    RegistryHandle::open(home.clone()).map_err(|e| ViewError::failed(format!("startup failed:\n{e}")))
 }
 
 /// The request for `op`, built from the view's arguments.

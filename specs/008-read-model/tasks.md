@@ -97,8 +97,8 @@ crate's tests, then commit, one read per commit. While moving, look for facts th
 
 - [X] T011 [US1] Move `keys list` to `crates/nullrouter-server/src/views/keys.rs` (no live ops) from `crates/nullrouter-cli/src/cmd/keys.rs`; it is the smallest read and proves the pattern
 - [X] T012 [US1] Move `accounts list [--long]` (`shown`, cooling, needs-sign-in hints) to `crates/nullrouter-server/src/views/accounts.rs` from `crates/nullrouter-cli/src/cmd/accounts.rs`; live op `accounts.state`
-- [ ] T013 [US1] Move `quota [provider [name]]` to `crates/nullrouter-server/src/views/quota.rs` from `crates/nullrouter-cli/src/cmd/quota.rs`; live op `quota.list`. Keep the text rendering in `crates/nullrouter-cli/src/quota_text.rs`, reading only the view
-- [ ] T014 [US1] Move `quota history` to `crates/nullrouter-server/src/views/quota.rs` (as `history`); live op `quota.checkpoint`, sent before reading, as today
+- [X] T013 [US1] Move `quota [provider [name]]` to `crates/nullrouter-server/src/views/quota.rs` from `crates/nullrouter-cli/src/cmd/quota.rs`; live op `quota.list`. Keep the text rendering in `crates/nullrouter-cli/src/quota_text.rs`, reading only the view
+- [X] T014 [US1] Move `quota history` to `crates/nullrouter-server/src/views/quota.rs` (as `history`); live op `quota.checkpoint`, sent before reading, as today
 - [ ] T015 [US1] Move `routing [target]` to `crates/nullrouter-server/src/views/routing.rs` from `crates/nullrouter-cli/src/cmd/routing.rs`; live op `routing.view`. Keep the text rendering in `crates/nullrouter-cli/src/routing_text.rs`
 - [ ] T016 [US1] Move `records list` to `crates/nullrouter-server/src/views/records.rs` from `crates/nullrouter-cli/src/cmd/records.rs`: filter parsing and its error messages, `settle_open` naming from `Live.running`. It reads from disk by both routes (spec Clarifications Q1)
 - [ ] T017 [US1] Move `records show` to `crates/nullrouter-server/src/views/records.rs` (as `record`); live op `records.get` first, then disk, as today. Put the key id → name map from `keys.toml` in `extra` (research R3); the CLI's `show` renderer reads it from there

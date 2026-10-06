@@ -74,9 +74,9 @@ enum Command {
 /// Opens the registry, or prints the startup errors and exits 1.
 pub(crate) fn open(home: Option<PathBuf>) -> Result<RegistryHandle, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
-    RegistryHandle::open(home).map_err(|e| {
-        eprintln!("startup failed:\n{e}");
-        ExitCode::from(1)
+    nullrouter_server::views::open_registry(&home).map_err(|e| {
+        eprintln!("{}", e.message);
+        ExitCode::from(e.code)
     })
 }
 
