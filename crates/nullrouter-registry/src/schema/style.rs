@@ -41,6 +41,24 @@ pub struct StyleFile {
 }
 
 impl StyleFile {
+    /// The style carries prompt-cache markers: it declares where their lifetime is kept, or a
+    /// text part or tool maps `cache_control` (Chat Completions, as OpenRouter's extension).
+    pub fn carries_cache_markers(&self) -> bool {
+        fn names(v: &toml::Value) -> bool {
+            match v {
+                toml::Value::String(s) => s.contains(".cache_control"),
+                toml::Value::Array(a) => a.iter().any(names),
+                toml::Value::Table(t) => t.values().any(names),
+                _ => false,
+            }
+        }
+        self.cache_marker.is_some()
+            || self.text.as_ref().is_some_and(|t| {
+                t.parts.values().any(|p| names(&p.data) || p.roles.values().any(names))
+                    || t.tools.as_ref().is_some_and(|tools| names(&tools.data))
+            })
+    }
+
     /// The codec section for `t`, if declared (text is checked separately).
     pub fn type_codec(&self, t: ModelType) -> Option<&TypeCodec> {
         match t {

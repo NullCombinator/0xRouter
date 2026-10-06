@@ -8,9 +8,11 @@ use std::sync::Arc;
 
 use nullrouter_engine::keys::{self, Keys};
 use nullrouter_engine::state::Engine;
+use nullrouter_engine::testkit::homes;
 use nullrouter_engine::testkit::{MockUpstream, Received, Step};
 use nullrouter_registry::OperatorHome;
 use nullrouter_server::serve::{App, run};
+use nullrouter_server::views::{self, Live, View, ViewError};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
@@ -451,3 +453,47 @@ pub fn style_request(base: &str, key: &str, style: &str, model: &str) -> reqwest
 }
 
 pub const STYLES: [&str; 4] = ["openai-chat", "anthropic-messages", "openai-responses", "gemini"];
+
+pub type Build = fn(&OperatorHome, &Value, &Live) -> Result<View, ViewError>;
+
+/// Every view moved so far, with the arguments it is exercised with.
+pub fn view_cases() -> Vec<(&'static str, &'static [&'static str], Value, Build)> {
+    use views::*;
+    let r = homes::record_id;
+    let mut v: Vec<(&'static str, &'static [&'static str], Value, Build)> = vec![
+        ("keys", keys::NEEDS, json!({}), keys::build),
+        ("accounts", accounts::NEEDS, json!({"provider": null}), accounts::build),
+        ("accounts xai", accounts::NEEDS, json!({"provider": "xai"}), accounts::build),
+        ("quota", quota::NEEDS, json!({"provider": null, "name": null}), quota::build),
+        ("quota xai work", quota::NEEDS, json!({"provider": "xai", "name": "work"}), quota::build),
+        (
+            "quota history",
+            quota::HISTORY_NEEDS,
+            json!({"provider": "xai", "name": "work", "since": null, "limit": null}),
+            quota::history,
+        ),
+        ("routing", routing::NEEDS, json!({"target": null}), routing::build),
+        ("routing mixed", routing::NEEDS, json!({"target": "mixed"}), routing::build),
+        ("records", records::NEEDS, json!({}), records::build),
+        ("records filtered", records::NEEDS, json!({"agent": "ak_fixture1", "limit": 2}), records::build),
+        ("providers", providers::NEEDS, json!({"capability": null}), providers::build),
+        ("providers tts", providers::NEEDS, json!({"capability": "tts"}), providers::build),
+        ("model", model::NEEDS, json!({"provider": "xai", "model": "grok-4"}), model::build),
+        ("model unknown", model::NEEDS, json!({"provider": "nope", "model": "m"}), model::build),
+        ("plugins", plugins::NEEDS, json!({"community": false}), plugins::build),
+        ("plugins community", plugins::NEEDS, json!({"community": true}), plugins::build),
+        ("check", check::NEEDS, json!({}), check::build),
+        ("resolve direct", resolve::NEEDS, json!({"target": "grok-cli/grok-build"}), resolve::build),
+        ("resolve unified", resolve::NEEDS, json!({"target": "mixed"}), resolve::build),
+        ("resolve unknown", resolve::NEEDS, json!({"target": "nope"}), resolve::build),
+        ("unified", unified::NEEDS, json!({"name": null}), unified::build),
+        ("unified mixed", unified::NEEDS, json!({"name": "mixed"}), unified::build),
+        ("behaviour", behaviour::NEEDS, json!({}), behaviour::build),
+        ("unified unknown", unified::NEEDS, json!({"name": "nope"}), unified::build),
+    ];
+    for n in [1, 2, 5, 6] {
+        v.push(("record", records::RECORD_NEEDS, json!({"id": r(n)}), records::record));
+    }
+    v.push(("record unknown", records::RECORD_NEEDS, json!({"id": "rq_missing"}), records::record));
+    v
+}

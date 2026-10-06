@@ -62,7 +62,8 @@ async fn keyco_setup() -> Setup {
 async fn keyco_main_serves() -> Setup {
     let s = keyco_setup().await;
     let path = s._dir.path().join(nullrouter_engine::accounts::FILE);
-    let text = std::fs::read_to_string(&path).unwrap().replacen("name = \"spare\"\n", "name = \"spare\"\npriority = 0.0\n", 1);
+    let text =
+        std::fs::read_to_string(&path).unwrap().replacen("name = \"spare\"\n", "name = \"spare\"\npriority = 0.0\n", 1);
     nullrouter_engine::files::write_private(&path, &text).unwrap();
     s.engine.reload().await.unwrap();
     s

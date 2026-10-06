@@ -296,7 +296,9 @@ mod tests {
 
     fn style(id: &str) -> Style {
         let (path, src) = match id {
-            "anthropic-messages" => ("anthropic-messages", include_str!("../../../../styles/bundled/anthropic-messages.toml")),
+            "anthropic-messages" => {
+                ("anthropic-messages", include_str!("../../../../styles/bundled/anthropic-messages.toml"))
+            }
             "openai-chat" => ("openai-chat", include_str!("../../../../styles/bundled/openai-chat.toml")),
             other => panic!("no style {other}"),
         };
@@ -362,7 +364,11 @@ mod tests {
     fn marker_values_do_not_change_hashes_but_the_salt_does() {
         let plain = chain_of(messages_body("m", None), "anthropic-messages", &salt(1));
         let marked = chain_of(messages_body("m", Some(json!({"type": "ephemeral"}))), "anthropic-messages", &salt(1));
-        let hour = chain_of(messages_body("m", Some(json!({"type": "ephemeral", "ttl": "1h"}))), "anthropic-messages", &salt(1));
+        let hour = chain_of(
+            messages_body("m", Some(json!({"type": "ephemeral", "ttl": "1h"}))),
+            "anthropic-messages",
+            &salt(1),
+        );
         let other = chain_of(messages_body("m", None), "anthropic-messages", &salt(2));
         let hashes = |c: &Chain| c.boundaries.iter().map(|b| b.hash).collect::<Vec<_>>();
         assert_eq!(hashes(&plain), hashes(&marked));
@@ -394,7 +400,8 @@ mod tests {
 
         // A marker on the second message: boundaries 0..=2 are covered, not the last.
         let mut body = messages_body("m", None);
-        body["messages"][1]["content"] = json!([{"type": "text", "text": "Four.", "cache_control": {"type": "ephemeral"}}]);
+        body["messages"][1]["content"] =
+            json!([{"type": "text", "text": "Four.", "cache_control": {"type": "ephemeral"}}]);
         let c = chain_of(body, "anthropic-messages", &s);
         let written = c.writable(CacheMode::Explicit, 1024);
         assert_eq!(written.len(), 3);
@@ -438,7 +445,10 @@ mod tests {
         body["messages"][1]["content"] = json!(secret);
         let c = chain_of(body, "openai-chat", &salt(1));
         let written = c.writable(CacheMode::Automatic, 1);
-        let rendered = format!("{c:?} {written:?} {}", serde_json::to_string(&written.iter().map(|w| w.hash).collect::<Vec<_>>()).unwrap());
+        let rendered = format!(
+            "{c:?} {written:?} {}",
+            serde_json::to_string(&written.iter().map(|w| w.hash).collect::<Vec<_>>()).unwrap()
+        );
         assert!(!rendered.contains(secret));
         for b in &c.boundaries {
             let hex = b.hash.hex();

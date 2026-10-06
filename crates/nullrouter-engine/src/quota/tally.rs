@@ -217,7 +217,15 @@ impl Tally {
 
     /// Adds a recovered attempt to the hourly counters and the sliding list, and to the running
     /// tally when `running` (it is later than the checkpoint the tally was reloaded from).
-    pub fn recover_attempt(&self, provider: &str, account: &str, model: &str, usage: Option<&Usage>, at: SystemTime, running: bool) {
+    pub fn recover_attempt(
+        &self,
+        provider: &str,
+        account: &str,
+        model: &str,
+        usage: Option<&Usage>,
+        at: SystemTime,
+        running: bool,
+    ) {
         let cell = self.cell(provider, account);
         let mut c = lock(&cell);
         let before = std::mem::take(&mut c.models);

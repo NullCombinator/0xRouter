@@ -43,8 +43,9 @@ impl Salt {
         files::refuse_symlink(&path)?;
         match fs::read(&path) {
             Ok(b) => {
-                let bytes = <[u8; SALT_LEN]>::try_from(b.as_slice())
-                    .map_err(|_| FileError::invalid(&path, "is not 32 bytes; remove it to start with new fingerprints"))?;
+                let bytes = <[u8; SALT_LEN]>::try_from(b.as_slice()).map_err(|_| {
+                    FileError::invalid(&path, "is not 32 bytes; remove it to start with new fingerprints")
+                })?;
                 return Ok(Self(bytes));
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}

@@ -208,7 +208,8 @@ async fn a_timeout_or_a_refused_connection_on_the_placed_account_falls_back_too(
     // Nothing listening: the first provider can't be reached, the second serves.
     let s = setup(
         |m| {
-            let dead = chat_plugin(m, "dead", NO_RETRY).replace(&m.url("/dead/chat/completions"), "http://127.0.0.1:1/chat");
+            let dead =
+                chat_plugin(m, "dead", NO_RETRY).replace(&m.url("/dead/chat/completions"), "http://127.0.0.1:1/chat");
             vec![("dead", dead), ("alpha", chat_plugin(m, "alpha", NO_RETRY))]
         },
         &[("dead", "main"), ("dead", "backup"), ("alpha", "main")],
@@ -220,4 +221,17 @@ async fn a_timeout_or_a_refused_connection_on_the_placed_account_falls_back_too(
     assert!(res.is_ok());
     let r = s.engine.records.get(&id).unwrap();
     assert_eq!(r.served_by.unwrap().provider, "alpha");
+}
+
+#[tokio::test]
+async fn a_clients_target_is_recorded_short_and_without_control_characters() {
+    let s = setup(|m| vec![("alpha", chat_plugin(m, "alpha", ""))], &[("alpha", "main")], &unified(&[("alpha", "m1")]))
+        .await;
+    let target = format!("no/such\x1b[2J{}", "x".repeat(5_000));
+    let (id, res) = send(&s, &target).await;
+    assert_eq!(res.err().expect("an unknown model").status, 404);
+    let kept = s.engine.records.get(&id).unwrap().target.unwrap();
+    assert!(kept.starts_with("no/such[2J"), "{kept}");
+    assert!(!kept.chars().any(char::is_control));
+    assert_eq!(kept.chars().count(), nullrouter_engine::records::MAX_NAME_CHARS);
 }

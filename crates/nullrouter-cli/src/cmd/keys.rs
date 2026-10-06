@@ -6,7 +6,8 @@ use std::process::ExitCode;
 use clap::Subcommand;
 use nullrouter_engine::keys::{self, BreakBehaviour, Keys};
 use nullrouter_registry::OperatorHome;
-use serde_json::json;
+use nullrouter_server::views;
+use serde_json::{Value, json};
 
 #[derive(Subcommand)]
 pub(crate) enum Command {
@@ -40,9 +41,14 @@ fn behaviour(s: &str) -> Result<BreakBehaviour, ExitCode> {
 
 pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
+    if matches!(cmd, Command::List) {
+        let view = super::read(&home, views::keys::NEEDS, &json!({}), views::keys::build)?;
+        print_list(&view.json, as_json);
+        return Ok(ExitCode::SUCCESS);
+    }
     let mut list = Keys::load(&home.path().join(keys::FILE)).map_err(fail)?;
     let done = match cmd {
-        Command::List => return Ok(print_list(&list, as_json)),
+        Command::List => unreachable!("handled above"),
         Command::Issue { name, break_behaviour } => {
             let b = break_behaviour.as_deref().map(behaviour).transpose()?;
             let (key, rec) = list.issue(&name, b).map_err(fail)?;
@@ -78,34 +84,21 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     Ok(ExitCode::SUCCESS)
 }
 
-fn print_list(list: &Keys, as_json: bool) -> ExitCode {
-    let rows: Vec<_> = list
-        .iter()
-        .map(|k| {
-            json!({
-                "id": k.id,
-                "name": k.name,
-                "key": format!("…{}", k.last4),
-                "created": k.created,
-                "revoked": k.revoked,
-                "break": k.break_behaviour.map(BreakBehaviour::as_str),
-            })
-        })
-        .collect();
+fn print_list(rows: &Value, as_json: bool) {
     if as_json {
-        println!("{:#}", json!(rows));
-    } else {
-        for (r, k) in rows.iter().zip(list.iter()) {
-            println!(
-                "{:<12} {:<20} {:<8} {:<26} {:<26} {}",
-                k.id,
-                k.name,
-                r["key"].as_str().unwrap_or_default(),
-                k.created,
-                k.revoked.as_deref().unwrap_or("-"),
-                k.break_behaviour.map_or("default", BreakBehaviour::as_str)
-            );
-        }
+        println!("{rows:#}");
+        return;
     }
-    ExitCode::SUCCESS
+    for r in rows.as_array().into_iter().flatten() {
+        let s = |k: &str| r[k].as_str().unwrap_or_default().to_owned();
+        println!(
+            "{:<12} {:<20} {:<8} {:<26} {:<26} {}",
+            s("id"),
+            s("name"),
+            s("key"),
+            s("created"),
+            r["revoked"].as_str().unwrap_or("-"),
+            r["break"].as_str().unwrap_or("default")
+        );
+    }
 }

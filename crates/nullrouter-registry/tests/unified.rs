@@ -283,3 +283,68 @@ fn amortization_for_names_known_targets() {
     let bad = format!("{SONNET}\n[routing.amortization_for]\n\"kr/no-such-model\" = \"1h\"\n");
     assert!(errors(&bad).contains("is not declared by provider"), "{}", errors(&bad));
 }
+
+// US8: a unified model whose members' limits differ loads, and the report notes it (R14).
+
+const MIXED: &str = r#"
+schema = 1
+
+[[unified_model]]
+name = "mixed"
+members = [
+  { provider = "grok-cli", model = "grok-build" },
+  { provider = "bluesminds", model = "claude-sonnet-4-5" },
+  { provider = "kr", model = "claude-sonnet-4.5" },
+]
+"#;
+
+#[test]
+fn n1_members_with_different_limits_produce_a_note_and_still_load() {
+    let reg = ok(MIXED);
+    assert_eq!(reg.unified_model("mixed").unwrap().members.len(), 3);
+    let notes: Vec<String> = reg.report().notes.iter().map(ToString::to_string).collect();
+    assert_eq!(
+        notes,
+        [
+            "unified model mixed: members differ in context_length: grok-cli 500000, bluesminds 200000, kiro undeclared",
+            "unified model mixed: members differ in max_output_tokens: grok-cli 64000, bluesminds undeclared, kiro undeclared",
+        ]
+    );
+    let n = &reg.report().notes[0];
+    assert_eq!((n.unified.as_str(), n.limit.as_str()), ("mixed", "context_length"));
+    assert_eq!(n.values[2], ("kiro".to_owned(), None));
+}
+
+#[test]
+fn n2_equal_or_wholly_undeclared_limits_are_not_noted() {
+    // One member: nothing to differ from.
+    let reg = ok(r#"
+[[unified_model]]
+name = "solo"
+members = [{ provider = "grok-cli", model = "grok-build" }]
+"#);
+    assert!(reg.report().notes.is_empty());
+    // No member declares a limit.
+    let reg = ok(r#"
+[[unified_model]]
+name = "blank"
+members = [{ provider = "kr", model = "claude-sonnet-4.5" }, { provider = "openrouter", model = "a/b" }]
+"#);
+    assert!(reg.report().notes.is_empty(), "{:?}", reg.report().notes);
+}
+
+#[test]
+fn n3_a_reload_recomputes_the_notes() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::write(home.path().join("config.toml"), MIXED).unwrap();
+    let handle = RegistryHandle::open_parity(OperatorHome::new(home.path())).unwrap();
+    assert_eq!(handle.snapshot().report().notes.len(), 2);
+    std::fs::write(
+        home.path().join("config.toml"),
+        "[[unified_model]]\nname = \"mixed\"\nmembers = [{ provider = \"grok-cli\", model = \"grok-build\" }]\n",
+    )
+    .unwrap();
+    let report = handle.reload().unwrap();
+    assert!(report.notes.is_empty());
+    assert!(handle.snapshot().report().notes.is_empty());
+}

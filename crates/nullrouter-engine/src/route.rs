@@ -17,10 +17,10 @@ use crate::plan::{self, RequestPlan, Step};
 use crate::records::Usage;
 use crate::routing::fingerprint::{Chain, Hash};
 use crate::routing::ledger::Debit;
-use crate::routing::pace::request_size;
 use crate::routing::meter::{self, AccountQuota, Bucket, MeterInput, Spent, Traffic};
+use crate::routing::pace::request_size;
 use crate::routing::{
-    AmortizationWindow, Candidate, CandidateKey, CacheSpec, Decision, PlacementReason, PriceSpec, RoutingInput, Tier,
+    AmortizationWindow, CacheSpec, Candidate, CandidateKey, Decision, PlacementReason, PriceSpec, RoutingInput, Tier,
     place::place, view,
 };
 use crate::state::{Engine, EngineState};
@@ -62,7 +62,10 @@ pub struct Tally {
     pub tokens: u64,
 }
 
-pub(crate) fn cache_of(provider: &nullrouter_registry::schema::ProviderEntity, account: Option<&crate::accounts::Account>) -> CacheSpec {
+pub(crate) fn cache_of(
+    provider: &nullrouter_registry::schema::ProviderEntity,
+    account: Option<&crate::accounts::Account>,
+) -> CacheSpec {
     let EffectiveCache { mode, lifetime, min_tokens } = provider.routing().cache;
     let lifetime = account.and_then(|a| a.routing.cache_lifetime).unwrap_or(lifetime);
     CacheSpec { mode, lifetime, min_tokens }
@@ -70,7 +73,14 @@ pub(crate) fn cache_of(provider: &nullrouter_registry::schema::ProviderEntity, a
 
 /// One model's counted traffic as a window's meter charges it.
 fn spent_of(model: &str, t: &crate::quota::tally::ModelTally) -> Spent {
-    Spent { model: model.to_owned(), requests: t.requests, input: t.input, output: t.output, cache_read: t.cache_read, cache_write: t.cache_write }
+    Spent {
+        model: model.to_owned(),
+        requests: t.requests,
+        input: t.input,
+        output: t.output,
+        cache_read: t.cache_read,
+        cache_write: t.cache_write,
+    }
 }
 
 fn candidate_of(engine: &Engine, c: &plan::Candidate<'_>, order: i64, now: SystemTime) -> Candidate {
@@ -93,11 +103,14 @@ fn candidate_of(engine: &Engine, c: &plan::Candidate<'_>, order: i64, now: Syste
             };
             let reported = crate::quota::poll::reported(c.provider, a).is_some();
             let tally = &engine.history.tally;
-            let since_poll: Vec<Spent> = tally.since_good_poll(&a.provider, &a.name).iter().map(|(m, t)| spent_of(m, t)).collect();
+            let since_poll: Vec<Spent> =
+                tally.since_good_poll(&a.provider, &a.name).iter().map(|(m, t)| spent_of(m, t)).collect();
             // The hourly counters are read only where a window counts from them: one nobody
             // reports, or one whose reset passed since its poll.
-            let reset_passed = board.latest.as_ref().is_some_and(|p| p.windows.iter().any(|w| w.resets_at.is_some_and(|r| r <= now)));
-            let reach = routing.windows.iter().map(|m| m.length).max().unwrap_or_default().min(crate::quota::tally::HORIZON);
+            let reset_passed =
+                board.latest.as_ref().is_some_and(|p| p.windows.iter().any(|w| w.resets_at.is_some_and(|r| r <= now)));
+            let reach =
+                routing.windows.iter().map(|m| m.length).max().unwrap_or_default().min(crate::quota::tally::HORIZON);
             let history: Vec<Bucket> = if !reported || reset_passed {
                 let from = now.checked_sub(reach).unwrap_or(SystemTime::UNIX_EPOCH);
                 tally
@@ -113,7 +126,11 @@ fn candidate_of(engine: &Engine, c: &plan::Candidate<'_>, order: i64, now: Syste
             };
             let recent: Vec<Traffic> = if routing.windows.iter().any(|m| m.is_admission()) {
                 tally
-                    .recent_since(&a.provider, &a.name, now.checked_sub(Duration::from_secs(3600)).unwrap_or(SystemTime::UNIX_EPOCH))
+                    .recent_since(
+                        &a.provider,
+                        &a.name,
+                        now.checked_sub(Duration::from_secs(3600)).unwrap_or(SystemTime::UNIX_EPOCH),
+                    )
                     .into_iter()
                     .map(|c| Traffic {
                         at: c.at,
@@ -155,7 +172,12 @@ fn candidate_of(engine: &Engine, c: &plan::Candidate<'_>, order: i64, now: Syste
 }
 
 /// The plan's steps as routing candidates, with the plan step each came from.
-fn candidates_of(engine: &Engine, st: &EngineState, plan: &RequestPlan<'_>, now: SystemTime) -> (Vec<Candidate>, Vec<usize>) {
+fn candidates_of(
+    engine: &Engine,
+    st: &EngineState,
+    plan: &RequestPlan<'_>,
+    now: SystemTime,
+) -> (Vec<Candidate>, Vec<usize>) {
     let mut candidates: Vec<Candidate> = Vec::new();
     let mut step_of: Vec<usize> = Vec::new();
     for (i, step) in plan.steps.iter().enumerate() {
@@ -165,7 +187,11 @@ fn candidates_of(engine: &Engine, st: &EngineState, plan: &RequestPlan<'_>, now:
             Step::Skip(s) => candidates.push(Candidate {
                 key: CandidateKey::new(&s.provider, s.account.as_deref().unwrap_or(""), &s.model),
                 order,
-                priority: s.account.as_deref().and_then(|a| st.accounts.get(&s.provider, a)).map_or(1.0, |a| a.priority),
+                priority: s
+                    .account
+                    .as_deref()
+                    .and_then(|a| st.accounts.get(&s.provider, a))
+                    .map_or(1.0, |a| a.priority),
                 out_of_service: Some(s.reason.clone()),
                 cooling: None,
                 quota: AccountQuota::payg(),
@@ -225,7 +251,14 @@ pub fn view_all(engine: &Engine, st: &EngineState, only: Option<&str>, now: Syst
                 }
             }
         }
-        let input = RoutingInput { target: target.clone(), candidates, amortization: length, size_tokens: 0, warm: None, deficits };
+        let input = RoutingInput {
+            target: target.clone(),
+            candidates,
+            amortization: length,
+            size_tokens: 0,
+            warm: None,
+            deficits,
+        };
         let window = AmortizationWindow { start: crate::routing::ledger::window_start(now, length), length };
         out.push(view::view(&input, window, now));
     }
@@ -237,7 +270,8 @@ pub fn decide(engine: &Engine, st: &EngineState, req: &TextRequest, plan: &Reque
     let (mut candidates, step_of) = candidates_of(engine, st, plan, now);
 
     // A text request that carries a prompt has a chain; media and counts are always cold.
-    let chain = (req.media.is_none() && !req.count).then(|| Chain::build(&req.ir, &engine.router.salt, req.client.cache_ttl_key.as_deref()));
+    let chain = (req.media.is_none() && !req.count)
+        .then(|| Chain::build(&req.ir, &engine.router.salt, req.client.cache_ttl_key.as_deref()));
     let routing = &st.settings().routing;
     let length = routing.amortization_for.get(&req.target).copied().unwrap_or(routing.amortization);
 
@@ -296,14 +330,8 @@ pub fn decide(engine: &Engine, st: &EngineState, req: &TextRequest, plan: &Reque
     }
     drop(state);
 
-    let input = RoutingInput {
-        target: req.target.clone(),
-        candidates,
-        amortization: length,
-        size_tokens,
-        warm,
-        deficits,
-    };
+    let input =
+        RoutingInput { target: req.target.clone(), candidates, amortization: length, size_tokens, warm, deficits };
     let placement = place(&input, now);
     let (stayed_on, warm_account) = match (&placement.decision.warm, &input.warm) {
         (Some(h), Some(w)) if h.stayed => (Some(w.hash), Some(w.key.clone())),
@@ -337,8 +365,11 @@ pub fn start(engine: &Engine, routed: &Routed, at: &CandidateKey, now: SystemTim
     let t = &routed.tally;
     let mut state = engine.router.lock();
     let key = at.account_key();
-    let (tier, shares) =
-        if t.payg_shares.iter().any(|(k, _)| *k == key) { (Tier::Payg, &t.payg_shares) } else { (Tier::Subscription, &t.shares) };
+    let (tier, shares) = if t.payg_shares.iter().any(|(k, _)| *k == key) {
+        (Tier::Payg, &t.payg_shares)
+    } else {
+        (Tier::Subscription, &t.shares)
+    };
     let ledger = state.ledgers.entry((t.target.clone(), tier)).or_default();
     let debit = ledger.debit(now, t.length, shares, &key, t.tokens);
     if debit.is_some() {
@@ -499,12 +530,8 @@ pub fn sweep(engine: &Engine, st: &EngineState, now: SystemTime) -> usize {
 pub fn compact(engine: &Engine, st: &EngineState, now: SystemTime) {
     let mut state = engine.router.lock();
     state.warm.sweep(now, |at| lifetime_of(st, at));
-    let warm: String = state
-        .warm
-        .stored()
-        .iter()
-        .map(|s| crate::journal::state::warm_line(s).to_string() + "\n")
-        .collect();
+    let warm: String =
+        state.warm.stored().iter().map(|s| crate::journal::state::warm_line(s).to_string() + "\n").collect();
     let ledgers: String = state
         .ledgers
         .iter()

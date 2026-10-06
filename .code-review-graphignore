@@ -1,0 +1,4 @@
+# Vendored and generated trees the Rust graph must not index.
+.cargo-home/**
+ref/**
+tests/fixtures/9router/**

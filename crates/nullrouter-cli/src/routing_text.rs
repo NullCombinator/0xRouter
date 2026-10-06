@@ -84,7 +84,9 @@ fn length_text(v: &Value) -> String {
 fn header(answer: &Value, now: SystemTime) -> String {
     let w = &answer["amortization"];
     let mut out = format!("amortization {}", length_text(&w["length"]));
-    if let (Some(start), Some(len)) = (time_of(&w["start"]), w["length"].as_str().and_then(|l| nullrouter_registry::schema::parse_duration(l).ok())) {
+    if let (Some(start), Some(len)) =
+        (time_of(&w["start"]), w["length"].as_str().and_then(|l| nullrouter_registry::schema::parse_duration(l).ok()))
+    {
         let end = start + len;
         let span = if len >= Duration::from_secs(86_400) {
             format!("{} {}–{} {}", weekday(start), hm(start), weekday(end), hm(end))
@@ -245,9 +247,7 @@ mod tests {
     }
 
     fn answer() -> Value {
-        let w = |name: &str, rem: f64, cap: f64, reserve: f64, resets: &str| {
-            json!({"name": name, "unit": "weighted_tokens", "remaining_now": rem, "capacity": cap, "reserve": reserve, "resets_at": resets})
-        };
+        let w = |name: &str, rem: f64, cap: f64, reserve: f64, resets: &str| json!({"name": name, "unit": "weighted_tokens", "remaining_now": rem, "capacity": cap, "reserve": reserve, "resets_at": resets});
         json!({
             "amortization": {"start": "2026-10-04T05:00:00.000Z", "length": "5h"},
             "journal": {"kept": true, "last_sync_age_s": 0.4},
@@ -271,12 +271,31 @@ mod tests {
         assert_eq!(lines[2], format!("{:<36}subscription tier", "sonnet"));
         assert!(lines[3].trim_start().starts_with("account") && lines[3].ends_with("windows"), "{}", lines[3]);
         let max = lines[4];
-        for want in ["anthropic/max", "polled", "1.42", "61%", "+91.2k", "5m", "5-hour 5.6M/9.0M wtok · floor 5% · rst 10:00", " | weekly 72.9M/90.0M wtok · floor 5% · rst Fri 09:00"] {
+        for want in [
+            "anthropic/max",
+            "polled",
+            "1.42",
+            "61%",
+            "+91.2k",
+            "5m",
+            "5-hour 5.6M/9.0M wtok · floor 5% · rst 10:00",
+            " | weekly 72.9M/90.0M wtok · floor 5% · rst Fri 09:00",
+        ] {
             assert!(max.contains(want), "{want:?} missing from {max:?}");
         }
-        assert!(lines[5].contains("estimated") && lines[5].ends_with("rst 12:00 · cold work off (priority 0)"), "{}", lines[5]);
+        assert!(
+            lines[5].contains("estimated") && lines[5].ends_with("rst 12:00 · cold work off (priority 0)"),
+            "{}",
+            lines[5]
+        );
         assert_eq!(lines[6], format!("{:<36}pay-as-you-go tier", ""));
-        assert!(lines[7].contains("openrouter/main") && lines[7].contains("payg") && lines[7].ends_with("price now 3.00/Mtok in"), "{}", lines[7]);
+        assert!(
+            lines[7].contains("openrouter/main")
+                && lines[7].contains("payg")
+                && lines[7].ends_with("price now 3.00/Mtok in"),
+            "{}",
+            lines[7]
+        );
         assert_eq!(lines[9], "opencode-go/main: window rolling capacity assumed");
     }
 

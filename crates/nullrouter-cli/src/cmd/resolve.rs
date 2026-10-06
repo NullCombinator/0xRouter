@@ -1,32 +1,17 @@
+//! `nullrouter resolve <target>`: exit 2 when the target isn't found.
+
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use nullrouter_registry::{Resolution, UnifiedMember};
-use serde_json::{Value, json};
+use nullrouter_registry::OperatorHome;
+use nullrouter_server::views;
+use serde_json::json;
 
-fn member(m: &UnifiedMember) -> Value {
-    json!({ "provider": m.provider, "requested": m.requested, "upstream_id": m.upstream_id, "catalogued": m.catalogued })
-}
-
-/// `--json` shape (stable; the quickstart parses it):
-/// `{"kind":"direct","provider","requested","upstream_id","catalogued"}`,
-/// `{"kind":"unified","name","model_kind","members":[{"provider","requested","upstream_id","catalogued"}]}`,
-/// or `{"kind":"not_found","error"}`.
 pub(crate) fn run(home: Option<PathBuf>, target: &str, as_json: bool) -> Result<ExitCode, ExitCode> {
-    let reg = crate::open(home)?.snapshot();
-    let (out, code) = match reg.resolve(target) {
-        Ok(Resolution::Direct { provider, requested, upstream_id, catalogued }) => (
-            json!({ "kind": "direct", "provider": provider.id, "requested": requested,
-                    "upstream_id": upstream_id, "catalogued": catalogued }),
-            0,
-        ),
-        Ok(Resolution::Unified(u)) => (
-            json!({ "kind": "unified", "name": u.name, "model_kind": u.kind.map(|k| k.as_str()),
-                    "members": u.members.iter().map(member).collect::<Vec<_>>() }),
-            0,
-        ),
-        Err(e) => (json!({ "kind": "not_found", "error": e.to_string() }), 2),
-    };
+    let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
+    let view = super::read(&home, views::resolve::NEEDS, &json!({"target": target}), views::resolve::build)?;
+    let out = &view.json;
+    let code = if out["kind"] == "not_found" { 2 } else { 0 };
     if as_json {
         println!("{out:#}");
     } else {
@@ -47,6 +32,9 @@ pub(crate) fn run(home: Option<PathBuf>, target: &str, as_json: bool) -> Result<
                         m["requested"].as_str().unwrap_or_default(),
                         m["upstream_id"].as_str().unwrap_or_default()
                     );
+                }
+                for n in view.extra["notes"].as_array().into_iter().flatten().filter_map(|n| n.as_str()) {
+                    println!("note: {n}");
                 }
             }
             _ => eprintln!("not found: {}", out["error"].as_str().unwrap_or_default()),

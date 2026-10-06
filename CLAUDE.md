@@ -13,8 +13,8 @@ Workspace layout:
 | `crates/nullrouter-registry` | Provider and unified-model registry: plugin schema, validation gate, lookup, reload |
 | `crates/nullrouter-wire` | API-style interpreter: translates client bodies ↔ IR ↔ provider wire bodies; no I/O, no async runtime |
 | `crates/nullrouter-engine` | Request engine: operator state snapshot, attempt loop (classification, retry, fallback, stay-warm), upstream calls, request records |
-| `crates/nullrouter-server` | HTTP surface over the engine: style-built routes, access-key check, streaming relay, model lists, token counts, operator socket |
-| `crates/nullrouter-cli` | `nullrouter` CLI: `serve`, `accounts`, `keys`, `behaviour`, `records`, `plugins`, `check`, `validate`, `resolve`, `model`, `providers` |
+| `crates/nullrouter-server` | HTTP surface over the engine: style-built routes, access-key check, streaming relay, model lists, token counts, operator socket, read model (`views`) |
+| `crates/nullrouter-cli` | `nullrouter` CLI: `serve`, `accounts`, `keys`, `behaviour`, `records`, `plugins`, `check`, `validate`, `resolve`, `unified`, `model`, `providers` |
 | `plugins/bundled/` | The five chosen providers (schema 2 TOML): seeded from `ref/9router` by the generator, then maintained by hand |
 | `plugins/community/` | The other 116 providers, generated from `ref/9router`; embedded, fit-checked, and installed on request |
 | `styles/bundled/` | The four client API styles (Chat Completions, Messages, Responses, Gemini): data files read by `nullrouter-wire` |

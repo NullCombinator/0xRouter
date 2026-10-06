@@ -1,0 +1,4 @@
+exit: 4
+--- stdout
+--- stderr
+no server is running on <HOME>/run/operator.sock; the routing view is the running server's (start it with `nullrouter serve`)

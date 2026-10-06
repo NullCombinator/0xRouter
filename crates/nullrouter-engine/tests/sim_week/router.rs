@@ -9,6 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use nullrouter_engine::accounts::RoutingOverrides;
 use nullrouter_engine::clock;
 use nullrouter_engine::journal::{Journal, Options, Target, records, state};
 use nullrouter_engine::quota::extract::{QuotaWindow, rfc3339_millis};
@@ -19,7 +20,6 @@ use nullrouter_engine::routing::pace::request_size;
 use nullrouter_engine::routing::place::place;
 use nullrouter_engine::routing::warm::WarmStore;
 use nullrouter_engine::routing::{CacheSpec, Candidate, CandidateKey, Placement, PriceSpec, RoutingInput, Tier};
-use nullrouter_engine::accounts::RoutingOverrides;
 use nullrouter_registry::schema::{CacheMode, MeterDecl};
 use serde_json::{Value, json};
 
@@ -46,7 +46,10 @@ pub struct Defs {
 
 impl Defs {
     pub fn index_of(&self, key: &CandidateKey) -> usize {
-        self.accounts.iter().position(|a| a.key.provider == key.provider && a.key.account == key.account).expect("a known account")
+        self.accounts
+            .iter()
+            .position(|a| a.key.provider == key.provider && a.key.account == key.account)
+            .expect("a known account")
     }
 }
 
@@ -206,12 +209,17 @@ impl<'a> Sim<'a> {
             }
         }
 
-        let polls: Value = fs::read(home.join("sim-polls.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(Value::Null);
+        let polls: Value = fs::read(home.join("sim-polls.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or(Value::Null);
         s.next_poll = polls["next"].as_u64().unwrap_or(0);
         let mut poll_at = vec![0u64; defs.accounts.len()];
         for (i, p) in s.polls.iter_mut().enumerate() {
             let e = &polls["accounts"][i.to_string()];
-            if let (Some(ms), Ok(w)) = (e["at"].as_u64(), serde_json::from_value::<Vec<QuotaWindow>>(e["windows"].clone())) {
+            if let (Some(ms), Ok(w)) =
+                (e["at"].as_u64(), serde_json::from_value::<Vec<QuotaWindow>>(e["windows"].clone()))
+            {
                 *p = Some((w, at(ms)));
                 poll_at[i] = ms;
             }
@@ -274,7 +282,7 @@ impl<'a> Sim<'a> {
         w.roll(t);
         w.sweep(t);
         self.warm.sweep(now, |_| Some(Duration::from_millis(CACHE_MS)));
-        if t % DAY == 0 {
+        if t.is_multiple_of(DAY) {
             self.compact(now);
         }
         let mut accounts = serde_json::Map::new();
@@ -367,11 +375,12 @@ impl<'a> Sim<'a> {
                 .map(|(s, p)| Boundary { hash: hash_of(*s), prefix_tokens: *p, marker_ttl: None, covered: false })
                 .collect(),
         };
-        let lookup: Vec<(CandidateKey, Duration)> = candidates.iter().map(|c| (c.key.clone(), c.cache.lifetime)).collect();
+        let lookup: Vec<(CandidateKey, Duration)> =
+            candidates.iter().map(|c| (c.key.clone(), c.cache.lifetime)).collect();
         let warm = self.warm.lookup(&agent, &chain, &lookup, now);
-        let known = warm
-            .as_ref()
-            .and_then(|wm| chain.boundaries.iter().find(|b| b.hash == wm.hash).map(|b| (wm.prefix_tokens, b.prefix_tokens)));
+        let known = warm.as_ref().and_then(|wm| {
+            chain.boundaries.iter().find(|b| b.hash == wm.hash).map(|b| (wm.prefix_tokens, b.prefix_tokens))
+        });
         let total = chain.boundaries.last().map_or(0, |b| b.prefix_tokens);
         let size = request_size(known, total);
 
@@ -405,7 +414,11 @@ impl<'a> Sim<'a> {
             json!({"id": id, "arrived": rfc3339_millis(now), "agent": agent, "style": "openai-chat", "op": "generate",
                 "type": "text", "target": self.defs.target}),
         );
-        self.journal.append(day.clone(), "decision", json!({"id": id, "decision": serde_json::to_value(&placement.decision).expect("a decision")}));
+        self.journal.append(
+            day.clone(),
+            "decision",
+            json!({"id": id, "decision": serde_json::to_value(&placement.decision).expect("a decision")}),
+        );
 
         let mut served = None;
         for (n, (key, reason, rank)) in placement.steps.iter().enumerate() {
@@ -440,7 +453,9 @@ impl<'a> Sim<'a> {
                 json!({"id": id, "outcome": "succeeded", "served_by": {"provider": k.provider, "account": k.account, "model": k.model},
                     "usage": usage_json(u), "break_handling": {"kind": "none"}})
             }
-            None => json!({"id": id, "outcome": "failed", "served_by": null, "usage": null, "break_handling": {"kind": "none"}}),
+            None => {
+                json!({"id": id, "outcome": "failed", "served_by": null, "usage": null, "break_handling": {"kind": "none"}})
+            }
         };
         self.journal.append(day, "close", close);
         self.placed.push(Placed {
@@ -451,12 +466,23 @@ impl<'a> Sim<'a> {
     }
 
     /// An attempt starts: unless it is warm work, the account is debited the request's estimate.
-    fn start(&mut self, p: &Placement, warm: Option<&CandidateKey>, at_: &CandidateKey, tokens: u64, now: SystemTime) -> Option<(Tier, Debit)> {
+    fn start(
+        &mut self,
+        p: &Placement,
+        warm: Option<&CandidateKey>,
+        at_: &CandidateKey,
+        tokens: u64,
+        now: SystemTime,
+    ) -> Option<(Tier, Debit)> {
         if warm == Some(at_) {
             return None;
         }
         let key = at_.account_key();
-        let (tier, shares) = if p.payg_shares.iter().any(|(k, _)| *k == key) { (Tier::Payg, &p.payg_shares) } else { (Tier::Subscription, &p.shares) };
+        let (tier, shares) = if p.payg_shares.iter().any(|(k, _)| *k == key) {
+            (Tier::Payg, &p.payg_shares)
+        } else {
+            (Tier::Subscription, &p.shares)
+        };
         let ledger = self.ledgers.entry(tier).or_default();
         let debit = ledger.debit(now, self.defs.amortization, shares, &key, tokens)?;
         self.queue(tier, now);

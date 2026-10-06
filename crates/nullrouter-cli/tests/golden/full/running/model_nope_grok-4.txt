@@ -1,0 +1,4 @@
+exit: 2
+--- stdout
+--- stderr
+not found: unknown provider "nope"

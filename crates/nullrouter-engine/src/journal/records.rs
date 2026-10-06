@@ -6,12 +6,12 @@
 //! read as JSON in the shape `serde_json::to_value(&RequestRecord)` gives, which is what the
 //! operator socket and the CLI already print.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
 
@@ -164,7 +164,9 @@ impl Folding {
                 }
             }
             "close" => {
-                for key in ["outcome", "served_by", "ttft_ms", "total_ms", "usage", "break_handling", "job", "recovered_at"] {
+                for key in
+                    ["outcome", "served_by", "ttft_ms", "total_ms", "usage", "break_handling", "job", "recovered_at"]
+                {
                     if let Some(v) = line.get(key) {
                         self.record.insert(key.into(), v.clone());
                     }
@@ -214,7 +216,8 @@ pub fn segments(home: &Path) -> Vec<(String, PathBuf)> {
         .filter_map(|e| {
             let name = e.file_name().into_string().ok()?;
             let day = name.strip_suffix(".jsonl")?;
-            (day.len() == 10 && day.as_bytes()[4] == b'-' && day.as_bytes()[7] == b'-').then(|| (day.to_owned(), e.path()))
+            (day.len() == 10 && day.as_bytes()[4] == b'-' && day.as_bytes()[7] == b'-')
+                .then(|| (day.to_owned(), e.path()))
         })
         .collect();
     out.sort();
@@ -230,20 +233,21 @@ pub struct Filter {
     pub agent: Option<String>,
     /// The target the client named, the unified model it resolved to, or the model that served it.
     pub model: Option<String>,
-    /// A placement reason (`cold_by_deficit`, `warm_stay`, …) of any attempt.
+    /// A placement reason (`warm`, `cold_by_deficit`, …) of any attempt.
     pub reason: Option<String>,
     pub since: Option<SystemTime>,
     pub unified_model: Option<String>,
     pub limit: Option<usize>,
+    /// Only records whose id sorts below it (the next page back). The id must name a record:
+    /// check with [`cursor_exists`]; `read` itself only filters.
+    pub before: Option<String>,
 }
 
 impl Filter {
     pub fn matches(&self, r: &Value) -> bool {
         let attempts = r["attempts"].as_array().map(Vec::as_slice).unwrap_or_default();
         let touches = |want: &dyn Fn(&str, Option<&str>) -> bool| {
-            attempts
-                .iter()
-                .any(|a| want(a["provider"].as_str().unwrap_or(""), a["account"].as_str()))
+            attempts.iter().any(|a| want(a["provider"].as_str().unwrap_or(""), a["account"].as_str()))
                 || r["served_by"]["provider"].as_str().is_some_and(|p| want(p, r["served_by"]["account"].as_str()))
         };
         if let Some(p) = &self.provider
@@ -281,6 +285,11 @@ impl Filter {
         {
             return false;
         }
+        if let Some(before) = &self.before
+            && r["id"].as_str().is_none_or(|id| id >= before.as_str())
+        {
+            return false;
+        }
         if let Some(since) = self.since {
             let at = r["arrived"].as_str().and_then(clock::parse_rfc3339);
             if at.is_none_or(|at| at < since) {
@@ -292,20 +301,207 @@ impl Filter {
 }
 
 /// The records matching `filter`, newest first, read from the segments newest first. Reading
-/// stops at the limit.
+/// stops at the limit; with one, each segment is read from its end, so the newest page costs the
+/// same however long the journal is.
 pub fn read(home: &Path, filter: &Filter) -> Vec<Value> {
     let limit = filter.limit.unwrap_or(usize::MAX);
+    let mut segs = segments(home);
+    // Segments after the cursor's day hold only newer records.
+    if let Some(day) = filter.before.as_deref().and_then(|id| cursor_day(home, id)) {
+        segs.retain(|(d, _)| *d <= day);
+    }
     let mut out = Vec::new();
-    for (_, path) in segments(home).into_iter().rev() {
+    for (_, path) in segs.into_iter().rev() {
         if out.len() >= limit {
             break;
+        }
+        if filter.before.is_some() && filter.limit.is_some() {
+            out.extend(read_indexed(&path, filter, limit - out.len()));
+            continue;
+        }
+        if filter.limit.is_some() {
+            out.extend(read_tail(&path, filter, limit - out.len()));
+            continue;
         }
         let Ok(text) = fs::read_to_string(&path) else { continue };
         let mut records = fold(&text);
         records.sort_by(|a, b| b["id"].as_str().cmp(&a["id"].as_str()));
-        out.extend(records.into_iter().filter(|r| filter.matches(r)).take(limit - out.len()));
+        out.extend(records.into_iter().filter(|r| filter.matches(r)));
     }
     out
+}
+
+/// A record id is `rq_` and a ULID, whose time is when the request arrived.
+fn id_ms(id: &str) -> Option<u64> {
+    ulid::Ulid::from_string(id.strip_prefix("rq_")?).ok().map(|u| u.timestamp_ms())
+}
+
+/// The segment day holding the record `id`, or `None` when no record has that id. A ULID id is
+/// looked for in its own UTC day and the day either side (a request at a day boundary); any
+/// other id in every segment.
+fn cursor_day(home: &Path, id: &str) -> Option<String> {
+    let all = segments(home);
+    let near: Vec<(String, PathBuf)> = match id_ms(id) {
+        Some(ms) => {
+            let days: Vec<String> = [-1i64, 0, 1]
+                .iter()
+                .map(|d| {
+                    let secs = (ms / 1000).saturating_add_signed(d * 86_400);
+                    clock::rfc3339(UNIX_EPOCH + Duration::from_secs(secs))[..10].to_owned()
+                })
+                .collect();
+            all.into_iter().filter(|(d, _)| days.contains(d)).rev().collect()
+        }
+        None => all.into_iter().rev().collect(),
+    };
+    near.into_iter().find_map(|(day, path)| {
+        let text = fs::read_to_string(path).ok()?;
+        // Only the few lines that mention the id are parsed; a record exists once its `open` is.
+        let opens = |line: &str| {
+            serde_json::from_str::<Value>(line).is_ok_and(|v| v["t"] == "open" && v["id"].as_str() == Some(id))
+        };
+        text.lines().filter(|l| l.contains(id)).any(opens).then_some(day)
+    })
+}
+
+/// Whether a record has this id (the cursor of a page back must).
+pub fn cursor_exists(home: &Path, id: &str) -> bool {
+    cursor_day(home, id).is_some()
+}
+
+/// How long a request may wait between its id being made and its `open` line being written (by
+/// the journal's single writer thread); no request waits this long.
+const OPEN_MARGIN_MS: u64 = 60_000;
+
+/// The block a segment is read backwards in.
+const BLOCK: u64 = 16 * 1024;
+
+/// A page behind a cursor: the segment's in-memory index (`journal::index`) gives each request's
+/// lines, so only the requests the page can show are read, however far back the cursor is. The
+/// first read of a segment indexes it whole; later ones read only what was appended.
+fn read_indexed(path: &Path, filter: &Filter, want: usize) -> Vec<Value> {
+    use std::ops::Bound::{Excluded, Unbounded};
+    let paged = super::index::with(path, |seg, file| {
+        let upto = filter.before.as_deref().map_or(Unbounded, Excluded);
+        let mut kept = Vec::new();
+        for (id, entry) in seg.entries.range::<str, _>((Unbounded, upto)).rev() {
+            if kept.len() >= want {
+                break;
+            }
+            if entry.opened {
+                kept.extend(fold(&seg.text(file, id)).into_iter().filter(|r| filter.matches(r)));
+            }
+        }
+        kept
+    });
+    paged.unwrap_or_else(|| read_tail(path, filter, want))
+}
+
+/// The records of one segment matching `filter`, newest first, at most `want`, reading the file
+/// backwards in blocks and stopping once they are certain.
+///
+/// A request's lines are in write order, and the first line of a request (its first `open`) is
+/// written no earlier than its id was made. Reading back, once the oldest `open` line read is
+/// more than the margin older than a request's id, that request's first `open` has been read, so
+/// every line it needs has, and every request still unread has an older id. A record is therefore
+/// folded when its id is past that cutoff, and reading stops when `want` of them match.
+fn read_tail(path: &Path, filter: &Filter, want: usize) -> Vec<Value> {
+    let Ok(mut file) = File::open(path) else { return Vec::new() };
+    let Ok(mut pos) = file.metadata().map(|m| m.len()) else { return Vec::new() };
+    let mut tail = Tail::default();
+    let mut carry: Vec<u8> = Vec::new();
+    while pos > 0 {
+        let n = pos.min(BLOCK);
+        pos -= n;
+        let mut chunk = vec![0u8; n as usize];
+        if file.seek(SeekFrom::Start(pos)).and_then(|_| file.read_exact(&mut chunk)).is_err() {
+            break;
+        }
+        chunk.extend_from_slice(&carry);
+        // What precedes the chunk's first newline continues in the block before.
+        let (head, lines) = match chunk.iter().position(|b| *b == b'\n') {
+            _ if pos == 0 => (0, 0),
+            Some(i) => (i, i + 1),
+            None => {
+                carry = chunk;
+                continue;
+            }
+        };
+        carry = chunk[..head].to_vec();
+        for line in chunk[lines..].split(|b| *b == b'\n').rev().filter(|l| !l.is_empty()) {
+            tail.take(line);
+        }
+        if pos > 0 && tail.timed {
+            tail.fold_ready(filter, false);
+            if tail.kept.len() >= want {
+                break;
+            }
+        }
+    }
+    // At the start of the segment everything read is certain; after a stop, what was not folded
+    // is older than what was.
+    if pos == 0 {
+        tail.fold_ready(filter, true);
+    }
+    let mut kept = tail.kept;
+    kept.sort_by(|a, b| b["id"].as_str().cmp(&a["id"].as_str()));
+    kept.truncate(want);
+    kept
+}
+
+/// What [`read_tail`] has read of a segment so far.
+struct Tail {
+    /// Each request's lines, newest first.
+    lines: HashMap<String, Vec<String>>,
+    /// The requests whose `open` line was seen, as `(id time in ms, id)`, not yet folded.
+    pending: Vec<(u64, String)>,
+    opened: HashSet<String>,
+    oldest_open: u64,
+    /// False once an id isn't a ULID: such a segment is read whole.
+    timed: bool,
+    /// The folded records that match.
+    kept: Vec<Value>,
+}
+
+impl Default for Tail {
+    fn default() -> Self {
+        Self {
+            lines: HashMap::new(),
+            pending: Vec::new(),
+            opened: HashSet::new(),
+            oldest_open: u64::MAX,
+            timed: true,
+            kept: Vec::new(),
+        }
+    }
+}
+
+impl Tail {
+    fn take(&mut self, line: &[u8]) {
+        // Only `t` and `id` are read here; `fold` parses the whole line once the request is ready.
+        let Ok(super::index::Head { t, id }) = serde_json::from_slice(line) else { return };
+        let Ok(text) = std::str::from_utf8(line) else { return };
+        self.lines.entry(id.to_owned()).or_default().push(text.to_owned());
+        if t == "open" && self.opened.insert(id.to_owned()) {
+            let ms = id_ms(id);
+            self.timed &= ms.is_some();
+            self.oldest_open = self.oldest_open.min(ms.unwrap_or(0));
+            self.pending.push((ms.unwrap_or(0), id.to_owned()));
+        }
+    }
+
+    /// Folds the requests whose first `open` has certainly been read (all of them, at the start
+    /// of the segment) and keeps those that match.
+    fn fold_ready(&mut self, filter: &Filter, all: bool) {
+        let cutoff = self.oldest_open.saturating_add(OPEN_MARGIN_MS);
+        let (ready, rest): (Vec<_>, Vec<_>) = self.pending.drain(..).partition(|(ms, _)| all || *ms > cutoff);
+        self.pending = rest;
+        for (_, id) in ready {
+            let mut mine = self.lines.remove(&id).unwrap_or_default();
+            mine.reverse();
+            self.kept.extend(fold(&mine.join("\n")).into_iter().filter(|r| filter.matches(r)));
+        }
+    }
 }
 
 /// One record by id; the id's ULID gives no day, so the segments are searched newest first.
@@ -422,7 +618,9 @@ pub fn prune(home: &Path, before: SystemTime, wait: Duration) -> io::Result<usiz
             break;
         }
         if boundary {
-            gone += rewrite(&path, |r| r["arrived"].as_str().is_some_and(|a| clock::parse_rfc3339(a).is_some_and(|t| t < before)))?;
+            gone += rewrite(&path, |r| {
+                r["arrived"].as_str().is_some_and(|a| clock::parse_rfc3339(a).is_some_and(|t| t < before))
+            })?;
         } else {
             let text = fs::read_to_string(&path).unwrap_or_default();
             gone += fold(&text).len();
@@ -448,9 +646,7 @@ pub fn forget(home: &Path, who: &Who, wait: Duration) -> io::Result<usize> {
 fn belongs(r: &Value, who: &Who) -> bool {
     match who {
         Who::Agent(k) => r["agent"]["key"].as_str() == Some(k),
-        Who::Account(a) => {
-            Filter { account: Some(a.clone()), ..Filter::default() }.matches(r)
-        }
+        Who::Account(a) => Filter { account: Some(a.clone()), ..Filter::default() }.matches(r),
     }
 }
 
@@ -467,7 +663,8 @@ fn rewrite(path: &Path, drop: impl Fn(&Value) -> bool) -> io::Result<usize> {
     let kept: Vec<&str> = text
         .lines()
         .filter(|l| {
-            serde_json::from_str::<Value>(l).ok().and_then(|v| v["id"].as_str().map(|id| ids.contains(id))) != Some(true)
+            serde_json::from_str::<Value>(l).ok().and_then(|v| v["id"].as_str().map(|id| ids.contains(id)))
+                != Some(true)
         })
         .collect();
     if kept.is_empty() {
@@ -533,7 +730,8 @@ mod tests {
         let start = record(id, arrived);
         let mut done = start.clone();
         done.attempts.push(attempt(1, account));
-        done.served_by = Some(ServedBy { provider: "anthropic".into(), account: Some(account.into()), model: "m".into() });
+        done.served_by =
+            Some(ServedBy { provider: "anthropic".into(), account: Some(account.into()), model: "m".into() });
         done.outcome = Outcome::Succeeded;
         done.total_ms = Some(12.0);
         let mut lines = lines_for(&RequestRecord::new(id.into(), arrived.into(), "anthropic-messages"), &start, true);
@@ -546,7 +744,8 @@ mod tests {
         let start = record("rq_1", "2026-10-04T09:12:03.120Z");
         let mut done = start.clone();
         done.attempts.push(attempt(1, "max"));
-        done.served_by = Some(ServedBy { provider: "anthropic".into(), account: Some("max".into()), model: "m".into() });
+        done.served_by =
+            Some(ServedBy { provider: "anthropic".into(), account: Some("max".into()), model: "m".into() });
         done.outcome = Outcome::Succeeded;
         done.ttft_ms = Some(4.0);
         done.total_ms = Some(12.0);
@@ -602,7 +801,8 @@ mod tests {
         let mut body = text(&lifecycle("rq_1", "2026-10-04T09:00:00Z", "max"));
         body += &text(&lifecycle("rq_2", "2026-10-04T10:00:00Z", "pro"));
         fs::write(home.path().join("records/2026-10-04.jsonl"), body).unwrap();
-        let ids = |f: Filter| read(home.path(), &f).iter().map(|r| r["id"].as_str().unwrap().to_owned()).collect::<Vec<_>>();
+        let ids =
+            |f: Filter| read(home.path(), &f).iter().map(|r| r["id"].as_str().unwrap().to_owned()).collect::<Vec<_>>();
         assert_eq!(ids(Filter::default()), ["rq_2", "rq_1"], "newest first");
         assert_eq!(ids(Filter { account: Some("anthropic/pro".into()), ..Filter::default() }), ["rq_2"]);
         assert_eq!(ids(Filter { account: Some("max".into()), ..Filter::default() }), ["rq_1"]);
@@ -654,7 +854,9 @@ mod tests {
     fn prune_removes_older_days_whole_and_rewrites_the_boundary_day() {
         let home = tempfile::tempdir().unwrap();
         fs::create_dir_all(home.path().join("records")).unwrap();
-        let day = |d: &str, lines: Vec<(&str, Value)>| fs::write(home.path().join(format!("records/{d}.jsonl")), text(&lines)).unwrap();
+        let day = |d: &str, lines: Vec<(&str, Value)>| {
+            fs::write(home.path().join(format!("records/{d}.jsonl")), text(&lines)).unwrap()
+        };
         day("2026-10-02", lifecycle("rq_a", "2026-10-02T09:00:00Z", "max"));
         let mut mid = lifecycle("rq_b", "2026-10-03T08:00:00Z", "max");
         mid.extend(lifecycle("rq_c", "2026-10-03T20:00:00Z", "max"));
@@ -662,7 +864,8 @@ mod tests {
         day("2026-10-04", lifecycle("rq_d", "2026-10-04T09:00:00Z", "max"));
         let cut = clock::parse_rfc3339("2026-10-03T12:00:00Z").unwrap();
         assert_eq!(prune(home.path(), cut, Duration::from_secs(1)).unwrap(), 2);
-        let ids: Vec<_> = read(home.path(), &Filter::default()).iter().map(|r| r["id"].as_str().unwrap().to_owned()).collect();
+        let ids: Vec<_> =
+            read(home.path(), &Filter::default()).iter().map(|r| r["id"].as_str().unwrap().to_owned()).collect();
         assert_eq!(ids, ["rq_d", "rq_c"]);
         assert!(!home.path().join("records/2026-10-02.jsonl").exists());
     }

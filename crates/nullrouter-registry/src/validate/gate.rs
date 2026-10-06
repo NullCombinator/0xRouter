@@ -14,8 +14,8 @@ use crate::floor::{Floor, PatternRisk};
 use crate::schema::{
     AuthScheme, CapabilityKind, Endpoint, EndpointAuth, Forwarding, HeaderValue, KNOWN_OAUTH_PARAMS,
     KNOWN_SECTION_FORMATS, ModelType, ModelsLiveDecl, PluginFile, PluginSource, ProviderEntity, QuotaAccounts,
-    QuotaDecl, QuotaDecoder, QuotaSource, RedirectKind, RouteOp, RoutingDecl, SignInDecl, SignInFlow, SignInParamValue, Transport,
-    WindowRule, account_urls, endpoint_hosts, glob_match,
+    QuotaDecl, QuotaDecoder, QuotaSource, RedirectKind, RouteOp, RoutingDecl, SignInDecl, SignInFlow, SignInParamValue,
+    Transport, WindowRule, account_urls, endpoint_hosts, glob_match,
 };
 use crate::template::{FieldPath as Selector, Template};
 

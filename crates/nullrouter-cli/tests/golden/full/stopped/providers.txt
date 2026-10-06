@@ -1,0 +1,11 @@
+exit: 0
+--- stdout
+anthropic                anthropic  apikey     llm,image_to_text
+elevenlabs               el         apikey     tts,stt
+grok-cli                 gcli       apikey     llm
+opencode-go              opencode-go apikey     llm,image_to_text
+opencode-zen             ocz        apikey     llm,image_to_text
+openrouter               openrouter freeTier   llm,image,image_to_text,video,tts,embedding
+xai                      xai        apikey     llm,image,image_to_text,video
+bluesminds               bm         apikey     llm
+--- stderr

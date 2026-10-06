@@ -23,7 +23,8 @@ fn nr(home: &Path, args: &[&str], stdin: &str) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
+    // A command that exits without reading stdin closes the pipe first; that is not a failure.
+    let _ = child.stdin.take().unwrap().write_all(stdin.as_bytes());
     child.wait_with_output().unwrap()
 }
 
@@ -197,4 +198,34 @@ async fn the_cli_reads_records_and_applies_changes_to_a_running_server() {
             assert!(!o.contains(secret), "CLI output shows a secret:\n{o}");
         }
     }
+}
+
+/// A plugin like `plugin`'s, with `m1` declaring `context_length`.
+fn limited(mock: &MockUpstream, id: &str, context: u64) -> String {
+    plugin(mock, id) + &format!("context_length = {context}\n")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_change_applied_to_a_running_server_prints_its_limits_notes() {
+    let mock = MockUpstream::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    std::fs::write(
+        home.join("config.toml"),
+        "allow_private_endpoints = true\n[[unified_model]]\nname = \"u\"\nmembers = [{ provider = \"alpha\", model = \"m1\" }, { provider = \"beta\", model = \"m1\" }]\n",
+    )
+    .unwrap();
+    std::fs::create_dir(home.join("plugins")).unwrap();
+    std::fs::write(home.join("plugins/alpha.toml"), limited(&mock, "alpha", 200_000)).unwrap();
+    std::fs::write(home.join("plugins/beta.toml"), limited(&mock, "beta", 128_000)).unwrap();
+
+    let (_server, _) = serve(home).await;
+    let o = nr(home, &["accounts", "add", "alpha", "main"], &format!("{SECRET}\n"));
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(String::from_utf8_lossy(&o.stdout), "alpha/main: applied\n", "notes stay off stdout");
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(
+        err.contains("note: unified model u: members differ in context_length: alpha 200000, beta 128000"),
+        "{err}"
+    );
 }

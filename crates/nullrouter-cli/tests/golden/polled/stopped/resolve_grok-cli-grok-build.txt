@@ -1,0 +1,4 @@
+exit: 0
+--- stdout
+direct grok-cli/grok-build → grok-cli (upstream grok-build)
+--- stderr

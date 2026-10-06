@@ -153,7 +153,7 @@ async fn dispatch(State(app): State<Arc<App>>, req: Request) -> Response {
     record.style.clone_from(&m.entry.style.file.id);
     record.op = Some(route.op);
     record.model_type = Some(route.model_type);
-    record.agent = Some(agent.clone());
+    record.agent = Some(AgentId { key: agent.key.clone(), session: agent.session.as_deref().map(records::plain) });
 
     match (route.op, route.model_type) {
         (RouteOp::Generate, ModelType::Text) => {

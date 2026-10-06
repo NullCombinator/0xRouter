@@ -162,3 +162,117 @@ fn reported_windows_with_no_meter_are_noted_and_paced_in_their_own_unit() {
     let listed = json["unmetered_windows"].as_array().unwrap();
     assert!(listed.iter().any(|w| w["provider"] == "grok-cli" && w["window"] == "prepaid"), "{listed:?}");
 }
+
+/// A home with a user plugin and a unified model whose members declare different limits.
+fn mixed_home() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    fs::create_dir(h.join("plugins")).unwrap();
+    let blue = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/community/bluesminds.toml");
+    fs::copy(blue, h.join("plugins/bluesminds.toml")).unwrap();
+    fs::write(
+        h.join("config.toml"),
+        "schema = 1\n[[unified_model]]\nname = \"mixed\"\nmembers = [\n\
+         { provider = \"grok-cli\", model = \"grok-build\" },\n\
+         { provider = \"bluesminds\", model = \"claude-sonnet-4-5\" },\n]\n",
+    )
+    .unwrap();
+    dir
+}
+
+const NOTE: &str = "note: unified model mixed: members differ in context_length: grok-cli 500000, bluesminds 200000";
+
+#[test]
+fn check_and_resolve_note_members_with_different_limits() {
+    let dir = mixed_home();
+    let h = dir.path();
+    let out = nr(h, &["check"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains(NOTE), "{text}");
+    assert!(text.contains("members differ in max_output_tokens: grok-cli 64000, bluesminds undeclared"), "{text}");
+    // A note is not a failure: the model loads and the check passes.
+    assert_eq!(out.status.code(), Some(0), "{text}");
+
+    let out = nr(h, &["resolve", "mixed"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.starts_with("unified mixed:"), "{text}");
+    assert!(text.contains(NOTE), "{text}");
+    assert_eq!(out.status.code(), Some(0));
+
+    let json: serde_json::Value = serde_json::from_slice(&nr(h, &["--json", "check"]).stdout).unwrap();
+    let notes = json["limits_notes"].as_array().unwrap();
+    assert_eq!(notes[0]["unified"], "mixed");
+    assert_eq!(notes[0]["limit"], "context_length");
+    assert_eq!(notes[0]["values"][1]["provider"], "bluesminds");
+    assert_eq!(notes[0]["values"][1]["value"], 200000);
+    let json: serde_json::Value = serde_json::from_slice(&nr(h, &["--json", "resolve", "mixed"]).stdout).unwrap();
+    assert_eq!(json["limits_notes"].as_array().unwrap().len(), 2);
+
+    // Another target's resolve says nothing about it.
+    let text = String::from_utf8(nr(h, &["resolve", "grok-cli/grok-build"]).stdout).unwrap();
+    assert!(!text.contains("differ"), "{text}");
+}
+
+/// A user plugin with no quota, meter or price, whose only endpoint speaks Gemini, declaring
+/// cache mode `explicit` (T093).
+const MUTE: &str = r#"schema = 2
+id = "mute"
+category = "apikey"
+
+[auth]
+kind = "apikey"
+header = "x-goog-api-key"
+
+[endpoints.text]
+url = "https://mute.example/v1beta/models/{model}:generateContent"
+wire = "gemini"
+
+[[models]]
+id = "m1"
+
+[routing.cache]
+mode = "explicit"
+"#;
+
+#[test]
+fn routing_declarations_that_cant_work_are_warned() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    fs::create_dir(h.join("plugins")).unwrap();
+    fs::write(h.join("plugins/mute.toml"), MUTE).unwrap();
+    write_private(
+        &h.join("accounts.toml"),
+        "schema = 2\n[[account]]\nprovider = \"mute\"\nname = \"a\"\nsecret = \"k\"\n\
+         [[account]]\nprovider = \"mute\"\nname = \"priced\"\nsecret = \"k\"\n\
+         [account.routing]\nprice = { input = 1.0 }\n",
+    )
+    .unwrap();
+    fs::create_dir_all(h.join("routing")).unwrap();
+    fs::write(h.join("routing/salt"), [0u8; 32]).unwrap();
+    chmod(&h.join("routing/salt"), 0o644);
+    chmod(&h.join("routing"), 0o755);
+
+    let out = nr(h, &["check"]);
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(0), "warnings only: {text}");
+    assert!(text.contains("warning: mute/a is pay-as-you-go with no price in its plugin or account"), "{text}");
+    assert!(!text.contains("mute/priced"), "an account price is a price: {text}");
+    assert!(
+        text.contains(
+            "warning: mute declares cache mode explicit, but none of its endpoints speaks a style with cache markers"
+        ),
+        "{text}"
+    );
+    assert!(text.contains("routing/salt has mode 644, expected 0600"), "{text}");
+    assert!(text.lines().any(|l| l.contains("/routing has mode 755, expected 0700")), "{text}");
+
+    let json: serde_json::Value = serde_json::from_slice(&nr(h, &["--json", "check"]).stdout).unwrap();
+    assert_eq!(json["routing_warnings"].as_array().unwrap().len(), 2, "{json:#}");
+}
+
+#[test]
+fn bundled_plugins_raise_no_routing_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&nr(dir.path(), &["--json", "check"]).stdout).unwrap();
+    assert_eq!(json["routing_warnings"], serde_json::json!([]));
+}

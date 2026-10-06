@@ -6,8 +6,8 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde::de::{Deserializer, Error as _};
 
-use super::enums::ModelKind;
 use super::duration::{de_duration, parse_duration};
+use super::enums::ModelKind;
 use super::primitives::BreakBehaviour;
 
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]

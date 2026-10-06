@@ -21,7 +21,8 @@ fn nr(home: &Path, args: &[&str], stdin: &str) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
+    // A command that exits without reading stdin closes the pipe first; that is not a failure.
+    let _ = child.stdin.take().unwrap().write_all(stdin.as_bytes());
     child.wait_with_output().unwrap()
 }
 
@@ -324,4 +325,37 @@ fn removing_a_sign_in_account_deletes_its_tokens_and_keeps_its_history() {
     let out = nr(home, &["accounts", "remove", "anthropic", "api"], "");
     assert!(String::from_utf8_lossy(&out.stdout).starts_with("anthropic/api: "), "{out:?}");
     assert!(!String::from_utf8_lossy(&out.stdout).contains("tokens"));
+}
+
+#[test]
+fn behaviour_show_prints_the_setting_and_whether_it_is_the_default() {
+    let dir = tempfile::tempdir().unwrap();
+    // No server runs, and a fresh home has no config.toml.
+    let o = nr(dir.path(), &["behaviour", "show"], "");
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(String::from_utf8_lossy(&o.stdout), "break_behaviour  restart  (default)\n");
+    let j = nr(dir.path(), &["--json", "behaviour", "show"], "");
+    let j: serde_json::Value = serde_json::from_slice(&j.stdout).unwrap();
+    assert_eq!(j, serde_json::json!({"break_behaviour": {"value": "restart", "default": true}}));
+
+    let set = nr(dir.path(), &["behaviour", "set-break", "error_event"], "");
+    assert!(set.status.success(), "{}", String::from_utf8_lossy(&set.stderr));
+    let o = nr(dir.path(), &["behaviour", "show"], "");
+    assert_eq!(String::from_utf8_lossy(&o.stdout), "break_behaviour  error_event\n");
+    let j = nr(dir.path(), &["--json", "behaviour", "show"], "");
+    let j: serde_json::Value = serde_json::from_slice(&j.stdout).unwrap();
+    assert_eq!(j["break_behaviour"], serde_json::json!({"value": "error_event", "default": false}));
+}
+
+#[test]
+fn behaviour_show_on_a_config_that_does_not_load_gives_the_error_and_no_value() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), "schema = 1\n[[unified_model]\n").unwrap();
+    let o = nr(dir.path(), &["behaviour", "show"], "");
+    assert_eq!(o.status.code(), Some(1));
+    assert!(o.stdout.is_empty());
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(err.starts_with("startup failed:\n"), "{err}");
+    assert!(err.contains("config.toml:2:"), "{err}");
+    assert!(!err.contains("break_behaviour"), "{err}");
 }

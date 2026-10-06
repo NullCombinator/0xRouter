@@ -1,0 +1,50 @@
+exit: 0
+--- stdout
+[
+  {
+    "id": "anthropic",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "elevenlabs",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "grok-cli",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "opencode-go",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "opencode-zen",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "openrouter",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "xai",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "bluesminds",
+    "set": "user",
+    "status": "loaded"
+  },
+  {
+    "id": "broken",
+    "set": "user",
+    "status": "invalid"
+  }
+]
+--- stderr

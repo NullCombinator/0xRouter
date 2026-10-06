@@ -1,0 +1,6 @@
+exit: 0
+--- stdout
+xai/work                 quota not reported
+xai/old                  quota not reported
+xai/gone                 quota not reported
+--- stderr

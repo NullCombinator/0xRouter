@@ -115,7 +115,9 @@ mod signin {
             let (id, res) = send(&s, "mockco/m1").await;
             assert!(res.is_ok());
             let r = s.engine.records.get(&id).unwrap();
-            if let Some(AttemptOutcome::Skipped { reason, .. }) = r.attempts.first().map(|a| &a.outcome).and_then(|o| o.as_ref()) {
+            if let Some(AttemptOutcome::Skipped { reason, .. }) =
+                r.attempts.first().map(|a| &a.outcome).and_then(|o| o.as_ref())
+            {
                 assert!(reason.contains("127.0.0.1") && reason.contains("accounts signin mockco sso"), "{reason}");
                 skipped = true;
             }

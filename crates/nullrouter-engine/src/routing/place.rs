@@ -43,10 +43,10 @@ pub fn place(input: &RoutingInput, now: SystemTime) -> Placement {
     let tier = |i: usize| input.candidates[i].quota.state.source.tier();
     let eligible = |i: usize| stands[i].why_not.is_none();
     // Pace, weight and share of the target's eligible subscription accounts (R7).
-    let paces: Vec<Pace> =
-        input.candidates.iter().map(|c| pace::pace_of(&c.quota, input.size_tokens, now)).collect();
+    let paces: Vec<Pace> = input.candidates.iter().map(|c| pace::pace_of(&c.quota, input.size_tokens, now)).collect();
     let subs_all: Vec<usize> = (0..stands.len()).filter(|&i| eligible(i) && tier(i) == Tier::Subscription).collect();
-    let entries: Vec<Option<(Pace, f64)>> = subs_all.iter().map(|&i| Some((paces[i], input.candidates[i].priority))).collect();
+    let entries: Vec<Option<(Pace, f64)>> =
+        subs_all.iter().map(|&i| Some((paces[i], input.candidates[i].priority))).collect();
     let mut weight_of = vec![0.0; stands.len()];
     let mut share_of = vec![0.0; stands.len()];
     for (&i, (w, s)) in subs_all.iter().zip(pace::shares(&entries)) {
@@ -109,8 +109,7 @@ pub fn place(input: &RoutingInput, now: SystemTime) -> Placement {
         weight_of[i] = *w;
         share_of[i] = if payg_total > 0.0 { w / payg_total } else { 1.0 / paygs_all.len() as f64 };
     }
-    let deficit_of =
-        |i: usize| input.deficits.get(&input.candidates[i].key.account_key()).copied().unwrap_or(0.0);
+    let deficit_of = |i: usize| input.deficits.get(&input.candidates[i].key.account_key()).copied().unwrap_or(0.0);
     // The largest deficit first; ties go to the higher share, then the operator's order, then the name (FR-016).
     let by_deficit = |i: &usize, j: &usize| {
         let (di, dj) = (deficit_of(*i), deficit_of(*j));
@@ -131,7 +130,9 @@ pub fn place(input: &RoutingInput, now: SystemTime) -> Placement {
     let mut floored: Vec<usize> = (0..stands.len()).filter(|&i| stands[i].floor_held && !skip(i)).collect();
     // What a moved request left behind is still a way to serve it if everything else fails.
     let mut left: Vec<usize> = moved_from
-        .filter(|&i| matches!(stands[i].why_not, None | Some(WhyNot::ReserveFloor)) && input.candidates[i].priority > 0.0)
+        .filter(|&i| {
+            matches!(stands[i].why_not, None | Some(WhyNot::ReserveFloor)) && input.candidates[i].priority > 0.0
+        })
         .into_iter()
         .collect();
     subs.sort_by(by_deficit);
@@ -214,11 +215,8 @@ pub fn place(input: &RoutingInput, now: SystemTime) -> Placement {
         candidates: rows,
         order: order.iter().map(|(i, _)| *i).collect(),
     };
-    let steps: Vec<(CandidateKey, PlacementReason, usize)> = order
-        .iter()
-        .enumerate()
-        .map(|(rank, (i, reason))| (input.candidates[*i].key.clone(), *reason, rank))
-        .collect();
+    let steps: Vec<(CandidateKey, PlacementReason, usize)> =
+        order.iter().enumerate().map(|(rank, (i, reason))| (input.candidates[*i].key.clone(), *reason, rank)).collect();
     let shares = subs_all
         .iter()
         .filter(|&&i| share_of[i] > 0.0)
@@ -245,7 +243,6 @@ fn any_payg_only(stands: &[Standing], tier: &impl Fn(usize) -> Tier) -> bool {
     !(0..stands.len()).any(|i| tier(i) == Tier::Subscription && stands[i].why_not.is_none())
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -254,7 +251,7 @@ mod tests {
 
     use super::*;
     use crate::routing::meter::{AccountQuota, QuotaState, Role, WindowState};
-    use crate::routing::{Candidate, CacheSpec, PriceSpec, QuotaSource, WarmEntry};
+    use crate::routing::{CacheSpec, Candidate, PriceSpec, QuotaSource, WarmEntry};
     use nullrouter_registry::schema::MeterUnit;
 
     fn t(secs: u64) -> SystemTime {
@@ -492,7 +489,8 @@ mod tests {
     #[test]
     fn overflow_is_shared_by_priority_over_price_and_only_after_the_subscriptions() {
         // Priority 1 at $1 against priority 1 at $4: the cheaper one first, with 80% of the share.
-        let i = input(vec![priced(payg("dear", 0), 4.0, 1.0), priced(payg("cheap", 1), 1.0, 1.0), sub("a", 2, 50.0)], None);
+        let i =
+            input(vec![priced(payg("dear", 0), 4.0, 1.0), priced(payg("cheap", 1), 1.0, 1.0), sub("a", 2, 50.0)], None);
         let p = place(&i, t(0));
         let order: Vec<_> = names(&p).into_iter().map(|n| n.0).collect();
         assert_eq!(order, ["a", "cheap", "dear"]);

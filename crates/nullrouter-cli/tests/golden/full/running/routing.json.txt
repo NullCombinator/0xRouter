@@ -1,0 +1,65 @@
+exit: 0
+--- stdout
+{
+  "ok": true,
+  "now": "2026-10-03T14:23:00Z",
+  "amortization": {
+    "start": "2026-10-03T14:00:00.000Z",
+    "length": "5h"
+  },
+  "journal": {
+    "kept": true,
+    "since": null,
+    "unkept_requests": 0,
+    "held_lines": 0,
+    "last_sync": null,
+    "last_sync_age_s": null
+  },
+  "targets": [
+    {
+      "target": "mixed",
+      "amortization_window": {
+        "start": "2026-10-03T14:00:00.000Z",
+        "length": "5h"
+      },
+      "accounts": [
+        {
+          "provider": "grok-cli",
+          "account": "",
+          "tier": "payg",
+          "source": "pay-as-you-go",
+          "stale": false,
+          "pending_first_poll": false,
+          "polled_at": null,
+          "priority": 1.0,
+          "pace": null,
+          "share": null,
+          "deficit": 0,
+          "cache_lifetime": "5m",
+          "price_now": null,
+          "why_not": "out_of_service",
+          "windows": []
+        },
+        {
+          "provider": "bluesminds",
+          "account": "",
+          "tier": "payg",
+          "source": "pay-as-you-go",
+          "stale": false,
+          "pending_first_poll": false,
+          "polled_at": null,
+          "priority": 1.0,
+          "pace": null,
+          "share": null,
+          "deficit": 0,
+          "cache_lifetime": "5m",
+          "price_now": null,
+          "why_not": "out_of_service",
+          "windows": []
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}
+--- stderr

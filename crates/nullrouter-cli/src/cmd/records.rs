@@ -13,9 +13,9 @@ use clap::Subcommand;
 use nullrouter_cli::routing_text;
 use nullrouter_engine::clock;
 use nullrouter_engine::journal::{records, state};
-use nullrouter_engine::keys::{self, Keys};
 use nullrouter_registry::OperatorHome;
 use nullrouter_server::operator::{self, CallError};
+use nullrouter_server::views;
 use serde_json::{Value, json};
 
 #[derive(Subcommand)]
@@ -33,7 +33,7 @@ pub(crate) enum Command {
         /// The target the client named, the unified model it resolved to, or the model that served it.
         #[arg(long)]
         model: Option<String>,
-        /// A placement reason, such as `warm_stay` or `cold_by_deficit`.
+        /// A placement reason, such as `warm`, `cold_by_deficit` or `overflow`.
         #[arg(long)]
         reason: Option<String>,
         /// A date (`2026-10-04`) or time (`2026-10-04T09:00:00Z`), UTC.
@@ -41,6 +41,9 @@ pub(crate) enum Command {
         since: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
+        /// Only records older than this one: the next page back. The id must name a record.
+        #[arg(long, value_name = "ID")]
+        before: Option<String>,
     },
     Show {
         id: String,
@@ -68,64 +71,46 @@ fn lock_wait() -> Duration {
         .map_or(records::LOCK_WAIT, Duration::from_millis)
 }
 
-fn server_runs(home: &OperatorHome) -> bool {
-    std::os::unix::net::UnixStream::connect(operator::socket_path(home)).is_ok()
-}
-
 fn fail(msg: impl std::fmt::Display) -> ExitCode {
     eprintln!("{msg}");
     ExitCode::from(1)
 }
 
-/// `2026-10-04` or an RFC 3339 time.
 fn parse_when(text: &str) -> Result<SystemTime, ExitCode> {
-    let full = if text.len() == 10 { format!("{text}T00:00:00Z") } else { text.to_owned() };
-    clock::parse_rfc3339(&full).ok_or_else(|| fail(format!("{text:?} is not a date; use 2026-10-04 or 2026-10-04T09:00:00Z")))
-}
-
-/// What a request with no `close` is called: in flight with a server, cut short without one.
-fn settle_open(records: &mut [Value], running: bool) {
-    for r in records {
-        if r["outcome"] == "in_progress" && r["job"].is_null() && !running {
-            r["outcome"] = json!("interrupted");
-        }
-    }
+    views::records::parse_when(text).map_err(|e| fail(e.message))
 }
 
 pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
-    // Records name keys by id; the operator knows them by name.
-    let names = Keys::load(&home.path().join(keys::FILE))
-        .map(|k| k.iter().map(|k| (k.id.clone(), k.name.clone())).collect())
-        .unwrap_or_default();
-    let running = server_runs(&home);
+    let running = views::server_runs(&home);
     match cmd {
-        Command::List { provider, account, agent, model, reason, since, limit } => {
-            let since = since.as_deref().map(parse_when).transpose()?;
-            let filter = records::Filter { provider, account, agent, model, reason, since, limit, ..Default::default() };
-            let mut found = records::read(home.path(), &filter);
-            settle_open(&mut found, running);
+        Command::List { provider, account, agent, model, reason, since, limit, before } => {
+            let args = json!({
+                "provider": provider, "account": account, "agent": agent, "model": model,
+                "reason": reason, "since": since, "limit": limit, "before": before,
+            });
+            let view = super::read(&home, views::records::NEEDS, &args, views::records::build)?;
             if as_json {
-                println!("{:#}", Value::Array(found));
+                println!("{:#}", view.json);
             } else {
-                for r in &found {
+                let mut found = view.json;
+                scrub(&mut found);
+                for r in found.as_array().into_iter().flatten() {
                     println!("{}", line(r));
                 }
             }
         }
         Command::Show { id } => {
-            // A running server knows the freshest copy of an unfinished request.
-            let live = running
-                .then(|| operator::call(&home, &json!({"op": "records.get", "id": id})).ok())
-                .flatten()
-                .filter(|a| a["ok"] == true)
-                .map(|a| a["record"].clone());
-            let mut found = live.or_else(|| records::get(home.path(), &id)).into_iter().collect::<Vec<_>>();
-            settle_open(&mut found, running);
-            let Some(record) = found.pop() else { return Err(fail(format!("no record {id}"))) };
+            let view = super::read(&home, views::records::RECORD_NEEDS, &json!({"id": id}), views::records::record)?;
+            let mut record = view.json;
             if as_json {
                 println!("{record:#}");
             } else {
+                scrub(&mut record);
+                let names = view.extra["key_names"]
+                    .as_object()
+                    .map(|m| m.iter().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned()))).collect())
+                    .unwrap_or_default();
                 print!("{}", show(&record, &names));
             }
         }
@@ -151,10 +136,13 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
             }
             let gone = records::forget(home.path(), &who, lock_wait()).map_err(|e| fail(lock_message(&e)))?;
             if !running {
-                let _ = match &who {
+                match &who {
                     records::Who::Account(a) => state::forget_account(home.path(), a),
                     records::Who::Agent(k) => state::forget_agent(home.path(), k),
-                };
+                }
+                .map_err(|e| {
+                    fail(format!("{gone} records forgotten, but the routing state could not be rewritten: {e}"))
+                })?;
             }
             println!("forgot {gone} records");
         }
@@ -176,6 +164,17 @@ fn ask(home: &OperatorHome, req: &Value) -> Result<Value, ExitCode> {
         Ok(a) => Err(fail(a["error"].as_str().unwrap_or("the server refused the request"))),
         Err(e @ CallError::NoServer(_)) => Err(fail(e)),
         Err(e) => Err(fail(e)),
+    }
+}
+
+/// Drops control characters from every string in `v`. A record carries text that a client or a
+/// provider chose, and the terminal obeys escape sequences in it.
+fn scrub(v: &mut Value) {
+    match v {
+        Value::String(s) if s.chars().any(char::is_control) => *s = s.chars().filter(|c| !c.is_control()).collect(),
+        Value::Array(a) => a.iter_mut().for_each(scrub),
+        Value::Object(m) => m.values_mut().for_each(scrub),
+        _ => {}
     }
 }
 
@@ -256,10 +255,11 @@ fn placed(a: &Value) -> String {
 
 /// `  in 18,210 · out 512 · cache w 18,100`, for the counts the provider reported.
 fn attempt_usage(u: &Value) -> String {
-    let parts: Vec<String> = [("in", "input"), ("out", "output"), ("cache r", "cache_read"), ("cache w", "cache_write")]
-        .iter()
-        .filter_map(|(label, key)| u[*key].as_u64().map(|n| format!("{label} {}", grouped_comma(n))))
-        .collect();
+    let parts: Vec<String> =
+        [("in", "input"), ("out", "output"), ("cache r", "cache_read"), ("cache w", "cache_write")]
+            .iter()
+            .filter_map(|(label, key)| u[*key].as_u64().map(|n| format!("{label} {}", grouped_comma(n))))
+            .collect();
     if parts.is_empty() { String::new() } else { format!("  {}", parts.join(" · ")) }
 }
 
@@ -282,7 +282,13 @@ fn decision(d: &Value, o: &mut String) {
     };
     let warm = &d["warm"];
     let named = |w: &Value| format!("{}/{}", s(&w["provider"]), s(&w["account"]));
-    let prefix = |w: &Value| format!("prefix {} · idle {:.0} s", routing_text::si(w["prefix_tokens"].as_f64().unwrap_or(0.0)), w["idle_s"].as_f64().unwrap_or(0.0));
+    let prefix = |w: &Value| {
+        format!(
+            "prefix {} · idle {:.0} s",
+            routing_text::si(w["prefix_tokens"].as_f64().unwrap_or(0.0)),
+            w["idle_s"].as_f64().unwrap_or(0.0)
+        )
+    };
     if d["kind"] == "warm" && !warm.is_null() {
         let _ = writeln!(o, "decision    warm on {} · {} · stayed", named(warm), prefix(warm));
     } else {
@@ -294,18 +300,27 @@ fn decision(d: &Value, o: &mut String) {
         );
         if !warm.is_null() {
             let because = warm["moved_because"].as_str().unwrap_or("not usable");
-            let _ = writeln!(o, "            warm on {} · {} · moved: {because} on {}", named(warm), prefix(warm), named(warm));
+            let _ = writeln!(
+                o,
+                "            warm on {} · {} · moved: {because} on {}",
+                named(warm),
+                prefix(warm),
+                named(warm)
+            );
         }
     }
     let rows = d["candidates"].as_array().cloned().unwrap_or_default();
     if rows.is_empty() {
         return;
     }
-    let order: Vec<usize> = d["order"].as_array().into_iter().flatten().filter_map(|i| i.as_u64().map(|i| i as usize)).collect();
+    let order: Vec<usize> =
+        d["order"].as_array().into_iter().flatten().filter_map(|i| i.as_u64().map(|i| i as usize)).collect();
     // The attempt order first, then the candidates it left out.
-    let mut seq: Vec<(Option<usize>, &Value)> = order.iter().enumerate().filter_map(|(rank, i)| rows.get(*i).map(|r| (Some(rank), r))).collect();
+    let mut seq: Vec<(Option<usize>, &Value)> =
+        order.iter().enumerate().filter_map(|(rank, i)| rows.get(*i).map(|r| (Some(rank), r))).collect();
     seq.extend(rows.iter().enumerate().filter(|(i, _)| !order.contains(i)).map(|(_, r)| (None, r)));
-    let mut cells = vec![["#", "account", "tier", "eligible", "pace", "share", "deficit", "price"].map(str::to_owned).to_vec()];
+    let mut cells =
+        vec![["#", "account", "tier", "eligible", "pace", "share", "deficit", "price"].map(str::to_owned).to_vec()];
     for (rank, r) in seq {
         let dash = || String::new();
         cells.push(vec![
@@ -481,7 +496,10 @@ mod tests {
         let mut warm = cold.clone();
         warm["decision"]["kind"] = json!("warm");
         warm["decision"]["warm"] = json!({"provider": "anthropic", "account": "max", "model": "m", "prefix_tokens": 41_200, "idle_s": 38.0, "stayed": true});
-        assert!(show(&warm, &Default::default()).contains("decision    warm on anthropic/max · prefix 41.2k · idle 38 s · stayed"));
+        assert!(
+            show(&warm, &Default::default())
+                .contains("decision    warm on anthropic/max · prefix 41.2k · idle 38 s · stayed")
+        );
         warm["decision"]["kind"] = json!("cold");
         warm["decision"]["warm"]["stayed"] = json!(false);
         warm["decision"]["warm"]["moved_because"] = json!("reserve_floor");

@@ -1,0 +1,33 @@
+exit: 0
+--- stdout
+[
+  {
+    "provider": "xai",
+    "name": "work",
+    "kind": "signin",
+    "reported": false,
+    "interval_s": 600,
+    "latest": null,
+    "last_failure": null
+  },
+  {
+    "provider": "xai",
+    "name": "old",
+    "kind": "signin",
+    "reported": false,
+    "interval_s": 600,
+    "latest": null,
+    "last_failure": null
+  },
+  {
+    "provider": "xai",
+    "name": "gone",
+    "kind": "signin",
+    "reported": false,
+    "interval_s": 600,
+    "latest": null,
+    "last_failure": null
+  }
+]
+--- stderr
+no server is running: quota is polled only while `nullrouter serve` runs

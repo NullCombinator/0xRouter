@@ -35,7 +35,11 @@ const WINDOW: f64 = 1_000_000.0;
 
 fn at(offset_s: i64) -> String {
     let now = SystemTime::now();
-    let t = if offset_s >= 0 { now + Duration::from_secs(offset_s as u64) } else { now - Duration::from_secs(offset_s.unsigned_abs()) };
+    let t = if offset_s >= 0 {
+        now + Duration::from_secs(offset_s as u64)
+    } else {
+        now - Duration::from_secs(offset_s.unsigned_abs())
+    };
     nullrouter_engine::clock::rfc3339(t)
 }
 
@@ -65,7 +69,8 @@ fn account<'a>(v: &'a TargetView, name: &str) -> &'a AccountView {
 
 async fn serve(f: &FleetSetup, n: usize) {
     for i in 0..n {
-        let body = json!({"model": "u", "stream": false, "messages": [{"role": "user", "content": format!("hello {i}")}]});
+        let body =
+            json!({"model": "u", "stream": false, "messages": [{"role": "user", "content": format!("hello {i}")}]});
         let req = request(&f.setup, "openai-chat", "u", body, &format!("ak_{i}"), CancellationToken::new());
         let id = req.id.clone();
         f.setup.engine.text(f.setup.engine.snapshot(), req).await.expect("served");
@@ -130,7 +135,10 @@ async fn a_reset_that_passed_before_the_next_poll_counts_as_a_reset() {
     let w = &account(&v, "one").windows[0];
     assert_eq!((w.remaining_at_poll, w.remaining_now), (Some(600_000.0), WINDOW), "full again");
     let next = w.resets_at.expect("a reset");
-    assert!(next > SystemTime::now() && next < SystemTime::now() + Duration::from_secs(5 * 3600), "one length on: {next:?}");
+    assert!(
+        next > SystemTime::now() && next < SystemTime::now() + Duration::from_secs(5 * 3600),
+        "one length on: {next:?}"
+    );
 
     // What is sent after the reset counts against the new window.
     serve(&f, 2).await;
@@ -189,7 +197,8 @@ async fn an_account_with_declared_limits_and_no_report_is_estimated_and_one_with
 
     // Pin the traffic to the estimated account by giving the other none to take cold work.
     for i in 0..3 {
-        let body = json!({"model": "alpha/m1", "stream": false, "messages": [{"role": "user", "content": format!("hi {i}")}]});
+        let body =
+            json!({"model": "alpha/m1", "stream": false, "messages": [{"role": "user", "content": format!("hi {i}")}]});
         let req = request(&f.setup, "openai-chat", "alpha/m1", body, &format!("ak_{i}"), CancellationToken::new());
         let id = req.id.clone();
         f.setup.engine.text(f.setup.engine.snapshot(), req).await.expect("served");

@@ -69,7 +69,11 @@ async fn a_new_priority_or_a_re_enabled_account_starts_again_at_zero_and_the_res
     let f = fleet().build().await;
     cold(&f, 5).await;
     let before = view(&f);
-    assert!(before.accounts.iter().all(|a| a.deficit != 0), "{:?}", before.accounts.iter().map(|a| a.deficit).collect::<Vec<_>>());
+    assert!(
+        before.accounts.iter().all(|a| a.deficit != 0),
+        "{:?}",
+        before.accounts.iter().map(|a| a.deficit).collect::<Vec<_>>()
+    );
 
     // Priority 2 on `a`: its deficit starts over, the others' stay, and its share doubles in the view.
     rewrite(&f, |t| t.replacen("name = \"a\"\n", "name = \"a\"\npriority = 2.0\n", 1));
@@ -79,7 +83,12 @@ async fn a_new_priority_or_a_re_enabled_account_starts_again_at_zero_and_the_res
     assert_eq!(deficit(&after, "a"), 0);
     assert_eq!((deficit(&after, "b"), deficit(&after, "c")), (deficit(&before, "b"), deficit(&before, "c")));
     let share = |v: &TargetView, n: &str| v.accounts.iter().find(|a| a.account == n).unwrap().share.unwrap();
-    assert!((share(&after, "a") / share(&after, "b") - 2.0).abs() < 1e-6, "{} / {}", share(&after, "a"), share(&after, "b"));
+    assert!(
+        (share(&after, "a") / share(&after, "b") - 2.0).abs() < 1e-6,
+        "{} / {}",
+        share(&after, "a"),
+        share(&after, "b")
+    );
 
     // `b` disabled and enabled again: it starts at 0 too.
     cold(&f, 4).await;
@@ -101,7 +110,8 @@ async fn a_changed_amortization_length_keeps_what_is_owed_for_now() {
     assert_eq!(before.amortization_window.length.as_secs(), 5 * 3600);
     std::fs::write(
         f.setup._dir.path().join("config.toml"),
-        std::fs::read_to_string(f.setup._dir.path().join("config.toml")).unwrap() + "\n[routing.amortization_for]\nu = \"1h\"\n",
+        std::fs::read_to_string(f.setup._dir.path().join("config.toml")).unwrap()
+            + "\n[routing.amortization_for]\nu = \"1h\"\n",
     )
     .unwrap();
     f.setup.engine.reload().await.unwrap();

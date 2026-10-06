@@ -954,3 +954,151 @@ async fn quota() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Slice 006, L7 (T085, SC-007): the routing view matches the provider's own polls.
+
+/// Every window of the view's account `provider/account` for `target`.
+fn view_windows(
+    engine: &Engine,
+    target: &str,
+    provider: &str,
+    account: &str,
+) -> Vec<nullrouter_engine::routing::view::WindowView> {
+    let st = engine.snapshot();
+    nullrouter_engine::route::view_all(engine, &st, Some(target), std::time::SystemTime::now())
+        .into_iter()
+        .flat_map(|t| t.accounts)
+        .find(|a| a.provider == provider && a.account == account)
+        .map(|a| a.windows)
+        .unwrap_or_default()
+}
+
+/// For each polled account: poll it and compare the view's `remaining_now` with the poll's
+/// `remaining` (they must agree: nothing was sent in between), send one tiny request through the
+/// provider, and check that the view's drop equals its own metered `cost_since_poll`. A second
+/// poll then shows what the provider charged; the difference is printed as a meter correction
+/// for `plugins/bundled/*.toml`, never asserted, because a provider rounds its percentages.
+///
+/// `-- live_routing_matches_polls --nocapture`. Skipped unless `NR_LIVE=1`; with it, a run that
+/// checks no account fails, naming the home it read and the account kinds it needs.
+#[tokio::test]
+async fn live_routing_matches_polls() {
+    let _one = SIGNIN_LIVE.lock().await;
+    let Some(engine) = open_live() else { return };
+    let st = engine.snapshot();
+    let mut checked = 0;
+    let mut corrections = Vec::new();
+    for account in st.accounts.iter().filter(|a| !a.disabled) {
+        let who = format!("{}/{}", account.provider, account.name);
+        let Ok(entity) = st.registry.provider(&account.provider) else { continue };
+        if nullrouter_engine::quota::poll::reported(entity, account).is_none() {
+            continue;
+        }
+        let Some(target) = targets().into_iter().find(|t| t.split('/').next() == Some(account.provider.as_str()))
+        else {
+            eprintln!("{who}: skipped, no live target for {}", account.provider);
+            continue;
+        };
+        let Some(first) = engine.poll_quota(&account.provider, &account.name).await else {
+            eprintln!("{who}: skipped, the poll did not run");
+            continue;
+        };
+        if !first.ok() {
+            eprintln!("{who}: skipped, the poll failed: {:?}", first.error);
+            continue;
+        }
+        // 1. The view agrees with the poll, window by window.
+        let before = view_windows(&engine, &target, &account.provider, &account.name);
+        assert!(!before.is_empty(), "{who}: the routing view has no windows for {target}");
+        for w in &first.windows {
+            let Some(v) = before.iter().find(|v| v.name == w.name) else {
+                eprintln!("{who}: window {:?} is reported but the view does not show it (no meter names it)", w.name);
+                continue;
+            };
+            let reported = v.remaining_at_poll.expect("a polled window has a remaining");
+            assert!(
+                v.cost_since_poll.abs() < 1e-6,
+                "{who} {}: cost since the poll is {} right after it",
+                w.name,
+                v.cost_since_poll
+            );
+            assert!(
+                (v.remaining_now - reported).abs() <= reported.abs() * 1e-6 + 1e-6,
+                "{who} {}: the view says {} left, the poll says {reported}",
+                w.name,
+                v.remaining_now
+            );
+            eprintln!("{who} {}: view {:.0} = poll {reported:.0} {}", w.name, v.remaining_now, v.unit);
+        }
+        checked += 1;
+
+        // 2. One tiny request: the view's drop is the cost it metered.
+        let body = json!({"model": target, "max_tokens": 16, "messages": [{"role": "user", "content": "Reply with the single word: pong"}]});
+        let (_, rec) = send(&engine, "openai-chat", &target, body).await;
+        assert_eq!(rec.outcome, Outcome::Succeeded, "{who}: {rec:#?}");
+        let served = rec.served_by.as_ref().map(|s| (s.provider.clone(), s.account.clone().unwrap_or_default()));
+        if served.as_ref().map(|(p, a)| (p.as_str(), a.as_str()))
+            != Some((account.provider.as_str(), account.name.as_str()))
+        {
+            eprintln!("{who}: the request went to {served:?}; the drop is checked for that account on its own turn");
+            continue;
+        }
+        let after = view_windows(&engine, &target, &account.provider, &account.name);
+        for (b, a) in before.iter().zip(&after) {
+            let drop = b.remaining_now - a.remaining_now;
+            assert!(
+                (drop - a.cost_since_poll).abs() <= a.cost_since_poll.abs() * 1e-6 + 1e-6,
+                "{who} {}: remaining fell by {drop} but the metered cost is {}",
+                a.name,
+                a.cost_since_poll
+            );
+            eprintln!("{who} {}: fell by {drop:.0} {}, the meter charged {:.0}", a.name, a.unit, a.cost_since_poll);
+        }
+
+        // 3. The provider's own account of it.
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        if let Some(second) = engine.poll_quota(&account.provider, &account.name).await.filter(|p| p.ok()) {
+            for (w0, w1) in first.windows.iter().zip(&second.windows) {
+                let (Some(r0), Some(r1), Some(a)) = (
+                    w0.remaining.or(w0.used.map(|u| 100.0 - u)),
+                    w1.remaining.or(w1.used.map(|u| 100.0 - u)),
+                    after.iter().find(|a| a.name == w1.name),
+                ) else {
+                    continue;
+                };
+                // A percent window is converted through the meter's capacity.
+                let provider_drop = if w1.unit == nullrouter_registry::schema::QuotaUnit::Percent {
+                    (r0 - r1) / 100.0 * a.capacity
+                } else {
+                    r0 - r1
+                };
+                let line = format!(
+                    "{who} {}: provider charged {provider_drop:.0}, the meter charged {:.0} ({} capacity {:.0})",
+                    w1.name, a.cost_since_poll, a.unit, a.capacity
+                );
+                eprintln!("{line}");
+                if (provider_drop - a.cost_since_poll).abs() > a.capacity * 0.01 {
+                    corrections.push(line);
+                }
+            }
+        }
+    }
+    // A run that compared nothing proves nothing: say where it looked and what it needs.
+    assert!(
+        checked > 0,
+        "live_routing_matches_polls checked no account. It read the home {} and found no enabled \
+         account with a quota poll that has a live target and answered the poll. Add one of an \
+         anthropic, grok-cli, opencode-go or opencode-zen account to that home (set NULLROUTER_HOME \
+         to point at the right one), then rerun.",
+        engine.home().path().display()
+    );
+    if !corrections.is_empty() {
+        eprintln!(
+            "\nMETER CORRECTIONS NEEDED (over 1% of capacity; record each in plugins/bundled/*.toml with a dated source comment):"
+        );
+        for c in &corrections {
+            eprintln!("  {c}");
+        }
+    }
+}

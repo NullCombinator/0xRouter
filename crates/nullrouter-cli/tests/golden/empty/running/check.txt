@@ -1,0 +1,9 @@
+exit: 0
+--- stdout
+home: <HOME>
+providers: 7 (7 bundled, 0 user)
+unified models: 0
+note: grok-cli reports window on-demand, which no [[routing.window]] meter names; it is paced in its own unit
+note: grok-cli reports window prepaid, which no [[routing.window]] meter names; it is paced in its own unit
+note: grok-cli reports window credits, which no [[routing.window]] meter names; it is paced in its own unit
+--- stderr

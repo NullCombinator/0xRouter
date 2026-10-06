@@ -1,0 +1,21 @@
+exit: 0
+--- stdout
+[
+  {
+    "provider": "grok-cli",
+    "name": "work",
+    "kind": "signin",
+    "order": 0,
+    "priority": 1.0,
+    "secret": "…5555",
+    "state": "active",
+    "state_since": null,
+    "state_reason": null,
+    "state_text": "active",
+    "email": null,
+    "tier": null,
+    "expires_at": "2026-10-03T20:23:00Z",
+    "last_refresh_at": null
+  }
+]
+--- stderr

@@ -11,7 +11,6 @@ pub fn window_start(now: SystemTime, length: Duration) -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(secs - secs % len)
 }
 
-
 /// No deficit grows past this many tokens either way: larger than any single request, so a long
 /// block can't build a burst larger than that.
 pub const CLAMP: f64 = 2_000_000.0;
@@ -135,12 +134,7 @@ impl Ledger {
             return None;
         }
         self.apply(shares, placed, tokens as f64);
-        Some(Debit {
-            window_start: self.window?,
-            shares: shares.to_vec(),
-            placed: placed.to_string(),
-            tokens,
-        })
+        Some(Debit { window_start: self.window?, shares: shares.to_vec(), placed: placed.to_string(), tokens })
     }
 
     /// The attempt ended with `actual` tokens: the same shares are applied to the difference from

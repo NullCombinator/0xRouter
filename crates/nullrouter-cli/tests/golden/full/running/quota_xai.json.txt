@@ -1,0 +1,35 @@
+exit: 0
+--- stdout
+[
+  {
+    "provider": "xai",
+    "name": "work",
+    "kind": "signin",
+    "disabled": false,
+    "reported": false,
+    "interval_s": 600,
+    "latest": null,
+    "last_failure": null
+  },
+  {
+    "provider": "xai",
+    "name": "old",
+    "kind": "signin",
+    "disabled": false,
+    "reported": false,
+    "interval_s": 600,
+    "latest": null,
+    "last_failure": null
+  },
+  {
+    "provider": "xai",
+    "name": "gone",
+    "kind": "signin",
+    "disabled": false,
+    "reported": false,
+    "interval_s": 600,
+    "latest": null,
+    "last_failure": null
+  }
+]
+--- stderr

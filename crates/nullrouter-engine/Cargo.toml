@@ -8,7 +8,7 @@ license.workspace = true
 
 [features]
 # `parity` lets tests open the registry with the fit check off (`Engine::open_parity`).
-testkit = ["dep:axum", "nullrouter-registry/parity"]
+testkit = ["dep:axum", "dep:tempfile", "nullrouter-registry/parity"]
 
 [dependencies]
 tokio.workspace = true
@@ -34,6 +34,7 @@ url.workspace = true
 nullrouter-wire.workspace = true
 nullrouter-registry.workspace = true
 axum = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true
@@ -43,6 +44,10 @@ nullrouter-engine = { path = ".", features = ["testkit"] }
 
 [[bench]]
 name = "engine"
+harness = false
+
+[[bench]]
+name = "records_page"
 harness = false
 
 [lints]

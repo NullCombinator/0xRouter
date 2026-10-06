@@ -376,7 +376,12 @@ impl MeterDecl {
             if self.unit != MeterUnit::WeightedTokens {
                 out.push(("token_weights", "only applies to unit \"weighted_tokens\"".into()));
             }
-            let all = [("input", w.input), ("output", w.output), ("cache_read", w.cache_read), ("cache_write", w.cache_write)];
+            let all = [
+                ("input", w.input),
+                ("output", w.output),
+                ("cache_read", w.cache_read),
+                ("cache_write", w.cache_write),
+            ];
             for (k, v) in all {
                 if !v.is_finite() || v < 0.0 {
                     out.push(("token_weights", format!("{k} must be 0 or more")));
@@ -488,7 +493,10 @@ mod tests {
     #[test]
     fn defaults_when_absent() {
         let e = EffectiveRouting::of(None);
-        assert_eq!(e.cache, EffectiveCache { mode: CacheMode::Automatic, lifetime: DEFAULT_CACHE_LIFETIME, min_tokens: 1024 });
+        assert_eq!(
+            e.cache,
+            EffectiveCache { mode: CacheMode::Automatic, lifetime: DEFAULT_CACHE_LIFETIME, min_tokens: 1024 }
+        );
         assert!(e.windows.is_empty() && e.prices.is_empty());
         let d: RoutingDecl = toml::from_str("[cache]\nmode = \"explicit\"").unwrap();
         assert_eq!(EffectiveRouting::of(Some(&d)).cache.lifetime, Duration::from_secs(300));

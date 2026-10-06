@@ -1,0 +1,4 @@
+exit: 0
+--- stdout
+--- stderr
+no server is running: quota is polled only while `nullrouter serve` runs

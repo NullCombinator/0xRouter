@@ -37,6 +37,8 @@ enum Command {
     },
     /// Resolve `provider/model` or a unified model name. Exit 2 if not found.
     Resolve { target: String },
+    /// List unified models, or one. Exit 2 if NAME isn't loaded.
+    Unified { name: Option<String> },
     /// Show what a provider declares about a model. Exit 2 if the provider is unknown.
     Model { provider: String, model: String },
     /// List providers.
@@ -74,9 +76,9 @@ enum Command {
 /// Opens the registry, or prints the startup errors and exits 1.
 pub(crate) fn open(home: Option<PathBuf>) -> Result<RegistryHandle, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
-    RegistryHandle::open(home).map_err(|e| {
-        eprintln!("startup failed:\n{e}");
-        ExitCode::from(1)
+    nullrouter_server::views::open_registry(&home).map_err(|e| {
+        eprintln!("{}", e.message);
+        ExitCode::from(e.code)
     })
 }
 
@@ -86,12 +88,13 @@ fn main() -> ExitCode {
         Command::Check => cmd::check::run(cli.home, cli.json),
         Command::Validate { files } => cmd::validate::run(&files),
         Command::Resolve { target } => cmd::resolve::run(cli.home, &target, cli.json),
+        Command::Unified { name } => cmd::unified::run(cli.home, name.as_deref(), cli.json),
         Command::Model { provider, model } => cmd::model::run(cli.home, &provider, &model, cli.json),
         Command::Providers { capability } => cmd::providers::run(cli.home, capability.as_deref(), cli.json),
         Command::Serve { listen } => cmd::serve::run(cli.home, listen),
         Command::Accounts(c) => cmd::accounts::run(cli.home, c, cli.json),
         Command::Keys(c) => cmd::keys::run(cli.home, c, cli.json),
-        Command::Behaviour(c) => cmd::behaviour::run(cli.home, c),
+        Command::Behaviour(c) => cmd::behaviour::run(cli.home, c, cli.json),
         Command::Records(c) => cmd::records::run(cli.home, c, cli.json),
         Command::Plugins(c) => cmd::plugins::run(cli.home, c, cli.json),
         Command::Quota(c) => cmd::quota::run(cli.home, c, cli.json),

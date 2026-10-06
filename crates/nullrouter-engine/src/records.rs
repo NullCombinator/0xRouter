@@ -15,6 +15,17 @@ pub use nullrouter_wire::codec::Dropped;
 
 pub const CAPACITY: usize = 10_000;
 
+/// The most characters of a client-chosen name (a target, a session) a record keeps.
+pub const MAX_NAME_CHARS: usize = 256;
+
+/// A client-chosen name as a record keeps it: control characters dropped and at most
+/// [`MAX_NAME_CHARS`] characters. Any agent key can choose these strings; a record is written
+/// to disk for every request and printed on the operator's terminal, which obeys escape
+/// sequences.
+pub fn plain(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).take(MAX_NAME_CHARS).collect()
+}
+
 /// `rq_` + a ULID, monotonic within the process so ids sort in arrival order.
 pub fn new_id() -> String {
     static GEN: Mutex<ulid::Generator> = Mutex::new(ulid::Generator::new());
@@ -334,7 +345,8 @@ impl RecordStore {
     /// their order.
     fn write(&self, before: &RequestRecord, after: &RequestRecord, force_open: bool) {
         let Some(journal) = &self.journal else { return };
-        let target = crate::journal::Target::Records { day: crate::journal::records::day_of(&after.arrived).to_owned() };
+        let target =
+            crate::journal::Target::Records { day: crate::journal::records::day_of(&after.arrived).to_owned() };
         for (t, fields) in crate::journal::records::lines_for(before, after, force_open) {
             journal.append(target.clone(), t, fields);
         }
@@ -347,7 +359,11 @@ impl RecordStore {
     pub fn insert(&self, record: RequestRecord) {
         let mut ring = self.lock();
         if self.journal.is_some() {
-            self.write(&RequestRecord::new(record.id.clone(), record.arrived.clone(), record.style.clone()), &record, true);
+            self.write(
+                &RequestRecord::new(record.id.clone(), record.arrived.clone(), record.style.clone()),
+                &record,
+                true,
+            );
         }
         if ring.records.len() == self.capacity {
             ring.evict();
@@ -545,5 +561,13 @@ mod tests {
         }
         let plain = AttemptOutcome::Skipped { reason: "x".into(), class: None };
         assert!(serde_json::to_value(plain).unwrap().get("class").is_none());
+    }
+
+    #[test]
+    fn a_clients_names_are_kept_short_and_without_control_characters() {
+        assert_eq!(plain("claude-sonnet"), "claude-sonnet");
+        assert_eq!(plain("a\x1b[2Jb\r\nc"), "a[2Jbc");
+        let long = plain(&"é".repeat(10_000));
+        assert_eq!(long.chars().count(), MAX_NAME_CHARS);
     }
 }

@@ -1,0 +1,4 @@
+exit: 0
+--- stdout
+no unified models; declare one with [[unified_model]] in config.toml
+--- stderr

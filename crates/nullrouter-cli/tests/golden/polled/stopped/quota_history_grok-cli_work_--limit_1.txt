@@ -1,0 +1,5 @@
+exit: 0
+--- stdout
+14:18         ok       prepaid 1,240 / 5,000 credits used
+  grok-build             3 requests   input 900   output 300   cache read 0   cache write 0
+--- stderr

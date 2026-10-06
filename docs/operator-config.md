@@ -209,9 +209,6 @@ command to run, for example `needs sign-in: run nullrouter accounts signin xai m
 
 ## Quota
 
-*Arrives with slice 005's quota stories (US4, US5); this section is a preview of the
-contract.*
-
 0router polls each account's quota where the provider's plugin declares how (anthropic,
 grok-cli, opencode-go, opencode-zen), every 10 minutes by default, and keeps every poll
 with a tally of the traffic sent in between.
@@ -265,7 +262,13 @@ break_behaviour = "restart"   # restart | error_event
 ```bash
 nullrouter behaviour set-break error_event              # the operator default
 nullrouter keys set-break claude-code-laptop restart    # per key; `default` clears it
+nullrouter behaviour show                               # break_behaviour  restart  (default)
 ```
+
+`behaviour show` reads `config.toml` only and works without a server. It prints each setting
+and marks the ones still at their default; `--json` gives
+`{"break_behaviour":{"value":"restart","default":true}}`. A `config.toml` that doesn't load
+prints the same error `check` gives, exit 1.
 
 ## Private endpoints
 
@@ -277,19 +280,178 @@ at request time. To route to a local model server, opt in:
 allow_private_endpoints = true
 ```
 
-## Request records
+## Routing
 
-The running server keeps a record of each request: agent, target, the provider and
-account that served it, every attempt with its outcome, time to first token and total,
-usage, and anything left out when translating across styles.
+When a target has several accounts, 0router decides which one serves each request:
+
+- **Warm**: an agent whose prompt prefix is still cached on an account stays on that account,
+  whatever the other numbers say. It moves only when that account can't serve (rate limited,
+  at its reserve floor, out of service) or to leave pay-as-you-go for a subscription. The
+  record names the reason.
+- **Cold**: work that is cached nowhere is spread over the subscription accounts. Each
+  account's share follows its **pace**: how much of its quota is left against how much time
+  its windows have left. A running **deficit** per account corrects for what each one actually
+  received, over an **amortization window** (5 hours by default).
+- **Overflow**: pay-as-you-go accounts serve only when no subscription can. They share that
+  work by priority divided by the price in effect now, so a cheaper account takes more. An
+  account with no declared price counts as price 1, and `check` warns about it.
+- **Last resort**: a subscription held back only by its reserve floor serves after
+  pay-as-you-go has failed, rather than failing the client.
+
+Every decision is recorded with the full candidate table (see [Request records](#request-records)).
+
+### Priority
 
 ```bash
-nullrouter records list --limit 20            # newest first; --provider, --model, --json
-nullrouter records show rq_01JAB3…           # the full record with attempts
+nullrouter accounts priority anthropic max 2     # twice the cold work of a priority-1 account
+nullrouter accounts priority opencode-go main 0  # never cold work, last resort or fallback
 ```
 
-Records live in the server's memory. `records` needs a running server and exits 4 without
-one. Error bodies sent to clients carry the record id, so a failure can be looked up.
+Priority multiplies an account's share of cold work: any number of 0 or more, default 1.
+Priority 0 means the account takes no cold work at all, and is never a fallback for it; an
+agent that is already warm on it still stays. `accounts list` shows the priority column.
+
+### Account overrides
+
+A plugin declares its accounts' quota windows, cache lifetime and prices. Override them per
+account when yours differ (a bigger plan, a negotiated price):
+
+```bash
+nullrouter routing set anthropic max cache_lifetime=1h reserve=10%
+nullrouter routing set anthropic max window.5-hour.capacity=12000000
+nullrouter routing set openrouter main price.input=3 price.output=15
+nullrouter routing unset anthropic max window.5-hour      # or one field: window.5-hour.capacity
+```
+
+They are saved in `accounts.toml`:
+
+```toml
+[[account]]
+provider = "anthropic"
+name = "max"
+kind = "signin"
+priority = 2
+
+[account.routing]
+cache_lifetime = "1h"                            # > 0, at most 24h
+reserve = "10%"                                  # 0–50%, every window; default 5%
+window."5-hour" = { capacity = 12_000_000 }      # also length, reserve
+# price = { input = 3.0, output = 15.0 }         # per million tokens; replaces the plugin's schedule
+```
+
+The values are checked by the same rules as the plugin's (see `docs/plugins.md`, `[routing]`).
+A window name that matches none of the plugin's windows is refused.
+
+### Amortization window
+
+```toml
+# config.toml
+[routing]
+amortization = "5h"                  # the default
+
+[routing.amortization_for]
+"sonnet" = "1h"                      # a unified model
+"anthropic/claude-opus-4-1" = "24h"  # a direct target
+```
+
+```bash
+nullrouter routing window 2h            # the default
+nullrouter routing window sonnet 1h     # one target
+nullrouter routing window sonnet default
+```
+
+Windows are aligned to the Unix epoch, so a 5-hour window runs 00:00–05:00, 05:00–10:00 and so
+on, in UTC. Deficits start from zero in each window. A shorter window corrects faster; a longer
+one evens out bursts over more time.
+
+### The routing view
+
+`nullrouter routing [target] [--json]` shows what the next decision would see. It needs a
+running server and exits 4 without one.
+
+```text
+amortization 5h (05:00–10:00 UTC, 2h 48m left) · records kept, last sync 0.4 s ago
+
+sonnet                              subscription tier
+  account          source     pace  share  deficit    priority  cache  windows
+  anthropic/max    polled      1.42  61%    +91.2k     1         5m     5-hour 5.6M/9.0M wtok · floor 5% · rst 10:00 | weekly 72.9M/90.0M wtok · floor 5% · rst Thu 09:00
+  anthropic/pro    polled      0.88  39%    -91.2k     1         1h     5-hour 1.4M/4.5M wtok · floor 10% · rst 08:40
+  opencode-go/main estimated   1.05  —      0          0         5m     rolling 4.2M/6.0M wtok · floor 5% · cold work off (priority 0)
+                                    pay-as-you-go tier
+  openrouter/main  payg        —     100%   0          1         5m     price now 3.00/Mtok in
+```
+
+| Column | Meaning |
+|---|---|
+| `source` | `polled`: the provider reports quota. `estimated`: no report, so 0router counts traffic against the plugin's declared limits. `payg`: neither, so the account is pay-as-you-go. `(pending first poll)`: no poll yet, so the account is treated as on pace. `(stale)`: the last poll failed, so the estimate keeps running from the last good one. |
+| `pace` | above 1, the account has quota to spare for the time left; below 1, it is running short |
+| `share` | its share of the next cold work |
+| `deficit` | tokens it is owed (+) or has had beyond its share (−) in this amortization window |
+| `cache` | the cache lifetime in effect: the account's override, else the plugin's |
+| `windows` | per window, what is left over its capacity (`wtok` weighted tokens, `req` requests), the reserve floor, and the reset time |
+
+Between polls, what is left is the last poll less the traffic 0router sent since, costed by
+the window's meter. `--json` gives the exact numbers per window: `remaining_at_poll`,
+`cost_since_poll`, `remaining_now`, `capacity`, `reserve` and `resets_at`.
+
+Warnings appear on their own lines, for example
+`opencode-go/main: window rolling capacity assumed` when no capacity is declared anywhere for
+that window, or `records not kept since 09:01 (disk full): 214 requests`.
+
+## Request records
+
+0router keeps a record of each request: agent, target, the routing decision with every
+candidate, every attempt with its account, placement reason and outcome, time to first token
+and total, usage, and anything left out when translating across styles. Records are written to
+`records/YYYY-MM-DD.jsonl` (one file per UTC day of arrival) and kept until you remove them.
+No record holds prompt text, a header value or a secret.
+
+```bash
+nullrouter records list --limit 20                      # newest first, read from disk
+nullrouter records list --account anthropic/max --reason overflow --since 2026-10-04
+nullrouter records list --limit 20 --before rq_01JAB3…  # the next page, older than that record
+nullrouter records show rq_01JAB3…                     # the decision table and every attempt
+nullrouter records prune --before 2026-09-01            # prints how many were removed
+nullrouter records forget --account anthropic/max       # or --agent KEY
+```
+
+`records list` filters by `--provider`, `--account P/N`, `--agent KEY`, `--model` (the target
+the client named, its unified model, or the model that served it), `--reason` (a placement
+reason: `warm`, `cold_by_deficit`, `moved_for_capacity`, `left_pay_as_you_go`, `overflow`,
+`last_resort`, `retry`, `fallback`) and `--since`. `--before ID` lists only records older than
+that one, after the other filters and before `--limit`, so passing each page's last id as the
+next `--before` walks the whole journal; an id that names no record is `no record ID`, exit 1.
+Paging back reads only the segment holding the cursor and the older ones, and a long-running
+server keeps an in-memory index of each segment it pages through. All `records` commands work without a
+server. With a server running, a request still in flight shows `in progress`; without one,
+a record that never closed shows `interrupted`.
+
+`records forget --agent` also drops that agent's cache fingerprints, so its next request is
+cold. `prune` and `forget` take the journal lock and exit 1 if it isn't free within 10 s.
+Error bodies sent to clients carry the record id, so a failure can be looked up.
+
+### Durability
+
+The routing state (which account each agent is warm on, and the deficits) is kept in
+`routing/` next to the records, so both survive a restart.
+
+| Event | Records | Warm state and deficits |
+|---|---|---|
+| clean shutdown | nothing lost | nothing lost |
+| 0router crash | nothing lost; requests in flight become `interrupted` | nothing lost for finished requests |
+| power loss or OS crash | at most about the last second | at most about the last second |
+| disk full | see below | kept in memory, written again when space returns |
+
+A client gets the last byte of its answer only after the record's final line is written.
+
+**When the disk is full**, serving continues. Up to 10,000 pending lines are held in memory
+and written when space returns (retried every 5 s); records beyond that are not kept, only
+counted. The server logs a warning when writing first fails, every minute while it fails, and
+when it resumes. `nullrouter routing` and `nullrouter check` show
+`records not kept since T (disk full): N requests`.
+
+Files under `records/` and `routing/` are mode 0600, the directories 0700, and `check` warns
+about any other mode.
 
 ## Addressing models
 
@@ -330,6 +492,16 @@ nullrouter resolve sonnet
 #   0. kiro claude-sonnet-4-5 → upstream claude-sonnet-4.5
 #   1. openrouter anthropic/claude-sonnet-4.5 → upstream anthropic/claude-sonnet-4.5
 ```
+
+```bash
+nullrouter unified              # every unified model, then `dropped unified model …` lines
+nullrouter unified sonnet       # one; exit 2 if it isn't loaded
+```
+
+`unified` prints the members and limits notes as `resolve` does, and lists the models a
+skipped plugin made the server drop. `unified NAME --json` prints exactly what `resolve NAME
+--json` prints. With none declared it says `no unified models; declare one with
+[[unified_model]] in config.toml`.
 
 Each member's upstream id is resolved once, at load. Rules:
 
@@ -377,17 +549,30 @@ config.toml:4:1 unified_model[0].members[1].provider: unknown provider "xx"
   - any error rejects the reload, and the previous state keeps serving;
   - in-flight requests keep the snapshot they started with;
   - nothing watches the files. Each mutating command (`accounts`, `keys`, `behaviour`,
-    `plugins install`/`uninstall`) writes its file atomically and then asks the running
+    `quota interval`, `routing set`/`unset`/`window`, `plugins install`/`uninstall`) writes its file atomically and then asks the running
     server to reload over the operator socket. It prints `applied` when the server
     acknowledged, or `saved; applies at next start` when no server is running. A hand
-    edit applies at the next start or the next such reload.
+    edit applies at the next start or the next such reload. If the reload loads a unified
+    model whose members' limits differ, the command prints the note on stderr.
 
 `nullrouter check` prints the load report:
 - provider counts;
 - pending and declined conflicts;
 - withheld credentials;
 - skipped plugins;
-- dropped unified models.
+- dropped unified models;
+- notes for unified models whose members differ in `context_length` or `max_output_tokens`
+  (`note: unified model sonnet: members differ in context_length: kiro 200000, openrouter 128000`;
+  the model still loads, and `resolve` prints the same note);
+- quota windows a provider reports that no `[[routing.window]]` meter names (paced in their own
+  unit);
+- pay-as-you-go accounts with no price, and an `explicit` cache mode on a provider none of whose
+  endpoints speaks a style with cache markers;
+- file modes of the sign-in, quota, record and routing files;
+- with a server running, whether records are being kept (disk full).
+
+A note or warning doesn't change the exit code; a skipped plugin, a dropped unified model or a
+file `serve` refuses to start with exits 1.
 
 ## Live checks (opt-in)
 
@@ -405,6 +590,7 @@ nullrouter accounts add opencode-go main      # optional: key accounts with [quo
 NR_LIVE=1 cargo test -p nullrouter-engine --test live -- signin_anthropic signin_grok_cli --nocapture
 NR_LIVE=1 cargo test -p nullrouter-engine --test live -- token_lifetimes --nocapture
 NR_LIVE=1 cargo test -p nullrouter-engine --test live -- quota --nocapture
+NR_LIVE=1 cargo test -p nullrouter-engine --test live -- live_routing_matches_polls --nocapture
 ```
 
 | Check | Sends | Prints |
@@ -412,9 +598,10 @@ NR_LIVE=1 cargo test -p nullrouter-engine --test live -- quota --nocapture
 | `signin_anthropic` (L1) | one Messages request, `max_tokens` 5, per anthropic sign-in account | `SERVED` with the answer and usage, or `REFUSED` with the status and the provider's text for `[[signin.refused]]`. Note whether sign-in showed the code page ("paste the code") or fell back to loopback: the token store doesn't record it. |
 | `signin_grok_cli` (L3) | three streamed Responses requests through one grok-cli account: (a) every `[identity]` header, (b) the fixed-value headers only, (c) every header and a body with an `item_reference` and foreign item ids | `PASSED`/`FAILED` per variant, with the identity header names sent and the error text |
 | `token_lifetimes` (L4) | one refresh per sign-in account, saved like any refresh | the stored and the fresh `expires_in`, whether the refresh token `ROTATED`, and a hint when the lifetime is under 2 × `refresh_lead` |
+| `live_routing_matches_polls` (L7) | per polled account: one quota poll, one tiny request, a second poll | for each window, the routing view's `remaining_now` beside the poll's figure, and how far it fell after the request beside the cost its meter charged. Any window where the provider charged more than 1% of capacity differently is listed under `METER CORRECTIONS NEEDED`, for a dated fix to the bundled plugin's `[[routing.window]]`. |
 | `quota` (L2, L5) | one quota read per account with `[quota]` (the fallback only when the primary yields no window), and `GET api.x.ai/v1/models` per xai account kind | the raw answer (truncated) next to the extracted windows, and the `x-ratelimit-*` headers xai returned |
 
-A provider with no account in the home is skipped with a message. The checks send their
+A provider with no account in the home is skipped with a message, except for `live_routing_matches_polls`: it fails when no polled account was checked, and the failure names the home it read and the kinds it needs (an anthropic, grok-cli, opencode-go or opencode-zen account that is enabled and answers its quota poll). The checks send their
 requests directly rather than through the attempt loop, so a refusal doesn't take the
 account out of service. Run them while no server uses the same home: the checks refresh
 tokens, and two processes refreshing one rotating token can sign the account out.

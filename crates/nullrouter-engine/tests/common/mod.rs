@@ -72,7 +72,8 @@ pub async fn setup_file(
     for (id, toml) in plugins(&mock) {
         std::fs::write(dir.path().join(format!("plugins/{id}.toml")), toml).unwrap();
     }
-    nullrouter_engine::files::write_private(&dir.path().join(nullrouter_engine::accounts::FILE), accounts_toml).unwrap();
+    nullrouter_engine::files::write_private(&dir.path().join(nullrouter_engine::accounts::FILE), accounts_toml)
+        .unwrap();
     // The parity set: a test's user plugin may declare `[quota]`, open to bundled plugins only.
     let (engine, report) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
     assert!(report.registry.diagnostics.is_empty(), "{:#?}", report.registry.diagnostics);
@@ -177,7 +178,11 @@ pub fn request(
     let client = st.style(client).unwrap().clone();
     let ir = request::decode(&client, &body).unwrap();
     let id = nullrouter_engine::records::new_id();
-    s.engine.records.insert(RequestRecord::new(id.clone(), nullrouter_engine::clock::now_rfc3339_millis(), client.id.clone()));
+    s.engine.records.insert(RequestRecord::new(
+        id.clone(),
+        nullrouter_engine::clock::now_rfc3339_millis(),
+        client.id.clone(),
+    ));
     let stream = body.get("stream").and_then(Value::as_bool).unwrap_or(false);
     TextRequest {
         id,

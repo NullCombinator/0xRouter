@@ -178,7 +178,7 @@ async fn concurrent_cold_requests_do_not_all_land_on_the_largest_deficit() {
     assert!(a >= 3 && b >= 3, "split {a}/{b}");
 }
 
-// ---- parity deviations D-006-1 to D-006-3 (T041), tests/parity/deviations.toml ----
+// ---- parity deviations D-006-1 to D-006-4 (T041), tests/parity/deviations.toml ----
 
 #[tokio::test]
 async fn d_006_1_order_comes_from_pace_not_fill_first() {
@@ -224,6 +224,34 @@ async fn d_006_3_equal_accounts_alternate_instead_of_sticking() {
     }
     // Equal state: the operator's order breaks the first tie, then the deficit alternates them.
     assert_eq!(seen, ["alpha/a", "alpha/b", "alpha/a", "alpha/b"]);
+}
+
+#[tokio::test]
+async fn d_006_4_a_priority_zero_account_is_not_tried_even_when_everything_else_failed() {
+    // 9router tries every active account in turn; here `a` (priority 0) takes no cold work, so
+    // once `b` has failed the request fails and `a` was never sent anything.
+    let f = Fleet::new()
+        .provider("alpha", TOKENS, &[("5h", "tokens")])
+        .account("alpha", "a", 0.0)
+        .account("alpha", "b", 1.0)
+        .unified(&[("alpha", "m1")])
+        .build()
+        .await;
+    f.setup.mock.push((0..8).map(|_| err(500)));
+    let req = request(&f.setup, "openai-chat", "u", body("hello"), "ak_1", CancellationToken::new());
+    let id = req.id.clone();
+    let Err(failure) = f.setup.engine.text(f.setup.engine.snapshot(), req).await else {
+        panic!("every tried account failed, so the request must fail");
+    };
+    assert_eq!(failure.status, 503);
+    let r = settled(&f.setup, &id).await;
+    assert_eq!(r.outcome, nullrouter_engine::records::Outcome::Failed);
+    assert!(failure.message.contains("not tried"), "the error names who was left out: {}", failure.message);
+    let a_secret = secret_of("alpha", "a");
+    assert!(
+        f.setup.mock.received().iter().all(|q| !format!("{:?}", q.headers).contains(&a_secret)),
+        "nothing was sent with a's secret"
+    );
 }
 
 #[tokio::test]

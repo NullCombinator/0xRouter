@@ -1,0 +1,272 @@
+exit: 0
+--- stdout
+[
+  {
+    "id": "rq_01M4129AT00000000000000006",
+    "arrived": "2026-10-03T14:22:00Z",
+    "agent": {
+      "key": "ak_fixture1",
+      "session": null
+    },
+    "style": "anthropic-messages",
+    "op": "generate",
+    "model_type": "text",
+    "target": "opus",
+    "unified_model": null,
+    "served_by": null,
+    "attempts": [],
+    "outcome": "in_progress",
+    "break_handling": {
+      "kind": "none"
+    },
+    "ttft_ms": null,
+    "total_ms": null,
+    "usage": null,
+    "job": null,
+    "decision": null
+  },
+  {
+    "id": "rq_01M40XK6400000000000000005",
+    "arrived": "2026-10-03T13:00:00Z",
+    "agent": {
+      "key": "ak_fixture1",
+      "session": null
+    },
+    "style": "anthropic-messages",
+    "op": "generate",
+    "model_type": "text",
+    "target": "sonnet",
+    "unified_model": null,
+    "served_by": null,
+    "attempts": [
+      {
+        "n": 1,
+        "provider": "anthropic",
+        "account": "main",
+        "model": "claude-sonnet-4-5",
+        "kind": "initial",
+        "placement": {
+          "reason": "warm",
+          "rank": 0
+        },
+        "started": 0.4,
+        "ended": 900.0,
+        "outcome": {
+          "state": "ok"
+        },
+        "dropped": [],
+        "forced": []
+      }
+    ],
+    "outcome": "in_progress",
+    "break_handling": {
+      "kind": "none"
+    },
+    "ttft_ms": null,
+    "total_ms": null,
+    "usage": null,
+    "job": null,
+    "decision": null
+  },
+  {
+    "id": "rq_01M40FVQM00000000000000004",
+    "arrived": "2026-10-03T09:00:00Z",
+    "agent": {
+      "key": "ak_fixture1",
+      "session": null
+    },
+    "style": "anthropic-messages",
+    "op": "generate",
+    "model_type": "text",
+    "target": "sonnet",
+    "unified_model": null,
+    "served_by": {
+      "provider": "anthropic",
+      "account": "main",
+      "model": "claude-sonnet-4-5"
+    },
+    "attempts": [
+      {
+        "n": 1,
+        "provider": "anthropic",
+        "account": "main",
+        "model": "claude-sonnet-4-5",
+        "kind": "initial",
+        "placement": {
+          "reason": "warm",
+          "rank": 0
+        },
+        "started": 0.4,
+        "ended": 900.0,
+        "outcome": {
+          "state": "ok"
+        },
+        "dropped": [],
+        "forced": []
+      }
+    ],
+    "outcome": "succeeded",
+    "break_handling": {
+      "kind": "none"
+    },
+    "ttft_ms": 120.0,
+    "total_ms": 900.0,
+    "usage": null,
+    "job": null,
+    "decision": null
+  },
+  {
+    "id": "rq_01M3Y61NP00000000000000003",
+    "arrived": "2026-10-02T11:30:00Z",
+    "agent": {
+      "key": "ak_unnamed",
+      "session": null
+    },
+    "style": "anthropic-messages",
+    "op": "generate",
+    "model_type": "text",
+    "target": "grok",
+    "unified_model": null,
+    "served_by": {
+      "provider": "xai",
+      "account": "work",
+      "model": "grok-4"
+    },
+    "attempts": [
+      {
+        "n": 1,
+        "provider": "xai",
+        "account": "work",
+        "model": "grok-4",
+        "kind": "initial",
+        "placement": {
+          "reason": "payg_overflow",
+          "rank": 0
+        },
+        "started": 0.4,
+        "ended": 900.0,
+        "outcome": {
+          "state": "ok"
+        },
+        "dropped": [],
+        "forced": []
+      }
+    ],
+    "outcome": "succeeded",
+    "break_handling": {
+      "kind": "none"
+    },
+    "ttft_ms": 120.0,
+    "total_ms": 900.0,
+    "usage": {
+      "input": 1204,
+      "output": 388,
+      "cache_read": 18432,
+      "cache_write": null,
+      "estimated": false
+    },
+    "job": null,
+    "decision": null
+  },
+  {
+    "id": "rq_01M3XXF0M00000000000000002",
+    "arrived": "2026-10-02T09:00:00Z",
+    "agent": {
+      "key": "ak_fixture2",
+      "session": null
+    },
+    "style": "anthropic-messages",
+    "op": "generate",
+    "model_type": "text",
+    "target": "sonnet",
+    "unified_model": null,
+    "served_by": {
+      "provider": "anthropic",
+      "account": "main",
+      "model": "claude-sonnet-4-5"
+    },
+    "attempts": [
+      {
+        "n": 1,
+        "provider": "anthropic",
+        "account": "main",
+        "model": "claude-sonnet-4-5",
+        "kind": "initial",
+        "placement": {
+          "reason": "warm",
+          "rank": 0
+        },
+        "started": 0.4,
+        "ended": 900.0,
+        "outcome": {
+          "state": "ok"
+        },
+        "dropped": [],
+        "forced": []
+      }
+    ],
+    "outcome": "succeeded",
+    "break_handling": {
+      "kind": "none"
+    },
+    "ttft_ms": 120.0,
+    "total_ms": 900.0,
+    "usage": null,
+    "job": null,
+    "decision": null
+  },
+  {
+    "id": "rq_01M3VB29M00000000000000001",
+    "arrived": "2026-10-01T09:00:00Z",
+    "agent": {
+      "key": "ak_fixture1",
+      "session": null
+    },
+    "style": "anthropic-messages",
+    "op": "generate",
+    "model_type": "text",
+    "target": "sonnet",
+    "unified_model": null,
+    "served_by": {
+      "provider": "anthropic",
+      "account": "main",
+      "model": "claude-sonnet-4-5"
+    },
+    "attempts": [
+      {
+        "n": 1,
+        "provider": "anthropic",
+        "account": "main",
+        "model": "claude-sonnet-4-5",
+        "kind": "initial",
+        "placement": {
+          "reason": "cold_by_deficit",
+          "rank": 0
+        },
+        "started": 0.4,
+        "ended": 900.0,
+        "outcome": {
+          "state": "ok"
+        },
+        "dropped": [],
+        "forced": []
+      }
+    ],
+    "outcome": "succeeded",
+    "break_handling": {
+      "kind": "none"
+    },
+    "ttft_ms": 120.0,
+    "total_ms": 900.0,
+    "usage": {
+      "input": 1204,
+      "output": 388,
+      "cache_read": 18432,
+      "cache_write": null,
+      "estimated": false
+    },
+    "job": null,
+    "decision": null
+  }
+]
+--- stderr

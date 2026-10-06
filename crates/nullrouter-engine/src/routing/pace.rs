@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn an_account_takes_the_minimum_pace_and_rate_over_its_pacing_windows() {
         let q = quota(vec![
-            win(MeterUnit::WeightedTokens, 5 * H, 1000.0, 0.8, H),   // π 4, r 800/3600
+            win(MeterUnit::WeightedTokens, 5 * H, 1000.0, 0.8, H), // π 4, r 800/3600
             win(MeterUnit::WeightedTokens, 168 * H, 70_000.0, 0.3, 84 * H), // π 0.6, r 21000/302400
         ]);
         let p = pace_of(&q, 100, now());

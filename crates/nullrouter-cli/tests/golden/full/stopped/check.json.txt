@@ -1,0 +1,84 @@
+exit: 1
+--- stdout
+{
+  "home": "<HOME>",
+  "providers": {
+    "bundled": 7,
+    "user": 1
+  },
+  "unified_models": 1,
+  "pending_conflicts": [],
+  "declined": [],
+  "withheld_credentials": [],
+  "skipped": [
+    {
+      "path": "<HOME>/plugins/broken.toml",
+      "id": "broken",
+      "errors": [
+        "<HOME>/plugins/broken.toml:3:6: key with no value, expected `=`"
+      ]
+    }
+  ],
+  "dropped_unified_models": [
+    {
+      "name": "lost",
+      "provider": "broken"
+    }
+  ],
+  "limits_notes": [
+    {
+      "unified": "mixed",
+      "limit": "context_length",
+      "values": [
+        {
+          "provider": "grok-cli",
+          "value": 500000
+        },
+        {
+          "provider": "bluesminds",
+          "value": 200000
+        }
+      ]
+    },
+    {
+      "unified": "mixed",
+      "limit": "max_output_tokens",
+      "values": [
+        {
+          "provider": "grok-cli",
+          "value": 64000
+        },
+        {
+          "provider": "bluesminds",
+          "value": null
+        }
+      ]
+    }
+  ],
+  "journal": null,
+  "unmetered_windows": [
+    {
+      "provider": "grok-cli",
+      "window": "on-demand"
+    },
+    {
+      "provider": "grok-cli",
+      "window": "prepaid"
+    },
+    {
+      "provider": "grok-cli",
+      "window": "credits"
+    }
+  ],
+  "routing_warnings": [
+    "anthropic/main is pay-as-you-go with no price in its plugin or account; it ranks as price 1 against other pay-as-you-go accounts",
+    "anthropic/spare is pay-as-you-go with no price in its plugin or account; it ranks as price 1 against other pay-as-you-go accounts"
+  ],
+  "signin": {
+    "errors": [],
+    "tokens_without_account": [],
+    "accounts_without_tokens": [],
+    "file_modes": []
+  }
+}
+--- stderr

@@ -1,0 +1,620 @@
+exit: 0
+--- stdout
+[
+  {
+    "id": "anthropic",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "elevenlabs",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "grok-cli",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "opencode-go",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "opencode-zen",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "openrouter",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "xai",
+    "set": "bundled",
+    "status": "loaded"
+  },
+  {
+    "id": "bluesminds",
+    "set": "user",
+    "status": "loaded"
+  },
+  {
+    "id": "broken",
+    "set": "user",
+    "status": "invalid"
+  },
+  {
+    "id": "alicode-intl",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "alicode",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "alims-intl",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "alitp-intl",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "antigravity",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "api-airforce",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "assemblyai",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "aws-polly",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "azure",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "baidu",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "bazaarlink",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "black-forest-labs",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "blackbox",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "bluesminds",
+    "set": "community",
+    "status": "installed"
+  },
+  {
+    "id": "brave-search",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "byteplus",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "cartesia",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "cerebras",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "chutes",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "claude",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "cline",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "clinepass",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "cloudflare-ai",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "codebuddy-cn",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "codebuddy-intl",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "codex",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "cohere",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "comfyui",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "commandcode",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "coqui",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "cursor",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "deepgram",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "deepseek",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "edge-tts",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "exa",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "fal-ai",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "featherless",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "firecrawl",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "fireworks",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "fish-audio",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "gemini-cli",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "gemini",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "github",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "gitlab",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "glm-cn",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "glm",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "google-pse",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "google-tts",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "grok-web",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "groq",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "huggingface",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "hyperbolic",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "iflow",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "inworld",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "jina-ai",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "jina-reader",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "kilo-gateway",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "kilocode",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "kimchi",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "kimi",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "kiro",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "linkup",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "llm7",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "local-device",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "mimo-free",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "minimax-cn",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "minimax",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "mistral",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "mmf",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "morph",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "nanobanana",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "nebius",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "nvidia",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "ollama-local",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "ollama-search",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "ollama",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "openai",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "opencode",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "perplexity-agent",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "perplexity-web",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "perplexity",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "playht",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "poolside",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "qoder-cn",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "qoder",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "recraft",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "runwayml",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "sambanova",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "sdwebui",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "searchapi",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "searxng",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "selfhosted-embedding",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "selfhosted-stt",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "selfhosted-tts",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "serper",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "siliconflow",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "stability-ai",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "tavily",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "tencent",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "together",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "tokenrouter",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "topaz",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "tortoise",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "venice",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "vercel-ai-gateway",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "vertex-partner",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "vertex",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "volcengine-ark",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "voyage-ai",
+    "set": "community",
+    "status": "fits"
+  },
+  {
+    "id": "xiaomi-mimo",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "xiaomi-tokenplan",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "xquik",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "youcom",
+    "set": "community",
+    "status": "unsupported"
+  },
+  {
+    "id": "zed",
+    "set": "community",
+    "status": "unsupported"
+  }
+]
+--- stderr

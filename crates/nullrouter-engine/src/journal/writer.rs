@@ -496,9 +496,7 @@ impl Thread {
         let path = item.target.path(&self.home);
         let (mut f, created) = match OpenOptions::new().append(true).create_new(true).mode(0o600).open(&path) {
             Ok(f) => (f, true),
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                (OpenOptions::new().append(true).open(&path)?, false)
-            }
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => (OpenOptions::new().append(true).open(&path)?, false),
             Err(e) => return Err(e),
         };
         if created && let Some(dir) = path.parent() {
@@ -553,7 +551,8 @@ impl Thread {
     /// Whether a test let this mark through while acks are paused.
     fn mark_is_free(&self) -> bool {
         #[cfg(feature = "testkit")]
-        let free = self.faults.free_marks.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1)).is_ok();
+        let free =
+            self.faults.free_marks.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1)).is_ok();
         #[cfg(not(feature = "testkit"))]
         let free = false;
         free
@@ -763,8 +762,10 @@ mod tests {
         std::thread::sleep(Duration::from_millis(200));
         let h = w.health();
         assert!(h.kept && h.since.is_none() && h.held_lines == 0, "{h:?}");
-        let ids: Vec<String> =
-            lines(&home.path().join("records/2026-10-04.jsonl")).iter().map(|l| l["id"].as_str().unwrap().to_owned()).collect();
+        let ids: Vec<String> = lines(&home.path().join("records/2026-10-04.jsonl"))
+            .iter()
+            .map(|l| l["id"].as_str().unwrap().to_owned())
+            .collect();
         assert_eq!(ids, ["rq_0", "rq_1", "rq_2", "rq_3", "rq_4"], "held lines are written in the order sent");
         assert_eq!(lines(&home.path().join("routing/warm.jsonl")).len(), 1);
     }

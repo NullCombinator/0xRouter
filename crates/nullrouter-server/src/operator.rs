@@ -4,8 +4,8 @@
 //!
 //! | Request | Response |
 //! |---|---|
-//! | `{"op":"reload"}` | `{"ok":true,"generation":N}`, or the error with the old snapshot kept |
-//! | `{"op":"records.list","provider"?,"unified_model"?,"account"?,"agent"?,"model"?,"reason"?,"since"?,"limit"?}` | `{"ok":true,"records":[…]}`: the journal's records plus those still in flight, newest first |
+//! | `{"op":"reload"}` | `{"ok":true,"generation":N}` (plus `"notes":[…]` when unified models' limits differ), or the error with the old snapshot kept |
+//! | `{"op":"records.list","provider"?,"unified_model"?,"account"?,"agent"?,"model"?,"reason"?,"since"?,"limit"?,"before"?}` | `{"ok":true,"records":[…]}`: the journal's records plus those still in flight, newest first, those with an id below `before` (which must name a record, else `{"ok":false,"error":"no record rq_…"}`) |
 //! | `{"op":"records.get","id":"rq_…"}` | `{"ok":true,"record":{…}}` |
 //! | `{"op":"records.forget","account"?:"P/N","agent"?:KEY}` | `{"ok":true,"fingerprints":N}`: the agent's fingerprints (or the account's fingerprints and ledger entries) leave memory and `routing/warm.jsonl`, and the live ring; the CLI then rewrites the record segments |
 //! | `{"op":"accounts.state"}` | `{"ok":true,"accounts":[…]}`: per account `kind`, `state`, `state_since`, `state_reason`, `expires_at`, cooldowns |
@@ -96,7 +96,16 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
                 for a in &r.unused_accounts {
                     tracing::warn!("account {a} names a provider that isn't loaded");
                 }
-                json!({"ok": true, "generation": r.generation})
+                let notes: Vec<String> =
+                    engine.snapshot().registry.report().notes.iter().map(ToString::to_string).collect();
+                for n in &notes {
+                    tracing::info!("{n}");
+                }
+                let mut answer = json!({"ok": true, "generation": r.generation});
+                if !notes.is_empty() {
+                    answer["notes"] = json!(notes);
+                }
+                answer
             }
             Err(e) => {
                 let error = engine.snapshot().redactor.redact(&e.to_string()).into_owned();
@@ -119,18 +128,22 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         }
         Some("records.forget") => {
             let st = engine.snapshot();
-            let now = std::time::SystemTime::now();
+            let now = nullrouter_engine::clock::now();
             let (account, agent) = (str_of("account"), str_of("agent"));
             let fingerprints = match (&account, &agent) {
                 (Some(a), None) => match a.split_once('/') {
                     Some((p, n)) => {
-                        engine.records.forget(|r| records::Filter { account: Some(a.clone()), ..Default::default() }.matches(r));
+                        engine
+                            .records
+                            .forget(|r| records::Filter { account: Some(a.clone()), ..Default::default() }.matches(r));
                         nullrouter_engine::route::drop_account(engine, &st, p, n, now)
                     }
                     None => return json!({"ok": false, "error": "--account is provider/name"}),
                 },
                 (None, Some(k)) => {
-                    engine.records.forget(|r| records::Filter { agent: Some(k.clone()), ..Default::default() }.matches(r));
+                    engine
+                        .records
+                        .forget(|r| records::Filter { agent: Some(k.clone()), ..Default::default() }.matches(r));
                     nullrouter_engine::route::drop_agent(engine, &st, k, now)
                 }
                 _ => return json!({"ok": false, "error": "name an account or an agent, not both"}),
@@ -199,8 +212,18 @@ async fn records_list(engine: &Arc<Engine>, req: &Value) -> Value {
         reason: str_of("reason"),
         since: str_of("since").and_then(|s| nullrouter_engine::clock::parse_rfc3339(&s)),
         limit,
+        before: str_of("before"),
     };
     let home = engine.home().path().to_owned();
+    if let Some(id) = &filter.before {
+        let (h, wanted) = (home.clone(), id.clone());
+        let named = tokio::task::spawn_blocking(move || records::cursor_exists(&h, &wanted)).await.unwrap_or(false);
+        // A request still in flight is a record too, and only the server knows it.
+        let live = engine.records.query(&Query::default()).iter().any(|r| &r.id == id);
+        if !named && !live {
+            return json!({"ok": false, "error": format!("no record {id}")});
+        }
+    }
     let read = filter.clone();
     let mut disk = tokio::task::spawn_blocking(move || records::read(&home, &read)).await.unwrap_or_default();
     let live: Vec<Value> = engine
@@ -210,7 +233,8 @@ async fn records_list(engine: &Arc<Engine>, req: &Value) -> Value {
         .filter_map(|r| serde_json::to_value(r).ok())
         .filter(|r| filter.matches(r))
         .collect();
-    let ids: std::collections::BTreeSet<String> = live.iter().filter_map(|r| r["id"].as_str().map(str::to_owned)).collect();
+    let ids: std::collections::BTreeSet<String> =
+        live.iter().filter_map(|r| r["id"].as_str().map(str::to_owned)).collect();
     disk.retain(|r| r["id"].as_str().is_none_or(|id| !ids.contains(id)));
     disk.extend(live);
     disk.sort_by(|a, b| b["id"].as_str().cmp(&a["id"].as_str()));
@@ -235,7 +259,7 @@ fn journal_health(engine: &Engine) -> Value {
 /// `routing.view`: every target's accounts as the next cold decision sees them.
 fn routing_view(engine: &Engine, target: Option<&str>) -> Value {
     let st = engine.snapshot();
-    let now = std::time::SystemTime::now();
+    let now = nullrouter_engine::clock::now();
     let targets = nullrouter_engine::route::view_all(engine, &st, target, now);
     let mut warnings: Vec<String> = targets.iter().flat_map(nullrouter_engine::routing::view::warnings).collect();
     warnings.dedup();
@@ -317,6 +341,7 @@ mod tests {
                 json!({"op": "records.get", "id": "rq_x"}),
                 json!({"op": "nope"}),
                 json!({"op": "quota.checkpoint"}),
+                json!({"op": "records.list", "before": "rq_nobody"}),
             ]
             .iter()
             .map(|r| call(&h, r).unwrap())
@@ -329,6 +354,7 @@ mod tests {
         assert_eq!(answers[2]["ok"], false);
         // The running tally reaches its checkpoint file on request.
         assert_eq!(answers[3], json!({"ok": true, "written": 1}));
+        assert_eq!(answers[4], json!({"ok": false, "error": "no record rq_nobody"}));
         let cp = nullrouter_engine::quota::history::tally_file(dir.path(), "p", "a").unwrap();
         assert!(std::fs::read_to_string(cp).unwrap().contains("\"requests\":1"));
         stop.send(()).unwrap();
