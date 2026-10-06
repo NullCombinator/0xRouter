@@ -10,14 +10,25 @@ pub fn rfc3339(t: SystemTime) -> String {
     format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
+/// The wall clock. With the `testkit` feature, `NULLROUTER_TEST_NOW` (RFC 3339) pins it, so the
+/// golden suite can run the real binary against fixed times; without the feature it is
+/// `SystemTime::now()`.
+pub fn now() -> SystemTime {
+    #[cfg(feature = "testkit")]
+    if let Some(t) = std::env::var("NULLROUTER_TEST_NOW").ok().and_then(|v| parse_rfc3339(&v)) {
+        return t;
+    }
+    SystemTime::now()
+}
+
 pub fn now_rfc3339() -> String {
-    rfc3339(SystemTime::now())
+    rfc3339(now())
 }
 
 /// Now with milliseconds: a request's arrival, so the traffic recovered from the journal is
 /// ordered against a checkpoint to within a millisecond.
 pub fn now_rfc3339_millis() -> String {
-    crate::quota::extract::rfc3339_millis(SystemTime::now())
+    crate::quota::extract::rfc3339_millis(now())
 }
 
 /// An RFC 3339 time (`2026-09-27T15:00:00Z`, fractions and `±hh:mm` offsets allowed).

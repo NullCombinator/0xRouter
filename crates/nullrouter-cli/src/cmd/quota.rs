@@ -81,7 +81,7 @@ fn print(accounts: &[Value], as_json: bool) {
     if as_json {
         println!("{:#}", Value::Array(accounts.to_vec()));
     } else {
-        print!("{}", quota_text::render(accounts, SystemTime::now(), 0));
+        print!("{}", quota_text::render(accounts, nullrouter_engine::clock::now(), 0));
     }
 }
 
@@ -141,7 +141,7 @@ pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<Ex
             } else if entries.is_empty() {
                 eprintln!("{provider}/{name}: no poll history{}", if since.is_some() { " in that range" } else { "" });
             } else {
-                print!("{}", quota_text::history(&entries, SystemTime::now(), 0));
+                print!("{}", quota_text::history(&entries, nullrouter_engine::clock::now(), 0));
             }
         }
         Command::Prune { before, provider, name } => {

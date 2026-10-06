@@ -128,7 +128,7 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         }
         Some("records.forget") => {
             let st = engine.snapshot();
-            let now = std::time::SystemTime::now();
+            let now = nullrouter_engine::clock::now();
             let (account, agent) = (str_of("account"), str_of("agent"));
             let fingerprints = match (&account, &agent) {
                 (Some(a), None) => match a.split_once('/') {
@@ -249,7 +249,7 @@ fn journal_health(engine: &Engine) -> Value {
 /// `routing.view`: every target's accounts as the next cold decision sees them.
 fn routing_view(engine: &Engine, target: Option<&str>) -> Value {
     let st = engine.snapshot();
-    let now = std::time::SystemTime::now();
+    let now = nullrouter_engine::clock::now();
     let targets = nullrouter_engine::route::view_all(engine, &st, target, now);
     let mut warnings: Vec<String> = targets.iter().flat_map(nullrouter_engine::routing::view::warnings).collect();
     warnings.dedup();

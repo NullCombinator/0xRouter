@@ -322,7 +322,7 @@ fn shown(a: &Account, live: &Value, stored: Option<&TokenEntry>) -> Shown {
         "needs_sign_in" => since_reason("needs sign-in"),
         "refused" => since_reason("refused by provider"),
         "refreshing" => {
-            let now = std::time::SystemTime::now();
+            let now = nullrouter_engine::clock::now();
             match expires.as_deref().and_then(parse_rfc3339).and_then(|t| now.duration_since(t).ok()) {
                 Some(d) => format!("refreshing (token expired {} ago, retrying)", ago(d.as_secs())),
                 None => "refreshing (retrying)".into(),

@@ -7,7 +7,6 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::time::SystemTime;
 
 use clap::{Args as ClapArgs, Subcommand};
 use nullrouter_cli::routing_text;
@@ -82,7 +81,7 @@ fn view(home: &OperatorHome, target: Option<&str>, as_json: bool) -> Result<Exit
     if as_json {
         println!("{answer:#}");
     } else {
-        print!("{}", routing_text::render(&answer, SystemTime::now()));
+        print!("{}", routing_text::render(&answer, nullrouter_engine::clock::now()));
     }
     Ok(ExitCode::SUCCESS)
 }
