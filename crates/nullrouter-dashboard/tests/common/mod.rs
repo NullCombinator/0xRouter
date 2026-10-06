@@ -50,8 +50,12 @@ impl Dash {
     }
 
     /// `serve` on `dir`: the client listener first (its address is the endpoint), then the
-    /// dashboard on a free loopback port; then a token and a signed-in browser.
+    /// dashboard on a free loopback port; then a signed-in browser. The token is written before
+    /// the engine opens: the `dashboard()` home holds an invalid plugin, so a reload refuses it.
     pub async fn start(dir: tempfile::TempDir) -> Self {
+        DashboardToken { digest: Some(DashboardToken::digest_of(TOKEN)), issued: Some("2026-10-06T08:00:00Z".into()) }
+            .save(dir.path())
+            .unwrap();
         let (engine, _) = Engine::open(OperatorHome::new(dir.path())).expect("the fixture home opens");
         let engine = Arc::new(engine);
 
@@ -72,10 +76,6 @@ impl Dash {
         .await;
         let addr = handle.addr().expect("the dashboard bound a loopback port");
 
-        DashboardToken { digest: Some(DashboardToken::digest_of(TOKEN)), issued: Some("2026-10-06T08:00:00Z".into()) }
-            .save(dir.path())
-            .unwrap();
-        engine.reload().await.unwrap();
 
         let http = Client::builder()
             .redirect(redirect::Policy::none())

@@ -14,7 +14,7 @@ fn num(x: f64) -> String {
     let whole = (x.trunc() as u64).to_string();
     let mut grouped = String::new();
     for (i, c) in whole.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
+        if i > 0 && i.is_multiple_of(3) {
             grouped.insert(0, ',');
         }
         grouped.insert(0, c);

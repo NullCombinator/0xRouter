@@ -155,7 +155,8 @@ async fn a_bad_logo_is_ignored_and_a_good_one_is_served_as_an_image() {
         assert_eq!(index.href(id), None, "{id}");
         let c = card(&html, id);
         assert!(c.contains("text-icon") && !c.contains("<img"), "{id}: {c}");
-        assert!(!html.contains(&format!("/{id}.png")), "{id}: no logo address on the page");
+        // The check note above the page names the file; no address serves it.
+        assert!(!html.contains(&format!("/{id}.png\"")), "{id}: no logo address on the page");
     }
 
     // Served as an image only, cacheable under its hash, and only to a signed-in browser.
