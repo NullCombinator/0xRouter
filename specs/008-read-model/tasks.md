@@ -131,7 +131,7 @@ crate's tests, then commit, one read per commit. While moving, look for facts th
   - a fixture whose `open` lines are written out of id order by up to 59 s (research R6 margin);
   - a cursor on the last record of a day, and on the first record after midnight;
   - an unknown id (error), and a pruned id (error).
-- [ ] T027 [P] [US2] Write the Criterion bench `crates/nullrouter-engine/benches/records_page.rs` and register it in `crates/nullrouter-engine/Cargo.toml`. Cases:
+- [X] T027 [P] [US2] Write the Criterion bench `crates/nullrouter-engine/benches/records_page.rs` and register it in `crates/nullrouter-engine/Cargo.toml`. Cases:
   - the newest page of 50 on 1k records, on 100k over 30 daily segments, and on 100k in one segment;
   - a page 50,000 records back in both 100k layouts.
 
@@ -141,11 +141,11 @@ crate's tests, then commit, one read per commit. While moving, look for facts th
 
 - [X] T028 [US2] Add `before: Option<String>` to `Filter` in `crates/nullrouter-engine/src/journal/records.rs`. Rule (data-model.md): "Only records whose id sorts below it. The id must name a record, else `no record <ID>` (exit 1). Combines with every other field."
 - [X] T029 [US2] In `crates/nullrouter-engine/src/journal/records.rs`, add the cursor lookup. Decode the ULID's time, find that UTC day's segment and the day either side, and use the existing cheap `contains` test before folding. It returns whether the id names a record (research R6.2)
-- [X] T030 [US2] In `crates/nullrouter-engine/src/journal/records.rs`, read a segment from its end in 64 KiB blocks, folding lines as they come. A record is complete once its `open` line is seen. Stop when `limit` complete matching records older than `before` are in hand **and** the oldest `open` line read is more than 60 s older, by ULID time, than the oldest record kept (research R6.3). Without a limit, read whole segments as today. `read` uses this path; the result order stays id descending
+- [X] T030 [US2] In `crates/nullrouter-engine/src/journal/records.rs`, read a segment from its end in 16 KiB blocks, folding lines as they come. A record is complete once its `open` line is seen. Stop when `limit` complete matching records older than `before` are in hand **and** the oldest `open` line read is more than 60 s older, by ULID time, than the oldest record kept (research R6.3). Without a limit, read whole segments as today. `read` uses this path; the result order stays id descending
 - [X] T031 [US2] Add `before` to the `records.list` op in `crates/nullrouter-server/src/operator.rs` (doc table at the top too); an unknown id answers `{"ok":false,"error":"no record rq_…"}` (contracts/cli.md)
 - [X] T032 [US2] Add `--before <ID>` to `records list` in `crates/nullrouter-cli/src/cmd/records.rs` and pass it through `views::records`; an unknown id prints `no record <ID>` on stderr and exits 1
 - [X] T033 [US2] Add `records list --before` cases to `crates/nullrouter-cli/tests/read_golden.rs` and bless only the new goldens in this commit
-- [ ] T034 [US2] Run the bench on this machine (`nice`, `-j 2`). Record the numbers against the targets of research R7 in `specs/008-read-model/bench-baseline.md`. If a target is missed, stop and report it; don't change the target
+- [X] T034 [US2] Run the bench on this machine (`nice`, `-j 2`). Record the numbers against the targets of research R7 in `specs/008-read-model/bench-baseline.md`. If a target is missed, stop and report it; don't change the target
 
 **Checkpoint**: US2 complete; existing goldens unchanged.
 

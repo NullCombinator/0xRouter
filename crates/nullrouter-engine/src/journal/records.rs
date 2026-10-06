@@ -374,7 +374,7 @@ pub fn cursor_exists(home: &Path, id: &str) -> bool {
 const OPEN_MARGIN_MS: u64 = 60_000;
 
 /// The block a segment is read backwards in.
-const BLOCK: u64 = 64 * 1024;
+const BLOCK: u64 = 16 * 1024;
 
 /// A page behind a cursor: the segment's in-memory index (`journal::index`) gives each request's
 /// lines, so only the requests the page can show are read, however far back the cursor is. The
@@ -478,9 +478,9 @@ impl Default for Tail {
 
 impl Tail {
     fn take(&mut self, line: &[u8]) {
+        // Only `t` and `id` are read here; `fold` parses the whole line once the request is ready.
+        let Ok(super::index::Head { t, id }) = serde_json::from_slice(line) else { return };
         let Ok(text) = std::str::from_utf8(line) else { return };
-        let Ok(v) = serde_json::from_str::<Value>(text) else { return };
-        let (Some(t), Some(id)) = (v["t"].as_str(), v["id"].as_str()) else { return };
         self.lines.entry(id.to_owned()).or_default().push(text.to_owned());
         if t == "open" && self.opened.insert(id.to_owned()) {
             let ms = id_ms(id);

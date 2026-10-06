@@ -21,9 +21,9 @@ static CACHE: Mutex<Option<HashMap<PathBuf, Arc<Mutex<Segment>>>>> = Mutex::new(
 
 /// What the index needs of a line.
 #[derive(Deserialize)]
-struct Head<'a> {
-    t: &'a str,
-    id: &'a str,
+pub(super) struct Head<'a> {
+    pub t: &'a str,
+    pub id: &'a str,
 }
 
 /// One request's lines in a segment.

@@ -112,7 +112,7 @@ the id.
    day either side of it (a request
    arriving at a day boundary), not in every segment. If it isn't there, the command fails with
    `no record <ID>` (FR-013), the message `records show` gives today.
-3. **Reading a segment from its end**: a segment is read backwards in blocks (64 KiB). Lines are
+3. **Reading a segment from its end**: a segment is read backwards in blocks (16 KiB). Lines are
    folded as they come; a record is complete when its `open` line has been seen. Reading stops
    when `limit` matching complete records older than the cursor are in hand **and** the oldest
    `open` line read is more than 60 s older (by ULID time) than the oldest record kept. The margin
