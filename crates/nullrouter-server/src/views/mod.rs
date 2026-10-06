@@ -12,6 +12,7 @@ use nullrouter_engine::state::Engine;
 use nullrouter_registry::OperatorHome;
 use serde_json::{Value, json};
 
+pub mod accounts;
 pub mod keys;
 
 use crate::operator::{self, CallError};

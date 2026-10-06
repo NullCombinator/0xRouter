@@ -24,7 +24,7 @@ One per read (research R1). Built by a sync function from two inputs and nothing
 
 | View | CLI command | Live ops | `extra` |
 |---|---|---|---|
-| `accounts` | `accounts list [--long]` | `accounts.state` | — |
+| `accounts` | `accounts list [--long]` | `accounts.state` | tokens-file warnings |
 | `quota` | `quota [provider [name]]` | `quota.list` | — |
 | `quota_history` | `quota history` | `quota.checkpoint` (flushes queued poll entries to disk first, as today) | — |
 | `routing` | `routing [target]` | `routing.view` | — |

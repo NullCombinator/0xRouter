@@ -7,11 +7,10 @@ use std::process::ExitCode;
 use clap::Subcommand;
 use nullrouter_cli::signin::{self, SignIn};
 use nullrouter_engine::accounts::{self, Account, Accounts, SecretSource};
-use nullrouter_engine::clock::{parse_rfc3339, rfc3339};
 use nullrouter_engine::signin::SignInHttp;
-use nullrouter_engine::tokens::{self, PersistedState, TokenEntry, TokenStore};
+use nullrouter_engine::tokens;
 use nullrouter_registry::{OperatorHome, SecretString};
-use nullrouter_server::operator;
+use nullrouter_server::views::{self, View};
 use serde_json::{Value, json};
 
 #[derive(Subcommand)]
@@ -161,14 +160,18 @@ fn sign_in(
 
 pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
+    if let Command::List { provider, long } = &cmd {
+        let args = json!({ "provider": provider });
+        let view = super::read(&home, views::accounts::NEEDS, &args, views::accounts::build)?;
+        print_list(&view, *long, as_json);
+        return Ok(ExitCode::SUCCESS);
+    }
     let mut list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
     // What the command did beyond `accounts.toml`, for its line.
     let mut note = None;
     let mut removed = false;
     let (provider, name) = match cmd {
-        Command::List { provider, long } => {
-            return Ok(print_list(&home, &list, provider.as_deref(), long, as_json));
-        }
+        Command::List { .. } => unreachable!("handled above"),
         Command::Signin { provider, name, paste, no_browser, accept_terms_risk } => {
             let browser = !paste && !no_browser && signin::has_display();
             return sign_in(&home, &provider, &name, browser, accept_terms_risk, as_json);
@@ -250,107 +253,6 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     Ok(ExitCode::SUCCESS)
 }
 
-/// An account's state as listed: the running server's when one answers, else what
-/// `accounts.toml` and `tokens.toml` say (the out-of-service states are kept there).
-struct Shown {
-    /// `active`, `refreshing`, `needs_sign_in`, `refused`, `disabled`.
-    state: String,
-    since: Option<String>,
-    reason: Option<String>,
-    /// The state column.
-    text: String,
-}
-
-impl Shown {
-    /// Whether the operator has to sign the account in again (the hint line).
-    fn needs_signin(&self) -> bool {
-        matches!(self.state.as_str(), "needs_sign_in" | "refused")
-    }
-}
-
-/// `2026-10-03T14:02:11Z` → `2026-10-03 14:02` (UTC).
-fn minute(t: &str) -> String {
-    match (t.get(..10), t.get(11..16)) {
-        (Some(d), Some(hm)) => format!("{d} {hm}"),
-        _ => t.to_owned(),
-    }
-}
-
-fn ago(secs: u64) -> String {
-    if secs < 120 { format!("{secs} s") } else { format!("{} min", secs / 60) }
-}
-
-fn shown(a: &Account, live: &Value, stored: Option<&TokenEntry>) -> Shown {
-    let row = live["accounts"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|s| s["provider"] == a.provider.as_str() && s["name"] == a.name.as_str());
-    let text_of = |v: &Value| v.as_str().map(str::to_owned);
-    let (state, since, reason, expires) = match row.filter(|r| r["state"].is_string()) {
-        Some(r) => (
-            text_of(&r["state"]).unwrap_or_default(),
-            text_of(&r["state_since"]),
-            text_of(&r["state_reason"]),
-            text_of(&r["expires_at"]),
-        ),
-        None if a.disabled => ("disabled".into(), None, None, None),
-        None if !a.is_signin() => ("active".into(), None, None, None),
-        None => match stored {
-            None => ("needs_sign_in".into(), None, Some("not signed in".into()), None),
-            Some(e) => {
-                let state = match e.state {
-                    Some(PersistedState::NeedsSignIn) => "needs_sign_in",
-                    Some(PersistedState::Refused) => "refused",
-                    None => "active",
-                };
-                (state.into(), e.state_since.map(rfc3339), e.state_reason.clone(), Some(rfc3339(e.expires_at)))
-            }
-        },
-    };
-    let since_reason = |what: &str| {
-        let mut t = what.to_owned();
-        if let Some(s) = &since {
-            t = format!("{t} since {}", minute(s));
-        }
-        match reason.as_deref().filter(|r| !r.is_empty()) {
-            Some(r) => format!("{t} ({r})"),
-            None => t,
-        }
-    };
-    let text = match state.as_str() {
-        "needs_sign_in" => since_reason("needs sign-in"),
-        "refused" => since_reason("refused by provider"),
-        "refreshing" => {
-            let now = nullrouter_engine::clock::now();
-            match expires.as_deref().and_then(parse_rfc3339).and_then(|t| now.duration_since(t).ok()) {
-                Some(d) => format!("refreshing (token expired {} ago, retrying)", ago(d.as_secs())),
-                None => "refreshing (retrying)".into(),
-            }
-        }
-        "active" => cooling(row),
-        other => other.to_owned(),
-    };
-    Shown { state, since, reason, text }
-}
-
-/// `active`, or the running server's rests: `cooling <model> 12 s, …`.
-fn cooling(row: Option<&Value>) -> String {
-    let rests: Vec<String> = row
-        .and_then(|r| r["cooling"].as_array())
-        .into_iter()
-        .flatten()
-        .map(|c| {
-            format!(
-                "{} {} s",
-                c["model"].as_str().unwrap_or("?"),
-                c["remaining_ms"].as_u64().unwrap_or(0).div_ceil(1000)
-            )
-        })
-        .collect();
-    if rests.is_empty() { "active".into() } else { format!("cooling {}", rests.join(", ")) }
-}
-
 /// Columns padded to their widest cell (header included), two spaces apart; the last
 /// column isn't padded.
 fn table(rows: &[Vec<String>]) -> Vec<String> {
@@ -372,51 +274,15 @@ fn table(rows: &[Vec<String>]) -> Vec<String> {
         .collect()
 }
 
-fn print_list(home: &OperatorHome, list: &Accounts, provider: Option<&str>, long: bool, as_json: bool) -> ExitCode {
-    // Cooldowns and in-memory states live in the running server; without one, the files
-    // say what is kept.
-    let live = operator::call(home, &json!({"op": "accounts.state"})).unwrap_or(Value::Null);
-    // Sign-in accounts show their access token's last four, as keys do (research R5).
-    let tokens = TokenStore::load(home.path()).unwrap_or_else(|e| {
-        eprintln!("warning: {e}");
-        TokenStore::default()
-    });
-    let mut hints = Vec::new();
-    let rows: Vec<_> = list
-        .iter()
-        .filter(|a| provider.is_none_or(|p| a.provider == p))
-        .map(|a| {
-            let t = tokens.get(&a.provider, &a.name).filter(|_| a.is_signin());
-            let secret = match t {
-                Some(t) => t.shown_token(),
-                None if a.is_signin() => "…".to_owned(),
-                None => a.shown_secret(),
-            };
-            let s = shown(a, &live, t);
-            if s.needs_signin() {
-                hints.push(format!("  → run: nullrouter accounts signin {} {}", a.provider, a.name));
-            }
-            json!({
-                "provider": a.provider,
-                "name": a.name,
-                "kind": if a.is_signin() { "signin" } else { "key" },
-                "order": a.order,
-                "priority": a.priority,
-                "secret": secret,
-                "state": s.state,
-                "state_since": s.since,
-                "state_reason": s.reason,
-                "state_text": s.text,
-                "email": t.and_then(|t| t.claims.email.clone()),
-                "tier": t.and_then(|t| t.claims.tier.clone()),
-                "expires_at": t.map(|t| rfc3339(t.expires_at)),
-                "last_refresh_at": t.and_then(|t| t.last_refresh_at.map(rfc3339)),
-            })
-        })
-        .collect();
+fn print_list(view: &View, long: bool, as_json: bool) {
+    // A token file that doesn't load is a warning, in either output.
+    for w in view.extra["warnings"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+        eprintln!("{w}");
+    }
+    let rows: &[Value] = view.json.as_array().map_or(&[], Vec::as_slice);
     if as_json {
-        println!("{:#}", json!(rows));
-        return ExitCode::SUCCESS;
+        println!("{:#}", view.json);
+        return;
     }
     let text = |r: &Value, k: &str| r[k].as_str().unwrap_or("-").to_owned();
     let mut cells =
@@ -444,8 +310,8 @@ fn print_list(home: &OperatorHome, list: &Accounts, provider: Option<&str>, long
             );
         }
     }
-    for h in hints {
-        println!("{h}");
+    // The accounts the operator has to sign in again.
+    for r in rows.iter().filter(|r| matches!(r["state"].as_str(), Some("needs_sign_in" | "refused"))) {
+        println!("  → run: nullrouter accounts signin {} {}", text(r, "provider"), text(r, "name"));
     }
-    ExitCode::SUCCESS
 }

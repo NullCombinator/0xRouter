@@ -11,7 +11,7 @@ For each view (data-model.md, "Views and their live ops"):
 - `build(home, args, live) -> Result<View, ViewError>`: sync. Reads the home's files, takes the
   live answers, and returns the view. Changes no state (FR-006).
   - `args`: the command's arguments (filters, target, NAME, flags such as `--long`).
-  - `live`: for each op in `NEEDS`, the answer, or "no server"; plus `running`.
+  - `live`: for each op in `NEEDS`, the answer, or "no server"; plus `running`. A refusal (`ok: false`) is kept as the answer, and a view that must fail on it calls `Live::ok`; a socket error is an answer `{"ok":false,"error":"operator socket: …"}`.
 - `View { json, extra }` (research R3). `json` is what `--json` prints.
 - `ViewError` carries the exact message and exit code the CLI gives today for that failure.
 
@@ -37,5 +37,6 @@ the routes; tests compare their results for every view (research R5).
 | View | Fact | Why the JSON lacks it |
 |---|---|---|
 | `record` | agent key name for the record's key id | `--json` has always carried the id only |
+| `accounts` | `warnings`: a `tokens.toml` that doesn't load, which the CLI prints on stderr in text and `--json` alike | the warning goes to stderr, not into the `--json` rows |
 
 Add a row for each case found while moving the reads.
