@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use nullrouter_engine::accounts::{self, Accounts};
-use nullrouter_engine::files::FileError;
+use nullrouter_engine::files::{self, FileError};
 use nullrouter_engine::identity;
 use nullrouter_engine::journal::records;
 use nullrouter_engine::keys;
@@ -323,6 +323,8 @@ fn signin_report(home: &Path) -> SigninReport {
     };
     // `serve` refuses a tokens.toml readable by others (as accounts.toml).
     check_mode(tokens::path(home), true, &mut r);
+    // As `keys.toml`: `serve` refuses a dashboard.toml readable by others (spec 009).
+    check_mode(home.join(files::DASHBOARD_FILE), true, &mut r);
     check_mode(home.join(tokens::LOCK), false, &mut r);
     check_mode(home.join(identity::INSTALL_ID_FILE), false, &mut r);
     check_mode(home.join(records::LOCK_FILE), false, &mut r);
@@ -486,6 +488,33 @@ mod tests {
             assert_eq!((*level, *subject), (want_level, want_subject), "{text}");
             assert!(text.starts_with(prefix), "{text:?} should start with {prefix:?}");
         }
+    }
+
+    /// `dashboard.toml` with a loose mode is an error `serve` refuses to start with, on Settings.
+    #[test]
+    fn a_shared_dashboard_file_is_a_settings_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let token = files::DashboardToken {
+            digest: Some(files::DashboardToken::digest_of("nrd_x")),
+            issued: Some("2026-10-05T11:50:00Z".into()),
+        };
+        token.save(dir.path()).unwrap();
+        let home = OperatorHome::new(dir.path());
+        let clean = build(&home, &json!({}), &Live::none()).unwrap();
+        assert!(!clean.json["notices"].to_string().contains("dashboard.toml"), "0600 is quiet");
+
+        std::fs::set_permissions(dir.path().join(files::DASHBOARD_FILE), std::fs::Permissions::from_mode(0o644))
+            .unwrap();
+        let view = build(&home, &json!({}), &Live::none()).unwrap();
+        let n = view.json["notices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|n| n["text"].as_str().unwrap().contains("dashboard.toml"))
+            .expect("a finding for dashboard.toml");
+        assert_eq!(level_subject(n), ("error", "settings"));
+        assert!(n["text"].as_str().unwrap().contains("has mode 644, expected 0600; run `chmod 600"), "{n}");
     }
 
     #[test]

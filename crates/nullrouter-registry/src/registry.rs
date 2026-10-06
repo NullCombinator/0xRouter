@@ -9,8 +9,9 @@ use crate::load::{LoadReport, WithheldCredential, style_carriers};
 use crate::lookup::{Catalog, derive_model_name};
 use crate::resolve::NotFound;
 use crate::schema::{
-    CapabilityKind, CapabilitySection, ContentKind, Endpoint, Model, ModelKind, ModelType, PipelineSettings,
-    ProviderEntity, ProviderSettings, RoutingSettings, SectionModel, ServerSettings, StyleFile, WireFormat,
+    CapabilityKind, CapabilitySection, ContentKind, DashboardSettings, Endpoint, Model, ModelKind, ModelType,
+    PipelineSettings, ProviderEntity, ProviderSettings, RoutingSettings, SectionModel, ServerSettings, StyleFile,
+    WireFormat,
 };
 use crate::validate::FieldPath;
 
@@ -92,6 +93,8 @@ pub struct RuntimeSettings {
     pub allow_private_endpoints: bool,
     pub server: ServerSettings,
     pub pipeline: PipelineSettings,
+    /// `[dashboard]` (spec 009).
+    pub dashboard: DashboardSettings,
     /// `[routing]`, with target keys written as unified names or `provider-id/model`.
     pub routing: RoutingSettings,
 }

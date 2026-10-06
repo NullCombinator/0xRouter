@@ -1215,6 +1215,7 @@ name = "nullrouter-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "nullrouter-dashboard",
  "nullrouter-engine",
  "nullrouter-registry",
  "nullrouter-server",
@@ -1244,7 +1245,10 @@ dependencies = [
  "serde_json",
  "sha2",
  "subtle",
+ "tempfile",
  "tokio",
+ "tower",
+ "tracing",
 ]
 
 [[package]]

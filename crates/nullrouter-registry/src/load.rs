@@ -475,6 +475,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
         allow_private_endpoints: config.allow_private_endpoints,
         server: config.server.clone(),
         pipeline: config.pipeline,
+        dashboard: config.dashboard.clone(),
         routing: RoutingSettings {
             amortization: config.routing.amortization,
             amortization_for: outcome.amortization_for,
