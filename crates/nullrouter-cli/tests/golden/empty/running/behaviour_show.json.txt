@@ -1,0 +1,9 @@
+exit: 0
+--- stdout
+{
+  "break_behaviour": {
+    "value": "restart",
+    "default": true
+  }
+}
+--- stderr

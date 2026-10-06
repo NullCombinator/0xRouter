@@ -13,6 +13,7 @@ use nullrouter_registry::{OperatorHome, RegistryHandle};
 use serde_json::{Value, json};
 
 pub mod accounts;
+pub mod behaviour;
 pub mod check;
 pub mod keys;
 pub mod model;

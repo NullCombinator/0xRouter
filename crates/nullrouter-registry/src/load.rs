@@ -340,6 +340,17 @@ fn bundled(
     if errors.is_empty() { Ok(out) } else { Err(errors) }
 }
 
+/// `config.toml` alone, read and parsed as a startup does; a missing file is the default. The
+/// errors are the ones a startup gives for a config that doesn't load.
+pub fn load_config(home: &OperatorHome) -> Result<OperatorConfig, StartupError> {
+    let file = home.config_file();
+    let src = read_optional(&file).map_err(|e| StartupError { errors: vec![io_error(&file, &e)] })?;
+    match src {
+        Some(src) => parse(&src, &file.display().to_string()).map_err(|errors| StartupError { errors }),
+        None => Ok(OperatorConfig::default()),
+    }
+}
+
 /// Builds a full snapshot from `home`.
 pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Registry, Vec<ValidationError>> {
     let styles = styles()?;

@@ -184,7 +184,7 @@ crate's tests, then commit, one read per commit. While moving, look for facts th
 
 ### Tests for User Story 4
 
-- [ ] T039 [P] [US4] Add `behaviour_show` tests to `crates/nullrouter-cli/tests/accounts_keys.rs`:
+- [X] T039 [P] [US4] Add `behaviour_show` tests to `crates/nullrouter-cli/tests/accounts_keys.rs`:
   - a fresh home prints `break_behaviour  restart  (default)`;
   - after `behaviour set-break error_event`, it prints `break_behaviour  error_event`;
   - `--json` gives `{"break_behaviour":{"value","default"}}`;
@@ -193,9 +193,9 @@ crate's tests, then commit, one read per commit. While moving, look for facts th
 
 ### Implementation for User Story 4
 
-- [ ] T040 [US4] Implement `crates/nullrouter-server/src/views/behaviour.rs`: read `config.toml` through `OperatorConfig`, one entry per `[pipeline]` setting with `value` and `default` (data-model.md). No live ops
-- [ ] T041 [US4] Add `Show` to `Command` in `crates/nullrouter-cli/src/cmd/behaviour.rs` (doc line "Show the operator's request-handling defaults and whether each is the default.") and render it per contracts/cli.md
-- [ ] T042 [US4] Add `behaviour` to `crates/nullrouter-server/tests/views_routes.rs`, and its goldens to `crates/nullrouter-cli/tests/read_golden.rs` (bless only the new files)
+- [X] T040 [US4] Implement `crates/nullrouter-server/src/views/behaviour.rs`: read `config.toml` through `OperatorConfig`, one entry per `[pipeline]` setting with `value` and `default` (data-model.md). No live ops
+- [X] T041 [US4] Add `Show` to `Command` in `crates/nullrouter-cli/src/cmd/behaviour.rs` (doc line "Show the operator's request-handling defaults and whether each is the default.") and render it per contracts/cli.md
+- [X] T042 [US4] Add `behaviour` to `crates/nullrouter-server/tests/views_routes.rs`, and its goldens to `crates/nullrouter-cli/tests/read_golden.rs` (bless only the new files)
 
 **Checkpoint**: all stories complete.
 

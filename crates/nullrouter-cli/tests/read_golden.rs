@@ -52,6 +52,7 @@ fn reads() -> Vec<Vec<String>> {
         "unified mixed",
         "unified lost",
         "unified nope",
+        "behaviour show",
     ]
     .iter()
     .map(|c| c.split(' ').map(str::to_owned).collect())

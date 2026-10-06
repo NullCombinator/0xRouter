@@ -1,0 +1,4 @@
+exit: 0
+--- stdout
+break_behaviour  restart  (default)
+--- stderr
