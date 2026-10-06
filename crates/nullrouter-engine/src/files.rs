@@ -126,7 +126,22 @@ struct RawDashboardFile {
     issued: Option<String>,
 }
 
+/// A dashboard token starts with this, then 43 base64url characters (32 random bytes).
+pub const DASHBOARD_TOKEN_PREFIX: &str = "nrd_";
+
 impl DashboardToken {
+    /// A fresh token and the record to store for it. The token text is the only copy; the record
+    /// holds its digest and the time.
+    pub fn issue() -> (String, Self) {
+        use base64::Engine as _;
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let mut bytes = [0u8; 32];
+        getrandom::fill(&mut bytes).expect("the OS random source is available");
+        let token = format!("{DASHBOARD_TOKEN_PREFIX}{}", URL_SAFE_NO_PAD.encode(bytes));
+        let record = Self { digest: Some(Self::digest_of(&token)), issued: Some(crate::clock::now_rfc3339()) };
+        (token, record)
+    }
+
     /// The digest of `token` as `dashboard.toml` keeps it.
     pub fn digest_of(token: &str) -> String {
         use sha2::{Digest, Sha256};
@@ -179,6 +194,21 @@ impl DashboardToken {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_issued_token_is_nrd_and_43_chars_and_only_its_digest_is_kept() {
+        let (token, record) = DashboardToken::issue();
+        assert!(token.starts_with("nrd_") && token.len() == 4 + 43, "{token}");
+        assert!(token[4..].bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'));
+        assert_eq!(record.digest, Some(DashboardToken::digest_of(&token)));
+        assert!(crate::clock::parse_rfc3339(record.issued.as_deref().unwrap()).is_some());
+        let (other, _) = DashboardToken::issue();
+        assert_ne!(token, other);
+        let dir = tempfile::tempdir().unwrap();
+        record.save(dir.path()).unwrap();
+        let text = fs::read_to_string(dir.path().join(DASHBOARD_FILE)).unwrap();
+        assert!(!text.contains(&token), "the token itself is never stored");
+    }
 
     #[test]
     fn written_files_are_private_and_shared_ones_refused() {

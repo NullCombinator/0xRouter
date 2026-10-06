@@ -12,17 +12,21 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::Router;
+use axum::extract::{Request, State};
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
 use nullrouter_engine::state::Engine;
 use nullrouter_engine::status::DashboardStatus;
 use nullrouter_registry::schema::DashboardSettings;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
+pub mod access;
 pub mod guard;
 pub mod headers;
 pub mod page;
+pub mod pages;
 pub mod time;
 
 /// What every handler shares.
@@ -31,6 +35,10 @@ pub struct Shared {
     /// The version `nullrouter --version` prints, for the sidebar.
     pub version: String,
     pub guard: guard::Guard,
+    /// The `Host` values this dashboard answers to; sign-in also checks `Origin` against it.
+    pub rule: headers::HostRule,
+    /// Wrong tokens since the last right one.
+    pub access: access::Access,
 }
 
 /// A running dashboard (or the record of why there isn't one).
@@ -60,8 +68,9 @@ impl DashboardHandle {
     }
 }
 
-/// Binds `settings.listen` and serves until `shutdown` resolves. The bound state, or the reason
-/// the bind failed, goes to `engine.status` for the operator socket. A bind failure is logged and
+/// Binds `settings.listen` and serves until `shutdown` resolves; with `enabled = false` it binds
+/// nothing and only records that. The bound state, or the reason the bind failed, goes to
+/// `engine.status` for the operator socket. A bind failure is logged and
 /// returned in the handle; it never stops `serve`.
 pub async fn spawn(
     engine: Arc<Engine>,
@@ -69,7 +78,12 @@ pub async fn spawn(
     version: impl Into<String>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> DashboardHandle {
-    let mut status = DashboardStatus { enabled: true, listen: settings.listen.clone(), serving: false, error: None };
+    let mut status =
+        DashboardStatus { enabled: settings.enabled, listen: settings.listen.clone(), serving: false, error: None };
+    if !settings.enabled {
+        engine.status.set_dashboard(status.clone());
+        return DashboardHandle { status, addr: None, task: None };
+    }
     let listener = match TcpListener::bind(&settings.listen).await {
         Ok(l) => l,
         Err(e) => {
@@ -82,8 +96,14 @@ pub async fn spawn(
     let addr = listener.local_addr().ok();
     let port = addr.map_or(0, |a| a.port());
     let host = settings.listen.rsplit_once(':').map_or(settings.listen.as_str(), |(h, _)| h);
-    let shared = Arc::new(Shared { engine: engine.clone(), version: version.into(), guard: guard::Guard::default() });
-    let app = router(shared, headers::HostRule::new(host, port));
+    let shared = Arc::new(Shared {
+        engine: engine.clone(),
+        version: version.into(),
+        guard: guard::Guard::default(),
+        rule: headers::HostRule::new(host, port),
+        access: access::Access::default(),
+    });
+    let app = router(shared);
     status.serving = true;
     engine.status.set_dashboard(status.clone());
     tracing::info!("the dashboard is listening on {}", settings.listen);
@@ -95,14 +115,34 @@ pub async fn spawn(
     DashboardHandle { status, addr, task: Some(task) }
 }
 
-/// Every route, behind the Host and method checks and the response headers.
-pub fn router(shared: Arc<Shared>, rule: headers::HostRule) -> Router {
+/// Every route, behind the Host and method checks and the response headers. Sign-in and the
+/// assets are open; every other path goes through the cookie check first.
+pub fn router(shared: Arc<Shared>) -> Router {
+    let rule = shared.rule.clone();
     Router::new()
-        .fallback(not_built)
+        .route("/signin", get(pages::signin::get).post(pages::signin::post))
+        .fallback(gated)
         .with_state(shared)
         .layer(axum::middleware::from_fn_with_state(rule, headers::enforce))
 }
 
-async fn not_built() -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, "No such page.\n")
+/// Any path but `/signin`: assets need no cookie; the rest redirect to sign in without one.
+async fn gated(State(shared): State<Arc<Shared>>, req: Request) -> Response {
+    let path = req.uri().path();
+    if path.starts_with("/assets/") {
+        return not_built();
+    }
+    match access::gate(&shared.engine, req.headers()) {
+        access::Gate::NoToken => pages::signin::see_other("/signin"),
+        access::Gate::SignedOut => {
+            let wanted = req.uri().path_and_query().map_or(path, |p| p.as_str());
+            pages::signin::see_other(&format!("/signin?next={}", access::encode_component(wanted)))
+        }
+        access::Gate::SignedIn if path == "/" => pages::signin::see_other("/endpoint"),
+        access::Gate::SignedIn => not_built(),
+    }
+}
+
+fn not_built() -> Response {
+    (StatusCode::NOT_FOUND, "No such page.\n").into_response()
 }

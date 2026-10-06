@@ -58,6 +58,9 @@ enum Command {
     /// Agent keys (`keys.toml`).
     #[command(subcommand)]
     Keys(cmd::keys::Command),
+    /// The read-only web dashboard: its token and its state.
+    #[command(subcommand)]
+    Dashboard(cmd::dashboard::Command),
     /// Operator defaults for request handling.
     #[command(subcommand)]
     Behaviour(cmd::behaviour::Command),
@@ -94,6 +97,7 @@ fn main() -> ExitCode {
         Command::Serve { listen } => cmd::serve::run(cli.home, listen),
         Command::Accounts(c) => cmd::accounts::run(cli.home, c, cli.json),
         Command::Keys(c) => cmd::keys::run(cli.home, c, cli.json),
+        Command::Dashboard(c) => cmd::dashboard::run(cli.home, c, cli.json),
         Command::Behaviour(c) => cmd::behaviour::run(cli.home, c, cli.json),
         Command::Records(c) => cmd::records::run(cli.home, c, cli.json),
         Command::Plugins(c) => cmd::plugins::run(cli.home, c, cli.json),

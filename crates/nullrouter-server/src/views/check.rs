@@ -38,7 +38,8 @@ pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, Vi
     let pair = |(p, n): &(String, String)| json!({ "provider": p, "name": n });
     let unmetered = unmetered_windows(&reg);
     let routing = routing_warnings(&reg, handle.home().path());
-    let (endpoint, endpoint_source) = endpoint(live.answer("server.status"), &reg.runtime().server.listen);
+    let status = live.answer("server.status").filter(|a| a["ok"] == true);
+    let (endpoint, endpoint_source) = endpoint(status, &reg.runtime().server.listen);
     let json = json!({
         "home": handle.home().path(),
         "endpoint": endpoint,
@@ -58,7 +59,7 @@ pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, Vi
         "journal": journal,
         "unmetered_windows": unmetered.iter().map(|(p, w)| json!({ "provider": p, "window": w })).collect::<Vec<_>>(),
         "routing_warnings": routing,
-        "notices": notices(handle.home().path(), r, journal.as_ref(), &unmetered, &routing, &s),
+        "notices": notices(handle.home().path(), r, journal.as_ref(), &unmetered, &routing, &s, status),
         "signin": {
             "errors": s.errors,
             "tokens_without_account": s.orphan_tokens.iter().map(pair).collect::<Vec<_>>(),
@@ -140,6 +141,7 @@ fn notices(
     unmetered: &[(String, String)],
     routing: &[String],
     s: &SigninReport,
+    status: Option<&Value>,
 ) -> Vec<Value> {
     let mut out = Vec::new();
     for c in &r.pending_conflicts {
@@ -206,6 +208,12 @@ fn notices(
         let text =
             format!("warning: sign-in account {p}/{n} has no tokens and can't serve; run `{}`", signin_command(p, n));
         out.push(Notice::new("warning", "quota", text));
+    }
+    // A running server whose dashboard is on but couldn't bind; `error` is "<addr>: <reason>".
+    if let Some(d) = status.map(|a| &a["dashboard"]).filter(|d| d["enabled"] == true && d["serving"] == false)
+        && let Some(e) = d["error"].as_str()
+    {
+        out.push(Notice::new("warning", "settings", format!("warning: dashboard not listening: {e}")));
     }
     out.iter().map(Notice::json).collect()
 }
@@ -574,5 +582,36 @@ mod tests {
                 .unwrap_or_else(|| panic!("no {prefix:?} for {subject} after notice {at}: {got:#?}"));
             at += pos + 1;
         }
+    }
+
+    /// A running server whose dashboard couldn't bind is a warning on Settings; a bound one, a
+    /// disabled one, and no server are quiet.
+    #[test]
+    fn a_dashboard_that_could_not_bind_is_a_settings_warning() {
+        let dir = homes::empty();
+        let home = OperatorHome::new(dir.path());
+        let with = |dashboard: Value| {
+            let mut live = Live { running: true, ..Live::none() };
+            live.answers.insert(
+                "server.status",
+                Some(json!({"ok": true, "client_listen": "127.0.0.1:20129", "dashboard": dashboard})),
+            );
+            build(&home, &json!({}), &live).unwrap().json["notices"].to_string()
+        };
+        let failed = with(json!({"enabled": true, "listen": "127.0.0.1:20130", "serving": false,
+                                 "error": "127.0.0.1:20130: Address already in use (os error 98)"}));
+        assert!(
+            failed.contains(r#""subject":"settings","text":"warning: dashboard not listening: 127.0.0.1:20130: Address already in use (os error 98)""#)
+                || failed.contains("warning: dashboard not listening: 127.0.0.1:20130: Address already in use"),
+            "{failed}"
+        );
+        for quiet in [
+            json!({"enabled": true, "listen": "127.0.0.1:20130", "serving": true, "error": null}),
+            json!({"enabled": false, "listen": "127.0.0.1:20130", "serving": false, "error": null}),
+        ] {
+            assert!(!with(quiet).contains("dashboard not listening"));
+        }
+        let stopped = build(&home, &json!({}), &Live::none()).unwrap().json["notices"].to_string();
+        assert!(!stopped.contains("dashboard not listening"), "{stopped}");
     }
 }

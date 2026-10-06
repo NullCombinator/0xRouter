@@ -7,7 +7,6 @@ use std::sync::Arc;
 use nullrouter_engine::maintenance;
 use nullrouter_engine::redact::RedactWriter;
 use nullrouter_engine::state::Engine;
-use nullrouter_engine::status::DashboardStatus;
 use nullrouter_registry::OperatorHome;
 use nullrouter_server::operator;
 use nullrouter_server::serve::{self, App};
@@ -63,33 +62,19 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
         // The dashboard has its own listener and task; a bind failure is recorded, not fatal
         // (spec 009).
         let settings = engine.snapshot().settings().dashboard.clone();
-        let dashboard = if settings.enabled {
-            Some(
-                nullrouter_dashboard::spawn(
-                    engine.clone(),
-                    &settings,
-                    env!("CARGO_PKG_VERSION"),
-                    until_stopped(stopped.clone()),
-                )
-                .await,
-            )
-        } else {
-            engine.status.set_dashboard(DashboardStatus {
-                enabled: false,
-                listen: settings.listen,
-                serving: false,
-                error: None,
-            });
-            None
-        };
+        let dashboard = nullrouter_dashboard::spawn(
+            engine.clone(),
+            &settings,
+            env!("CARGO_PKG_VERSION"),
+            until_stopped(stopped.clone()),
+        )
+        .await;
         let ops = tokio::spawn(operator::serve(engine, socket, until_stopped(stopped)));
         tracing::info!("listening on {listen}");
         let served = serve::run(app, listener, serve::signal()).await;
         let _ = stop.send(true);
         let _ = ops.await;
-        if let Some(dashboard) = dashboard {
-            dashboard.stopped().await;
-        }
+        dashboard.stopped().await;
         let _ = upkeep.await;
         // Every line sent so far is written and synced before the process exits (spec 006).
         let _ = tokio::task::spawn_blocking(move || journal_owner.journal.shutdown()).await;
