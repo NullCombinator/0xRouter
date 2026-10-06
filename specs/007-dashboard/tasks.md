@@ -53,19 +53,21 @@ workspace runs belong to CI or cloud sessions.
 
 ## Phase 2: Foundational (Blocking Prerequisites)
 
+> **Reconciled 2026-10-05**: T004-T010, T012, T038, T040-T042, T044, T046 and T049 were delivered by slice 008 (merged, `b541985`) and are ticked. T011 keeps only its `subject` field. This file is rewritten when the dashboard is shaped again; until then, do not implement from it.
+
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
 ### Shared view layer (R1; no behaviour change, and the CLI's existing tests are the gate)
 
-- [ ] T004 Create `crates/nullrouter-server/src/views/mod.rs`, with a `Live` trait that has two implementations: `Socket(&OperatorHome)` (calls `operator::call`) and `InProcess(&Arc<Engine>)` (calls `operator::handle`). Each view takes `(&OperatorHome, &EngineState snapshot or registry, &dyn Live)` and returns `serde_json::Value`
-- [ ] T005 [P] Move the `accounts list --long` JSON builder (`shown`, `cooling`, the row `json!`, the needs-sign-in hints) from `crates/nullrouter-cli/src/cmd/accounts.rs` to `crates/nullrouter-server/src/views/accounts.rs`. The CLI's `print_list` prints the view
-- [ ] T006 [P] Move the `quota` current-windows JSON builder from `crates/nullrouter-cli/src/cmd/quota.rs` and `crates/nullrouter-cli/src/quota_text.rs` (data part only) to `crates/nullrouter-server/src/views/quota.rs`
-- [ ] T007 [P] Move the `routing [target]` view builder from `crates/nullrouter-cli/src/cmd/routing.rs` and `crates/nullrouter-cli/src/routing_text.rs` (data part only) to `crates/nullrouter-server/src/views/routing.rs`
-- [ ] T008 [P] Move the `records list` and `records show` JSON builders (filter parsing, the "in flight" / "cut short" naming at `records.rs` "What a request with no `close` is called") from `crates/nullrouter-cli/src/cmd/records.rs` to `crates/nullrouter-server/src/views/records.rs`
-- [ ] T009 [P] Move the `providers`, `model` and `plugins list --community` JSON builders from `crates/nullrouter-cli/src/cmd/{providers,model,plugins}.rs` to `crates/nullrouter-server/src/views/{providers,model,plugins}.rs`
-- [ ] T010 [P] Move the `keys list` JSON builder (`id`, `name`, `key: "…last4"`, `created`, `revoked`, `break`) from `crates/nullrouter-cli/src/cmd/keys.rs` to `crates/nullrouter-server/src/views/keys.rs`
-- [ ] T011 [P] Move the `check` JSON builder from `crates/nullrouter-cli/src/cmd/check.rs` to `crates/nullrouter-server/src/views/check.rs`. Give each warning, note and error a `subject` field (`accounts`, `routing`, `models`, `keys`) so pages can pick theirs (FR-019b). The CLI's text output is unchanged
-- [ ] T012 Run `cargo test -p nullrouter-cli -j 2` and `cargo test -p nullrouter-server -j 2`. Every existing expected output passes unchanged (contracts/cli.md "Moved code")
+- [x] T004 Create `crates/nullrouter-server/src/views/mod.rs`, with a `Live` trait that has two implementations: `Socket(&OperatorHome)` (calls `operator::call`) and `InProcess(&Arc<Engine>)` (calls `operator::handle`). Each view takes `(&OperatorHome, &EngineState snapshot or registry, &dyn Live)` and returns `serde_json::Value` _(done in slice 008)_
+- [x] T005 [P] Move the `accounts list --long` JSON builder (`shown`, `cooling`, the row `json!`, the needs-sign-in hints) from `crates/nullrouter-cli/src/cmd/accounts.rs` to `crates/nullrouter-server/src/views/accounts.rs`. The CLI's `print_list` prints the view _(done in slice 008)_
+- [x] T006 [P] Move the `quota` current-windows JSON builder from `crates/nullrouter-cli/src/cmd/quota.rs` and `crates/nullrouter-cli/src/quota_text.rs` (data part only) to `crates/nullrouter-server/src/views/quota.rs` _(done in slice 008)_
+- [x] T007 [P] Move the `routing [target]` view builder from `crates/nullrouter-cli/src/cmd/routing.rs` and `crates/nullrouter-cli/src/routing_text.rs` (data part only) to `crates/nullrouter-server/src/views/routing.rs` _(done in slice 008)_
+- [x] T008 [P] Move the `records list` and `records show` JSON builders (filter parsing, the "in flight" / "cut short" naming at `records.rs` "What a request with no `close` is called") from `crates/nullrouter-cli/src/cmd/records.rs` to `crates/nullrouter-server/src/views/records.rs` _(done in slice 008)_
+- [x] T009 [P] Move the `providers`, `model` and `plugins list --community` JSON builders from `crates/nullrouter-cli/src/cmd/{providers,model,plugins}.rs` to `crates/nullrouter-server/src/views/{providers,model,plugins}.rs` _(done in slice 008)_
+- [x] T010 [P] Move the `keys list` JSON builder (`id`, `name`, `key: "…last4"`, `created`, `revoked`, `break`) from `crates/nullrouter-cli/src/cmd/keys.rs` to `crates/nullrouter-server/src/views/keys.rs` _(done in slice 008)_
+- [ ] T011 [P] Add a `subject` field (`accounts`, `routing`, `models`, `keys`) to each warning, note and error in `crates/nullrouter-server/src/views/check.rs`, so pages can pick their own. _(The move of the `check` builder was done in slice 008; only this field remains.)_
+- [x] T012 Run `cargo test -p nullrouter-cli -j 2` and `cargo test -p nullrouter-server -j 2`. Every existing expected output passes unchanged (contracts/cli.md "Moved code") _(done in slice 008)_
 
 ### Home files and config
 
@@ -185,14 +187,14 @@ detail.
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T038 [P] [US3] Write `crates/nullrouter-engine/tests/records_page.rs`: the newest-first read with `limit` and `before` returns exactly what the full scan returns after the same filter, sort and truncate, over multiple segments and with in-flight records merged
+- [x] T038 [P] [US3] Write `crates/nullrouter-engine/tests/records_page.rs`: the newest-first read with `limit` and `before` returns exactly what the full scan returns after the same filter, sort and truncate, over multiple segments and with in-flight records merged _(done in slice 008)_
 - [ ] T039 [P] [US3] Write `crates/nullrouter-dashboard/tests/cli_agreement.rs::routing`: `/routing` vs `routing --json` (pace, share, deficit, priority, quota source, each window) and the routing and journal `check` items. `::records`: `/records` with each filter (provider, account, agent, model, reason, since) vs `records list --json` with the same filters. Paging via `before` vs `records list --before`. `/records/<id>` vs `records show --json` for each fixture record. "usage not reported", "in flight" and "cut short" appear in the CLI's words, and an invalid `since` shows the CLI's error
 
 ### Implementation for User Story 3
 
-- [ ] T040 [US3] Add the newest-first read with early stop to `records::read` in `crates/nullrouter-engine/src/journal/records.rs` (segments newest first, stop at `limit` after `before`) and the `before` filter field (R9)
-- [ ] T041 [US3] Add `before` to the `records.list` op in `crates/nullrouter-server/src/operator.rs` and `--before <ID>` to `records list` in `crates/nullrouter-cli/src/cmd/records.rs`
-- [ ] T042 [P] [US3] Add the Criterion bench `records_page_100k` in `crates/nullrouter-engine/benches/` (100k records, 50 per page, newest page and a deep page). Record the baseline locally in `specs/007-dashboard/bench-baseline.md`
+- [x] T040 [US3] Add the newest-first read with early stop to `records::read` in `crates/nullrouter-engine/src/journal/records.rs` (segments newest first, stop at `limit` after `before`) and the `before` filter field (R9) _(done in slice 008)_
+- [x] T041 [US3] Add `before` to the `records.list` op in `crates/nullrouter-server/src/operator.rs` and `--before <ID>` to `records list` in `crates/nullrouter-cli/src/cmd/records.rs` _(done in slice 008)_
+- [x] T042 [P] [US3] Add the Criterion bench `records_page_100k` in `crates/nullrouter-engine/benches/` (100k records, 50 per page, newest page and a deep page). Record the baseline locally in `specs/007-dashboard/bench-baseline.md` _(done in slice 008)_
 - [ ] T043 [US3] Implement `crates/nullrouter-dashboard/src/pages/routing.rs` (`/routing`: amortization window, per target and account the routing view, the routing and journal `check` items, the first page of records) and `crates/nullrouter-dashboard/src/pages/records.rs` (`/records`: filter form, 50 per page, "Older" link with `before`; `/records/<id>`: every attempt with account, outcome, class, reason, TTFT and total, the placement reason and its values, usage, dropped fields) (FR-021, FR-022, FR-026)
 
 **Checkpoint**: the operator can tell from the dashboard why each request went where it did.
@@ -209,7 +211,7 @@ with members and limits notes, the load report, and the "not built yet" entries.
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T044 [P] [US4] Write `crates/nullrouter-cli/tests/unified.rs`: `unified` text and `--json` per contracts/cli.md (members in order with upstream, limits notes, `dropped`), `unified <name>`, exit 2 with `resolve`'s message for an unknown name, and the empty-home message
+- [x] T044 [P] [US4] Write `crates/nullrouter-cli/tests/unified.rs`: `unified` text and `--json` per contracts/cli.md (members in order with upstream, limits notes, `dropped`), `unified <name>`, exit 2 with `resolve`'s message for an unknown name, and the empty-home message _(done in slice 008)_
 - [ ] T045 [P] [US4] Write `crates/nullrouter-dashboard/tests/cli_agreement.rs::models`:
   - `/models` vs `providers --json`, `plugins list --community --json`, `unified --json`, and the models-subject `check --json` items;
   - `/models/<provider>/<model>` vs `model <provider> <model> --json` for each model of each active provider;
@@ -218,7 +220,7 @@ with members and limits notes, the load report, and the "not built yet" entries.
 
 ### Implementation for User Story 4
 
-- [ ] T046 [US4] Implement `crates/nullrouter-server/src/views/unified.rs` (data-model.md `unified` shape, reusing `resolve`'s member JSON and `note_json` from `crates/nullrouter-cli/src/cmd/resolve.rs`, moved into the view) and `nullrouter unified [NAME]` in `crates/nullrouter-cli/src/cmd/unified.rs`, registered in `crates/nullrouter-cli/src/main.rs`
+- [x] T046 [US4] Implement `crates/nullrouter-server/src/views/unified.rs` (data-model.md `unified` shape, reusing `resolve`'s member JSON and `note_json` from `crates/nullrouter-cli/src/cmd/resolve.rs`, moved into the view) and `nullrouter unified [NAME]` in `crates/nullrouter-cli/src/cmd/unified.rs`, registered in `crates/nullrouter-cli/src/main.rs` _(done in slice 008)_
 - [ ] T047 [US4] Implement `crates/nullrouter-dashboard/src/pages/models.rs`: providers with model types and their models linking to `/models/<provider>/<model>`, plugins with state, community plugins with fit, unified models with kind and ordered members, dropped unified models, limits notes and the other models-subject `check` items. Also the model detail page (FR-023)
 - [ ] T048 [P] [US4] Implement `crates/nullrouter-dashboard/src/pages/not_built.rs`: the Model tests and Combos pages per R13 (FR-025)
 
@@ -234,7 +236,7 @@ with members and limits notes, the load report, and the "not built yet" entries.
 
 ### Tests for User Story 5 ⚠️
 
-- [ ] T049 [P] [US5] Extend `crates/nullrouter-cli/tests/accounts_keys.rs` with `behaviour show`: text `break_behaviour  restart  (default)`; after `behaviour set-break error_event`, `error_event` without `(default)`; and `--json` `{"break_behaviour":{"value","default"}}`
+- [x] T049 [P] [US5] Extend `crates/nullrouter-cli/tests/accounts_keys.rs` with `behaviour show`: text `break_behaviour  restart  (default)`; after `behaviour set-break error_event`, `error_event` without `(default)`; and `--json` `{"break_behaviour":{"value","default"}}` _(done in slice 008)_
 - [ ] T050 [P] [US5] Write `crates/nullrouter-dashboard/tests/cli_agreement.rs::keys`: `/keys` vs `keys list --json` and `behaviour show --json`, the keys-subject `check` items, revoked shown with its time, "default" for keys without their own behaviour with the operator default shown once, and no key text beyond `…last4`
 
 ### Implementation for User Story 5

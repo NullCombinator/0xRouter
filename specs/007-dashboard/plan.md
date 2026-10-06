@@ -9,6 +9,8 @@ plan decision that contradicts a confirmed ledger row means stop and revisit the
 
 ## Summary
 
+> **Reconciled 2026-10-05**: the shared view layer and the new CLI reads moved to slice 008 and are merged. This plan covers what remains (token and access, style, pages, gates) and is rewritten when the dashboard is shaped again.
+
 A read-only, server-rendered dashboard served by `nullrouter serve` on its own loopback port
 (`127.0.0.1:20130`, on by default), behind a dashboard token issued by the CLI and carried in an
 HttpOnly, SameSite=Strict cookie. It has four pages (accounts and quota; routing and requests;
@@ -126,10 +128,10 @@ crates/
 │   ├── tests/                       # access, isolation, cli_agreement, style_guide, secrets
 │   └── benches/pages.rs
 ├── nullrouter-server/src/
-│   ├── views/                       # NEW: moved --json builders + unified, behaviour (R1)
-│   └── operator.rs                  # + dashboard.status, records.list before
+│   ├── views/                       # exists (slice 008): --json builders + unified, behaviour (R1)
+│   └── operator.rs                  # + dashboard.status (records.list before: slice 008)
 ├── nullrouter-engine/src/
-│   ├── records.rs / journal/        # newest-first read with early stop (R9)
+│   ├── records.rs / journal/        # newest-first read with early stop (R9; slice 008)
 │   └── files.rs                     # dashboard.toml load/save
 ├── nullrouter-registry/src/schema/config.rs   # [dashboard] table, loopback rule
 └── nullrouter-cli/src/cmd/
@@ -148,9 +150,9 @@ server → engine → registry. `CLAUDE.md`'s workspace table gains the new crat
 
 ## Phases for tasks
 
-1. **Views move** (no behaviour change). The CLI's tests are the gate.
-2. **New CLI reads**: `unified`, `behaviour show`, `records list --before`, the newest-first read
-   with its bench.
+1. ~~**Views move**~~ (no behaviour change). Done in slice 008 (merged `b541985`), except the `subject` field on check items (T011).
+2. ~~**New CLI reads**~~: `unified`, `behaviour show`, `records list --before`, the newest-first read
+   with its bench. Done in slice 008.
 3. **Token and access**: `dashboard.toml`, `dashboard token/status`, the `[dashboard]` config,
    the listener in `serve`, sign-in, cookie, Host and CSP checks, the delay.
 4. **Style guide**: extraction from `ref/9router`, `tokens.toml`, the generated `tokens.css`, the
