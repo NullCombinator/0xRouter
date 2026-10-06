@@ -10,7 +10,7 @@
 of two). In clarify, plan and analyze, an answer that contradicts a confirmed row of that brief's
 ledger means stop and revisit the brief.
 
-**Replaces** spec 007 (`specs/007-dashboard`, four-page layout), which is retired. Its open task
+**Replaces** spec 007 (four-page layout), retired to `specs/briefs/superseded/007-dashboard/`. Its open task
 T011 (a `subject` on each `check` item) is carried into FR-024. Its plan's dashboard token and
 cookie decisions (research R6 to R8, open Low L1) carry over to this slice's plan.
 

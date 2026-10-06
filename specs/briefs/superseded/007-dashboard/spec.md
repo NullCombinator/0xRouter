@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Scope brief**: [specs/briefs/2026-10-05-dashboard-v1-superseded.md](../briefs/2026-10-05-dashboard-v1-superseded.md). In
+**Scope brief**: [specs/briefs/2026-10-05-dashboard-v1-superseded.md](../../2026-10-05-dashboard-v1-superseded.md). In
 clarify and plan, an answer that contradicts a confirmed row of that brief's ledger means stop and
 revisit the brief.
 

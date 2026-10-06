@@ -80,7 +80,7 @@ The `dark:` classes in the source are dropped.
 
 ## Corrections this extraction made to slice 007's documents
 
-- The style-guide contract's example used `radius-card = 10px` from `Card.js:40`. The card radius is **14 px**, at `Card.js:29`. 10 px is the button, input, and tile radius. The example in `specs/007-dashboard/contracts/style-guide.md` needs fixing.
+- The style-guide contract's example used `radius-card = 10px` from `Card.js:40`. The card radius is **14 px**, at `Card.js:29`. 10 px is the button, input, and tile radius. The example in `specs/briefs/superseded/007-dashboard/contracts/style-guide.md` needs fixing.
 - The faint grid behind pages is `.landing-grid` in `app/globals.css` (about lines 464 to 471): 40 px cells of 1 px lines in the brand color at 8% opacity. A soft coral glow, `.dot-grid-bg` (lines 451 to 456), also exists. Both are decoration; they are listed under Page below.
 
 ## Page
