@@ -143,9 +143,7 @@ fn operator_files(home: &OperatorHome) -> Result<(Accounts, Keys, DashboardToken
 
 fn assemble(
     registry: Arc<Registry>,
-    mut accounts: Accounts,
-    keys: Keys,
-    dashboard: DashboardToken,
+    (mut accounts, keys, dashboard): (Accounts, Keys, DashboardToken),
     redactor: Arc<SharedRedactor>,
     tokens: Arc<TokenCells>,
     live_models: Arc<LiveModels>,
@@ -211,9 +209,7 @@ impl Engine {
         let shared_redactor = Arc::new(SharedRedactor::new(Redactor::for_state(&accounts, &tokens)));
         let (state, report) = assemble(
             registry.snapshot(),
-            accounts,
-            keys,
-            dashboard,
+            (accounts, keys, dashboard),
             shared_redactor.clone(),
             tokens.clone(),
             live_models.clone(),
@@ -311,9 +307,7 @@ impl Engine {
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let (state, report) = assemble(
             self.registry.snapshot(),
-            accounts,
-            keys,
-            dashboard,
+            (accounts, keys, dashboard),
             self.shared_redactor.clone(),
             self.tokens.clone(),
             self.live_models.clone(),

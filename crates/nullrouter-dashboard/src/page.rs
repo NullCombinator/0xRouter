@@ -239,7 +239,7 @@ mod tests {
         let (_dir, engine) = engine();
         let err = build(&engine, &[Want::new(ViewName::Record, json!({"id": "rq_nope"}))]).await.unwrap_err();
         let PageError::View(e) = err else { panic!("{err:?}") };
-        assert_eq!(e.code, 2);
+        assert_eq!(e.code, 1, "the view's code for an unknown record");
         assert!(e.message.contains("rq_nope"), "{}", e.message);
     }
 }
