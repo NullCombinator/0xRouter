@@ -3,6 +3,7 @@ schema = 1
 id = "volcengine-ark"
 category = "apikey"
 alias = "volcengine-ark"
+logo = "volcengine-ark.png"
 aliases = ["ark"]
 ui_alias = "ark"
 

@@ -3,6 +3,7 @@ schema = 1
 id = "searchapi"
 category = "apikey"
 alias = "searchapi"
+logo = "searchapi.png"
 
 [auth]
 kind = "apikey"

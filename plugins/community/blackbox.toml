@@ -3,6 +3,7 @@ schema = 1
 id = "blackbox"
 category = "apikey"
 alias = "blackbox"
+logo = "blackbox.png"
 aliases = ["bb"]
 ui_alias = "bb"
 transport = { base_url = "https://api.blackbox.ai/v1/chat/completions", thinking_format = "openai" }

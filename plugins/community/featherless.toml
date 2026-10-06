@@ -3,6 +3,7 @@ schema = 1
 id = "featherless"
 category = "apikey"
 alias = "featherless"
+logo = "featherless.png"
 aliases = ["fl"]
 ui_alias = "fl"
 transport = { base_url = "https://api.featherless.ai/v1/chat/completions", validate_url = "https://api.featherless.ai/v1/models" }

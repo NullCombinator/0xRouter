@@ -3,6 +3,7 @@ schema = 1
 id = "cloudflare-ai"
 category = "freeTier"
 alias = "cloudflare-ai"
+logo = "cloudflare-ai.png"
 aliases = ["cf"]
 ui_alias = "cf"
 transport = { base_url = "https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/v1/chat/completions", thinking_format = "openai" }

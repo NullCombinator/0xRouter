@@ -3,6 +3,7 @@ schema = 1
 id = "searxng"
 category = "freeTier"
 alias = "searxng"
+logo = "searxng.png"
 
 [auth]
 kind = "none"

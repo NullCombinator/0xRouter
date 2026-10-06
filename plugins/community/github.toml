@@ -4,6 +4,7 @@ id = "github"
 category = "oauth"
 requires = ["9router-executor:github"]
 alias = "gh"
+logo = "github.png"
 ui_alias = "gh"
 
 [transport]

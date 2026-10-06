@@ -3,6 +3,7 @@ schema = 1
 id = "comfyui"
 category = "apikey"
 alias = "comfyui"
+logo = "comfyui.png"
 requires = ["9router-image:comfyui"]
 
 [[models]]

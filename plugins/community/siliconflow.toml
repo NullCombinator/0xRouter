@@ -3,6 +3,7 @@ schema = 1
 id = "siliconflow"
 category = "apikey"
 alias = "siliconflow"
+logo = "siliconflow.png"
 transport = { base_url = "https://api.siliconflow.com/v1/chat/completions", validate_url = "https://api.siliconflow.com/v1/models", thinking_format = "openai" }
 
 [[models]]

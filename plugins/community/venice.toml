@@ -3,6 +3,7 @@ schema = 1
 id = "venice"
 category = "apikey"
 alias = "venice"
+logo = "venice.png"
 aliases = ["vn"]
 ui_alias = "venice"
 passthrough_models = true

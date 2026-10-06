@@ -3,6 +3,7 @@ schema = 1
 id = "mistral"
 category = "apikey"
 alias = "mistral"
+logo = "mistral.png"
 
 [transport]
 base_url = "https://api.mistral.ai/v1/chat/completions"

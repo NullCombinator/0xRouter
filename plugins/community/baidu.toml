@@ -3,6 +3,7 @@ schema = 1
 id = "baidu"
 category = "apikey"
 alias = "qianfan"
+logo = "baidu.png"
 aliases = ["qianfan", "ernie", "baidu-qianfan"]
 ui_alias = "qianfan"
 transport = { base_url = "https://qianfan.baidubce.com/v2/chat/completions", validate_url = "https://qianfan.baidubce.com/v2/models" }

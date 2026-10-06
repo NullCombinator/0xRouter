@@ -3,6 +3,7 @@ schema = 1
 id = "jina-reader"
 category = "apikey"
 alias = "jina-reader"
+logo = "jina-reader.png"
 
 [auth]
 kind = "apikey"

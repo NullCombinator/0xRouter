@@ -4,6 +4,7 @@ id = "grok-web"
 category = "webCookie"
 requires = ["9router-executor:grok-web"]
 alias = "grok-web"
+logo = "grok-web.png"
 aliases = ["gw"]
 ui_alias = "gw"
 passthrough_models = true

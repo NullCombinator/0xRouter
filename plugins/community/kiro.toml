@@ -4,6 +4,7 @@ id = "kiro"
 category = "free"
 requires = ["9router-executor:kiro"]
 alias = "kr"
+logo = "kiro.png"
 ui_alias = "kr"
 version_separator_tolerance = true
 

@@ -3,6 +3,7 @@ schema = 1
 id = "edge-tts"
 category = "freeTier"
 alias = "edge-tts"
+logo = "edge-tts.png"
 requires = ["9router-tts:edge-tts"]
 
 [[models]]

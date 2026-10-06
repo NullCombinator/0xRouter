@@ -3,6 +3,7 @@ schema = 1
 id = "ollama"
 category = "freeTier"
 alias = "ollama"
+logo = "ollama.png"
 transport = { base_url = "https://ollama.com/api/chat", validate_url = "https://ollama.com/api/tags", format = "ollama" }
 
 [[models]]

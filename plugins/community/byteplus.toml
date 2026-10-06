@@ -3,6 +3,7 @@ schema = 1
 id = "byteplus"
 category = "freeTier"
 alias = "byteplus"
+logo = "byteplus.png"
 aliases = ["bpm"]
 ui_alias = "bpm"
 

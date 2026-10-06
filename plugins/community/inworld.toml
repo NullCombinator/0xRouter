@@ -3,6 +3,7 @@ schema = 1
 id = "inworld"
 category = "apikey"
 alias = "inworld"
+logo = "inworld.png"
 
 [[capabilities.tts.models]]
 id = "inworld-tts-1.5-mini"

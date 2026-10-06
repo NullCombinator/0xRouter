@@ -4,6 +4,7 @@ id = "commandcode"
 category = "apikey"
 requires = ["9router-executor:commandcode"]
 alias = "commandcode"
+logo = "commandcode.png"
 aliases = ["cmc"]
 ui_alias = "cmc"
 

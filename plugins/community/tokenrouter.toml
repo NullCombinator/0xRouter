@@ -3,6 +3,7 @@ schema = 1
 id = "tokenrouter"
 category = "apikey"
 alias = "tokenrouter"
+logo = "tokenrouter.png"
 aliases = ["tr"]
 ui_alias = "tokenrouter"
 passthrough_models = true

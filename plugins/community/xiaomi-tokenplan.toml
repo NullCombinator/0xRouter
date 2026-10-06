@@ -4,6 +4,7 @@ id = "xiaomi-tokenplan"
 category = "apikey"
 requires = ["9router-executor:xiaomi-tokenplan"]
 alias = "xiaomi-tokenplan"
+logo = "xiaomi-tokenplan.png"
 aliases = ["xmtp"]
 ui_alias = "xmtp"
 

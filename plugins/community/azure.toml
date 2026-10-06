@@ -4,6 +4,7 @@ id = "azure"
 category = "apikey"
 requires = ["9router-executor:azure"]
 alias = "azure"
+logo = "azure.png"
 
 [transport]
 base_url = ""

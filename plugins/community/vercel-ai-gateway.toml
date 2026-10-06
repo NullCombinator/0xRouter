@@ -3,6 +3,7 @@ schema = 1
 id = "vercel-ai-gateway"
 category = "apikey"
 alias = "vercel-ai-gateway"
+logo = "vercel-ai-gateway.png"
 aliases = ["vercel"]
 ui_alias = "vercel"
 passthrough_models = true

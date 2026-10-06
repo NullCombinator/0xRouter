@@ -3,6 +3,7 @@ schema = 1
 id = "jina-ai"
 category = "apikey"
 alias = "jina"
+logo = "jina-ai.png"
 
 [[capabilities.embedding.models]]
 id = "jina-embeddings-v3"

@@ -3,6 +3,7 @@ schema = 1
 id = "glm"
 category = "apikey"
 alias = "glm"
+logo = "glm.png"
 
 [transport]
 base_url = "https://api.z.ai/api/anthropic/v1/messages"

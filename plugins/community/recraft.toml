@@ -3,6 +3,7 @@ schema = 1
 id = "recraft"
 category = "apikey"
 alias = "recraft"
+logo = "recraft.png"
 
 [[models]]
 id = "recraftv3"

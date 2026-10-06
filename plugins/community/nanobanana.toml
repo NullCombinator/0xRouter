@@ -3,6 +3,7 @@ schema = 1
 id = "nanobanana"
 category = "apikey"
 alias = "nanobanana"
+logo = "nanobanana.png"
 aliases = ["nb"]
 ui_alias = "nb"
 transport = { base_url = "https://api.nanobananaapi.ai/v1/chat/completions", validate_url = "https://api.nanobananaapi.ai/v1/models" }

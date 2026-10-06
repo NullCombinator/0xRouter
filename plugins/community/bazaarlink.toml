@@ -3,6 +3,7 @@ schema = 1
 id = "bazaarlink"
 category = "freeTier"
 alias = "bzl"
+logo = "bazaarlink.png"
 aliases = ["bazaar-link"]
 ui_alias = "bzl"
 transport = { base_url = "https://bazaarlink.ai/api/v1/chat/completions", validate_url = "https://bazaarlink.ai/api/v1/models" }

@@ -3,6 +3,7 @@ schema = 1
 id = "playht"
 category = "apikey"
 alias = "playht"
+logo = "playht.png"
 
 [[capabilities.tts.models]]
 id = "PlayDialog"

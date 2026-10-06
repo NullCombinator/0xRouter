@@ -3,6 +3,7 @@ schema = 1
 id = "selfhosted-stt"
 category = "apikey"
 alias = "selfhosted-stt"
+logo = "selfhosted-stt.png"
 
 [[models]]
 id = "whisper-1"

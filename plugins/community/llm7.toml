@@ -3,6 +3,7 @@ schema = 1
 id = "llm7"
 category = "apikey"
 alias = "llm7"
+logo = "llm7.png"
 aliases = ["llm-7"]
 ui_alias = "llm7"
 passthrough_models = true

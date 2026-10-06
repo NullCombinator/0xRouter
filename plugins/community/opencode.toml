@@ -4,6 +4,7 @@ id = "opencode"
 category = "free"
 requires = ["9router-executor:opencode"]
 alias = "oc"
+logo = "opencode.png"
 ui_alias = "oc"
 passthrough_models = true
 models_fetcher = { url = "https://opencode.ai/zen/v1/models", kind = "opencode-free" }

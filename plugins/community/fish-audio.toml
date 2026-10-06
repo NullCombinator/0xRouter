@@ -3,6 +3,7 @@ schema = 1
 id = "fish-audio"
 category = "apikey"
 alias = "fish"
+logo = "fish-audio.png"
 
 [[capabilities.tts.models]]
 id = "s2.1-pro-free"

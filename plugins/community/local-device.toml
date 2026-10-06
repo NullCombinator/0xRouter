@@ -3,6 +3,7 @@ schema = 1
 id = "local-device"
 category = "freeTier"
 alias = "local-device"
+logo = "local-device.png"
 requires = ["9router-tts:local-device"]
 
 [[models]]

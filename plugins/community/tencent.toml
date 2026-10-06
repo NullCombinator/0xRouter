@@ -3,6 +3,7 @@ schema = 1
 id = "tencent"
 category = "apikey"
 alias = "hunyuan"
+logo = "tencent.png"
 aliases = ["hunyuan", "tencent-hunyuan"]
 ui_alias = "hunyuan"
 transport = { base_url = "https://api.hunyuan.cloud.tencent.com/v1/chat/completions", validate_url = "https://api.hunyuan.cloud.tencent.com/v1/models" }

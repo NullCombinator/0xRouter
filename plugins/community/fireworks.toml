@@ -3,6 +3,7 @@ schema = 1
 id = "fireworks"
 category = "apikey"
 alias = "fireworks"
+logo = "fireworks.png"
 transport = { base_url = "https://api.fireworks.ai/inference/v1/chat/completions", validate_url = "https://api.fireworks.ai/inference/v1/models" }
 
 [[models]]

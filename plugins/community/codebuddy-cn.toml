@@ -4,6 +4,7 @@ id = "codebuddy-cn"
 category = "oauth"
 requires = ["9router-executor:codebuddy-cn"]
 alias = "cbcn"
+logo = "codebuddy-cn.png"
 ui_alias = "cbcn"
 
 [transport]

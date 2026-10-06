@@ -3,6 +3,7 @@ schema = 1
 id = "kilo-gateway"
 category = "freeTier"
 alias = "kgw"
+logo = "kilo-gateway.png"
 aliases = ["kilo-gateway", "kilogateway"]
 ui_alias = "kgw"
 transport = { base_url = "https://api.kilo.ai/api/gateway/chat/completions", validate_url = "https://api.kilo.ai/api/gateway/models" }

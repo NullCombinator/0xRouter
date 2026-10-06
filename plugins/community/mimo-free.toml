@@ -2,6 +2,7 @@
 schema = 1
 id = "mimo-free"
 category = "free"
+logo = "mimo-free.png"
 requires = ["9router-executor:mimo-free"]
 ui_alias = "mmf"
 passthrough_models = true

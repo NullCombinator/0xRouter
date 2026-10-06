@@ -3,6 +3,7 @@ schema = 1
 id = "cohere"
 category = "apikey"
 alias = "cohere"
+logo = "cohere.png"
 transport = { base_url = "https://api.cohere.ai/v1/chat/completions", validate_url = "https://api.cohere.ai/v1/models" }
 
 [[models]]

@@ -3,6 +3,7 @@ schema = 1
 id = "sdwebui"
 category = "apikey"
 alias = "sdwebui"
+logo = "sdwebui.png"
 requires = ["9router-image:sdwebui"]
 
 [[models]]

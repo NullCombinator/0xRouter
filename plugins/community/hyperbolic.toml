@@ -3,6 +3,7 @@ schema = 1
 id = "hyperbolic"
 category = "apikey"
 alias = "hyperbolic"
+logo = "hyperbolic.png"
 aliases = ["hyp"]
 ui_alias = "hyp"
 transport = { base_url = "https://api.hyperbolic.xyz/v1/chat/completions", validate_url = "https://api.hyperbolic.xyz/v1/models" }

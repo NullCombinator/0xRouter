@@ -4,6 +4,7 @@ id = "gemini-cli"
 category = "free"
 requires = ["9router-executor:gemini-cli"]
 alias = "gc"
+logo = "gemini-cli.png"
 ui_alias = "gc"
 
 [transport]

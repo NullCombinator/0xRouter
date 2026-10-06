@@ -4,6 +4,7 @@ id = "zed"
 category = "oauth"
 requires = ["9router-executor:zed"]
 alias = "zd"
+logo = "zed.png"
 ui_alias = "zd"
 passthrough_models = true
 models = []

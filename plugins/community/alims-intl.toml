@@ -3,6 +3,7 @@ schema = 1
 id = "alims-intl"
 category = "apikey"
 alias = "alims-intl"
+logo = "alims-intl.png"
 
 [transport]
 base_url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"

@@ -3,6 +3,7 @@ schema = 1
 id = "perplexity-agent"
 category = "apikey"
 alias = "perplexity-agent"
+logo = "perplexity-agent.png"
 aliases = ["pplx-agent", "pplx-responses"]
 ui_alias = "pa"
 passthrough_models = true

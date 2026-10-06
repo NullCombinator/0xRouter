@@ -3,6 +3,7 @@ schema = 1
 id = "sambanova"
 category = "apikey"
 alias = "samba"
+logo = "sambanova.png"
 aliases = ["sambanova-ai"]
 ui_alias = "samba"
 transport = { base_url = "https://api.sambanova.ai/v1/chat/completions", validate_url = "https://api.sambanova.ai/v1/models" }

@@ -4,6 +4,7 @@ id = "qoder"
 category = "oauth"
 requires = ["9router-executor:qoder"]
 alias = "qd"
+logo = "qoder.png"
 ui_alias = "qd"
 
 [transport]

@@ -3,6 +3,7 @@ schema = 1
 id = "huggingface"
 category = "apikey"
 alias = "huggingface"
+logo = "huggingface.png"
 aliases = ["hf"]
 ui_alias = "hf"
 requires = ["9router-image:huggingface"]

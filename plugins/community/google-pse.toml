@@ -3,6 +3,7 @@ schema = 1
 id = "google-pse"
 category = "apikey"
 alias = "gpse"
+logo = "google-pse.png"
 
 [auth]
 kind = "apikey"

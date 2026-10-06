@@ -3,6 +3,7 @@ schema = 1
 id = "claude"
 category = "oauth"
 alias = "cc"
+logo = "claude.png"
 ui_alias = "cc"
 
 [transport]

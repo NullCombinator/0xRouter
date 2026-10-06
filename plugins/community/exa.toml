@@ -3,6 +3,7 @@ schema = 1
 id = "exa"
 category = "apikey"
 alias = "exa"
+logo = "exa.png"
 
 [auth]
 kind = "apikey"

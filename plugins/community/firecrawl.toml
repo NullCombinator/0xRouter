@@ -3,6 +3,7 @@ schema = 1
 id = "firecrawl"
 category = "apikey"
 alias = "firecrawl"
+logo = "firecrawl.png"
 
 [auth]
 kind = "apikey"

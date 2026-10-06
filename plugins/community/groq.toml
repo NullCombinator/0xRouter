@@ -3,6 +3,7 @@ schema = 1
 id = "groq"
 category = "apikey"
 alias = "groq"
+logo = "groq.png"
 
 [transport]
 base_url = "https://api.groq.com/openai/v1/chat/completions"

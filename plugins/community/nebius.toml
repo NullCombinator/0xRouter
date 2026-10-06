@@ -3,6 +3,7 @@ schema = 1
 id = "nebius"
 category = "apikey"
 alias = "nebius"
+logo = "nebius.png"
 transport = { base_url = "https://api.studio.nebius.ai/v1/chat/completions", validate_url = "https://api.studio.nebius.ai/v1/models" }
 
 [[models]]

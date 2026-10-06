@@ -3,6 +3,7 @@ schema = 1
 id = "kilocode"
 category = "oauth"
 alias = "kc"
+logo = "kilocode.png"
 ui_alias = "kc"
 passthrough_models = true
 models_fetcher = { url = "https://api.kilo.ai/api/gateway/models", kind = "openrouter-free" }

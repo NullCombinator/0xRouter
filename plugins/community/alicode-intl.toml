@@ -3,6 +3,7 @@ schema = 1
 id = "alicode-intl"
 category = "apikey"
 alias = "alicode-intl"
+logo = "alicode-intl.png"
 
 [transport]
 base_url = "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions"

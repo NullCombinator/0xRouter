@@ -3,6 +3,7 @@ schema = 1
 id = "deepgram"
 category = "apikey"
 alias = "deepgram"
+logo = "deepgram.png"
 aliases = ["dg"]
 ui_alias = "dg"
 transport = { base_url = "https://api.deepgram.com/v1/listen" }

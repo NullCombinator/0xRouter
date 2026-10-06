@@ -3,6 +3,7 @@ schema = 1
 id = "chutes"
 category = "apikey"
 alias = "chutes"
+logo = "chutes.png"
 aliases = ["ch"]
 ui_alias = "ch"
 transport = { base_url = "https://llm.chutes.ai/v1/chat/completions", validate_url = "https://llm.chutes.ai/v1/models" }

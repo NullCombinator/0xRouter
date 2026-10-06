@@ -4,6 +4,7 @@ id = "perplexity-web"
 category = "webCookie"
 requires = ["9router-executor:perplexity-web"]
 alias = "perplexity-web"
+logo = "perplexity-web.png"
 aliases = ["pw"]
 ui_alias = "pw"
 

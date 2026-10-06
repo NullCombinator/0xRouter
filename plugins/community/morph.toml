@@ -3,6 +3,7 @@ schema = 1
 id = "morph"
 category = "apikey"
 alias = "morph"
+logo = "morph.png"
 aliases = ["morphllm"]
 ui_alias = "morph"
 transport = { base_url = "https://api.morphllm.com/v1/chat/completions", validate_url = "https://api.morphllm.com/v1/models" }
