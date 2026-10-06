@@ -1,5 +1,9 @@
 # Scope brief: dashboard (slice A of two)
 
+> **SUPERSEDED 2026-10-06 by [`2026-10-06-dashboard.md`](2026-10-06-dashboard.md).** Rows 2, 5 and 17
+> (new layout, four pages, latency summaries in a later slice) were overridden by the user after the
+> mockups. Kept for history; don't plan from it.
+
 Shaped with `/shape-spec` on 2026-10-05. The user chose the dashboard over Claude's
 recommendation (model tests and latency view), building 004 first, or combos. In
 `/speckit-clarify` and `/speckit-plan`, an answer that contradicts a confirmed row below means
