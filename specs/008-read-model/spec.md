@@ -12,6 +12,21 @@ revisit the brief.
 
 **Input**: User description: "Read model: one shared place that builds what every operator read shows, so the CLI today and the dashboard later show the same facts from the same values. Every CLI read command builds its JSON answer in this shared read model: accounts list, quota (including history), routing, records list and records show, providers, model, plugins list, keys list, check, and resolve. The CLI prints what the read model returns. Each read gives identical values whether it is asked through the operator socket or from inside the running server, because the dashboard will run inside the serve process and every fact it shows must have a CLI twin. Nothing the operator sees today changes: every existing command's text and --json output stays byte for byte the same, and reads keep working with the server stopped exactly as they do now. Three new read-only commands, each with --json: `unified [NAME]` lists every unified model with its kind, ordered members with their upstream ids, limits notes, and dropped models. With no unified models it says so and exits 0; an unknown NAME exits 2 with the message resolve gives. `behaviour show` shows the operator's break behaviour, marked \"(default)\" when it is not set. `records list --before <ID>` pages back through records older than that id. The newest page is read without scanning the whole journal, and an unknown id is an error naming it. A benchmark on a 100,000-record journal measures paging, against a target set in planning. Constraints: read-only views show no more secret text than the CLI shows today (key and token endings only). Plugins stay data, never code. The slice fails if any existing output changes, if any listed read still builds its own value outside the read model, if the socket and in-server answers differ, or if paging is slow on a large journal. Out of scope: `validate` stays outside the read model; it checks a plugin file, not router state → stays as is. Dashboard pages, dashboard token and sign-in, listener, [dashboard] config, style guide → dashboard slice, shaped when the dashboard vision settles. A per-item subject field on check results → dashboard slice. Any command that changes state; whether the dashboard ever writes stays open → later. Latency view (median and 95th percentile, trends) → its own slice after the dashboard. Usage over a chosen period → later, likely with latency. Agents panel and harness tags on keys → later, with the dashboard vision. Estimated cost; whether prices are plugin data or core stays open → later. Scope brief: specs/briefs/2026-10-05-read-model.md"
 
+## Clarifications
+
+### Session 2026-10-05
+
+- Q: When the home's files and the running server differ (an edit not applied yet, or a request
+  the server knows about that isn't on disk yet), where should a read take each fact from? → A:
+  The same sources by both routes: the home's files for what lives in files, and the running
+  server's live answer for live-only facts, whichever route asks. Both routes agree by
+  construction. After a bad edit, both show the files (with `check`'s error) while the server
+  keeps serving the old version; a request appears once it is on disk, as in the CLI today.
+- Q: Some reads show facts in their text that their `--json` lacks today (for example
+  `records show` prints an agent key's name; its `--json` has only the key id). Where should such
+  a fact live? → A: In the read's answer, with the `--json` output unchanged. The text and any
+  future page render it from the answer; `--json` keeps printing exactly what it prints today.
+
 ## User Scenarios & Testing *(mandatory)*
 
 The operator is the person who runs `nullrouter serve` and manages its accounts, keys and
@@ -46,8 +61,8 @@ obtained from inside a running server over the same state are identical.
    exactly as before: facts from the home's files are shown, and facts that need the running
    server are shown as unavailable in the same words as today.
 3. **Given** a running server, **When** a read is asked the CLI's way (home files, plus the
-   operator socket for live facts) and from inside the server, over the same loaded state,
-   **Then** the two answers are identical.
+   operator socket for live facts) and from inside the server (the same home files, plus the
+   server's live answer without the socket), **Then** the two answers are identical.
 4. **Given** a read's text output shows a fact the `--json` output does not carry today (for
    example a key's name next to its id), **When** the read model answers, **Then** the answer
    carries that fact too, and the `--json` output is still unchanged.
@@ -136,9 +151,13 @@ from it, and a dashboard needs a CLI twin for it.
 
 ### Edge Cases
 
-- The home's files changed since the server last loaded them (an edit not yet applied). The CLI
-  reads files, so it may show the edit before the server does, as today. The CLI and in-server
-  answers are compared over the same loaded state; a pending edit is not a disagreement.
+- The home's files changed since the server last loaded them (an edit not yet applied, or one the
+  server refused). Both routes read the files, so both show the edit, and `check` shows any load
+  error, while the server keeps serving what it loaded before.
+- A request the server is handling has not reached the disk yet. Both routes read records from
+  disk, so neither lists it until it is written, as `records list` behaves today. `records show`
+  asks the running server first for the freshest copy of a request still in flight, by both
+  routes, as it does today.
 - The server stops while a read is running. The read answers as it would with the server stopped,
   the same way the command behaves today.
 - A record id passed to `--before` was pruned. It names no record, so the command fails naming
@@ -166,10 +185,14 @@ from it, and a dashboard needs a CLI twin for it.
   returns and MUST NOT build any of these answers itself.
 - **FR-002**: Each read's answer MUST carry every fact that command's text output shows, so text
   and `--json` are two renderings of one answer. Where the text shows a fact the `--json` output
-  does not carry today, the answer carries it and the `--json` output stays as it is (FR-004).
-- **FR-003**: Each read MUST give an identical answer whether it is asked the CLI's way (the
-  home's files, plus the operator socket for facts only a running server has) or from inside the
-  running server, over the same loaded state.
+  does not carry today (such as an agent key's name in `records show`), the answer carries it and
+  the `--json` output stays as it is (FR-004). No front end looks such a fact up on its own.
+- **FR-003**: Each read MUST give an identical answer whether it is asked the CLI's way or from
+  inside the running server. Both routes MUST take each fact from the same source: the home's
+  files for what lives in files (accounts, keys, plugins, unified models, settings, records, quota
+  history), and the running server's live answer for facts only it has (account states and
+  cooldowns, the routing view's live figures, journal health). The CLI asks for live facts through
+  the operator socket; the in-server route asks the server directly.
 - **FR-004**: The text and `--json` output of every existing command MUST stay byte for byte the
   same, including error messages and exit codes.
 - **FR-005**: Every listed read MUST keep working with the server stopped exactly as it does now:
@@ -237,10 +260,6 @@ from it, and a dashboard needs a CLI twin for it.
 
 ## Assumptions
 
-- "The CLI's way" for reads that need no running server (`providers`, `model`, `plugins list`,
-  `resolve`, `unified`, `behaviour show`, and the file-backed parts of others) means reading the
-  home's files, as today. The in-server route reads the server's loaded state. They are compared
-  over the same loaded state (Edge Cases).
 - The dashboard will run inside the `serve` process (recorded direction, 2026-10-05). This slice
   only makes the in-server route available and tested; nothing uses it outside tests yet.
 - Record ids keep their current form; "older than an id" follows the journal's newest-first
