@@ -23,7 +23,8 @@ dropped unified model opus: member provider xx was skipped
 
 - Member and note lines have the form `resolve <name>` prints them today.
 - `--json`: the `unified` view (data-model.md).
-- With NAME: only that model, and no `dropped` lines. Exit 2 if it isn't loaded, with the message
+- With NAME: only that model, and no `dropped` lines. A dropped unified model isn't loaded, so its
+  name behaves like any unknown name. Exit 2 if it isn't loaded, with the message
   `resolve` gives for that name (stderr, `not found: …`), and for `--json` the same `{"kind":"not_found","error"}`
   object `resolve` prints.
 - No unified models: `no unified models; declare one with [[unified_model]] in config.toml`,

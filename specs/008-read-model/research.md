@@ -107,7 +107,9 @@ the id.
    record ids are ULIDs, sorted descending within a segment and segment by segment, so a record is
    older than the cursor when its id sorts below it.
 2. **Finding the cursor**: the ULID's time part gives the instant the id was made, at arrival. The
-   cursor's record is looked for in that day's segment and the day either side of it (a request
+   cursor's record is looked for in that UTC day's segment (segments are named by the first ten
+   characters of the record's RFC 3339 UTC `arrived`, `day_of` in `journal/records.rs`) and the
+   day either side of it (a request
    arriving at a day boundary), not in every segment. If it isn't there, the command fails with
    `no record <ID>` (FR-013), the message `records show` gives today.
 3. **Reading a segment from its end**: a segment is read backwards in blocks (64 KiB). Lines are

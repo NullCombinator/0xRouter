@@ -95,6 +95,7 @@ crates/nullrouter-server/src/
 crates/nullrouter-server/tests/
 ├── views_routes.rs       # both routes, every view (R5)
 └── secrets.rs            # extended (R9)
+crates/nullrouter-engine/src/testkit/homes.rs     # fixture homes shared by the CLI and server tests
 crates/nullrouter-engine/src/journal/records.rs   # Filter.before, tail reading (R6)
 crates/nullrouter-engine/tests/records_page.rs
 crates/nullrouter-engine/benches/records_page.rs

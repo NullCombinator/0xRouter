@@ -18,7 +18,7 @@ One per read (research R1). Built by a sync function from two inputs and nothing
 |---|---|---|
 | Home files | read by the view from the operator home | Registry-backed views load the registry from files, as the CLI does today (R2). |
 | Live answers | one per operator op the view declares | CLI: `operator::call` over the socket. In-server: `operator::handle(engine, req).await`. |
-| `running` | whether a server answered | In-server: always true. Names unfinished records "in flight" or "cut short". |
+| `running` | whether the socket accepts a connection, checked even when the view needs no op | In-server: always true. Names unfinished records "in flight" or "cut short". |
 
 ### Views and their live ops
 

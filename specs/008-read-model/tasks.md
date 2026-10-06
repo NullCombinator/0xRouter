@@ -37,7 +37,7 @@ commit.
 
 ### The byte-for-byte gate (research R4)
 
-- [ ] T003 Write fixture-home builders in `crates/nullrouter-cli/tests/common/homes.rs`, built through the CLI and the engine's `testkit` with a pinned clock and fixed ids. The homes cover:
+- [ ] T003 Write fixture-home builders in `crates/nullrouter-engine/src/testkit/homes.rs` (declared in `crates/nullrouter-engine/src/testkit/mod.rs`, behind the existing `testkit` feature), so the CLI's and the server's tests use the same homes. They write the home's files through the engine's and registry's own APIs (not by running the CLI), with a pinned clock and fixed ids. The homes cover:
   - every account kind and state (key, env-var key, signed-in, needs sign-in, disabled, cooling down);
   - unified models: one whose members differ in `context_length`, one dropped because its member's plugin was skipped;
   - bundled, installed and community plugins;
@@ -65,8 +65,8 @@ commit.
   - `ViewError { message: String, code: u8 }`, carrying the CLI's exact message and exit code;
   - `Live { answers: BTreeMap<&'static str, Option<Value>>, running: bool }`, where `None` means "no server".
 - [ ] T008 In `crates/nullrouter-server/src/views/mod.rs`, add the two route helpers:
-  - `fetch_socket(home, needs, args) -> Live`, which uses `operator::call` per op and treats a refused connection as "no server";
-  - `async fn fetch_in_process(engine, needs, args) -> Live`, which uses `operator::handle` with `running = true`.
+  - `fetch_socket(home, needs, args) -> Live` (the CLI route), which uses `operator::call` per op and treats a refused connection as "no server". It sets `running` by connecting to the socket, as today's `server_runs` in `crates/nullrouter-cli/src/cmd/records.rs` does, even when `needs` is empty;
+  - `async fn fetch_in_process(engine, needs, args) -> Live` (the in-server route), which uses `operator::handle` with `running = true`.
 
   Each builds an op's request from the view's arguments (for example `routing.view` with `target`, `quota.list` with `provider`/`name`). Unit tests use a fake answer map.
 - [ ] T009 Add `async fn run_in_process<F>(engine, needs, args, build: F)` to `crates/nullrouter-server/src/views/mod.rs`. It fetches with `fetch_in_process`, then calls the sync `build` in `tokio::task::spawn_blocking` (constitution: no blocking I/O on the executor)
@@ -84,7 +84,7 @@ each move, and `cargo test -p nullrouter-server -j 2 --test views_routes` passes
 
 ### Tests for User Story 1
 
-- [ ] T010 [US1] Write `crates/nullrouter-server/tests/views_routes.rs` (research R5). It reuses the fixture homes of T003: move the builders into the engine's `testkit`, or a shared dev-only module both crates can reach, without changing the goldens. For each view moved so far, it starts a `testkit` server, builds the view by both routes, and asserts `json` and `extra` are equal. Self-changing fields are compared within the elapsed seconds, as research R5 says. Each later move task adds its view to this test
+- [ ] T010 [US1] Write `crates/nullrouter-server/tests/views_routes.rs` (research R5). It uses the fixture homes of T003 (`nullrouter_engine::testkit::homes`). For each view moved so far, it starts a `testkit` server, builds the view by both routes, and asserts `json` and `extra` are equal. Self-changing fields are compared within the elapsed seconds, as research R5 says. Each later move task adds its view to this test
 
 ### Implementation for User Story 1
 

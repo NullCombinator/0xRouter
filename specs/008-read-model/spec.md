@@ -197,8 +197,9 @@ from it, and a dashboard needs a CLI twin for it.
   same, including error messages and exit codes.
 - **FR-005**: Every listed read MUST keep working with the server stopped exactly as it does now:
   the same facts shown, and the same words for what is unavailable without a server.
-- **FR-006**: The read model MUST NOT change any state: no file is written and no server state is
-  changed by any read.
+- **FR-006**: No read MAY change what the router knows or does: no account, key, setting, record,
+  routing state or quota figure changes because of a read. A read MAY ask the running server to
+  write to disk what it already holds, as `quota history` does today before reading the history.
 - **FR-007**: No read MAY show more of a secret than the CLI shows today: provider keys and
   sign-in tokens appear only as their last four characters or as the name of the environment
   variable that holds them, and agent keys only as their last four characters. Plugins MUST
@@ -233,7 +234,8 @@ from it, and a dashboard needs a CLI twin for it.
   behaviour setting), and its answer. The answer is a value from which both the text and the JSON
   output are rendered.
 - **Live facts**: the part of an answer that only a running server knows (account states and
-  cooldowns, in-flight records, the routing view's current pace and deficits, journal health).
+  cooldowns, the freshest copy of an unfinished request for `records show`, the routing view's
+  current pace and deficits, journal health).
   Without a server they are reported as unavailable.
 - **Record page**: a run of records in newest-first order, bounded by an optional `before` id and
   an optional limit, after the listing's filters.
