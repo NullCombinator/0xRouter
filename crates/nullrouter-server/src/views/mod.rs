@@ -14,6 +14,8 @@ use serde_json::{Value, json};
 
 pub mod accounts;
 pub mod keys;
+pub mod model;
+pub mod providers;
 pub mod quota;
 pub mod records;
 pub mod routing;

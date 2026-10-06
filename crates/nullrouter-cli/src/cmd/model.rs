@@ -1,34 +1,24 @@
+//! `nullrouter model <provider> <model>`: exit 2 when the provider is unknown.
+
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use nullrouter_registry::OperatorHome;
+use nullrouter_server::views;
 use serde_json::json;
 
 pub(crate) fn run(home: Option<PathBuf>, provider: &str, model: &str, as_json: bool) -> Result<ExitCode, ExitCode> {
-    let reg = crate::open(home)?.snapshot();
-    let info = match reg.model(provider, model) {
-        Ok(info) => info,
-        Err(e) => {
-            if as_json {
-                println!("{:#}", json!({ "kind": "not_found", "error": e.to_string() }));
-            } else {
-                eprintln!("not found: {e}");
-            }
-            return Ok(ExitCode::from(2));
+    let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
+    let args = json!({"provider": provider, "model": model});
+    let out = super::read(&home, views::model::NEEDS, &args, views::model::build)?.json;
+    if out["kind"] == "not_found" {
+        if as_json {
+            println!("{out:#}");
+        } else {
+            eprintln!("not found: {}", out["error"].as_str().unwrap_or_default());
         }
-    };
-    let provider_id = reg.provider(provider).map(|p| p.id.as_str()).unwrap_or(provider);
-    let out = json!({
-        "provider": provider_id,
-        "model": model,
-        "declared": info.declared,
-        "name": info.name,
-        "kind": info.kind.map(|k| k.as_str()),
-        "target_format": info.target_format.map(|f| f.as_str()),
-        "supported_formats": info.supported_formats.map(|f| f.iter().map(|x| x.as_str()).collect::<Vec<_>>()),
-        "quota_family": info.quota_family,
-        "strip": info.strip.map(|s| s.iter().map(|x| x.as_str()).collect::<Vec<_>>()),
-        "upstream_id": info.upstream_id,
-    });
+        return Ok(ExitCode::from(2));
+    }
     if as_json {
         println!("{out:#}");
     } else {
