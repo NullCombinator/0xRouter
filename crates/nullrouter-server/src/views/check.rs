@@ -461,6 +461,7 @@ mod tests {
             &[("grok-cli".into(), "prepaid".into())],
             &["anthropic/main is pay-as-you-go".into()],
             &signin,
+            None,
         );
         let kinds: Vec<(&str, &str, &str)> = got
             .iter()
