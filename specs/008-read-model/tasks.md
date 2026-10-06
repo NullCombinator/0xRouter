@@ -203,11 +203,13 @@ crate's tests, then commit, one read per commit. While moving, look for facts th
 
 ## Phase 7: Polish & Cross-Cutting
 
-- [ ] T043 [P] Document `unified`, `behaviour show` and `records list --before` in `docs/operator-config.md`, in the style of the existing command sections
-- [ ] T044 [P] Add `views` to the `nullrouter-server` row of the workspace table in `CLAUDE.md` ("… operator socket, read model (`views`)") and `unified` to the `nullrouter-cli` row's command list
-- [ ] T045 Run `cargo fmt --all --check`, then `cargo clippy -p <crate> --all-targets -j 2 -- -D warnings` and `cargo test -p <crate> -j 2` for `nullrouter-engine`, `nullrouter-server` and `nullrouter-cli`, one crate at a time
-- [ ] T046 Walk through `specs/008-read-model/quickstart.md` sections 1–5 and mark each one done or failed in this file
-- [ ] T047 Final golden check: `git diff <T006 commit> -- crates/nullrouter-cli/tests/golden` shows only added files (the new reads), and no existing golden changed (SC-001)
+- [X] T043 [P] Document `unified`, `behaviour show` and `records list --before` in `docs/operator-config.md`, in the style of the existing command sections
+- [X] T044 [P] Add `views` to the `nullrouter-server` row of the workspace table in `CLAUDE.md` ("… operator socket, read model (`views`)") and `unified` to the `nullrouter-cli` row's command list
+- [X] T045 Run `cargo fmt --all --check`, then `cargo clippy -p <crate> --all-targets -j 2 -- -D warnings` and `cargo test -p <crate> -j 2` for `nullrouter-engine`, `nullrouter-server` and `nullrouter-cli`, one crate at a time
+- [X] T046 Walk through `specs/008-read-model/quickstart.md` sections 1–5 and mark each one done or failed in this file
+  - Walk-through, 2026-10-05: 1 done (read_golden and every CLI test green in the T045 run); 2 done (views_routes and secrets green in the server run); 3 done by hand on a scratch home (empty home, behaviour show/set-break, two unified models, `unified nope` exit 2, `unified a --json` equals `resolve a --json`); 4 done (records_page tests green; bench in `bench-baseline.md`; the `--before` forms are pinned by the US2 goldens); 5 done: every listed read calls a view. The CLI's remaining direct `operator::call`/`Accounts::load`/`Keys::load` sites are writes (`accounts`, `keys`, `quota poll`/`checkpoint`/`interval`, `records forget`, `routing` setters, `behaviour set-break`), not reads.
+  - T045 ran locally rather than in CI: engine, server and cli clippy `-D warnings` clean, all tests green. T047: `git diff 66e3a62 -- crates/nullrouter-cli/tests/golden` is 108 added files, none modified.
+- [X] T047 Final golden check: `git diff <T006 commit> -- crates/nullrouter-cli/tests/golden` shows only added files (the new reads), and no existing golden changed (SC-001)
 
 ---
 

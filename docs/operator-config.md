@@ -262,7 +262,13 @@ break_behaviour = "restart"   # restart | error_event
 ```bash
 nullrouter behaviour set-break error_event              # the operator default
 nullrouter keys set-break claude-code-laptop restart    # per key; `default` clears it
+nullrouter behaviour show                               # break_behaviour  restart  (default)
 ```
+
+`behaviour show` reads `config.toml` only and works without a server. It prints each setting
+and marks the ones still at their default; `--json` gives
+`{"break_behaviour":{"value":"restart","default":true}}`. A `config.toml` that doesn't load
+prints the same error `check` gives, exit 1.
 
 ## Private endpoints
 
@@ -403,6 +409,7 @@ No record holds prompt text, a header value or a secret.
 ```bash
 nullrouter records list --limit 20                      # newest first, read from disk
 nullrouter records list --account anthropic/max --reason overflow --since 2026-10-04
+nullrouter records list --limit 20 --before rq_01JAB3…  # the next page, older than that record
 nullrouter records show rq_01JAB3…                     # the decision table and every attempt
 nullrouter records prune --before 2026-09-01            # prints how many were removed
 nullrouter records forget --account anthropic/max       # or --agent KEY
@@ -411,7 +418,11 @@ nullrouter records forget --account anthropic/max       # or --agent KEY
 `records list` filters by `--provider`, `--account P/N`, `--agent KEY`, `--model` (the target
 the client named, its unified model, or the model that served it), `--reason` (a placement
 reason: `warm`, `cold_by_deficit`, `moved_for_capacity`, `left_pay_as_you_go`, `overflow`,
-`last_resort`, `retry`, `fallback`) and `--since`. All `records` commands work without a
+`last_resort`, `retry`, `fallback`) and `--since`. `--before ID` lists only records older than
+that one, after the other filters and before `--limit`, so passing each page's last id as the
+next `--before` walks the whole journal; an id that names no record is `no record ID`, exit 1.
+Paging back reads only the segment holding the cursor and the older ones, and a long-running
+server keeps an in-memory index of each segment it pages through. All `records` commands work without a
 server. With a server running, a request still in flight shows `in progress`; without one,
 a record that never closed shows `interrupted`.
 
@@ -481,6 +492,16 @@ nullrouter resolve sonnet
 #   0. kiro claude-sonnet-4-5 → upstream claude-sonnet-4.5
 #   1. openrouter anthropic/claude-sonnet-4.5 → upstream anthropic/claude-sonnet-4.5
 ```
+
+```bash
+nullrouter unified              # every unified model, then `dropped unified model …` lines
+nullrouter unified sonnet       # one; exit 2 if it isn't loaded
+```
+
+`unified` prints the members and limits notes as `resolve` does, and lists the models a
+skipped plugin made the server drop. `unified NAME --json` prints exactly what `resolve NAME
+--json` prints. With none declared it says `no unified models; declare one with
+[[unified_model]] in config.toml`.
 
 Each member's upstream id is resolved once, at load. Rules:
 
