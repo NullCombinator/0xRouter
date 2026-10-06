@@ -16,6 +16,17 @@ cookie decisions (research R6 to R8, open Low L1) carry over to this slice's pla
 
 **Input**: User description: "Dashboard: a read-only web view of 0router in a browser, so the operator can see their endpoint, keys, providers, quota, routing and requests on pages that look like the dashboard mockups. It is written in Rust, server-rendered with no scripts, and served by the running `nullrouter serve` process on its own port, bound to this machine only. It is on by default. Until the operator issues a dashboard token with `nullrouter dashboard token`, its only page names that command; the operator can turn the dashboard off, and `nullrouter dashboard status` shows its state. The browser asks for the token once; no other page opens without it. The dashboard is look only: every change (accounts, keys, priorities, behaviour, plugins) stays in the CLI. Its look is 9router's: a style guide extracted from 9router's code (colors, type, spacing, component styles) is written into this repo and the styling is built from it, with one light theme, English only, the constant background grid, icons and bright colors. Its sidebar and page names are 9router's (Endpoint & Key, Providers, Combo, Usage, Quota Tracker, and under System: Proxy Pools, Console Log, Settings) under the title \"0Router Proxy\"; this replaces spec 007's four-page layout. Every fact a page shows has a CLI command that shows the same fact, a page shows everything its matching CLI reads show, and every `check` warning, note and error appears on the page it concerns. Each page shows an \"as of\" time in this machine's time zone, named, and the operator reloads to refresh. Endpoint & Key shows the endpoint URL and the agent keys as cards (as `keys list` shows them), and a Client adapters side panel that says client-side adapters aren't built yet. Providers shows provider cards, a detail window per provider with its accounts and all its models under a filter that lists every model kind the plugins declare, and a Provider plugins side panel; the buttons \"Add … Compatible\" and \"Test All\" and the plugin enable, disable and hide switches are disabled and say they aren't built yet or name the CLI command. A plugin may ship a PNG logo, at most 64 KiB and 256 px; the core checks it, and a bad logo is ignored so the plugin still loads with its text icon, and `check` says why. Quota Tracker shows every account with its sign-in status, quota with reset times (polled or estimated), priority, and its pace, share and deficit. Usage shows the Requests table, newest first, 50 at a time, with the reason for each placement, latency and result; a row opens a window with that request's attempts, stay-warm decision and changes. The traffic landscape, the usage stat cards and topology graph, and the period filter appear as slots that say they arrive with the next dashboard slice. Settings shows the operator's behaviour settings, where the data lives, and the dashboard's own status. A round housekeeping button opens a panel that lists the current notices from `check` and the accounts; its chat box is disabled and says it isn't built yet. Combo, Console Log and Proxy Pools are entries that say the feature isn't built yet and name what exists instead. This slice adds `nullrouter dashboard token`, `nullrouter dashboard status` and a subject on each `check` item so notices reach their page. A page never shows a secret or a prompt, plugins see nothing they didn't before, and a fault in the dashboard never slows or breaks client requests. The slice fails if: a page disagrees with the CLI for the same moment; the look visibly departs from the style guide taken from 9router. Visual reference only (where it disagrees with this text, this text wins): docs/dashboard/mockups. Out of scope: changing anything from the dashboard, including plugin switches, adapter review and the housekeeping chat → later; the traffic landscape and gauges, usage totals per period, Est. Cost, the topology graph, the period filter, and the harness tag on keys → the next dashboard slice (summaries and landscape); latency trends over time → the latency slice; extra Usage charts and breakdown tables → later; live auto-refresh → later; side panels on Usage, Quota Tracker and Settings → later; reaching the dashboard from another machine, HTTPS and network binding → later; translations → later; client-side adapters → slice 004; model tests and combos themselves → later, with their own slices; fitted quota weights and leak detection → later; 9router's Token Saver, CLI Tools, Translator, Skills, Media pages and Basic Chat → not planned. Scope brief: specs/briefs/2026-10-05-dashboard.md"
 
+## Clarifications
+
+### Session 2026-10-05
+
+- Q: When this slice ships, which providers should show a real logo on the Providers page rather
+  than a text icon? → A: Every bundled and community plugin that 9router has a logo for ships it,
+  brought in by the generator and shrunk where needed; the rest show their text icon (FR-040a).
+- Q: On each agent key card, the mockup shows "last used" and "requests today", but `keys list`
+  shows neither. Add them to the CLI, or leave them off? → A: `keys list` gains "last used" now
+  and the card shows it; "requests today" is a slot that arrives with slice 2's totals (FR-029a).
+
 ## User Scenarios & Testing *(mandatory)*
 
 This slice has two users:
@@ -343,9 +354,12 @@ plugin loads and its text icon is shown, and `check` names the plugin and the re
   name available on the page, never cut so that two names look the same.
 - **A model kind no plugin declares** (for example "decision" today). It is not in the kind
   filter; it appears once a plugin declares it.
-- **A fact the mockup draws that no CLI read shows** (for example "last used" or "requests today"
-  on a key card, "last response resolved" on a provider). It is not shown. Facts that a later
-  slice adds a CLI read for (the latency and totals of slice 2) are shown in slots instead.
+- **A fact the mockup draws that no CLI read shows.** Where it is cheap and belongs to this slice,
+  the CLI gains it ("last used" on a key, FR-029a; the endpoint URL, FR-020). Where a later slice
+  adds its CLI read ("requests today" on a key card and "last response resolved" on a provider,
+  from slice 2's totals and latency reads), it is shown as a slot. Otherwise it is not shown.
+- **A key with no records** (never used, or its records were pruned or forgotten). Its "last
+  used" is "never", on the card and in `keys list`.
 - **Times.** Every time is shown in this machine's local time zone, and each page names that zone.
   The CLI's UTC times and the page's local times are the same instant.
 
@@ -451,12 +465,17 @@ plugin loads and its text icon is shown, and `check` names the plugin and the re
 **Pages**
 
 - **FR-029**: Endpoint & Key MUST show the endpoint URL agents point at, and one card per agent key
-  with what `keys list` shows (name, id, last four characters, created, revoked, break behaviour).
-  Its Client adapters panel MUST say client-side adapters aren't built yet and show no adapter
+  with what `keys list` shows (name, id, last four characters, created, revoked, break behaviour,
+  last used). Each card's "requests today" MUST be a slot. Its Client adapters panel MUST say client-side adapters aren't built yet and show no adapter
   rows. The traffic landscape MUST be a slot.
-- **FR-030**: Providers MUST show a card per provider, grouped as the mockup groups them, with its
-  logo or text icon and the number and state of its accounts. A card MUST open a window with the
-  provider's accounts and all its models.
+- **FR-029a**: `keys list` MUST gain "last used" for each key: the arrival time of the newest
+  request record made with that key, the same record `records list --agent <key id> --limit 1`
+  lists, or "never" when there is none. It is in the text and machine-readable output.
+- **FR-030**: Providers MUST show a card per provider, grouped into one section per category
+  `providers` shows (today `oauth`, `free`, `freeTier`, `apikey`, `webCookie`), each named as
+  9router names it, with the operator's own plugins under Custom Providers, with its logo or text icon and the number and state of its accounts. A
+  card MUST open a window with the provider's accounts and all its models. The window's "last
+  response" is a slot for slice 2's latency read.
 - **FR-031**: The window's model filter MUST list every model kind the plugins declare, with its
   count for that provider, and no other kind.
 - **FR-032**: Providers' side panel MUST list the bundled plugins, the plugins installed from the
@@ -493,6 +512,9 @@ plugin loads and its text icon is shown, and `check` names the plugin and the re
 
 - **FR-040**: A provider plugin MAY declare a logo: a PNG file of at most 64 KiB and at most 256 px
   wide and 256 px high. Bundled and community plugins may carry one the same way.
+- **FR-040a**: Every bundled and community plugin whose provider has a logo in 9router MUST ship
+  that logo, brought in by the generator from `ref/9router` and shrunk where it breaks a limit so
+  that it passes FR-041. A plugin with no 9router logo shows its text icon.
 - **FR-041**: The core MUST check each declared logo when it loads plugins. A logo that is
   missing, not a PNG, or over a limit MUST be ignored; the plugin MUST still load and serve as
   before, the dashboard shows its text icon, and `check` MUST report the plugin and the reason.
@@ -591,8 +613,9 @@ the user, as long as nothing the user sees changes.
   where the mockup draws it, beside the topology graph slot. *(technical decision)*
 - Dropped unified models and limits notes go on the Combo entry, because it is the page that names
   unified models; slice 1 has no other page that lists them. *(technical decision)*
-- Key cards show what `keys list` shows. The mockup's "last used", "requests today" and harness
-  badge have no twin in this slice; the harness tag arrives in slice 2.
+- Key cards show what `keys list` shows, including "last used" (FR-029a). "Requests today" is a
+  slot for slice 2's totals; the harness badge is left off, and the harness tag arrives in slice 2
+  (brief row 20).
 - Account notices in the housekeeping panel are the account conditions the CLI already shows
   (needs signing in again, cooling down); the panel invents no new kind.
 - SC-005's 1 ms bound and SC-009's 1 second page load carry over from spec 007. *(technical
@@ -608,9 +631,9 @@ the user, as long as nothing the user sees changes.
 - 9router loads its font (Inter) and icon font from Google. The dashboard serves both from the
   binary instead (both licences allow it), or falls back to the style guide's system font stack.
   *(technical decision)*
-- The provider logos in the mockup come from 9router; where bundled and community plugins carry
-  them, each must pass FR-040, and any over a limit is shrunk before it ships. *(technical
-  decision)*
+- The logos come from 9router, whose code is MIT-licensed (FR-040a). A provider's logo is used only
+  to name that provider, as 9router uses it. The generator shrinks any logo over a limit (one is
+  790 KB today); how is a plan decision. *(technical decision)*
 - Client traffic and the dashboard share one process. Isolation means the dashboard's work never
   holds anything a client request waits for, and its work per page is bounded. *(technical
   decision)*
