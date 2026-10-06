@@ -6,6 +6,7 @@ id = "grok-cli"
 category = "apikey"
 alias = "gcli"
 aliases = ["grok-build", "gb"]
+logo = "grok-cli.png"
 
 # The body goes upstream as the client sent it (spec FR-004c): no endpoint-level `force`
 # until live check L3 shows the server needs one. Effort-suffixed model ids carry their

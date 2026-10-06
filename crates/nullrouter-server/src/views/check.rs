@@ -53,6 +53,7 @@ pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, Vi
         "skipped": r.skipped.iter().map(|s| json!({
             "path": s.path, "id": s.id, "errors": s.errors.iter().map(ToString::to_string).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
+        "logos_ignored": r.logos_ignored.iter().map(|l| json!({ "id": l.id, "reason": l.reason })).collect::<Vec<_>>(),
         "dropped_unified_models": r.dropped_unified_models.iter()
             .map(|d| json!({ "name": d.name, "provider": d.provider })).collect::<Vec<_>>(),
         "limits_notes": r.notes.iter().map(note_json).collect::<Vec<_>>(),
@@ -167,6 +168,10 @@ fn notices(
             text.push_str(&format!("\n  {e}"));
         }
         out.push(Notice::new("error", "providers", text));
+    }
+    // A logo that failed the check: the plugin loaded without it (spec 009 research R10).
+    for l in &r.logos_ignored {
+        out.push(Notice::new("note", "providers", format!("note: logo ignored: {}: {}", l.id, l.reason)));
     }
     for d in &r.dropped_unified_models {
         let text = format!("dropped unified model {}: member provider {} was skipped", d.name, d.provider);
@@ -391,7 +396,7 @@ fn signin_command(provider: &str, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use nullrouter_engine::testkit::homes;
-    use nullrouter_registry::{DroppedUnifiedModel, LimitsNote, PluginConflict, WithheldCredential};
+    use nullrouter_registry::{DroppedUnifiedModel, IgnoredLogo, LimitsNote, PluginConflict, WithheldCredential};
 
     use super::*;
 
@@ -431,6 +436,7 @@ mod tests {
                 provider: "gemini-cli".into(),
                 offending_url: "https://evil.example/token".parse().unwrap(),
             }],
+            logos_ignored: vec![IgnoredLogo { id: "crush".into(), reason: "2700 × 1392 px, over 256 px".into() }],
             dropped_unified_models: vec![DroppedUnifiedModel { name: "lost".into(), provider: "broken".into() }],
             notes: vec![LimitsNote {
                 unified: "mixed".into(),
@@ -474,6 +480,7 @@ mod tests {
             ("warning", "providers", "conflict pending: /h/plugins/kiro.toml shadows bundled kiro;"),
             ("warning", "providers", "declined: /h/plugins/kiro.toml (bundled kiro stays active)"),
             ("warning", "providers", "credential WITHHELD: OAuth for gemini-cli will not work"),
+            ("note", "providers", "note: logo ignored: crush: 2700 × 1392 px, over 256 px"),
             ("error", "combo", "dropped unified model lost: member provider broken was skipped"),
             ("note", "combo", "note: unified model mixed: members differ in context_length: a 1, b undeclared"),
             ("warning", "usage", "warning: records not kept since 2026-10-03T14:00:00Z (disk full): 3 requests"),
@@ -567,6 +574,7 @@ mod tests {
             ("conflict pending: ", "providers"),
             ("declined: ", "providers"),
             ("skipped: ", "providers"),
+            ("note: logo ignored: pixel: not a PNG", "providers"),
             ("dropped unified model ", "combo"),
             ("note: unified model ", "combo"),
             ("note: grok-cli reports window ", "quota"),

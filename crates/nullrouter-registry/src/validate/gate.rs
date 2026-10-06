@@ -173,6 +173,9 @@ fn semantic_errors(p: &PluginFile) -> Found {
     if let Some(a) = p.alias.as_deref().filter(|a| !is_token(a)) {
         err(FieldPath::of("alias"), format!("{a:?} must match [a-z0-9][a-z0-9-]*"));
     }
+    if let Some(l) = p.logo.as_deref().filter(|l| !crate::logo::is_file_name(l)) {
+        err(FieldPath::of("logo"), format!("{l:?} {}", crate::logo::NAME_RULE));
+    }
 
     if let Some(t) = &p.transport {
         check_transport(t, &FieldPath::of("transport"), &mut err);

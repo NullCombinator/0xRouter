@@ -1,6 +1,7 @@
 //! The community set (research R19): the providers outside the chosen five, embedded in the
 //! binary (no network) and installed on request. Install runs the gate and the fit check,
-//! then copies the file to `$NULLROUTER_HOME/plugins/`. Fit is re-checked on every load.
+//! then copies the file to `$NULLROUTER_HOME/plugins/`, and its logo to `plugins/logos/` (spec
+//! 009 research R10). Fit is re-checked on every load.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -8,6 +9,7 @@ use std::{fmt, fs, io};
 
 use crate::fit::FitVerdict;
 use crate::load::{self, OperatorHome};
+use crate::logo;
 use crate::validate::ValidationError;
 
 include!(concat!(env!("OUT_DIR"), "/community_plugins.rs"));
@@ -26,6 +28,12 @@ pub struct CommunityPlugin {
 impl CommunityPlugin {
     pub fn file(&self) -> String {
         format!("plugins/community/{}.toml", self.id)
+    }
+
+    /// The logo file the plugin declares, if it is a name the gate accepts.
+    pub fn logo(&self) -> Option<String> {
+        let doc: toml::Table = toml::from_str(self.src).ok()?;
+        doc.get("logo")?.as_str().filter(|name| logo::is_file_name(name)).map(str::to_owned)
     }
 }
 
@@ -97,25 +105,46 @@ pub fn install(id: &str, home: &OperatorHome) -> Result<PathBuf, InstallError> {
     }
     let dir = home.plugins_dir();
     fs::create_dir_all(&dir).map_err(|e| InstallError::Io(dir.clone(), e))?;
-    // Atomic: a load never sees half a file. The temporary name isn't `*.toml`, so it's
-    // never scanned.
-    let tmp = dir.join(format!(".{id}.toml.tmp"));
-    fs::write(&tmp, plugin.src).map_err(|e| InstallError::Io(tmp.clone(), e))?;
-    fs::rename(&tmp, &dest).map_err(|e| InstallError::Io(dest.clone(), e))?;
+    // The logo first, so the load that first sees the plugin finds it. A plugin whose logo
+    // isn't embedded installs without one; the load notes it.
+    if let Some(name) = plugin.logo()
+        && let Some(bytes) = logo::community(&name)
+    {
+        let logos = dir.join(logo::DIR);
+        fs::create_dir_all(&logos).map_err(|e| InstallError::Io(logos.clone(), e))?;
+        write_atomic(&logos, &name, bytes)?;
+    }
+    write_atomic(&dir, &format!("{id}.toml"), plugin.src.as_bytes())?;
     Ok(dest)
 }
 
-/// Removes an installed community plugin's file.
+/// Writes `dir/name` through a temporary file and a rename: a load never sees half a file. The
+/// temporary name starts with `.` and ends in `.tmp`, so it's never scanned.
+fn write_atomic(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), InstallError> {
+    let tmp = dir.join(format!(".{name}.tmp"));
+    let dest = dir.join(name);
+    fs::write(&tmp, bytes).map_err(|e| InstallError::Io(tmp.clone(), e))?;
+    fs::rename(&tmp, &dest).map_err(|e| InstallError::Io(dest, e))
+}
+
+/// Removes an installed community plugin's file, then the logo `install` copied.
 pub fn uninstall(id: &str, home: &OperatorHome) -> Result<PathBuf, InstallError> {
-    if !community().iter().any(|p| p.id == id) {
-        return Err(InstallError::UnknownId(id.to_owned()));
-    }
+    let plugin = community().iter().find(|p| p.id == id).ok_or_else(|| InstallError::UnknownId(id.to_owned()))?;
     let path = installed_path(id, home);
     match fs::remove_file(&path) {
-        Ok(()) => Ok(path),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Err(InstallError::NotInstalled(path)),
-        Err(e) => Err(InstallError::Io(path, e)),
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(InstallError::NotInstalled(path)),
+        Err(e) => return Err(InstallError::Io(path, e)),
     }
+    if let Some(name) = plugin.logo() {
+        let file = home.plugins_dir().join(logo::DIR).join(name);
+        match fs::remove_file(&file) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(InstallError::Io(file, e)),
+        }
+    }
+    Ok(path)
 }
 
 /// Whether `id` is installed in `home`.

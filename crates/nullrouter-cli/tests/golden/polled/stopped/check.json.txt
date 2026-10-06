@@ -13,6 +13,7 @@ exit: 0
   "declined": [],
   "withheld_credentials": [],
   "skipped": [],
+  "logos_ignored": [],
   "dropped_unified_models": [],
   "limits_notes": [],
   "journal": null,
