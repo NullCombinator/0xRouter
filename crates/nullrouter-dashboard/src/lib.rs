@@ -8,6 +8,7 @@
 //! its own task, bounded page builds ([`guard`]), and a bind failure that is only recorded.
 
 use std::future::Future;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::Router;
@@ -35,6 +36,7 @@ pub struct Shared {
 /// A running dashboard (or the record of why there isn't one).
 pub struct DashboardHandle {
     status: DashboardStatus,
+    addr: Option<SocketAddr>,
     task: Option<JoinHandle<()>>,
 }
 
@@ -42,6 +44,12 @@ impl DashboardHandle {
     /// What `server.status` reports.
     pub fn status(&self) -> &DashboardStatus {
         &self.status
+    }
+
+    /// The address the listener bound (the real port when `listen` asked for port 0); `None` when
+    /// the bind failed.
+    pub fn addr(&self) -> Option<SocketAddr> {
+        self.addr
     }
 
     /// Resolves once the listener has stopped (immediately when it never started).
@@ -68,10 +76,11 @@ pub async fn spawn(
             tracing::warn!("the dashboard is not listening on {}: {e}", settings.listen);
             status.error = Some(format!("{}: {e}", settings.listen));
             engine.status.set_dashboard(status.clone());
-            return DashboardHandle { status, task: None };
+            return DashboardHandle { status, addr: None, task: None };
         }
     };
-    let port = listener.local_addr().map_or(0, |a| a.port());
+    let addr = listener.local_addr().ok();
+    let port = addr.map_or(0, |a| a.port());
     let host = settings.listen.rsplit_once(':').map_or(settings.listen.as_str(), |(h, _)| h);
     let shared = Arc::new(Shared { engine: engine.clone(), version: version.into(), guard: guard::Guard::default() });
     let app = router(shared, headers::HostRule::new(host, port));
@@ -83,7 +92,7 @@ pub async fn spawn(
             tracing::warn!("the dashboard stopped: {e}");
         }
     });
-    DashboardHandle { status, task: Some(task) }
+    DashboardHandle { status, addr, task: Some(task) }
 }
 
 /// Every route, behind the Host and method checks and the response headers.

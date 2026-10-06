@@ -1242,6 +1242,7 @@ dependencies = [
  "nullrouter-engine",
  "nullrouter-registry",
  "nullrouter-server",
+ "reqwest",
  "serde_json",
  "sha2",
  "subtle",

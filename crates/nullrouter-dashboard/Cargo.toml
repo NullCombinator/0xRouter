@@ -24,6 +24,7 @@ nullrouter-registry.workspace = true
 [dev-dependencies]
 nullrouter-engine = { workspace = true, features = ["testkit"] }
 tempfile.workspace = true
+reqwest.workspace = true
 tower = { version = "0.5", features = ["util"] }
 
 [lints]
