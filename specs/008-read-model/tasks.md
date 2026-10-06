@@ -106,7 +106,7 @@ crate's tests, then commit, one read per commit. While moving, look for facts th
 - [X] T019 [US1] Move `plugins list [--community]` to `crates/nullrouter-server/src/views/plugins.rs` from `crates/nullrouter-cli/src/cmd/plugins.rs`
 - [X] T020 [US1] Move `resolve <target>` to `crates/nullrouter-server/src/views/resolve.rs` from `crates/nullrouter-cli/src/cmd/resolve.rs`, including `member` and `note_json` as `pub` functions there (US3 reuses them); `not_found` keeps exit code 2
 - [X] T021 [US1] Move `check` to `crates/nullrouter-server/src/views/check.rs` from `crates/nullrouter-cli/src/cmd/check.rs`; live op `routing.health`. Do NOT add a `subject` field (brief row 16)
-- [ ] T022 [US1] Make the startup-error path shared: the registry load failure message (`startup failed:\n…`, exit 1) that `crates/nullrouter-cli/src/main.rs` `open` prints becomes a `ViewError` the registry-backed views return, so both routes report it the same way
+- [X] T022 [US1] Make the startup-error path shared: the registry load failure message (`startup failed:\n…`, exit 1) that `crates/nullrouter-cli/src/main.rs` `open` prints becomes a `ViewError` the registry-backed views return, so both routes report it the same way
 
 ### Gates for User Story 1
 
