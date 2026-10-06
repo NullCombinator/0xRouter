@@ -8,6 +8,8 @@
 //   plugins/community/<id>.toml for every provider except the chosen five, whose schema 2
 //     files in plugins/bundled/ are hand-maintained
 //   tools/gen-bundled/seeds/<id>.json for the chosen five: their evaluated 9router entry
+//   plugins/{bundled,community}/logos/<id>.png and plugins/LOGOS.md: each provider's logo from
+//     ref/9router/public/providers/, or its override in tools/gen-bundled/seeds/logos/
 //   crates/nullrouter-registry/src/schema/oauth_params.rs
 //   crates/nullrouter-registry/src/schema/section_formats.rs
 //   crates/nullrouter-registry/src/credentials/bundled.rs
@@ -18,7 +20,7 @@
 // never dropped silently (R4).
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { register } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -611,8 +613,57 @@ const communityDir = join(ROOT, "plugins", "community");
 rmSync(communityDir, { recursive: true, force: true });
 mkdirSync(communityDir, { recursive: true });
 const seedDir = join(ROOT, "tools", "gen-bundled", "seeds");
-rmSync(seedDir, { recursive: true, force: true });
 mkdirSync(seedDir, { recursive: true });
+// Only the seeds this script writes: seeds/logos/ holds the hand-converted logo overrides.
+for (const f of readdirSync(seedDir)) if (f.endsWith(".json")) rmSync(join(seedDir, f));
+
+// Logos (spec 009 contracts/plugin-logo.md): the override if there is one, else 9router's PNG,
+// held to the four limits the core checks at load. A failing file stops the run, so a new
+// oversized logo in ref/9router needs an override before it ships.
+const LOGO_OVERRIDES = join(seedDir, "logos");
+const logoSource = (id) => {
+  const override = join(LOGO_OVERRIDES, `${id}.png`);
+  if (existsSync(override)) return { path: override, shown: `tools/gen-bundled/seeds/logos/${id}.png (override)` };
+  const ref = join(REF, "public", "providers", `${id}.png`);
+  if (existsSync(ref)) return { path: ref, shown: `ref/9router/public/providers/${id}.png` };
+  return null;
+};
+const logoFault = (bytes) => {
+  if (bytes.length > 65536) return `${Math.ceil(bytes.length / 1024)} KiB, over 64 KiB`;
+  const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (bytes.length < 24 || sig.some((b, i) => bytes[i] !== b) || bytes.toString("latin1", 12, 16) !== "IHDR") {
+    return "not a PNG";
+  }
+  const [w, h] = [bytes.readUInt32BE(16), bytes.readUInt32BE(20)];
+  if (w < 1 || h < 1 || w > 256 || h > 256) return `${w} × ${h} px, over 256 px`;
+  return null;
+};
+const logoRows = [];
+/** Copies `id`'s logo into `dir`/logos/ and returns its file name, or null when it has none. */
+const shipLogo = (id, set, dir) => {
+  const src = logoSource(id);
+  if (!src) return null;
+  const fault = logoFault(readFileSync(src.path));
+  if (fault) {
+    console.error(`generate.mjs: logo ${src.shown}: ${fault}`);
+    process.exit(1);
+  }
+  mkdirSync(join(dir, "logos"), { recursive: true });
+  copyFileSync(src.path, join(dir, "logos", `${id}.png`));
+  logoRows.push(`| \`${id}\` | ${set} | \`${src.shown}\` |`);
+  return `${id}.png`;
+};
+rmSync(join(bundledDir, "logos"), { recursive: true, force: true });
+/** The plugin with `logo` after its alias (or category), where a reader looks for it. */
+const withLogo = (p, logo) => {
+  if (!logo) return p;
+  const out = {};
+  for (const [k, v] of Object.entries(p)) {
+    out[k] = v;
+    if (k === (p.alias !== undefined ? "alias" : "category")) out.logo = logo;
+  }
+  return out;
+};
 for (const p of plugins) {
   if (CHOSEN.includes(p.id)) {
     const seed = `${JSON.stringify({ source: HEADER, plugin: p }, null, 2)}\n`;
@@ -621,15 +672,34 @@ for (const p of plugins) {
       process.exit(1);
     }
     writeFileSync(join(seedDir, `${p.id}.json`), seed);
+    // The bundled plugins carry `logo` by hand; the file is still shipped from here.
+    shipLogo(p.id, "bundled", bundledDir);
     continue;
   }
-  const toml = toToml(p);
+  const toml = toToml(withLogo(p, shipLogo(p.id, "community", communityDir)));
   if (leaks(toml)) {
     console.error(`generate.mjs: secret leaked into ${p.id}.toml`);
     process.exit(1);
   }
   writeFileSync(join(communityDir, `${p.id}.toml`), toml);
 }
+writeFileSync(join(ROOT, "plugins", "LOGOS.md"), `# Provider logos
+
+<!-- ${HEADER} -->
+
+Where each shipped logo comes from, at ref/9router@${SHA}. A logo is 9router's
+\`public/providers/<id>.png\` unless an override exists in \`tools/gen-bundled/seeds/logos/\`.
+The overrides were converted once with ImageMagick, because 9router's file breaks a limit
+(over 64 KiB or 256 px) or is an SVG:
+
+    convert <in> -resize 256x256\\> -strip png:<out>
+
+(\`kimchi.svg\` rasterised at 256 px.) Limits and checks: \`docs/plugins.md\`.
+
+| Provider | Set | Source |
+|---|---|---|
+${logoRows.join("\n")}
+`);
 for (const id of CHOSEN) {
   if (!plugins.some((p) => p.id === id)) {
     console.error(`generate.mjs: chosen provider ${id} is gone from ref/9router`);
