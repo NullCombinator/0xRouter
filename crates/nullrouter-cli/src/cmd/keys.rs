@@ -92,13 +92,14 @@ fn print_list(rows: &Value, as_json: bool) {
     for r in rows.as_array().into_iter().flatten() {
         let s = |k: &str| r[k].as_str().unwrap_or_default().to_owned();
         println!(
-            "{:<12} {:<20} {:<8} {:<26} {:<26} {}",
+            "{:<12} {:<20} {:<8} {:<26} {:<26} {:<11} {}",
             s("id"),
             s("name"),
             s("key"),
             s("created"),
             r["revoked"].as_str().unwrap_or("-"),
-            r["break"].as_str().unwrap_or("default")
+            r["break"].as_str().unwrap_or("default"),
+            r["last_used"].as_str().unwrap_or("never")
         );
     }
 }

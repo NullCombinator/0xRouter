@@ -1,0 +1,812 @@
+# The dashboard's design tokens and components, each traced to the 9router line it comes from
+# (contracts/style-guide.md). tokens.css is generated from this file: NR_BLESS=1 cargo test -p
+# nullrouter-dashboard --test style_guide.
+
+schema = 1
+tailwind = "4.x (ref/9router/package.json)"
+
+[token.color-brand-500]
+value = "#E56A4A"
+source = "src/app/globals.css:21"
+
+[token.color-brand-600]
+value = "#cc5236"
+source = "src/app/globals.css:22"
+
+[token.color-brand-700]
+value = "#a64027"
+source = "src/app/globals.css:23"
+
+[token.color-brand-800]
+value = "#7a2f1d"
+source = "src/app/globals.css:24"
+
+[token.color-primary]
+value = "var(--color-brand-500)"
+source = "src/app/globals.css:28"
+
+[token.color-accent]
+value = "var(--color-brand-500)"
+source = "src/app/globals.css:167"
+
+[token.color-bg]
+value = "#FDFAF6"
+source = "src/app/globals.css:32"
+
+[token.color-bg-alt]
+value = "#F7F3EE"
+source = "src/app/globals.css:33"
+
+[token.color-surface]
+value = "#ffffff"
+source = "src/app/globals.css:34"
+
+[token.color-surface-2]
+value = "#f4f4f5"
+source = "src/app/globals.css:35"
+
+[token.color-surface-3]
+value = "#e7e7e9"
+source = "src/app/globals.css:36"
+
+[token.color-border]
+value = "#e5e7eb"
+source = "src/app/globals.css:40"
+
+[token.color-border-subtle]
+value = "#f1f1f3"
+source = "src/app/globals.css:41"
+
+[token.color-text-main]
+value = "#0a0a0a"
+source = "src/app/globals.css:45"
+
+[token.color-text-muted]
+value = "#6B7280"
+source = "src/app/globals.css:46"
+
+[token.color-text-subtle]
+value = "#9CA3AF"
+source = "src/app/globals.css:47"
+
+[token.color-vibrancy]
+value = "rgba(255, 255, 255, 0.72)"
+source = "src/app/globals.css:311"
+
+[token.color-white]
+value = "#fff"
+source = "src/shared/components/Button.js:6"
+class = "text-white"
+
+[token.color-black-2]
+value = "color-mix(in oklab, #000 2%, transparent)"
+source = "src/app/(dashboard)/dashboard/providers/page.js:393"
+class = "bg-black/[0.02]"
+
+[token.color-black-10]
+value = "color-mix(in oklab, #000 10%, transparent)"
+source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/QuotaTable.js:183"
+class = "border-black/10"
+
+[token.color-black-50]
+value = "color-mix(in oklab, #000 50%, transparent)"
+source = "src/shared/components/Modal.js:50"
+class = "bg-black/50"
+
+[token.color-brand-500-10]
+value = "color-mix(in oklab, var(--color-brand-500) 10%, transparent)"
+source = "src/shared/components/Badge.js:7"
+class = "bg-brand-500/10"
+
+[token.color-brand-500-30]
+value = "color-mix(in oklab, var(--color-brand-500) 30%, transparent)"
+source = "src/shared/components/Card.js:30"
+class = "hover:border-brand-500/30"
+
+[token.color-brand-500-40]
+value = "color-mix(in oklab, var(--color-brand-500) 40%, transparent)"
+source = "src/shared/components/Input.js:43"
+class = "focus:border-brand-500/40"
+
+[token.color-primary-10]
+value = "color-mix(in oklab, var(--color-primary) 10%, transparent)"
+source = "src/shared/components/Sidebar.js:169"
+class = "bg-primary/10"
+
+[token.color-text-muted-60]
+value = "color-mix(in oklab, var(--color-text-muted) 60%, transparent)"
+source = "src/shared/components/Sidebar.js:187"
+class = "text-text-muted/60"
+
+[token.color-green-500]
+value = "oklch(72.3% 0.219 149.579)"
+source = "src/shared/components/Badge.js:41"
+class = "bg-green-500"
+
+[token.color-green-600]
+value = "oklch(62.7% 0.194 149.214)"
+source = "src/shared/components/Badge.js:8"
+class = "text-green-600"
+
+[token.color-green-500-10]
+value = "color-mix(in oklab, var(--color-green-500) 10%, transparent)"
+source = "src/shared/components/Badge.js:8"
+class = "bg-green-500/10"
+
+[token.color-yellow-500]
+value = "oklch(79.5% 0.184 86.047)"
+source = "src/shared/components/Badge.js:42"
+class = "bg-yellow-500"
+
+[token.color-yellow-600]
+value = "oklch(68.1% 0.162 75.834)"
+source = "src/shared/components/Badge.js:9"
+class = "text-yellow-600"
+
+[token.color-yellow-500-10]
+value = "color-mix(in oklab, var(--color-yellow-500) 10%, transparent)"
+source = "src/shared/components/Badge.js:9"
+class = "bg-yellow-500/10"
+
+[token.color-red-500]
+value = "oklch(63.7% 0.237 25.331)"
+source = "src/shared/components/Badge.js:43"
+class = "bg-red-500"
+
+[token.color-red-600]
+value = "oklch(57.7% 0.245 27.325)"
+source = "src/shared/components/Badge.js:10"
+class = "text-red-600"
+
+[token.color-red-500-10]
+value = "color-mix(in oklab, var(--color-red-500) 10%, transparent)"
+source = "src/shared/components/Badge.js:10"
+class = "bg-red-500/10"
+
+[token.color-blue-500]
+value = "oklch(62.3% 0.214 259.815)"
+source = "src/shared/components/Badge.js:44"
+class = "bg-blue-500"
+
+[token.color-blue-600]
+value = "oklch(54.6% 0.245 262.881)"
+source = "src/shared/components/Badge.js:11"
+class = "text-blue-600"
+
+[token.color-blue-500-10]
+value = "color-mix(in oklab, var(--color-blue-500) 10%, transparent)"
+source = "src/shared/components/Badge.js:11"
+class = "bg-blue-500/10"
+
+[token.color-green-500-30]
+value = "color-mix(in oklab, var(--color-green-500) 30%, transparent)"
+source = "src/shared/components/layouts/DashboardLayout.js:12"
+class = "border-green-500/30"
+
+[token.color-red-500-30]
+value = "color-mix(in oklab, var(--color-red-500) 30%, transparent)"
+source = "src/shared/components/layouts/DashboardLayout.js:18"
+class = "border-red-500/30"
+
+[token.color-blue-500-30]
+value = "color-mix(in oklab, var(--color-blue-500) 30%, transparent)"
+source = "src/shared/components/layouts/DashboardLayout.js:29"
+class = "border-blue-500/30"
+
+[token.color-yellow-500-30]
+value = "color-mix(in oklab, var(--color-yellow-500) 30%, transparent)"
+source = "src/app/(dashboard)/dashboard/cli-tools/components/AntigravityToolCard.js:423"
+class = "border-yellow-500/30"
+
+[token.color-gray-500]
+value = "oklch(55.1% 0.027 264.364)"
+source = "src/shared/components/Badge.js:46"
+class = "bg-gray-500"
+
+[token.font-sans]
+value = "'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif"
+source = "src/app/globals.css:199"
+
+[token.font-mono]
+value = "ui-monospace, monospace"
+source = "src/app/globals.css:594"
+
+[token.text-xs]
+value = ".75rem"
+source = "src/shared/components/Button.js:15"
+class = "text-xs"
+
+[token.text-xs-leading]
+value = "calc(1 / 0.75)"
+source = "src/shared/components/Button.js:15"
+class = "text-xs"
+
+[token.text-sm]
+value = ".875rem"
+source = "src/shared/components/Button.js:16"
+class = "text-sm"
+
+[token.text-sm-leading]
+value = "calc(1.25 / 0.875)"
+source = "src/shared/components/Button.js:16"
+class = "text-sm"
+
+[token.text-base]
+value = "1rem"
+source = "src/shared/components/Header.js:291"
+class = "text-base"
+
+[token.text-base-leading]
+value = "1.5"
+source = "src/shared/components/Header.js:291"
+class = "text-base"
+
+[token.text-lg]
+value = "1.125rem"
+source = "src/shared/components/Sidebar.js:127"
+class = "text-lg"
+
+[token.text-lg-leading]
+value = "calc(1.75 / 1.125)"
+source = "src/shared/components/Sidebar.js:127"
+class = "text-lg"
+
+[token.text-xl]
+value = "1.25rem"
+source = "src/app/(dashboard)/dashboard/providers/page.js:628"
+class = "text-xl"
+
+[token.text-xl-leading]
+value = "calc(1.75 / 1.25)"
+source = "src/app/(dashboard)/dashboard/providers/page.js:628"
+class = "text-xl"
+
+[token.text-2xl]
+value = "1.5rem"
+source = "src/shared/components/Header.js:291"
+class = "lg:text-2xl"
+
+[token.text-2xl-leading]
+value = "calc(2 / 1.5)"
+source = "src/shared/components/Header.js:291"
+class = "lg:text-2xl"
+
+[token.text-10]
+value = "10px"
+source = "src/shared/components/Badge.js:15"
+class = "text-[10px]"
+
+[token.text-11]
+value = "11px"
+source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/QuotaTable.js:132"
+class = "text-[11px]"
+
+[token.text-13]
+value = "13px"
+source = "src/shared/components/Sidebar.js:181"
+class = "text-[13px]"
+
+[token.weight-medium]
+value = "500"
+source = "src/shared/components/Input.js:23"
+class = "font-medium"
+
+[token.weight-semibold]
+value = "600"
+source = "src/shared/components/Card.js:46"
+class = "font-semibold"
+
+[token.weight-bold]
+value = "700"
+source = "src/shared/components/ProviderIcon.js:30"
+class = "font-bold"
+
+[token.tracking-tight]
+value = "-0.025em"
+source = "src/shared/components/Sidebar.js:127"
+class = "tracking-tight"
+
+[token.tracking-wider]
+value = "0.05em"
+source = "src/shared/components/Sidebar.js:187"
+class = "tracking-wider"
+
+[token.code-size]
+value = "0.875em"
+source = "src/app/globals.css:593"
+
+[token.code-padding]
+value = "0.1rem 0.35rem"
+source = "src/app/globals.css:591"
+
+[token.icon-default]
+value = "24px"
+source = "src/app/globals.css:336"
+
+[token.icon-page]
+value = "1.5rem"
+source = "src/shared/components/Header.js:287"
+class = "lg:text-2xl"
+
+[token.icon-card]
+value = "20px"
+source = "src/shared/components/Card.js:41"
+class = "text-[20px]"
+
+[token.icon-nav]
+value = "18px"
+source = "src/shared/components/Sidebar.js:175"
+class = "text-[18px]"
+
+[token.icon-badge]
+value = "14px"
+source = "src/shared/components/Badge.js:50"
+class = "text-[14px]"
+
+[token.icon-empty]
+value = "32px"
+source = "src/app/(dashboard)/dashboard/combos/page.js:417"
+class = "text-[32px]"
+
+[token.space-0-5]
+value = "0.125rem"
+source = "src/shared/components/Sidebar.js:160"
+class = "space-y-0.5"
+
+[token.space-1]
+value = "0.25rem"
+source = "src/shared/components/Sidebar.js:167"
+class = "py-1"
+
+[token.space-1-5]
+value = "0.375rem"
+source = "src/shared/components/Badge.js:31"
+class = "gap-1.5"
+
+[token.space-2]
+value = "0.5rem"
+source = "src/shared/components/Sidebar.js:160"
+class = "py-2"
+
+[token.space-2-5]
+value = "0.625rem"
+source = "src/shared/components/Badge.js:16"
+class = "px-2.5"
+
+[token.space-3]
+value = "0.75rem"
+source = "src/shared/components/Card.js:38"
+class = "gap-3"
+
+[token.space-4]
+value = "1rem"
+source = "src/shared/components/Sidebar.js:160"
+class = "px-4"
+
+[token.space-6]
+value = "1.5rem"
+source = "src/shared/components/Sidebar.js:121"
+class = "px-6"
+
+[token.space-8]
+value = "2rem"
+source = "src/app/(dashboard)/dashboard/endpoint/EndpointPageClient.js:720"
+class = "gap-8"
+
+[token.space-10]
+value = "2.5rem"
+source = "src/shared/components/layouts/DashboardLayout.js:98"
+class = "lg:p-10"
+
+[token.space-12]
+value = "3rem"
+source = "src/app/(dashboard)/dashboard/combos/page.js:415"
+class = "py-12"
+
+[token.size-1-5]
+value = "0.375rem"
+source = "src/shared/components/Badge.js:40"
+class = "size-1.5"
+
+[token.size-3]
+value = "0.75rem"
+source = "src/shared/components/Toggle.js:15"
+class = "size-3"
+
+[token.size-4]
+value = "1rem"
+source = "src/shared/components/Toggle.js:15"
+class = "h-4"
+
+[token.size-7]
+value = "1.75rem"
+source = "src/shared/components/Button.js:15"
+class = "h-7"
+
+[token.size-8]
+value = "2rem"
+source = "src/app/(dashboard)/dashboard/providers/page.js:722"
+class = "size-8"
+
+[token.size-9]
+value = "2.25rem"
+source = "src/shared/components/Sidebar.js:123"
+class = "size-9"
+
+[token.size-14]
+value = "3.5rem"
+source = "src/shared/components/Toggle.js:17"
+class = "w-14"
+
+[token.size-16]
+value = "4rem"
+source = "src/app/(dashboard)/dashboard/combos/page.js:416"
+class = "w-16"
+
+[token.size-full]
+value = "100%"
+source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/QuotaTable.js:186"
+class = "h-full"
+
+[token.screen-height]
+value = "100vh"
+source = "src/shared/components/layouts/DashboardLayout.js:41"
+class = "h-screen"
+
+[token.sidebar-width]
+value = "18rem"
+source = "src/shared/components/Sidebar.js:112"
+class = "w-72"
+
+[token.drawer-width]
+value = "400px"
+source = "src/shared/components/Drawer.js:15"
+class = "w-[400px]"
+
+[token.container-7xl]
+value = "80rem"
+source = "src/shared/components/layouts/DashboardLayout.js:99"
+class = "max-w-7xl"
+
+[token.modal-width]
+value = "56rem"
+source = "src/shared/components/Modal.js:24"
+class = "max-w-4xl"
+
+[token.panel-width]
+value = "24rem"
+source = "src/shared/components/Modal.js:20"
+class = "max-w-sm"
+
+[token.modal-body-height]
+value = "calc(85vh - 100px)"
+source = "src/shared/components/Modal.js:102"
+class = "max-h-[calc(85vh-100px)]"
+
+[token.quota-name-width]
+value = "9rem"
+source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/QuotaTable.js:172"
+class = "w-36"
+
+[token.card-min]
+value = "240px"
+source = "src/app/(dashboard)/dashboard/providers/[id]/CompatibleModelsSection.js:170"
+class = "min-w-[240px]"
+
+[token.fr]
+value = "1fr"
+source = "src/shared/components/LanguageSwitcher.js:159"
+class = "1fr"
+
+[token.grid-cols-2]
+value = "repeat(2, minmax(0, 1fr))"
+source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/index.js:1049"
+class = "md:grid-cols-2"
+
+[token.grid-usage]
+value = "minmax(0, 2fr) minmax(280px, 1fr)"
+source = "src/shared/components/UsageStats.js:475"
+class = "lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]"
+
+[token.flex-1]
+value = "1"
+source = "src/shared/components/Header.js:244"
+class = "flex-1"
+
+[token.grid-line]
+value = "1px"
+source = "src/app/globals.css:467"
+
+[token.grid-cell]
+value = "40px"
+source = "src/app/globals.css:469"
+
+[token.grid-opacity]
+value = "0.08"
+source = "src/app/globals.css:470"
+
+[token.border-width]
+value = "1px"
+source = "src/shared/components/Card.js:28"
+class = "border"
+
+[token.radius-brand]
+value = "10px"
+source = "src/app/globals.css:56"
+
+[token.radius-brand-lg]
+value = "14px"
+source = "src/app/globals.css:57"
+
+[token.radius-lg]
+value = "0.5rem"
+source = "src/shared/components/Sidebar.js:167"
+class = "rounded-lg"
+
+[token.radius-full]
+value = "calc(infinity * 1px)"
+source = "src/shared/components/Badge.js:31"
+class = "rounded-full"
+
+[token.radius-button]
+value = "8px"
+source = "src/shared/components/Button.js:15"
+class = "rounded-[8px]"
+
+[token.radius-code]
+value = "4px"
+source = "src/app/globals.css:592"
+
+[token.shadow-soft]
+value = "0 1px 2px 0 rgba(0,0,0,0.04)"
+source = "src/app/globals.css:60"
+
+[token.shadow-warm]
+value = "0 2px 12px -2px rgba(229, 106, 74, 0.18)"
+source = "src/app/globals.css:61"
+
+[token.shadow-focus]
+value = "0 0 0 3px rgba(229,106,74,0.18)"
+source = "src/app/globals.css:67"
+
+[token.shadow-elev]
+value = "inset 0 1px 0 0 rgba(255,255,255,0.8), 0 1px 2px rgba(15,23,42,0.04), 0 12px 36px -8px rgba(15,23,42,0.10)"
+source = "src/shared/components/Modal.js:59"
+class = "shadow-[var(--shadow-elev)]"
+
+[token.shadow-sm]
+value = "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)"
+source = "src/shared/components/Button.js:6"
+class = "shadow-sm"
+
+[token.blur-vibrancy]
+value = "blur(20px)"
+source = "src/app/globals.css:309"
+
+[token.blur-backdrop]
+value = "blur(2px)"
+source = "src/shared/components/Modal.js:50"
+class = "backdrop-blur-[2px]"
+
+[token.opacity-disabled]
+value = "0.5"
+source = "src/shared/components/Button.js:7"
+class = "disabled:opacity-50"
+
+[token.z-modal]
+value = "50"
+source = "src/shared/components/Modal.js:47"
+class = "z-50"
+
+[token.z-panel]
+value = "40"
+source = "src/shared/components/layouts/DashboardLayout.js:74"
+class = "z-40"
+
+[component.page]
+uses = ["color-primary", "font-mono", "text-sm", "text-sm-leading", "space-3", "space-6", "color-text-muted", "text-xs", "text-xs-leading", "weight-medium", "border-width", "color-border"]
+source = "src/app/globals.css:203"
+
+[component.frame]
+uses = ["screen-height", "color-bg", "color-text-main", "font-sans", "text-base", "text-base-leading"]
+source = "src/shared/components/layouts/DashboardLayout.js:41"
+
+[component.grid-bg]
+uses = ["grid-opacity", "color-accent", "grid-line", "grid-cell"]
+source = "src/app/globals.css:465"
+
+[component.icon]
+uses = ["icon-card"]
+source = "src/app/globals.css:332"
+
+[component.sidebar]
+uses = ["sidebar-width", "screen-height", "border-width", "color-border-subtle", "color-vibrancy", "blur-vibrancy", "space-3", "space-4", "space-6", "size-9", "radius-brand", "color-brand-500", "color-brand-700", "shadow-warm", "color-white", "color-text-main", "text-lg", "text-lg-leading", "weight-semibold", "tracking-tight", "color-text-muted", "text-xs", "text-xs-leading", "flex-1", "space-0-5", "space-2", "color-text-muted-60", "tracking-wider"]
+source = "src/shared/components/Sidebar.js:112"
+
+[component.nav-item]
+uses = ["space-3", "space-1", "radius-lg", "color-text-muted", "color-surface-2", "color-text-main", "color-primary", "color-primary-10", "icon-nav", "text-13", "weight-medium"]
+source = "src/shared/components/Sidebar.js:167"
+
+[component.main]
+uses = ["flex-1", "space-8", "container-7xl", "space-10"]
+source = "src/shared/components/layouts/DashboardLayout.js:94"
+
+[component.page-header]
+uses = ["space-3", "space-8", "space-2", "border-width", "color-border-subtle", "color-primary", "icon-page", "flex-1", "text-2xl", "text-2xl-leading", "weight-semibold", "tracking-tight", "color-text-muted", "text-sm", "text-sm-leading", "space-1-5", "color-border", "radius-brand", "color-surface", "text-xs", "text-xs-leading", "icon-badge"]
+source = "src/shared/components/Header.js:230"
+
+[component.notices]
+uses = ["space-2"]
+source = "src/shared/components/layouts/DashboardLayout.js:12"
+
+[component.notice]
+uses = ["space-3", "border-width", "radius-lg", "text-sm", "text-sm-leading", "color-red-500-30", "color-red-500-10", "color-red-600", "color-yellow-500-30", "color-yellow-500-10", "color-yellow-600", "color-blue-500-30", "color-blue-500-10", "color-blue-600"]
+source = "src/shared/components/layouts/DashboardLayout.js:12"
+
+[component.failure]
+uses = ["space-4", "border-width", "color-red-500-30", "radius-lg", "color-red-500-10", "color-red-600", "text-sm", "text-sm-leading"]
+source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/ProviderLimitCard.js:125"
+
+[component.card]
+uses = ["space-6", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-soft", "space-3", "space-4", "space-2", "radius-brand", "color-bg", "color-text-muted", "flex-1", "color-text-main", "text-base", "text-base-leading", "weight-semibold", "text-sm", "text-sm-leading"]
+source = "src/shared/components/Card.js:28"
+
+[component.inset]
+uses = ["space-4", "border-width", "color-border-subtle", "radius-brand", "color-bg"]
+source = "src/shared/components/Card.js:61"
+
+[component.section-bar]
+uses = ["space-3", "space-4", "text-xl", "text-xl-leading", "weight-semibold", "space-2"]
+source = "src/app/(dashboard)/dashboard/providers/page.js:628"
+
+[component.kv]
+uses = ["space-4", "space-2", "border-width", "color-border-subtle", "text-sm", "text-sm-leading", "color-text-muted"]
+source = "src/shared/components/Card.js:76"
+
+[component.button]
+uses = ["space-2", "size-7", "space-3", "border-width", "radius-button", "text-xs", "text-xs-leading", "weight-semibold", "icon-nav", "size-9", "space-4", "radius-brand", "text-sm", "text-sm-leading", "color-brand-500", "color-white", "shadow-sm", "color-brand-600", "color-border", "color-surface-2", "color-text-main", "color-surface-3", "opacity-disabled"]
+source = "src/shared/components/Button.js:35"
+
+[component.control]
+uses = ["space-2"]
+source = "src/shared/components/Input.js:21"
+
+[component.hint]
+uses = ["color-text-muted", "text-xs", "text-xs-leading"]
+source = "src/shared/components/Input.js:61"
+
+[component.switch]
+uses = ["size-8", "size-4", "space-0-5", "radius-full", "color-brand-500", "opacity-disabled", "size-3", "color-white", "shadow-sm"]
+source = "src/shared/components/Toggle.js:20"
+
+[component.input]
+uses = ["space-2-5", "space-3", "border-width", "radius-brand", "color-surface-2", "color-text-main", "text-sm", "text-sm-leading", "color-brand-500-40", "shadow-focus", "opacity-disabled"]
+source = "src/shared/components/Input.js:41"
+
+[component.code]
+uses = ["code-padding", "radius-code", "color-bg-alt", "font-mono", "code-size"]
+source = "src/app/globals.css:589"
+
+[component.truncate]
+uses = []
+source = "src/app/(dashboard)/dashboard/providers/page.js:739"
+
+[component.badge]
+uses = ["space-1-5", "space-1", "space-2-5", "radius-full", "text-xs", "text-xs-leading", "weight-semibold", "size-1-5", "color-gray-500", "color-surface-2", "color-text-muted", "color-brand-500-10", "color-brand-600", "color-brand-500", "color-green-500-10", "color-green-600", "color-green-500", "color-yellow-500-10", "color-yellow-600", "color-yellow-500", "color-red-500-10", "color-red-600", "color-red-500", "color-blue-500-10", "color-blue-600", "color-blue-500"]
+source = "src/shared/components/Badge.js:31"
+
+[component.text-icon]
+uses = ["size-8", "radius-lg", "color-brand-500-10", "color-brand-600", "text-xs", "weight-bold"]
+source = "src/shared/components/ProviderIcon.js:30"
+
+[component.logo]
+uses = ["size-8", "radius-lg"]
+source = "src/app/(dashboard)/dashboard/providers/page.js:731"
+
+[component.meter]
+uses = ["size-1-5", "border-width", "radius-full", "size-full", "color-green-500-10", "color-green-500", "color-yellow-500-10", "color-yellow-500", "color-red-500-10", "color-red-500", "color-black-10"]
+source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/QuotaTable.js:182"
+
+[component.slot]
+uses = ["space-1", "space-6", "border-width", "color-border", "radius-brand-lg", "color-text-muted", "text-sm", "text-sm-leading", "weight-semibold", "color-text-subtle", "text-xs", "text-xs-leading"]
+source = "src/app/(dashboard)/dashboard/combos/page.js:1067"
+
+[component.empty]
+uses = ["space-12", "size-16", "space-4", "radius-full", "color-primary-10", "color-primary", "icon-empty", "space-1", "color-text-main", "text-base", "text-base-leading", "weight-medium", "color-text-muted", "text-sm", "text-sm-leading"]
+source = "src/app/(dashboard)/dashboard/combos/page.js:415"
+
+[component.modal]
+uses = ["z-modal", "space-4", "color-black-50", "blur-backdrop", "modal-width", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-elev", "space-3", "space-2", "space-6", "color-text-main", "text-lg", "text-lg-leading", "weight-semibold", "space-1-5", "radius-brand", "color-text-muted", "color-surface-2", "modal-body-height"]
+source = "src/shared/components/Modal.js:47"
+
+[component.side-panel]
+uses = ["screen-height", "border-width", "color-border-subtle", "color-surface", "drawer-width", "space-3", "space-6", "color-primary", "space-4", "flex-1", "color-text-main", "text-lg", "text-lg-leading", "weight-semibold", "color-text-muted"]
+source = "src/shared/components/Drawer.js:51"
+
+[component.side-section]
+uses = ["space-4", "space-6", "border-width", "color-border-subtle", "space-2", "color-text-muted-60", "text-xs", "text-xs-leading", "weight-semibold", "tracking-wider"]
+source = "src/shared/components/Sidebar.js:187"
+
+[component.floating-button]
+uses = ["space-6", "z-panel", "size-14", "radius-full", "color-brand-500", "color-brand-700", "shadow-warm", "color-white", "color-brand-600", "color-brand-800", "icon-default"]
+source = "src/shared/components/Sidebar.js:123"
+
+[component.house-panel]
+uses = ["space-6", "size-14", "space-3", "z-panel", "panel-width", "modal-body-height", "border-width", "color-border", "radius-brand-lg", "color-surface", "shadow-elev", "space-4", "color-border-subtle", "color-primary", "flex-1", "color-text-main", "text-sm", "text-sm-leading", "weight-semibold", "color-text-muted", "text-xs", "text-xs-leading", "space-1-5", "radius-brand", "color-surface-2", "space-2", "color-text-muted-60", "tracking-wider"]
+source = "src/shared/components/Modal.js:57"
+
+[component.signin]
+uses = ["screen-height", "space-4", "color-bg", "color-text-main", "font-sans", "text-base", "text-base-leading", "panel-width", "space-8", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-elev", "space-3", "text-lg", "text-lg-leading", "weight-semibold", "tracking-tight", "color-text-muted", "text-sm", "text-sm-leading", "color-red-600", "weight-medium"]
+source = "src/shared/components/layouts/AuthLayout.js:19"
+
+[component.quota-filters]
+uses = ["space-1-5", "size-8", "space-2", "border-width", "color-black-10", "radius-lg", "color-black-2", "color-text-main", "text-xs", "text-xs-leading"]
+source = "src/app/(dashboard)/dashboard/providers/page.js:393"
+
+[component.quota-grid]
+uses = ["grid-cols-2", "space-3"]
+source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/index.js:1049"
+
+[component.quota-card]
+uses = ["size-full", "opacity-disabled", "color-red-500-30", "space-2", "space-3", "border-width", "color-black-10", "flex-1", "text-sm", "text-sm-leading", "weight-semibold", "color-text-muted", "text-xs", "text-xs-leading", "text-11", "space-0-5", "text-10", "space-1-5", "color-red-600", "space-1", "color-border-subtle", "quota-name-width", "weight-medium"]
+source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/ProviderLimitCard.js:58"
+
+[component.usage-overview]
+uses = ["space-6", "grid-usage", "space-2", "flex-1"]
+source = "src/shared/components/UsageStats.js:475"
+
+[component.usage-recent]
+uses = ["size-full", "space-3", "color-text-muted", "text-sm", "text-sm-leading", "space-1-5", "space-1", "text-xs", "text-xs-leading", "size-1-5", "radius-full", "color-green-500", "color-red-500", "color-blue-500"]
+source = "src/app/(dashboard)/dashboard/usage/components/UsageTable.js:163"
+
+[component.usage-table]
+uses = ["space-4", "text-sm", "text-sm-leading", "space-1-5", "space-2", "text-xs", "text-xs-leading"]
+source = "src/app/(dashboard)/dashboard/usage/components/UsageTable.js:163"
+
+[component.usage-row]
+uses = []
+source = "src/app/(dashboard)/dashboard/usage/components/UsageTable.js:193"
+
+[component.attempt]
+uses = ["space-1", "space-2", "space-3", "border-width", "color-border-subtle", "radius-lg", "color-bg", "color-green-500-30", "color-red-500-30", "space-4", "color-text-muted-60", "text-xs", "text-xs-leading", "weight-semibold", "tracking-wider", "text-sm", "text-sm-leading", "color-text-subtle", "font-mono", "color-text-muted"]
+source = "src/app/(dashboard)/dashboard/usage/components/RequestDetailsTab.js:58"
+
+[component.provider-grid]
+uses = ["card-min", "fr", "space-4", "space-2"]
+source = "src/app/(dashboard)/dashboard/providers/page.js:632"
+
+[component.provider-card]
+uses = ["space-3", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-soft", "color-text-main", "color-brand-500-30", "shadow-warm", "color-brand-500", "space-1", "text-base", "text-base-leading", "weight-semibold", "space-1-5", "color-text-muted", "text-xs", "text-xs-leading"]
+source = "src/app/(dashboard)/dashboard/providers/page.js:714"
+
+[component.provider-window]
+uses = ["space-6", "space-4", "space-1", "text-2xl", "text-2xl-leading", "weight-semibold", "tracking-tight", "space-2", "color-text-muted", "text-sm", "text-sm-leading", "space-3", "color-text-muted-60", "text-xs", "text-xs-leading", "tracking-wider", "border-width", "color-border-subtle", "radius-lg", "color-bg", "weight-medium"]
+source = "src/shared/components/Modal.js:57"
+
+[component.kind-filter]
+uses = ["space-1-5", "size-7", "space-3", "radius-button", "color-surface-2", "color-text-muted", "text-xs", "text-xs-leading", "weight-medium", "color-text-main", "color-brand-500", "color-white", "color-text-subtle", "text-11"]
+source = "src/shared/components/SegmentedControl.js:20"
+
+[component.model-row]
+uses = ["space-2", "space-3", "border-width", "color-border", "radius-lg", "space-4", "space-1-5", "text-xs", "text-xs-leading"]
+source = "src/app/(dashboard)/dashboard/usage/components/RequestDetailsTab.js:58"
+
+[component.plugin-row]
+uses = ["space-3", "space-1-5", "flex-1", "text-sm", "text-sm-leading", "weight-semibold", "color-text-muted", "text-11", "space-2", "text-xs", "text-xs-leading"]
+source = "src/app/(dashboard)/dashboard/providers/page.js:722"
+
+[component.endpoint-url]
+uses = ["space-3", "space-2-5", "radius-brand", "color-surface-2", "font-mono", "text-sm", "text-sm-leading", "color-text-muted", "text-xs", "text-xs-leading"]
+source = "src/shared/components/Input.js:41"
+
+[component.key-grid]
+uses = ["card-min", "fr", "space-4"]
+source = "src/app/(dashboard)/dashboard/providers/page.js:632"
+
+[component.key-card]
+uses = ["space-3", "space-4", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-soft", "opacity-disabled", "space-2", "text-base", "text-base-leading", "weight-semibold"]
+source = "src/shared/components/Card.js:28"
+
+[component.settings-list]
+uses = ["space-3", "color-text-muted", "text-sm", "text-sm-leading", "font-mono"]
+source = "src/shared/components/Card.js:76"

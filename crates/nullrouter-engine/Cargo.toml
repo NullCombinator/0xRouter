@@ -50,5 +50,9 @@ harness = false
 name = "records_page"
 harness = false
 
+[[bench]]
+name = "keys_last_used_100k"
+harness = false
+
 [lints]
 workspace = true

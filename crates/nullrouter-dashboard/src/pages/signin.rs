@@ -1,6 +1,6 @@
 //! `GET /signin` and `POST /signin` (contracts/dashboard-http.md "Access"): before a token
-//! exists the page names the command that issues one; after, it is the token form. The frame and
-//! the style arrive with the rest of the pages; this page is plain markup.
+//! exists the page names the command that issues one; after, it is the token form, in a card as
+//! 9router's login page has it (AuthLayout.js).
 
 use std::sync::Arc;
 
@@ -11,8 +11,9 @@ use axum::http::{HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use maud::{DOCTYPE, Markup, html};
 
-use crate::Shared;
 use crate::access::{self, Gate};
+use crate::components::icon;
+use crate::{Shared, assets};
 
 /// What the sign-in page shows.
 pub enum Screen {
@@ -28,24 +29,31 @@ pub fn page(screen: &Screen) -> Markup {
         html lang="en" {
             head {
                 meta charset="utf-8";
+                meta name="viewport" content="width=device-width, initial-scale=1";
                 title { "Sign in · 0Router Proxy" }
+                @for sheet in assets::STYLESHEETS { link rel="stylesheet" href=(assets::href(sheet)); }
             }
-            body {
-                main {
-                    h1 { "0Router Proxy" }
+            body class="signin" {
+                main class="signin__card" {
+                    div class="signin__brand" {
+                        span class="sidebar__mark" { (icon("hub")) }
+                        h1 class="signin__title" { "0Router Proxy" }
+                    }
                     @match screen {
                         Screen::NoToken => {
-                            p { "No dashboard token yet. Run " code { "nullrouter dashboard token" } "." }
+                            p class="signin__text" {
+                                "No dashboard token yet. Run " code class="code" { "nullrouter dashboard token" } "."
+                            }
                         }
                         Screen::Form { next, wrong } => {
                             @if *wrong {
-                                p role="alert" { "That token is not the current one." }
+                                p class="signin__alert" role="alert" { "That token is not the current one." }
                             }
-                            form method="post" action="/signin" {
-                                label for="token" { "Dashboard token" }
-                                input id="token" type="password" name="token" autocomplete="off" required;
+                            form class="signin__form" method="post" action="/signin" {
+                                label class="signin__label" for="token" { "Dashboard token" }
+                                input class="input" id="token" type="password" name="token" autocomplete="off" required;
                                 input type="hidden" name="next" value=(next);
-                                button type="submit" { "Sign in" }
+                                button class="button button--md button--primary" type="submit" { "Sign in" }
                             }
                         }
                     }

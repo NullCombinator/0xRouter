@@ -97,11 +97,11 @@ cookie-scope note.
 Every page needs the frame. The style suite and the full component set finish in Phase 10.
 
 - [ ] T026 [US7] Revise `docs/dashboard/style-guide.md` per research R12: drop "Not taken: page structure, navigation entries"; add the sidebar (`.bg-vibrancy`, 288 px), entries, "System" heading, page header, modal, side panel, round floating button and panel, background grid on every page, slot and disabled-hint (from existing tokens only); move 007 FR references to 009's; replace the "Open" section with the decisions
-- [ ] T027 [US7] Create `crates/nullrouter-dashboard/style/tokens.toml` per contracts/style-guide.md (`schema = 1`, `tailwind = …`, `[token.*]` with `value`, `source`, optional `class`; `[component.*]` with `uses`, `source`), covering every value the guide lists
-- [ ] T028 [US7] Generate `crates/nullrouter-dashboard/style/tokens.css` from `tokens.toml` with a `cargo test` that writes it under `NR_BLESS=1` and fails on any difference otherwise
-- [ ] T029 [P] [US7] Add Inter (variable woff2, Latin subset) and its OFL text to `crates/nullrouter-dashboard/assets/`, and the Material Symbols Outlined SVGs for every icon the mockups use (`grep -o 'class="i[^"]*">[a-z_]*' docs/dashboard/mockups/*.html`) to `assets/icons/`, with the Apache 2.0 text in `assets/LICENSES/`; serve them at `/assets/<hash>/<file>` from `include_bytes!`
-- [ ] T030 [US7] Create `crates/nullrouter-dashboard/src/components.rs` (card, badge by status per contracts/style-guide.md "Status → badge", button incl. disabled with hint, table, modal, side panel with `<details>` chevron, slot, empty state, notice line by level) and the matching rules in `style/dashboard.css` using only `var(--token)`, keywords, `0`, and percentages in `width`/`flex`
-- [ ] T031 [US7] Create `crates/nullrouter-dashboard/src/frame.rs`: sidebar ("0Router Proxy", the version `nullrouter --version` prints, the eight entries under contracts/dashboard-http.md "Frame", the current entry marked), header (icon, title, subtitle, "as of" line), background grid, the round housekeeping button linking to the same path with `notices` toggled, and the page's own notices (subject = page id) above its content
+- [X] T027 [US7] Create `crates/nullrouter-dashboard/style/tokens.toml` per contracts/style-guide.md (`schema = 1`, `tailwind = …`, `[token.*]` with `value`, `source`, optional `class`; `[component.*]` with `uses`, `source`), covering every value the guide lists
+- [X] T028 [US7] Generate `crates/nullrouter-dashboard/style/tokens.css` from `tokens.toml` with a `cargo test` that writes it under `NR_BLESS=1` and fails on any difference otherwise
+- [X] T029 [P] [US7] Add Inter (variable woff2, Latin subset) and its OFL text to `crates/nullrouter-dashboard/assets/`, and the Material Symbols Outlined SVGs for every icon the mockups use (`grep -o 'class="i[^"]*">[a-z_]*' docs/dashboard/mockups/*.html`) to `assets/icons/`, with the Apache 2.0 text in `assets/LICENSES/`; serve them at `/assets/<hash>/<file>` from `include_bytes!`
+- [X] T030 [US7] Create `crates/nullrouter-dashboard/src/components.rs` (card, badge by status per contracts/style-guide.md "Status → badge", button incl. disabled with hint, table, modal, side panel with `<details>` chevron, slot, empty state, notice line by level) and the matching rules in `style/dashboard.css` using only `var(--token)`, keywords, `0`, and percentages in `width`/`flex`
+- [X] T031 [US7] Create `crates/nullrouter-dashboard/src/frame.rs`: sidebar ("0Router Proxy", the version `nullrouter --version` prints, the eight entries under contracts/dashboard-http.md "Frame", the current entry marked), header (icon, title, subtitle, "as of" line), background grid, the round housekeeping button linking to the same path with `notices` toggled, and the page's own notices (subject = page id) above its content
 
 **Checkpoint**: every route renders the frame for a signed-in browser.
 
@@ -115,12 +115,12 @@ Every page needs the frame. The style suite and the full component set finish in
 
 ### Tests for User Story 2
 
-- [ ] T032 [P] [US2] Write `crates/nullrouter-dashboard/tests/agreement.rs` with a helper that starts `serve` on the `dashboard()` home, signs in, fetches a page, runs a CLI command with `--json` against the same server, and checks that every scalar the CLI JSON holds for the facts the page shows appears in the page (times compared as instants via `datetime`, live durations within the elapsed seconds); then a Quota Tracker case against `accounts list --long`, `quota` and `routing`, and the narrowed case `?provider=…&account=…` against `quota <provider> <name>`
-- [ ] T033 [P] [US2] Add Quota Tracker cases to `crates/nullrouter-dashboard/tests/pages.rs`: the needs-sign-in card names `nullrouter accounts login <provider> <name>`; pending-first-poll and stale use `quota`'s words; pay-as-you-go has no bar; `order=expiring` sorts windows by reset; empty home names `nullrouter accounts add <provider> <name>`
+- [X] T032 [P] [US2] Write `crates/nullrouter-dashboard/tests/agreement.rs` with a helper that starts `serve` on the `dashboard()` home, signs in, fetches a page, runs a CLI command with `--json` against the same server, and checks that every scalar the CLI JSON holds for the facts the page shows appears in the page (times compared as instants via `datetime`, live durations within the elapsed seconds); then a Quota Tracker case against `accounts list --long`, `quota` and `routing`, and the narrowed case `?provider=…&account=…` against `quota <provider> <name>`
+- [X] T033 [P] [US2] Add Quota Tracker cases to `crates/nullrouter-dashboard/tests/pages.rs`: the needs-sign-in card names `nullrouter accounts signin <provider> <name>`; pending-first-poll and stale use `quota`'s words; pay-as-you-go has no bar; `order=expiring` sorts windows by reset; empty home names `nullrouter accounts add <provider> <name>`
 
 ### Implementation for User Story 2
 
-- [ ] T034 [US2] Create `crates/nullrouter-dashboard/src/pages/quota.rs` per contracts/dashboard-http.md "Quota Tracker" (views `accounts`, `quota`, `routing`, `check`): filters as a `GET` form, one card per account, quota windows with bars, each target's pace, share and deficit, the amortization window in the header, the footer line
+- [X] T034 [US2] Create `crates/nullrouter-dashboard/src/pages/quota.rs` per contracts/dashboard-http.md "Quota Tracker" (views `accounts`, `quota`, `routing`, `check`): filters as a `GET` form, one card per account, quota windows with bars, each target's pace, share and deficit, the amortization window in the header, the footer line
 
 **Checkpoint**: MVP: access plus Quota Tracker.
 
@@ -134,12 +134,12 @@ Every page needs the frame. The style suite and the full component set finish in
 
 ### Tests for User Story 3
 
-- [ ] T035 [P] [US3] Add Usage cases to `crates/nullrouter-dashboard/tests/agreement.rs`: page 1 against `records list --limit 50`, "Older" against `--before <last id>`, `/usage/records/<id>` against `records show <id>` (attempts, stay-warm decision, changes, usage), the unfinished record, the record with no reported usage and the record cut short in `records`' words (never as zero), the records-not-kept warning
-- [ ] T036 [P] [US3] Add Usage cases to `crates/nullrouter-dashboard/tests/pages.rs`: the three slots (period filter, stat cards, topology graph) show no digits; "Recent Requests" lists the newest 10; a missing record id gives 404 in the frame with the CLI's message; on an empty home the page says "No request records yet."
+- [X] T035 [P] [US3] Add Usage cases to `crates/nullrouter-dashboard/tests/agreement.rs`: page 1 against `records list --limit 50`, "Older" against `--before <last id>`, `/usage/records/<id>` against `records show <id>` (attempts, stay-warm decision, changes, usage), the unfinished record, the record with no reported usage and the record cut short in `records`' words (never as zero), the records-not-kept warning
+- [X] T036 [P] [US3] Add Usage cases to `crates/nullrouter-dashboard/tests/pages.rs`: the three slots (period filter, stat cards, topology graph) show no digits; "Recent Requests" lists the newest 10; a missing record id gives 404 in the frame with the CLI's message; on an empty home the page says "No request records yet."
 
 ### Implementation for User Story 3
 
-- [ ] T037 [US3] Create `crates/nullrouter-dashboard/src/pages/usage.rs` per contracts/dashboard-http.md "Usage": slots, "Recent Requests", the Requests table in the CLI's words, "Older" paging, rows linking to `/usage/records/<id>`, and the window (views `records` with `limit=50`, `before`; `record`)
+- [X] T037 [US3] Create `crates/nullrouter-dashboard/src/pages/usage.rs` per contracts/dashboard-http.md "Usage": slots, "Recent Requests", the Requests table in the CLI's words, "Older" paging, rows linking to `/usage/records/<id>`, and the window (views `records` with `limit=50`, `before`; `record`)
 
 ---
 
@@ -151,12 +151,12 @@ Every page needs the frame. The style suite and the full component set finish in
 
 ### Tests for User Story 4
 
-- [ ] T038 [P] [US4] Add Providers cases to `crates/nullrouter-dashboard/tests/agreement.rs`: sections and cards against `providers` (category, source) and `accounts list --long`; `/providers/<id>` accounts against `accounts list --long`, each model against `model <provider> <model>`; the plugins panel against `plugins list --community`
-- [ ] T039 [P] [US4] Add Providers cases to `crates/nullrouter-dashboard/tests/pages.rs`: the kind filter lists exactly the kinds the loaded plugins declare (no "decision" while none does), each with this provider's count, and `?kind=` lists exactly those models; every disabled control shows the research R15 hint and has no form; a provider with no accounts says "No connections"
+- [X] T038 [P] [US4] Add Providers cases to `crates/nullrouter-dashboard/tests/agreement.rs`: sections and cards against `providers` (category, source) and `accounts list --long`; `/providers/<id>` accounts against `accounts list --long`, each model against `model <provider> <model>`; the plugins panel against `plugins list --community`
+- [X] T039 [P] [US4] Add Providers cases to `crates/nullrouter-dashboard/tests/pages.rs`: the kind filter lists exactly the kinds the loaded plugins declare (no "decision" while none does), each with this provider's count, and `?kind=` lists exactly those models; every disabled control shows the research R15 hint and has no form; a provider with no accounts says "No connections"
 
 ### Implementation for User Story 4
 
-- [ ] T040 [US4] Create `crates/nullrouter-dashboard/src/pages/providers.rs` per contracts/dashboard-http.md "Providers": disabled "Add … Compatible" and "Test All", one section per `providers` category named as 9router names it plus Custom Providers, cards with the text icon and account states, `q` search, the "Provider plugins" side panel with disabled switches, and the `/providers/<id>` window with accounts, the kind filter, the models, and the "last response" slot
+- [X] T040 [US4] Create `crates/nullrouter-dashboard/src/pages/providers.rs` per contracts/dashboard-http.md "Providers": disabled "Add … Compatible" and "Test All", one section per `providers` category named as 9router names it plus Custom Providers, cards with the text icon and account states, `q` search, the "Provider plugins" side panel with disabled switches, and the `/providers/<id>` window with accounts, the kind filter, the models, and the "last response" slot
 
 ---
 
@@ -169,12 +169,12 @@ Every page needs the frame. The style suite and the full component set finish in
 ### Tests for User Story 6
 
 - [ ] T041 [P] [US6] Write `crates/nullrouter-dashboard/tests/notices.rs` on the `dashboard()` home: (its logo and dashboard-port cases pass once T022 and T062 have extended the fixture) `?notices` on any page lists every `check --json` `notices[].text` and every account needing sign-in or cooling down in `accounts list`'s words; each notice appears on the page its `subject` names; with no notices the panel says "No notices."; the chat box is disabled with "Not built yet."
-- [ ] T042 [P] [US6] Add not-built cases to `crates/nullrouter-dashboard/tests/pages.rs`: Combo's, Console Log's and Proxy Pools' texts per research R15; Combo lists its `combo` notices and no unified model list
+- [X] T042 [P] [US6] Add not-built cases to `crates/nullrouter-dashboard/tests/pages.rs`: Combo's, Console Log's and Proxy Pools' texts per research R15; Combo lists its `combo` notices and no unified model list
 
 ### Implementation for User Story 6
 
-- [ ] T043 [US6] Add the housekeeping panel to `crates/nullrouter-dashboard/src/frame.rs` (views `check`, `accounts`; notices grouped by level, then accounts needing action, then the disabled chat box)
-- [ ] T044 [P] [US6] Create `crates/nullrouter-dashboard/src/pages/combo.rs`, `pages/console_log.rs`, `pages/proxy_pools.rs` per research R15 (Console Log links to `/usage`)
+- [X] T043 [US6] Add the housekeeping panel to `crates/nullrouter-dashboard/src/frame.rs` (views `check`, `accounts`; notices grouped by level, then accounts needing action, then the disabled chat box)
+- [X] T044 [P] [US6] Create `crates/nullrouter-dashboard/src/pages/combo.rs`, `pages/console_log.rs`, `pages/proxy_pools.rs` per research R15 (Console Log links to `/usage`)
 
 ---
 
@@ -186,19 +186,19 @@ Every page needs the frame. The style suite and the full component set finish in
 
 ### Tests for User Story 5
 
-- [ ] T045 [P] [US5] Write `crates/nullrouter-engine` unit tests in `src/journal/index.rs` for the per-agent newest arrival: refresh after appends updates it; a replaced segment (prune, forget) recomputes it; a key in no segment has none
-- [ ] T046 [P] [US5] Add `keys list` cases to `crates/nullrouter-cli/tests/accounts_keys.rs`: `last_used` equals the `arrived` of `records list --agent <key id> --limit 1`, with and without a server; `never` / `null` for an unused key; after `records forget --agent <key id>` it is `never`
-- [ ] T047 [P] [US5] Add Endpoint & Key and Settings cases to `crates/nullrouter-dashboard/tests/agreement.rs`: the URL against `check --json` `endpoint` (and the "configured; no server running" text cannot occur on a served page), key cards against `keys list`, Settings against `behaviour show`, `check` (`home`) and `dashboard status`; no full key or token in either page; on an empty home Endpoint & Key says "No agent keys. Run `nullrouter keys issue <name>`."
+- [X] T045 [P] [US5] Write `crates/nullrouter-engine` unit tests in `src/journal/index.rs` for the per-agent newest arrival: refresh after appends updates it; a replaced segment (prune, forget) recomputes it; a key in no segment has none
+- [X] T046 [P] [US5] Add `keys list` cases to `crates/nullrouter-cli/tests/accounts_keys.rs`: `last_used` equals the `arrived` of `records list --agent <key id> --limit 1`, with and without a server; `never` / `null` for an unused key; after `records forget --agent <key id>` it is `never`
+- [X] T047 [P] [US5] Add Endpoint & Key and Settings cases to `crates/nullrouter-dashboard/tests/agreement.rs`: the URL against `check --json` `endpoint` (and the "configured; no server running" text cannot occur on a served page), key cards against `keys list`, Settings against `behaviour show`, `check` (`home`) and `dashboard status`; no full key or token in either page; on an empty home Endpoint & Key says "No agent keys. Run `nullrouter keys issue <name>`."
 
 ### Implementation for User Story 5
 
-- [ ] T048 [US5] Add the newest arrival per agent to the segment index in `crates/nullrouter-engine/src/journal/index.rs` (read from each `open` line's `agent` and `arrived`, which the index already parses)
-- [ ] T049 [US5] Add `last_used(home) -> BTreeMap<String, SystemTime>` to `crates/nullrouter-engine/src/journal/records.rs`: segments newest first, stopping once every key in `keys.toml` is found or the oldest segment is read; through the index when cached
-- [ ] T050 [US5] Add the `keys.last_used` op to `crates/nullrouter-server/src/operator.rs` (`{"ok":true,"last_used":{"<key id>":"<RFC 3339>"|null}}`), running the journal read in `tokio::task::spawn_blocking` as `records.get` does, and `last_used` to `views::keys` (`NEEDS` gains `keys.last_used`; without a server it calls T049 itself)
-- [ ] T051 [US5] Append the last-used column to `keys list` text in `crates/nullrouter-cli/src/cmd/keys.rs` (RFC 3339 or `never`) and re-bless the goldens in one commit
-- [ ] T052 [P] [US5] Add the `keys_last_used_100k` Criterion bench in `crates/nullrouter-engine/benches/keys_last_used_100k.rs` (registered in `Cargo.toml`; reuse `records_page.rs`'s journal builder): warm (index cached) and cold (one key never used); targets warm under 5 ms, cold under 1 s; record the baseline in `specs/009-dashboard/bench-baseline.md`, and confirm `records_page` didn't regress
-- [ ] T053 [US5] Create `crates/nullrouter-dashboard/src/pages/endpoint.rs` per contracts/dashboard-http.md "Endpoint & Key": the API Endpoint card, the "Agent traffic" slot, key cards with last used and a "requests today" slot, disabled "Add Agent" with its hint, the "Client adapters" side panel, the empty state
-- [ ] T054 [US5] Create `crates/nullrouter-dashboard/src/pages/settings.rs` per contracts/dashboard-http.md "Settings": Routing (`behaviour show`), Local mode (`check.home`), Dashboard (`dashboard status`, and "Change it with `nullrouter dashboard token`")
+- [X] T048 [US5] Add the newest arrival per agent to the segment index in `crates/nullrouter-engine/src/journal/index.rs` (read from each `open` line's `agent` and `arrived`, which the index already parses)
+- [X] T049 [US5] Add `last_used(home) -> BTreeMap<String, SystemTime>` to `crates/nullrouter-engine/src/journal/records.rs`: segments newest first, stopping once every key in `keys.toml` is found or the oldest segment is read; through the index when cached
+- [X] T050 [US5] Add the `keys.last_used` op to `crates/nullrouter-server/src/operator.rs` (`{"ok":true,"last_used":{"<key id>":"<RFC 3339>"|null}}`), running the journal read in `tokio::task::spawn_blocking` as `records.get` does, and `last_used` to `views::keys` (`NEEDS` gains `keys.last_used`; without a server it calls T049 itself)
+- [X] T051 [US5] Append the last-used column to `keys list` text in `crates/nullrouter-cli/src/cmd/keys.rs` (RFC 3339 or `never`) and re-bless the goldens in one commit
+- [X] T052 [P] [US5] Add the `keys_last_used_100k` Criterion bench in `crates/nullrouter-engine/benches/keys_last_used_100k.rs` (registered in `Cargo.toml`; reuse `records_page.rs`'s journal builder): warm (index cached) and cold (one key never used); targets warm under 5 ms, cold under 1 s; record the baseline in `specs/009-dashboard/bench-baseline.md`, and confirm `records_page` didn't regress
+- [X] T053 [US5] Create `crates/nullrouter-dashboard/src/pages/endpoint.rs` per contracts/dashboard-http.md "Endpoint & Key": the API Endpoint card, the "Agent traffic" slot, key cards with last used and a "requests today" slot, disabled "Add Agent" with its hint, the "Client adapters" side panel, the empty state
+- [X] T054 [US5] Create `crates/nullrouter-dashboard/src/pages/settings.rs` per contracts/dashboard-http.md "Settings": Routing (`behaviour show`), Local mode (`check.home`), Dashboard (`dashboard status`, and "Change it with `nullrouter dashboard token`")
 
 ---
 
@@ -208,7 +208,7 @@ Every page needs the frame. The style suite and the full component set finish in
 
 **Independent Test**: spec US7; quickstart step 8.
 
-- [ ] T055 [P] [US7] Write `crates/nullrouter-dashboard/tests/style_guide.rs`: (1) every declaration in `dashboard.css` is `var(--x)`, a keyword, `0` or a `width`/`flex` percentage, every `--x` is a token, every component class is a `[component.*]` using only its tokens; (2) every `source` line exists in `ref/9router` and contains the value or class, and none is inside `.dark { … }` (skipped with a message when `ref/9router` is absent); (3) `tokens.css` matches `tokens.toml`
+- [X] T055 [P] [US7] Write `crates/nullrouter-dashboard/tests/style_guide.rs`: (1) every declaration in `dashboard.css` is `var(--x)`, a keyword, `0` or a `width`/`flex` percentage, every `--x` is a token, every component class is a `[component.*]` using only its tokens; (2) every `source` line exists in `ref/9router` and contains the value or class, and none is inside `.dark { … }` (skipped with a message when `ref/9router` is absent); (3) `tokens.css` matches `tokens.toml`
 - [ ] T056 [P] [US7] Write `crates/nullrouter-dashboard/tests/offline.rs`: every page's HTML references only `/assets/…`, `/logos/…` and dashboard routes; no `<script>`; no `http(s)://` URL in `src`, `href` (except the endpoint text), or CSS `url()`
 - [ ] T057 [US7] Complete the components the pages use (provider card, quota card, key card, request row) in `components.rs` and `dashboard.css`, each a `[component.*]` in `tokens.toml` naming the 9router component it composes, until T055 passes. Add to `tests/pages.rs`: every status in contracts/style-guide.md "Status → badge" renders with its badge variant; a 200-character account, model and key name is shown in full or truncated with the full name in a `title`, and two names differing only at the end stay distinguishable
 - [ ] T058 [US7] Compare side by side as quickstart step 8 says (9router light mode, the mockups, this dashboard) and write the differences found and fixed to `specs/009-dashboard/look-review.md`; the user's judgement of SC-008 is recorded there
@@ -223,18 +223,18 @@ Every page needs the frame. The style suite and the full component set finish in
 
 ### Tests for User Story 8
 
-- [ ] T059 [P] [US8] Write logo-check unit tests in `crates/nullrouter-registry/src/logo.rs`: a valid PNG passes; "At most 65,536 bytes"; a JPEG named `.png` → `not a PNG`; 257 × 10 → `257 × 10 px, over 256 px`; missing → `file not found: logos/<file>`; `logo = "../x.png"`, `"a/b.png"`, `"x.svg"` fail validation on the field
-- [ ] T060 [P] [US8] Write `crates/nullrouter-dashboard/tests/logos.rs`: a user plugin with each bad logo loads and serves a request, its card shows the text icon, and `check` prints `note: logo ignored: <id>: <reason>` with subject `providers`; a good logo is served at `/logos/<hash>/<id>.png` with `Content-Type: image/png` and `nosniff`; `plugins install`/`uninstall` copy and remove a community logo
+- [X] T059 [P] [US8] Write logo-check unit tests in `crates/nullrouter-registry/src/logo.rs`: a valid PNG passes; "At most 65,536 bytes"; a JPEG named `.png` → `not a PNG`; 257 × 10 → `257 × 10 px, over 256 px`; missing → `file not found: logos/<file>`; `logo = "../x.png"`, `"a/b.png"`, `"x.svg"` fail validation on the field
+- [X] T060 [P] [US8] Write `crates/nullrouter-dashboard/tests/logos.rs`: a user plugin with each bad logo loads and serves a request, its card shows the text icon, and `check` prints `note: logo ignored: <id>: <reason>` with subject `providers`; a good logo is served at `/logos/<hash>/<id>.png` with `Content-Type: image/png` and `nosniff`; `plugins install`/`uninstall` copy and remove a community logo
 
 ### Implementation for User Story 8
 
-- [ ] T061 [US8] With the `plugin-system-designer` agent, add the optional `logo` field to the schema 2 plugin in `crates/nullrouter-registry/src/schema/plugin.rs` ("A bare file name ending in `.png`: no `/`, `\` or `..`") and create `crates/nullrouter-registry/src/logo.rs` with the four checks of contracts/plugin-logo.md, reading only the first 33 bytes and the length, without decoding
-- [ ] T062 [US8] Embed `plugins/bundled/logos/*.png` and `plugins/community/logos/*.png` in `crates/nullrouter-registry/build.rs` (a missing directory embeds an empty table), resolve `<home>/plugins/logos/` for user plugins in `load.rs`, keep passed logos' bytes in the registry snapshot, and add failures to the load report as their own list, `logos_ignored: [{id, reason}]` (not the typed `notes`, which are limits notes); `views::check` adds `logos_ignored` to its JSON and turns each into a `note: logo ignored: <id>: <reason>` notice with subject `providers`, printed right after the `skipped:` lines (research R5). Add a plugin with a bad logo to the `dashboard()` fixture (T003)
-- [ ] T063 [US8] Make `plugins install <id>` copy the logo to `<home>/plugins/logos/` and `plugins uninstall <id>` remove it, in `crates/nullrouter-cli/src/cmd/plugins.rs`
-- [ ] T064 [US8] Convert the five overrides once with ImageMagick (`convert <in> -resize 256x256\> -strip png:<out>`; `kimchi.svg` rasterised at 256 px) into `tools/gen-bundled/seeds/logos/{crush,nebius,reka,siliconflow,kimchi}.png`, each checked against the four limits
+- [X] T061 [US8] With the `plugin-system-designer` agent, add the optional `logo` field to the schema 2 plugin in `crates/nullrouter-registry/src/schema/plugin.rs` ("A bare file name ending in `.png`: no `/`, `\` or `..`") and create `crates/nullrouter-registry/src/logo.rs` with the four checks of contracts/plugin-logo.md, reading only the first 33 bytes and the length, without decoding
+- [X] T062 [US8] Embed `plugins/bundled/logos/*.png` and `plugins/community/logos/*.png` in `crates/nullrouter-registry/build.rs` (a missing directory embeds an empty table), resolve `<home>/plugins/logos/` for user plugins in `load.rs`, keep passed logos' bytes in the registry snapshot, and add failures to the load report as their own list, `logos_ignored: [{id, reason}]` (not the typed `notes`, which are limits notes); `views::check` adds `logos_ignored` to its JSON and turns each into a `note: logo ignored: <id>: <reason>` notice with subject `providers`, printed right after the `skipped:` lines (research R5). Add a plugin with a bad logo to the `dashboard()` fixture (T003)
+- [X] T063 [US8] Make `plugins install <id>` copy the logo to `<home>/plugins/logos/` and `plugins uninstall <id>` remove it, in `crates/nullrouter-cli/src/cmd/plugins.rs`
+- [X] T064 [US8] Convert the five overrides once with ImageMagick (`convert <in> -resize 256x256\> -strip png:<out>`; `kimchi.svg` rasterised at 256 px) into `tools/gen-bundled/seeds/logos/{crush,nebius,reka,siliconflow,kimchi}.png`, each checked against the four limits
 - [ ] T065 [US8] Extend `tools/gen-bundled/generate.mjs`: copy `ref/9router/public/providers/<id>.png` (or the override) to `plugins/{bundled,community}/logos/<id>.png`, apply the four checks and exit with an error naming a failing file, write `logo = "<id>.png"` into each generated community plugin, and write `plugins/LOGOS.md` (one row per logo with its source path or override at the ref SHA, the ImageMagick command, and "Each logo names its provider only; marks belong to their owners. 9router is MIT-licensed.")
 - [ ] T066 [US8] Run the generator and commit its output on its own, naming the ref SHA; add `logo = "<id>.png"` by hand to the bundled plugins that have one (`anthropic`, `elevenlabs`, `grok-cli`, `opencode-go`, `openrouter`, `xai`; `opencode-zen` has none) in `plugins/bundled/*.toml`
-- [ ] T067 [US8] Serve `/logos/<hash>/<id>.png` in `crates/nullrouter-dashboard/src/lib.rs` from the snapshot, behind the same cookie check as pages (FR-008), and show the logo on the provider card and window in `pages/providers.rs` (text icon when `None`)
+- [X] T067 [US8] Serve `/logos/<hash>/<id>.png` in `crates/nullrouter-dashboard/src/lib.rs` from the snapshot, behind the same cookie check as pages (FR-008), and show the logo on the provider card and window in `pages/providers.rs` (text icon when `None`)
 - [ ] T068 [US8] Document the `logo` field, its directory, limits and failure note in `docs/plugins.md`
 
 ---

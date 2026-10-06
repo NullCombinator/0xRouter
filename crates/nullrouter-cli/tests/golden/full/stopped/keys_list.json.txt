@@ -7,7 +7,8 @@ exit: 0
     "key": "…L0P1",
     "created": "2026-10-01T08:00:00Z",
     "revoked": null,
-    "break": null
+    "break": null,
+    "last_used": "2026-10-03T14:22:00Z"
   },
   {
     "id": "ak_fixture2",
@@ -15,7 +16,8 @@ exit: 0
     "key": "…C1C1",
     "created": "2026-10-01T08:30:00Z",
     "revoked": "2026-10-02T17:00:00Z",
-    "break": "error_event"
+    "break": "error_event",
+    "last_used": "2026-10-02T09:00:00Z"
   }
 ]
 --- stderr

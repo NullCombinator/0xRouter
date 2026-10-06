@@ -359,3 +359,117 @@ fn behaviour_show_on_a_config_that_does_not_load_gives_the_error_and_no_value() 
     assert!(err.contains("config.toml:2:"), "{err}");
     assert!(!err.contains("break_behaviour"), "{err}");
 }
+
+// ---- last used (spec 009, FR-029a) ----
+
+/// The ids of the keys `keys list` shows, by name.
+fn key_ids(home: &Path) -> std::collections::BTreeMap<String, String> {
+    let rows: serde_json::Value = serde_json::from_slice(&nr(home, &["--json", "keys", "list"], "").stdout).unwrap();
+    rows.as_array()
+        .unwrap()
+        .iter()
+        .map(|r| (r["name"].as_str().unwrap().to_owned(), r["id"].as_str().unwrap().to_owned()))
+        .collect()
+}
+
+/// A key's `last_used` in `keys list --json`.
+fn last_used(home: &Path, id: &str) -> serde_json::Value {
+    let rows: serde_json::Value = serde_json::from_slice(&nr(home, &["--json", "keys", "list"], "").stdout).unwrap();
+    rows.as_array().unwrap().iter().find(|r| r["id"] == id).unwrap()["last_used"].clone()
+}
+
+/// The `arrived` of the newest record `records list` finds for the agent.
+fn newest_arrival(home: &Path, id: &str) -> serde_json::Value {
+    let out = nr(home, &["--json", "records", "list", "--agent", id, "--limit", "1"], "").stdout;
+    let rows: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    rows.as_array().unwrap().first().map_or(serde_json::Value::Null, |r| r["arrived"].clone())
+}
+
+fn journal(home: &Path, lines: &[(&str, &str, &str)]) {
+    std::fs::create_dir_all(home.join("records")).unwrap();
+    for (day, id, agent) in lines {
+        let at = format!("{day}T{}:00:00.250Z", &id[3..]);
+        let line = serde_json::json!({"v":1,"t":"open","id":id,"arrived":at,"agent":agent,
+            "style":"anthropic-messages","op":"generate","type":"text","target":"sonnet"});
+        let path = home.join(format!("records/{day}.jsonl"));
+        let old = std::fs::read_to_string(&path).unwrap_or_default();
+        std::fs::write(path, format!("{old}{line}\n")).unwrap();
+    }
+}
+
+struct Serving(std::process::Child);
+
+impl Drop for Serving {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn serve(home: &Path) -> Serving {
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let child = Command::new(env!("CARGO_BIN_EXE_nullrouter"))
+        .arg("--home")
+        .arg(home)
+        .args(["serve", "--listen", &format!("127.0.0.1:{port}")])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let serving = Serving(child);
+    for _ in 0..500 {
+        if home.join("run/operator.sock").exists() && std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            return serving;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("the server never came up");
+}
+
+#[test]
+fn last_used_is_the_newest_arrival_of_the_keys_records_and_never_without_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    for name in ["busy", "idle"] {
+        assert!(nr(h, &["keys", "issue", name], "").status.success());
+    }
+    let ids = key_ids(h);
+    let (busy, idle) = (ids["busy"].as_str(), ids["idle"].as_str());
+    assert_eq!(last_used(h, busy), serde_json::Value::Null, "no journal yet");
+
+    // Two days; the newest arrival is on the later one, and written after an older one.
+    journal(
+        h,
+        &[
+            ("2026-10-01", "rq_09", busy),
+            ("2026-10-02", "rq_11", busy),
+            ("2026-10-02", "rq_10", "ak_not_listed"),
+            ("2026-10-01", "rq_08", busy),
+        ],
+    );
+    let text = String::from_utf8(nr(h, &["keys", "list"], "").stdout).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert!(lines[0].ends_with("2026-10-02T11:00:00.250Z"), "{text}");
+    assert!(lines[1].ends_with("never"), "{text}");
+
+    // Without a server, then with one: the same answer, and the same as `records list`.
+    let answers = |h: &Path| (last_used(h, busy), last_used(h, idle), newest_arrival(h, busy));
+    let (used, unused, arrival) = answers(h);
+    assert_eq!(used, "2026-10-02T11:00:00.250Z");
+    assert_eq!(used, arrival, "last used is the arrived of `records list --agent <id> --limit 1`");
+    assert_eq!(unused, serde_json::Value::Null);
+    let serving = serve(h);
+    assert_eq!(answers(h), (used.clone(), unused.clone(), arrival.clone()), "with a server");
+
+    // A record that arrives later moves it, through the server's cached index.
+    journal(h, &[("2026-10-03", "rq_12", busy)]);
+    assert_eq!(last_used(h, busy), "2026-10-03T12:00:00.250Z");
+
+    // Forgetting the agent's records takes its last use with them, with the server's index warm.
+    assert!(nr(h, &["records", "forget", "--agent", busy], "").status.success());
+    assert_eq!(last_used(h, busy), serde_json::Value::Null);
+    drop(serving);
+    assert_eq!(last_used(h, busy), serde_json::Value::Null, "and without a server");
+    assert!(String::from_utf8(nr(h, &["keys", "list"], "").stdout).unwrap().lines().all(|l| l.ends_with("never")));
+}

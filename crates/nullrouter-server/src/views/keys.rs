@@ -1,16 +1,27 @@
-//! `keys list`: the agent keys, by name and last four characters, never the key.
+//! `keys list`: the agent keys, by name and last four characters, never the key, and when each
+//! last arrived (the newest record whose agent is the key's id, or `null`).
 
+use std::collections::BTreeMap;
+
+use nullrouter_engine::journal::records;
 use nullrouter_engine::keys::{self, BreakBehaviour, Keys};
 use nullrouter_registry::OperatorHome;
 use serde_json::{Value, json};
 
 use super::{Live, View, ViewError};
 
-/// No live ops: `keys.toml` is the whole answer.
-pub const NEEDS: &[&str] = &[];
+/// A server answers `last_used` from its cached segment index; without one the view reads the
+/// journal itself.
+pub const NEEDS: &[&str] = &["keys.last_used"];
 
-pub fn build(home: &OperatorHome, _args: &Value, _live: &Live) -> Result<View, ViewError> {
+pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, ViewError> {
     let list = Keys::load(&home.path().join(keys::FILE)).map_err(ViewError::failed)?;
+    let served = live.ok("keys.last_used")?.map(|a| a["last_used"].clone());
+    let own = if served.is_none() { records::last_arrived(home.path()) } else { BTreeMap::new() };
+    let last_used = |id: &str| match &served {
+        Some(map) => map[id].clone(),
+        None => own.get(id).map_or(Value::Null, |t| json!(t)),
+    };
     let rows: Vec<Value> = list
         .iter()
         .map(|k| {
@@ -21,6 +32,7 @@ pub fn build(home: &OperatorHome, _args: &Value, _live: &Live) -> Result<View, V
                 "created": k.created,
                 "revoked": k.revoked,
                 "break": k.break_behaviour.map(BreakBehaviour::as_str),
+                "last_used": last_used(&k.id),
             })
         })
         .collect();

@@ -127,7 +127,8 @@ fn hex(b: u8) -> Option<u8> {
     char::from(b).to_digit(16).and_then(|d| u8::try_from(d).ok())
 }
 
-fn decode_component(s: &str) -> String {
+/// Undoes [`encode_component`] and a form's `+` for a space; a bad escape stays as it is.
+pub fn decode_component(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;

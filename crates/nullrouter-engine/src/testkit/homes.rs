@@ -34,6 +34,10 @@ pub const ALL: &[Fixture] = &[
 ];
 
 fn put(home: &Path, rel: &str, text: &str) {
+    put_bytes(home, rel, text.as_bytes());
+}
+
+fn put_bytes(home: &Path, rel: &str, bytes: &[u8]) {
     let path = home.join(rel);
     // Directories and files are private, as the server makes them (`check` warns about others).
     let mut dirs = std::fs::DirBuilder::new();
@@ -41,7 +45,7 @@ fn put(home: &Path, rel: &str, text: &str) {
     #[cfg(unix)]
     std::os::unix::fs::DirBuilderExt::mode(&mut dirs, 0o700);
     dirs.create(path.parent().unwrap()).unwrap();
-    fs::write(&path, text).unwrap();
+    fs::write(&path, bytes).unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -181,6 +185,9 @@ break_behaviour = "error_event"
     // and one invalid user plugin whose unified model is therefore dropped.
     let community = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/community/bluesminds.toml");
     put(h, "plugins/bluesminds.toml", &fs::read_to_string(community).unwrap());
+    // `plugins install` copies the plugin's logo too (spec 009 T063).
+    let logo = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/community/logos/bluesminds.png");
+    put_bytes(h, "plugins/logos/bluesminds.png", &fs::read(logo).unwrap());
     put(h, "plugins/broken.toml", "schema = 2\nid = \"broken\"\nthis is not valid\n");
     put(
         h,
@@ -229,7 +236,8 @@ members = [
 /// by failing a mock upstream), the records-not-kept and dashboard-not-listening warnings (both
 /// come from a running server), a sign-in error (`serve` refuses to start with one), and a
 /// withheld credential (it needs a user plugin with its own sign-in, which the fit check refuses).
-/// T022 and T062 add the dashboard port and the bad logo.
+/// T022 adds the dashboard port. T062 adds `pixel`, a user plugin whose logo is a JPEG named
+/// `.png`: it loads without it, and `check` notes `logo ignored: pixel: not a PNG`.
 pub fn dashboard() -> TempDir {
     let dir = full();
     let h = dir.path();
@@ -266,6 +274,8 @@ pub fn dashboard() -> TempDir {
     put(h, "plugins/elevenlabs.toml", &bundled("elevenlabs.toml"));
     put(h, "plugins/openrouter.toml", &bundled("openrouter.toml"));
     put(h, "config.toml", &(read("config.toml") + "\n[plugin_decisions]\nopenrouter = \"decline\"\n"));
+    put(h, "plugins/pixel.toml", PIXEL);
+    put_bytes(h, "plugins/logos/pixel.png", &JPEG);
 
     // A request that fell back: the first account was rate limited, the second served it. The
     // second attempt dropped a field the style can't carry and forced a parameter.
@@ -293,6 +303,33 @@ pub fn dashboard() -> TempDir {
     check_loads(h);
     dir
 }
+
+/// The [`dashboard`] home's user plugin with a bad logo (T062).
+const PIXEL: &str = r##"schema = 2
+id = "pixel"
+category = "apikey"
+logo = "pixel.png"
+
+[auth]
+kind = "apikey"
+header = "Authorization"
+scheme = "bearer"
+
+[endpoints.text]
+url = "https://api.pixel.example/v1/chat/completions"
+wire = "openai-chat"
+
+[[models]]
+id = "pixel-1"
+
+[display]
+name = "Pixel"
+color = "#6C5CE7"
+text_icon = "PX"
+"##;
+
+/// The start of a JPEG file (JFIF), which `pixel.png` holds instead of a PNG.
+const JPEG: [u8; 20] = [0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0, 1, 1, 0, 0, 1, 0, 1, 0, 0];
 
 /// The id of the [`dashboard`] home's request with a failed first attempt.
 pub fn fallback_id() -> String {

@@ -7,6 +7,7 @@
 //! | `{"op":"reload"}` | `{"ok":true,"generation":N}` (plus `"notes":[…]` when unified models' limits differ), or the error with the old snapshot kept |
 //! | `{"op":"records.list","provider"?,"unified_model"?,"account"?,"agent"?,"model"?,"reason"?,"since"?,"limit"?,"before"?}` | `{"ok":true,"records":[…]}`: the journal's records plus those still in flight, newest first, those with an id below `before` (which must name a record, else `{"ok":false,"error":"no record rq_…"}`) |
 //! | `{"op":"records.get","id":"rq_…"}` | `{"ok":true,"record":{…}}` |
+//! | `{"op":"keys.last_used"}` | `{"ok":true,"last_used":{"<key id>":"<RFC 3339>"\|null}}`: for every key in `keys.toml`, the arrival of its newest record, from the cached segment index and the requests still in flight; `null` for a key no record names |
 //! | `{"op":"records.forget","account"?:"P/N","agent"?:KEY}` | `{"ok":true,"fingerprints":N}`: the agent's fingerprints (or the account's fingerprints and ledger entries) leave memory and `routing/warm.jsonl`, and the live ring; the CLI then rewrites the record segments |
 //! | `{"op":"accounts.state"}` | `{"ok":true,"accounts":[…]}`: per account `kind`, `state`, `state_since`, `state_reason`, `expires_at`, cooldowns |
 //! | `{"op":"routing.view","target"?}` | `{"ok":true,"amortization":{start,length},"journal":{…},"targets":[…],"warnings":[…]}`: per target and account the pace, share, deficit, priority, cache lifetime, quota source and each window's remaining amount, unit, reset and reserve |
@@ -137,6 +138,7 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
                 _ => json!({"ok": false, "error": "no such record"}),
             }
         }
+        Some("keys.last_used") => keys_last_used(engine).await,
         Some("records.forget") => {
             let st = engine.snapshot();
             let now = nullrouter_engine::clock::now();
@@ -208,6 +210,39 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         Some(op) => json!({"ok": false, "error": format!("unknown op {op:?}")}),
         None => json!({"ok": false, "error": "the request names no op"}),
     }
+}
+
+/// `keys.last_used`: the journal read runs on the blocking pool, as `records.get`'s does.
+async fn keys_last_used(engine: &Arc<Engine>) -> Value {
+    use nullrouter_engine::keys::{self, Keys};
+
+    let home = engine.home().path().to_owned();
+    let read = tokio::task::spawn_blocking(move || {
+        let list = Keys::load(&home.join(keys::FILE))?;
+        let ids: Vec<String> = list.iter().map(|k| k.id.clone()).collect();
+        Ok::<_, nullrouter_engine::files::FileError>((ids, records::last_arrived(&home)))
+    })
+    .await;
+    let (ids, mut last) = match read {
+        Ok(Ok(read)) => read,
+        Ok(Err(e)) => return json!({"ok": false, "error": e.to_string()}),
+        Err(e) => return json!({"ok": false, "error": format!("the read failed: {e}")}),
+    };
+    // A request in flight is a record too, and may not be in the journal yet.
+    let parse = nullrouter_engine::clock::parse_rfc3339;
+    for r in engine.records.query(&Query::default()) {
+        let Some(agent) = &r.agent else { continue };
+        let newer = match last.get(&agent.key) {
+            Some(known) => parse(&r.arrived).zip(parse(known)).is_some_and(|(new, old)| new > old),
+            None => parse(&r.arrived).is_some(),
+        };
+        if newer {
+            last.insert(agent.key.clone(), r.arrived.clone());
+        }
+    }
+    let shown: serde_json::Map<String, Value> =
+        ids.into_iter().map(|id| (id.clone(), last.get(&id).map_or(Value::Null, |t| json!(t)))).collect();
+    json!({"ok": true, "last_used": shown})
 }
 
 /// `records.list`: what the journal holds plus what is still in flight (the live ring is the

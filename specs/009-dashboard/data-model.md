@@ -85,7 +85,7 @@ Built, rendered and dropped per request; never cached (FR-022).
   "logos_ignored": [{"id": "crush", "reason": "2700 × 1392 px, over 256 px"}],
   "notices": [
     {"level": "warning", "subject": "quota",
-     "text": "warning: sign-in account anthropic/work has no tokens and can't serve; run `nullrouter accounts login anthropic work`"},
+     "text": "warning: sign-in account anthropic/work has no tokens and can't serve; run `nullrouter accounts signin anthropic work`"},
     {"level": "note", "subject": "providers",
      "text": "note: logo ignored: crush: 2700 × 1392 px, over 256 px"}
   ]

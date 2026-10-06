@@ -14,7 +14,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::get;
 use nullrouter_engine::state::Engine;
 use nullrouter_engine::status::DashboardStatus;
@@ -23,8 +23,12 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
 pub mod access;
+pub mod assets;
+pub mod components;
+pub mod frame;
 pub mod guard;
 pub mod headers;
+pub mod logos;
 pub mod page;
 pub mod pages;
 pub mod time;
@@ -130,7 +134,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
 async fn gated(State(shared): State<Arc<Shared>>, req: Request) -> Response {
     let path = req.uri().path();
     if path.starts_with("/assets/") {
-        return not_built();
+        return assets::serve(path);
     }
     match access::gate(&shared.engine, req.headers()) {
         access::Gate::NoToken => pages::signin::see_other("/signin"),
@@ -139,10 +143,37 @@ async fn gated(State(shared): State<Arc<Shared>>, req: Request) -> Response {
             pages::signin::see_other(&format!("/signin?next={}", access::encode_component(wanted)))
         }
         access::Gate::SignedIn if path == "/" => pages::signin::see_other("/endpoint"),
-        access::Gate::SignedIn => not_built(),
+        access::Gate::SignedIn if path.starts_with("/logos/") => logos::serve(&shared.engine, path),
+        access::Gate::SignedIn => match pages::Req::parse(path, req.uri().query().unwrap_or_default()) {
+            Some(page_req) => page(shared, page_req).await,
+            None => frame::render_error(None, &shared.version, StatusCode::NOT_FOUND, "No such page."),
+        },
     }
 }
 
-fn not_built() -> Response {
-    (StatusCode::NOT_FOUND, "No such page.\n").into_response()
+/// One page, built under the guard (research R8): its views in one consistent state, then the
+/// markup, both in the guarded task so a panic or a stall is this page's error only.
+async fn page(shared: Arc<Shared>, req: pages::Req) -> Response {
+    let (engine, version) = (shared.engine.clone(), shared.version.clone());
+    let r = req.clone();
+    let built = shared
+        .guard
+        .run(move || async move {
+            let tz = time::local_zone();
+            let logos = logos::Index::of(&engine);
+            match page::build(&engine, &pages::wants(&r)).await {
+                Ok(p) => frame::render(&r, &p, &version, &tz, &logos),
+                // A window whose id doesn't exist: the page under it, and the CLI's message.
+                Err(page::PageError::View(e)) if r.window.is_some() => {
+                    let base = pages::Req { window: None, ..r.clone() };
+                    match page::build(&engine, &pages::wants(&base)).await {
+                        Ok(p) => frame::render_missing_window(&r, &p, &version, &tz, &logos, &e.message),
+                        Err(e) => frame::render_error(Some(&r), &version, StatusCode::INTERNAL_SERVER_ERROR, &frame::build_failed(&e)),
+                    }
+                }
+                Err(e) => frame::render_error(Some(&r), &version, StatusCode::INTERNAL_SERVER_ERROR, &frame::build_failed(&e)),
+            }
+        })
+        .await;
+    built.unwrap_or_else(|e| frame::render_error(Some(&req), &shared.version, e.status(), &e.text()))
 }

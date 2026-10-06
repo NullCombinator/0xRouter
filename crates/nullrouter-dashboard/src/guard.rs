@@ -29,14 +29,14 @@ pub enum BuildError {
 }
 
 impl BuildError {
-    fn status(&self) -> StatusCode {
+    pub fn status(&self) -> StatusCode {
         match self {
             Self::Busy => StatusCode::SERVICE_UNAVAILABLE,
             Self::TimedOut(_) | Self::Panicked(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
-    /// The page's text. Once the frame exists (T031) pages show it inside the frame.
+    /// The page's text, shown inside the frame.
     pub fn text(&self) -> String {
         match self {
             Self::Busy => "Busy; reload.".into(),
