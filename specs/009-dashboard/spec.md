@@ -26,6 +26,9 @@ cookie decisions (research R6 to R8, open Low L1) carry over to this slice's pla
 - Q: On each agent key card, the mockup shows "last used" and "requests today", but `keys list`
   shows neither. Add them to the CLI, or leave them off? → A: `keys list` gains "last used" now
   and the card shows it; "requests today" is a slot that arrives with slice 2's totals (FR-029a).
+- Q: Should the Combo page also list the unified models as `nullrouter unified` shows them, or only
+  say combos aren't built yet and name the command? → A: Only say so: it names `[[unified_model]]`
+  and `nullrouter unified` and shows `check`'s unified-model notices; no list (FR-037, brief row 7).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -500,7 +503,9 @@ plugin loads and its text icon is shown, and `check` names the plugin and the re
   shows it.
 - **FR-037**: Combo, Console Log and Proxy Pools MUST each say the feature isn't built yet and name
   what exists instead: Combo names `[[unified_model]]` in `config.toml` and `nullrouter unified`;
-  Console Log names the Usage page; Proxy Pools says 0router has no proxy pool feature.
+  Console Log names the Usage page; Proxy Pools says 0router has no proxy pool feature. Combo
+  MUST also show `check`'s notices about unified models (FR-024), and MUST NOT list the unified
+  models themselves; they stay in the CLI until a combos or model-tests slice.
 - **FR-038**: Every page MUST have the round housekeeping button. It MUST open a panel listing
   every current notice: every warning, note and error `check` reports, and every account that
   needs signing in again or is cooling down, in the CLI's words. The panel's chat box MUST be
@@ -597,6 +602,9 @@ the user, as long as nothing the user sees changes.
 
 - The token is entered once per browser and kept until the token is replaced. There is no
   time-based expiry, because the dashboard is local-only and read-only. *(technical decision)*
+- The operator turns the dashboard off and chooses its port in the home's configuration file, as
+  spec 007's plan decided; this slice adds no CLI command for it beyond `dashboard token` and
+  `dashboard status` (brief row 22). *(technical decision)*
 - One dashboard token at a time; there are no per-user tokens. The operator is the only user.
 - The page reads the same server state the CLI reads, through the shared read model of slice 008,
   so "agrees with the CLI" can be tested against one snapshot. *(technical decision)*
@@ -612,7 +620,7 @@ the user, as long as nothing the user sees changes.
 - The mockup's "Recent Requests" list on Usage is a records read (`records list`) and is shown
   where the mockup draws it, beside the topology graph slot. *(technical decision)*
 - Dropped unified models and limits notes go on the Combo entry, because it is the page that names
-  unified models; slice 1 has no other page that lists them. *(technical decision)*
+  unified models (clarified 2026-10-05).
 - Key cards show what `keys list` shows, including "last used" (FR-029a). "Requests today" is a
   slot for slice 2's totals; the harness badge is left off, and the harness tag arrives in slice 2
   (brief row 20).
