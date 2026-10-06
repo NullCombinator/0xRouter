@@ -233,7 +233,7 @@ impl Engine {
             reload: Mutex::new(()),
         };
         let st = engine.snapshot();
-        let restored = crate::route::restore(&engine, &st, SystemTime::now());
+        let restored = crate::route::restore(&engine, &st, crate::clock::now());
         tracing::info!("routing state restored: {} fingerprints, {} ledgers", restored.fingerprints, restored.ledgers);
         Ok((engine, report))
     }
@@ -243,7 +243,7 @@ impl Engine {
     /// server runs it before it listens.
     pub fn recover_journal(&self) -> std::io::Result<usize> {
         self.journal.flush_blocking();
-        let now = SystemTime::now();
+        let now = crate::clock::now();
         let closed = crate::journal::records::recover(self.home().path(), now)?;
         self.history.recover_counters(now);
         Ok(closed)
