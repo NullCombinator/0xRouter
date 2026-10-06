@@ -6,7 +6,8 @@ use std::process::ExitCode;
 use clap::Subcommand;
 use nullrouter_registry::OperatorHome;
 use nullrouter_registry::community::{self, InstallError};
-use serde_json::{Value, json};
+use nullrouter_server::views;
+use serde_json::json;
 
 #[derive(Subcommand)]
 pub(crate) enum Command {
@@ -73,30 +74,12 @@ fn done(
 /// Bundled and installed plugins as loaded, then, with `--community`, every community
 /// plugin with its fit status.
 fn list(home: Option<PathBuf>, with_community: bool, as_json: bool) -> Result<ExitCode, ExitCode> {
-    let handle = crate::open(home)?;
-    let reg = handle.snapshot();
-    let mut rows: Vec<Value> = reg
-        .providers()
-        .map(|p| json!({"id": p.id, "set": if p.is_bundled() { "bundled" } else { "user" }, "status": "loaded"}))
-        .collect();
-    let report = reg.report();
-    rows.extend(report.unsupported.iter().map(|u| json!({"id": u.id, "set": "user", "status": "unsupported"})));
-    rows.extend(report.skipped.iter().map(|s| json!({"id": s.id, "set": "user", "status": "invalid"})));
-    if with_community {
-        for p in community::community() {
-            let status = match &p.verdict {
-                _ if community::is_installed(p.id, handle.home()) => "installed",
-                Ok(v) if v.fits() => "fits",
-                Ok(_) => "unsupported",
-                Err(_) => "invalid",
-            };
-            rows.push(json!({"id": p.id, "set": "community", "status": status}));
-        }
-    }
+    let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
+    let view = super::read(&home, views::plugins::NEEDS, &json!({"community": with_community}), views::plugins::build)?;
     if as_json {
-        println!("{:#}", json!(rows));
+        println!("{:#}", view.json);
     } else {
-        for r in &rows {
+        for r in view.json.as_array().into_iter().flatten() {
             let s = |k: &str| r[k].as_str().unwrap_or_default().to_owned();
             println!("{:<24} {:<10} {}", s("id"), s("set"), s("status"));
         }

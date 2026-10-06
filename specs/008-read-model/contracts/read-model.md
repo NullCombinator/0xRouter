@@ -39,5 +39,7 @@ the routes; tests compare their results for every view (research R5).
 | `record` | agent key name for the record's key id | `--json` has always carried the id only |
 | `accounts` | `warnings`: a `tokens.toml` that doesn't load, which the CLI prints on stderr in text and `--json` alike | the warning goes to stderr, not into the `--json` rows |
 | `quota` | `offline`: no server answered, so the CLI adds its "no server is running" line on stderr | `--json` prints the same rows whether or not a server answered |
+| `resolve` | `notes`: the limits notes as the text prints them (`note: …`) | `--json` gives them structured, in `limits_notes` |
+| `check` | `withheld`, `notes`, `mode_lines`: the lines the text prints for withheld credentials, limits notes and file-mode findings | `--json` gives the structured fields only |
 
 Add a row for each case found while moving the reads.

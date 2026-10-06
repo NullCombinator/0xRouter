@@ -103,9 +103,9 @@ crate's tests, then commit, one read per commit. While moving, look for facts th
 - [X] T016 [US1] Move `records list` to `crates/nullrouter-server/src/views/records.rs` from `crates/nullrouter-cli/src/cmd/records.rs`: filter parsing and its error messages, `settle_open` naming from `Live.running`. It reads from disk by both routes (spec Clarifications Q1)
 - [X] T017 [US1] Move `records show` to `crates/nullrouter-server/src/views/records.rs` (as `record`); live op `records.get` first, then disk, as today. Put the key id → name map from `keys.toml` in `extra` (research R3); the CLI's `show` renderer reads it from there
 - [X] T018 [US1] Move `providers [--capability]` to `crates/nullrouter-server/src/views/providers.rs` and `model <p> <m>` to `crates/nullrouter-server/src/views/model.rs`. Both load the registry from the home's files (research R2), not from an engine snapshot
-- [ ] T019 [US1] Move `plugins list [--community]` to `crates/nullrouter-server/src/views/plugins.rs` from `crates/nullrouter-cli/src/cmd/plugins.rs`
-- [ ] T020 [US1] Move `resolve <target>` to `crates/nullrouter-server/src/views/resolve.rs` from `crates/nullrouter-cli/src/cmd/resolve.rs`, including `member` and `note_json` as `pub` functions there (US3 reuses them); `not_found` keeps exit code 2
-- [ ] T021 [US1] Move `check` to `crates/nullrouter-server/src/views/check.rs` from `crates/nullrouter-cli/src/cmd/check.rs`; live op `routing.health`. Do NOT add a `subject` field (brief row 16)
+- [X] T019 [US1] Move `plugins list [--community]` to `crates/nullrouter-server/src/views/plugins.rs` from `crates/nullrouter-cli/src/cmd/plugins.rs`
+- [X] T020 [US1] Move `resolve <target>` to `crates/nullrouter-server/src/views/resolve.rs` from `crates/nullrouter-cli/src/cmd/resolve.rs`, including `member` and `note_json` as `pub` functions there (US3 reuses them); `not_found` keeps exit code 2
+- [X] T021 [US1] Move `check` to `crates/nullrouter-server/src/views/check.rs` from `crates/nullrouter-cli/src/cmd/check.rs`; live op `routing.health`. Do NOT add a `subject` field (brief row 16)
 - [ ] T022 [US1] Make the startup-error path shared: the registry load failure message (`startup failed:\n…`, exit 1) that `crates/nullrouter-cli/src/main.rs` `open` prints becomes a `ViewError` the registry-backed views return, so both routes report it the same way
 
 ### Gates for User Story 1

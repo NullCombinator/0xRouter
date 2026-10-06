@@ -13,11 +13,14 @@ use nullrouter_registry::{OperatorHome, RegistryHandle};
 use serde_json::{Value, json};
 
 pub mod accounts;
+pub mod check;
 pub mod keys;
 pub mod model;
+pub mod plugins;
 pub mod providers;
 pub mod quota;
 pub mod records;
+pub mod resolve;
 pub mod routing;
 
 use crate::operator::{self, CallError};

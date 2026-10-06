@@ -34,8 +34,8 @@ One per read (research R1). Built by a sync function from two inputs and nothing
 | `model` | `model <provider> <model>` | — | — |
 | `plugins` | `plugins list [--community]` | — | — |
 | `keys` | `keys list` | — | — |
-| `check` | `check` | `routing.health` | — |
-| `resolve` | `resolve <target>` | — | — |
+| `check` | `check` | `routing.health` | `withheld`, `notes`, `mode_lines` |
+| `resolve` | `resolve <target>` | — | `notes` |
 | `unified` (new) | `unified [NAME]` | — | — |
 | `behaviour` (new) | `behaviour show` | — | — |
 
