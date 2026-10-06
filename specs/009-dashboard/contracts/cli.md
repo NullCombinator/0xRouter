@@ -45,11 +45,12 @@ token: issued 2026-10-05T11:50:00Z
 
 - After `home:`, a new line: `endpoint: http://127.0.0.1:20129/v1`, or with no server
   `endpoint: http://127.0.0.1:20129/v1 (configured; no server running)` (research R6).
-- New line kinds: `note: logo ignored: <plugin id>: <reason>`;
+- New line kinds: `note: logo ignored: <plugin id>: <reason>` (printed right after the `skipped:`
+  lines);
   `warning: dashboard not listening: <addr>: <reason>` (server running, bind failed); the file mode
   of `dashboard.toml`.
 - Every other line is unchanged, byte for byte, in the same order.
-- `--json` gains `endpoint`, `endpoint_source` and `notices` (data-model.md). Existing fields are
+- `--json` gains `endpoint`, `endpoint_source`, `logos_ignored` and `notices` (data-model.md). Existing fields are
   unchanged.
 
 ## `nullrouter keys list` (changed)

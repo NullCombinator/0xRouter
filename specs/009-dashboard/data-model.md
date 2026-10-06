@@ -33,7 +33,7 @@ Applies at the next `serve` start; the listener isn't rebound on reload.
 
 Resolved in the `logos/` directory beside the plugin's set (contracts/plugin-logo.md). Checked at
 load: at most 65,536 bytes; PNG signature; `IHDR` first, width and height 1 to 256. A failed check
-keeps the plugin and adds a load-report note.
+keeps the plugin and adds an entry to the load report's `logos_ignored` list.
 
 ### Logo files
 
@@ -61,7 +61,7 @@ keeps the plugin and adds a load-report note.
 
 | Field | Meaning |
 |---|---|
-| `bound` | `Ok(addr)` or `Err(reason)` from binding at startup; answered by `server.status`. |
+| `serving` | `Ok(addr)` or `Err(reason)` from binding at startup; answered by `server.status` as `serving` and `error`. |
 | `failures` | Wrong tokens since the last success; delay = min(1 s × 2ⁿ, 30 s). |
 | `builds` | A semaphore of 2 page-build permits. |
 
@@ -82,6 +82,7 @@ Built, rendered and dropped per request; never cached (FR-022).
 {
   "endpoint": "http://127.0.0.1:20129/v1",
   "endpoint_source": "server",
+  "logos_ignored": [{"id": "crush", "reason": "2700 × 1392 px, over 256 px"}],
   "notices": [
     {"level": "warning", "subject": "quota",
      "text": "warning: sign-in account anthropic/work has no tokens and can't serve; run `nullrouter accounts login anthropic work`"},
@@ -92,6 +93,7 @@ Built, rendered and dropped per request; never cached (FR-022).
 ```
 
 - `endpoint_source`: `"server"` (the running server's address) or `"config"` (no server).
+- `logos_ignored`: one entry per logo that failed the check at load; empty when none.
 - `level`: `error`, `warning` or `note`. `subject`: `endpoint`, `providers`, `combo`, `usage`,
   `quota` or `settings` (research R5 table). `text`: the exact line `check` prints; a multi-line
   notice (a skipped plugin and its errors) has its lines joined by `\n`.

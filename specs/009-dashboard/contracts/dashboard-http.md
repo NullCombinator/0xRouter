@@ -20,7 +20,8 @@ no scripts anywhere (FR-004).
 
 | Request | No token issued | Token issued, no or wrong cookie | Valid cookie |
 |---|---|---|---|
-| `GET /assets/<hash>/<file>`, `GET /logos/<hash>/<id>.png` | 200 | 200 | 200 |
+| `GET /assets/<hash>/<file>` | 200 | 200 | 200 |
+| `GET /logos/<hash>/<id>.png` | 303 → `/signin` | 303 → `/signin` | 200 |
 | `GET /signin` | 200: "No dashboard token yet. Run `nullrouter dashboard token`." | 200: the token form | 303 → `/` |
 | `POST /signin` (`token=…`, form-encoded) | 200: the no-token page | right: 303 → `next` or `/`, `Set-Cookie`. Wrong: after the delay, 401 with the form and "That token is not the current one." | 303 → `/` |
 | any other route | 303 → `/signin` | 303 → `/signin?next=<path and query>` | the page |
@@ -29,8 +30,9 @@ no scripts anywhere (FR-004).
 - `POST /signin` with an `Origin` that isn't this dashboard's → 403.
 - `Set-Cookie: nr_dashboard=<token>; Path=/; HttpOnly; SameSite=Strict; Max-Age=34560000`.
 - There is no sign-out route: signing out is issuing a new token or clearing the browser's data.
-- Logos are public like the other assets: they carry no 0router data beyond which plugins are
-  loaded, which the sign-in page doesn't link to.
+- Logos need the cookie, as pages do: a user plugin's logo shows which plugins this home loads
+  (FR-008). The browser sends the SameSite=Strict cookie when a page loads its own images.
+  Assets (style, font, icons) carry no 0router data and need no cookie.
 
 ## Frame (every page after sign-in)
 
@@ -67,7 +69,7 @@ no scripts anywhere (FR-004).
   the card adds "(configured; no server running)", as `check` does. The copy button is not drawn
   (it needs a script).
 - Slot: "Agent traffic" (the landscape), "Arrives with the next dashboard slice."
-- Agent cards, one per key, as `keys list` shows them: name, `…last4`, created, revoked (with
+- Agent cards, one per key, as `keys list` shows them: name, id, `…last4`, created, revoked (with
   time), break behaviour (`default` when none), last used (`never` when none). Each card has a
   slot for "requests today". The "Add Agent" control is disabled with
   "In the CLI: `nullrouter keys issue <name>`".

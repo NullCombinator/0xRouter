@@ -36,7 +36,8 @@ icon. The check doesn't decode the image. SVG is never accepted.
 
 ## Served
 
-`GET /logos/<content hash>/<provider id>.png` on the dashboard port, `Content-Type: image/png`,
+`GET /logos/<content hash>/<provider id>.png` on the dashboard port, behind the dashboard cookie
+like a page, `Content-Type: image/png`,
 `X-Content-Type-Options: nosniff`, under the CSP's `img-src 'self'`.
 
 ## Shipped logos (generator)

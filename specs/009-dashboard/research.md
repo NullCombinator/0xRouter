@@ -87,7 +87,7 @@ unchanged byte for byte. Existing JSON fields stay.
 |---|---|---|
 | `conflict pending: …`, `declined: …`, `credential WITHHELD: …` | warning | `providers` |
 | `skipped: …` (with its indented errors) | error | `providers` |
-| `note: logo ignored: …` (R10) | note | `providers` |
+| `note: logo ignored: …` (R10; its own `logos_ignored` list, printed right after the `skipped:` lines) | note | `providers` |
 | `dropped unified model …`, `note: unified model … members differ …` (limits notes) | error / note | `combo` |
 | `warning: records not kept since …` | warning | `usage` |
 | `note: … reports window …` (unmetered), `warning:` routing warnings, sign-in `error:` lines, tokens without an account, accounts without tokens | as printed | `quota` |
@@ -154,7 +154,7 @@ a session table (state for no gain), the token in the URL (leaks through history
   a load error naming the rule (FR-002).
 - Its own `TcpListener`, task and axum router. A bind failure is logged and kept; `serve` keeps
   serving clients. A new operator op, `server.status`, answers
-  `{client_listen, dashboard: {enabled, listen, bound, error?}}` for `check` (R6) and
+  `{client_listen, dashboard: {enabled, listen, serving, error}}` for `check` (R6) and
   `dashboard status` (contracts/cli.md).
 - Bounded work: at most 2 page builds at once (others wait up to 5 s, then 503), each with a 10 s
   timeout, each in its own task so a panic is that page's 500. Reads run on the blocking pool
@@ -204,16 +204,21 @@ more than `records list` with a filter that matches nothing.
   copies a community plugin's logo there, and `plugins uninstall` removes it.
 - **Check at load** (the core reads; the plugin does nothing): at most 64 KiB; the PNG signature;
   an `IHDR` chunk first, with width and height each 1 to 256. No decoding, so no image library
-  in the core. A failure keeps the plugin loaded and adds a load-report note,
-  `logo ignored: <plugin id>: <reason>` (`file not found`, `not a PNG`, `78 KiB, over 64 KiB`,
-  `2700 × 1392 px, over 256 px`). `check` prints it as `note: …` with subject `providers`.
-- **Serving**: `GET /logos/<provider id>.png` from the registry snapshot's bytes (kept in memory,
+  in the core. A failure keeps the plugin loaded and adds an entry to the load report's own
+  `logos_ignored` list (not the typed limits `notes`): `{id, reason}`, with reasons
+  `file not found: logos/<file>`, `not a PNG`, `<n> KiB, over 64 KiB` and
+  `<w> × <h> px, over 256 px` (contracts/plugin-logo.md). `check` prints each as
+  `note: logo ignored: <plugin id>: <reason>` right after the `skipped:` lines, with subject
+  `providers`, and its JSON gains `logos_ignored`.
+- **Serving**: `GET /logos/<content hash>/<provider id>.png`, behind the dashboard cookie like a
+  page (FR-008: a user plugin's logo shows which plugins this home loads), from the registry
+  snapshot's bytes (kept in memory,
   at most 64 KiB each), `Content-Type: image/png`, `nosniff`, and the CSP's `img-src 'self'`. No
   SVG is accepted (FR-042).
 - **Shipping (FR-040a)**: the generator (`tools/gen-bundled/generate.mjs`) copies
   `ref/9router/public/providers/<id>.png` to `plugins/{bundled,community}/logos/<id>.png` and
-  writes `logo = "<id>.png"` into the generated community plugins. The five hand-maintained
-  bundled plugins get the line by hand. Of 121 plugins, 119 have a file of the same id in 9router
+  writes `logo = "<id>.png"` into the generated community plugins. The seven hand-maintained
+  bundled plugins get the line by hand (six; `opencode-zen` has no logo). Of 121 plugins, 119 have a file of the same id in 9router
   (`opencode-zen` and `ollama-search` don't, so they show text icons). Five files fail the check
   today: `crush.png` (2700 × 1392, 790 KB), `nebius.png`, `reka.png` and `siliconflow.png` (JPEGs
   named `.png`), and `kimchi.svg` (SVG). They are converted once to PNGs within the limits with
@@ -249,7 +254,7 @@ a few KB.
 this slice, and `crates/nullrouter-dashboard/style/tokens.toml` its machine-readable half, as
 007's contract described: each token has a `value` and a `source` (`ref/9router` file and line,
 and the Tailwind class when it came from one). `dashboard.css` uses only `var(--token)`,
-keywords and `0`; `tokens.css` is generated from `tokens.toml` and tested. Light theme only.
+keywords, `0`, and percentages in `width`/`flex` layout; `tokens.css` is generated from `tokens.toml` and tested. Light theme only.
 
 What changes from 007:
 - The guide's "Not taken: page structure, navigation entries" is removed. The sidebar (the

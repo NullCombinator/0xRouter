@@ -102,7 +102,7 @@ machine. `dashboard status` matches each state.
 7. **Given** another website open in the operator's browser, **When** it tries to load or embed a
    dashboard page, **Then** it can't read the page or see its content.
 8. **Given** the token was printed once by the CLI, **When** the operator looks for it later in
-   the home directory, logs, records, `dashboard status` or any page, **Then** it is not there in
+   the operator home, logs, records, `dashboard status` or any page, **Then** it is not there in
    readable form.
 
 ---
@@ -382,7 +382,7 @@ plugin loads and its text icon is shown, and `check` names the plugin and the re
 - **FR-005**: `nullrouter dashboard token` MUST issue a dashboard token and print it once. Issuing
   a new one replaces the old one, and every browser signed in with the old one must sign in again.
 - **FR-006**: The dashboard token MUST be stored the way the operator's other secrets are, and
-  MUST NOT be readable from the home directory, logs, records, CLI output (beyond the one time it
+  MUST NOT be readable from the operator home (`$NULLROUTER_HOME`), logs, records, CLI output (beyond the one time it
   is issued), or any page.
 - **FR-007**: Until a token is issued, every dashboard address MUST show only a page that names
   `nullrouter dashboard token`.

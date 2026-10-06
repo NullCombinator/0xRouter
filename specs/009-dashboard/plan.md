@@ -167,6 +167,9 @@ rule for generator output says.
 
 ## Phases for tasks
 
+The build order below was the plan's first cut. `tasks.md` orders the work by story priority
+(token and access first, logos last as P3), and its order wins.
+
 1. **Read-model additions** (no dashboard yet; the CLI's tests are the gate): `check` notices with
    subjects and the endpoint (R5, R6), `server.status`, `keys.last_used` and "last used" in
    `keys list` with its bench (R9).
