@@ -41,6 +41,9 @@ pub(crate) enum Command {
         since: Option<String>,
         #[arg(long)]
         limit: Option<usize>,
+        /// Only records older than this one: the next page back. The id must name a record.
+        #[arg(long, value_name = "ID")]
+        before: Option<String>,
     },
     Show {
         id: String,
@@ -81,10 +84,10 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
     let running = views::server_runs(&home);
     match cmd {
-        Command::List { provider, account, agent, model, reason, since, limit } => {
+        Command::List { provider, account, agent, model, reason, since, limit, before } => {
             let args = json!({
                 "provider": provider, "account": account, "agent": agent, "model": model,
-                "reason": reason, "since": since, "limit": limit,
+                "reason": reason, "since": since, "limit": limit, "before": before,
             });
             let view = super::read(&home, views::records::NEEDS, &args, views::records::build)?;
             if as_json {

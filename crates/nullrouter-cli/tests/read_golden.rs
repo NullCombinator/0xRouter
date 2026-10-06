@@ -56,6 +56,13 @@ fn reads() -> Vec<Vec<String>> {
         v.push(vec!["records".into(), "show".into(), r(n)]);
     }
     v.push(vec!["records".into(), "show".into(), "rq_missing".into()]);
+    // Paging back (spec 008 US2).
+    for extra in [["--limit", "2"].as_slice(), ["--agent", "ak_fixture1"].as_slice(), [].as_slice()] {
+        let mut a = vec!["records".to_owned(), "list".into(), "--before".into(), r(5)];
+        a.extend(extra.iter().map(|s| (*s).to_owned()));
+        v.push(a);
+    }
+    v.push(vec!["records".into(), "list".into(), "--before".into(), "rq_missing".into()]);
     v
 }
 

@@ -5,7 +5,7 @@
 //! | Request | Response |
 //! |---|---|
 //! | `{"op":"reload"}` | `{"ok":true,"generation":N}` (plus `"notes":[…]` when unified models' limits differ), or the error with the old snapshot kept |
-//! | `{"op":"records.list","provider"?,"unified_model"?,"account"?,"agent"?,"model"?,"reason"?,"since"?,"limit"?}` | `{"ok":true,"records":[…]}`: the journal's records plus those still in flight, newest first |
+//! | `{"op":"records.list","provider"?,"unified_model"?,"account"?,"agent"?,"model"?,"reason"?,"since"?,"limit"?,"before"?}` | `{"ok":true,"records":[…]}`: the journal's records plus those still in flight, newest first, those with an id below `before` (which must name a record, else `{"ok":false,"error":"no record rq_…"}`) |
 //! | `{"op":"records.get","id":"rq_…"}` | `{"ok":true,"record":{…}}` |
 //! | `{"op":"records.forget","account"?:"P/N","agent"?:KEY}` | `{"ok":true,"fingerprints":N}`: the agent's fingerprints (or the account's fingerprints and ledger entries) leave memory and `routing/warm.jsonl`, and the live ring; the CLI then rewrites the record segments |
 //! | `{"op":"accounts.state"}` | `{"ok":true,"accounts":[…]}`: per account `kind`, `state`, `state_since`, `state_reason`, `expires_at`, cooldowns |
@@ -212,8 +212,18 @@ async fn records_list(engine: &Arc<Engine>, req: &Value) -> Value {
         reason: str_of("reason"),
         since: str_of("since").and_then(|s| nullrouter_engine::clock::parse_rfc3339(&s)),
         limit,
+        before: str_of("before"),
     };
     let home = engine.home().path().to_owned();
+    if let Some(id) = &filter.before {
+        let (h, wanted) = (home.clone(), id.clone());
+        let named = tokio::task::spawn_blocking(move || records::cursor_exists(&h, &wanted)).await.unwrap_or(false);
+        // A request still in flight is a record too, and only the server knows it.
+        let live = engine.records.query(&Query::default()).iter().any(|r| &r.id == id);
+        if !named && !live {
+            return json!({"ok": false, "error": format!("no record {id}")});
+        }
+    }
     let read = filter.clone();
     let mut disk = tokio::task::spawn_blocking(move || records::read(&home, &read)).await.unwrap_or_default();
     let live: Vec<Value> = engine
@@ -331,6 +341,7 @@ mod tests {
                 json!({"op": "records.get", "id": "rq_x"}),
                 json!({"op": "nope"}),
                 json!({"op": "quota.checkpoint"}),
+                json!({"op": "records.list", "before": "rq_nobody"}),
             ]
             .iter()
             .map(|r| call(&h, r).unwrap())
@@ -343,6 +354,7 @@ mod tests {
         assert_eq!(answers[2]["ok"], false);
         // The running tally reaches its checkpoint file on request.
         assert_eq!(answers[3], json!({"ok": true, "written": 1}));
+        assert_eq!(answers[4], json!({"ok": false, "error": "no record rq_nobody"}));
         let cp = nullrouter_engine::quota::history::tally_file(dir.path(), "p", "a").unwrap();
         assert!(std::fs::read_to_string(cp).unwrap().contains("\"requests\":1"));
         stop.send(()).unwrap();

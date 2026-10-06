@@ -50,8 +50,15 @@ pub fn build(home: &OperatorHome, args: &Value, live: &Live) -> Result<View, Vie
         reason: text(args, "reason"),
         since,
         limit: args["limit"].as_u64().map(|n| n as usize),
+        before: text(args, "before"),
         ..Default::default()
     };
+    // The page back starts at a record that exists.
+    if let Some(id) = &filter.before
+        && !records::cursor_exists(home.path(), id)
+    {
+        return Err(ViewError::failed(format!("no record {id}")));
+    }
     let mut found = records::read(home.path(), &filter);
     settle_open(&mut found, live.running);
     Ok(View::new(Value::Array(found)))
