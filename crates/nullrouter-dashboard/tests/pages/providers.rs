@@ -168,8 +168,9 @@ async fn an_unknown_provider_is_a_404_with_the_clis_message() {
 async fn the_search_filters_cards_by_id() {
     let d = Dash::dashboard().await;
     let page = d.ok("/providers?q=ANTHRO").await;
-    assert!(page.contains("href=\"/providers/anthropic\""));
-    assert!(!page.contains("href=\"/providers/xai\""));
+    // A card's link keeps the query, so only the start of the address is fixed.
+    assert!(page.contains("href=\"/providers/anthropic"), "{page}");
+    assert!(!page.contains("href=\"/providers/xai"));
     let none = text_of(&d.ok("/providers?q=zzzz-nothing").await);
     assert!(none.contains("No provider matches"), "{none}");
 }
