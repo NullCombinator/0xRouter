@@ -1,0 +1,13 @@
+exit: 0
+--- stdout
+provider: "xai"
+model: "grok-4"
+declared: true
+name: "Grok 4"
+kind: null
+target_format: null
+supported_formats: null
+quota_family: null
+strip: null
+upstream_id: "grok-4"
+--- stderr

@@ -1,0 +1,14 @@
+exit: 0
+--- stdout
+rq_01M3XXF0M00000000000000002  2026-10-02 09:00:00  succeeded
+agent       ci
+door        anthropic-messages  generate  text
+target      sonnet
+served by   anthropic/main  claude-sonnet-4-5
+ttft        120.0 ms     total 900.0 ms
+usage       not reported
+break       none
+attempts
+  1  anthropic/main   claude-sonnet-4-5          warm (rank 0)  ok
+       0.90 s
+--- stderr

@@ -1,0 +1,4 @@
+exit: 0
+--- stdout
+--- stderr
+grok-cli/work: no poll history

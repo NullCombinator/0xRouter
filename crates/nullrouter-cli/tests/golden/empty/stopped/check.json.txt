@@ -1,0 +1,39 @@
+exit: 0
+--- stdout
+{
+  "home": "<HOME>",
+  "providers": {
+    "bundled": 7,
+    "user": 0
+  },
+  "unified_models": 0,
+  "pending_conflicts": [],
+  "declined": [],
+  "withheld_credentials": [],
+  "skipped": [],
+  "dropped_unified_models": [],
+  "limits_notes": [],
+  "journal": null,
+  "unmetered_windows": [
+    {
+      "provider": "grok-cli",
+      "window": "on-demand"
+    },
+    {
+      "provider": "grok-cli",
+      "window": "prepaid"
+    },
+    {
+      "provider": "grok-cli",
+      "window": "credits"
+    }
+  ],
+  "routing_warnings": [],
+  "signin": {
+    "errors": [],
+    "tokens_without_account": [],
+    "accounts_without_tokens": [],
+    "file_modes": []
+  }
+}
+--- stderr

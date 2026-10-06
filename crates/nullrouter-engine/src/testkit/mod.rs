@@ -1,6 +1,7 @@
 //! Test support (feature `testkit`): an in-process, scripted upstream, identity provider
 //! and quota endpoints.
 
+pub mod homes;
 pub mod mock_idp;
 pub mod mock_quota;
 pub mod mock_upstream;

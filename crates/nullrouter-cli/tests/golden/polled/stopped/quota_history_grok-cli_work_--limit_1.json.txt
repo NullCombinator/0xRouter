@@ -1,0 +1,30 @@
+exit: 0
+--- stdout
+[
+  {
+    "v": 1,
+    "at": "2026-10-03T14:18:00.000Z",
+    "ok": true,
+    "windows": [
+      {
+        "name": "prepaid",
+        "unit": "credits",
+        "used": 1240.0,
+        "limit": 5000.0,
+        "remaining": 3760.0,
+        "resets_at": "2026-11-01T00:00:00.000Z"
+      }
+    ],
+    "tally": {
+      "grok-build": {
+        "requests": 3,
+        "requests_usage_unreported": 0,
+        "input": 900,
+        "output": 300,
+        "cache_read": 0,
+        "cache_write": 0
+      }
+    }
+  }
+]
+--- stderr

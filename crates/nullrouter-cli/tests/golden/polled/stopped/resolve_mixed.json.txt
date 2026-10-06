@@ -1,0 +1,7 @@
+exit: 2
+--- stdout
+{
+  "kind": "not_found",
+  "error": "no unified model named \"mixed\""
+}
+--- stderr

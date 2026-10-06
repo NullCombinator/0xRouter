@@ -1,0 +1,12 @@
+exit: 0
+--- stdout
+anthropic                bundled    loaded
+elevenlabs               bundled    loaded
+grok-cli                 bundled    loaded
+opencode-go              bundled    loaded
+opencode-zen             bundled    loaded
+openrouter               bundled    loaded
+xai                      bundled    loaded
+bluesminds               user       loaded
+broken                   user       invalid
+--- stderr

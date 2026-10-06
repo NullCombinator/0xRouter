@@ -1,0 +1,7 @@
+exit: 0
+--- stdout
+xai/work                 quota not reported
+xai/old                  quota not reported
+xai/gone                 quota not reported
+--- stderr
+no server is running: quota is polled only while `nullrouter serve` runs

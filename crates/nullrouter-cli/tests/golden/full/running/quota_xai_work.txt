@@ -1,0 +1,4 @@
+exit: 0
+--- stdout
+xai/work                 quota not reported
+--- stderr

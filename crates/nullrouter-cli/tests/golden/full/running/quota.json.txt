@@ -1,0 +1,65 @@
+exit: 0
+--- stdout
+[
+  {
+    "provider": "anthropic",
+    "name": "main",
+    "kind": "key",
+    "disabled": false,
+    "reported": false,
+    "interval_s": 600,
+    "latest": null,
+    "last_failure": null
+  },
+  {
+    "provider": "anthropic",
+    "name": "spare",
+    "kind": "key",
+    "disabled": true,
+    "reported": false,
+    "interval_s": 600,
+    "latest": null,
+    "last_failure": null
+  },
+  {
+    "provider": "openrouter",
+    "name": "envkey",
+    "kind": "key",
+    "disabled": false,
+    "reported": false,
+    "interval_s": 600,
+    "latest": null,
+    "last_failure": null
+  },
+  {
+    "provider": "xai",
+    "name": "work",
+    "kind": "signin",
+    "disabled": false,
+    "reported": false,
+    "interval_s": 600,
+    "latest": null,
+    "last_failure": null
+  },
+  {
+    "provider": "xai",
+    "name": "old",
+    "kind": "signin",
+    "disabled": false,
+    "reported": false,
+    "interval_s": 600,
+    "latest": null,
+    "last_failure": null
+  },
+  {
+    "provider": "xai",
+    "name": "gone",
+    "kind": "signin",
+    "disabled": false,
+    "reported": false,
+    "interval_s": 600,
+    "latest": null,
+    "last_failure": null
+  }
+]
+--- stderr

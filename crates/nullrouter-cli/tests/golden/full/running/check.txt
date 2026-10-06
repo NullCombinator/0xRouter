@@ -1,0 +1,16 @@
+exit: 1
+--- stdout
+home: <HOME>
+providers: 8 (7 bundled, 1 user)
+unified models: 1
+skipped: <HOME>/plugins/broken.toml
+  <HOME>/plugins/broken.toml:3:6: key with no value, expected `=`
+dropped unified model lost: member provider broken was skipped
+note: unified model mixed: members differ in context_length: grok-cli 500000, bluesminds 200000
+note: unified model mixed: members differ in max_output_tokens: grok-cli 64000, bluesminds undeclared
+note: grok-cli reports window on-demand, which no [[routing.window]] meter names; it is paced in its own unit
+note: grok-cli reports window prepaid, which no [[routing.window]] meter names; it is paced in its own unit
+note: grok-cli reports window credits, which no [[routing.window]] meter names; it is paced in its own unit
+warning: anthropic/main is pay-as-you-go with no price in its plugin or account; it ranks as price 1 against other pay-as-you-go accounts
+warning: anthropic/spare is pay-as-you-go with no price in its plugin or account; it ranks as price 1 against other pay-as-you-go accounts
+--- stderr

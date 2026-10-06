@@ -1,0 +1,4 @@
+exit: 0
+--- stdout
+provider  name  kind  order  priority  secret  state
+--- stderr

@@ -1,0 +1,21 @@
+exit: 0
+--- stdout
+{
+  "ok": true,
+  "now": "2026-10-03T14:23:00Z",
+  "amortization": {
+    "start": "2026-10-03T14:00:00.000Z",
+    "length": "5h"
+  },
+  "journal": {
+    "kept": true,
+    "since": null,
+    "unkept_requests": 0,
+    "held_lines": 0,
+    "last_sync": null,
+    "last_sync_age_s": null
+  },
+  "targets": [],
+  "warnings": []
+}
+--- stderr

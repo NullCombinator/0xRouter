@@ -1,0 +1,11 @@
+exit: 0
+--- stdout
+rq_01M4129AT00000000000000006  2026-10-03 14:22:00  in progress
+agent       laptop
+door        anthropic-messages  generate  text
+target      opus
+ttft        -            total -
+usage       not reported
+break       none
+attempts
+--- stderr

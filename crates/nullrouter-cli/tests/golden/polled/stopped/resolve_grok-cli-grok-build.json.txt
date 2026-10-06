@@ -1,0 +1,10 @@
+exit: 0
+--- stdout
+{
+  "kind": "direct",
+  "provider": "grok-cli",
+  "requested": "grok-build",
+  "upstream_id": "grok-build",
+  "catalogued": true
+}
+--- stderr

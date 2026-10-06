@@ -1,0 +1,58 @@
+exit: 0
+--- stdout
+[
+  {
+    "id": "rq_01M3Y61NP00000000000000003",
+    "arrived": "2026-10-02T11:30:00Z",
+    "agent": {
+      "key": "ak_unnamed",
+      "session": null
+    },
+    "style": "anthropic-messages",
+    "op": "generate",
+    "model_type": "text",
+    "target": "grok",
+    "unified_model": null,
+    "served_by": {
+      "provider": "xai",
+      "account": "work",
+      "model": "grok-4"
+    },
+    "attempts": [
+      {
+        "n": 1,
+        "provider": "xai",
+        "account": "work",
+        "model": "grok-4",
+        "kind": "initial",
+        "placement": {
+          "reason": "payg_overflow",
+          "rank": 0
+        },
+        "started": 0.4,
+        "ended": 900.0,
+        "outcome": {
+          "state": "ok"
+        },
+        "dropped": [],
+        "forced": []
+      }
+    ],
+    "outcome": "succeeded",
+    "break_handling": {
+      "kind": "none"
+    },
+    "ttft_ms": 120.0,
+    "total_ms": 900.0,
+    "usage": {
+      "input": 1204,
+      "output": 388,
+      "cache_read": 18432,
+      "cache_write": null,
+      "estimated": false
+    },
+    "job": null,
+    "decision": null
+  }
+]
+--- stderr

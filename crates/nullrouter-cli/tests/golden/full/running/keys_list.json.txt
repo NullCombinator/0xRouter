@@ -1,0 +1,21 @@
+exit: 0
+--- stdout
+[
+  {
+    "id": "ak_fixture1",
+    "name": "laptop",
+    "key": "…L0P1",
+    "created": "2026-10-01T08:00:00Z",
+    "revoked": null,
+    "break": null
+  },
+  {
+    "id": "ak_fixture2",
+    "name": "ci",
+    "key": "…C1C1",
+    "created": "2026-10-01T08:30:00Z",
+    "revoked": "2026-10-02T17:00:00Z",
+    "break": "error_event"
+  }
+]
+--- stderr

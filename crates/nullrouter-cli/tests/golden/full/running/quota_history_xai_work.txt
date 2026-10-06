@@ -1,0 +1,6 @@
+exit: 0
+--- stdout
+14:00         ok       monthly 1,240 / 5,000 credits used
+  grok-4                 12 requests (1 usage unreported)   input 5,120   output 2,210   cache read 40,960   cache write 1,024
+14:10         failed   timeout   no traffic
+--- stderr

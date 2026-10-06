@@ -1,0 +1,10 @@
+exit: 0
+--- stdout
+anthropic/main           quota not reported
+anthropic/spare          quota not reported
+openrouter/envkey        quota not reported
+xai/work                 quota not reported
+xai/old                  quota not reported
+xai/gone                 quota not reported
+--- stderr
+no server is running: quota is polled only while `nullrouter serve` runs

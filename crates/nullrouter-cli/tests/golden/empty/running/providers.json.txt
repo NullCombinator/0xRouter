@@ -1,0 +1,80 @@
+exit: 0
+--- stdout
+[
+  {
+    "id": "anthropic",
+    "alias": "anthropic",
+    "category": "apikey",
+    "capabilities": [
+      "llm",
+      "image_to_text"
+    ],
+    "source": "bundled"
+  },
+  {
+    "id": "elevenlabs",
+    "alias": "el",
+    "category": "apikey",
+    "capabilities": [
+      "tts",
+      "stt"
+    ],
+    "source": "bundled"
+  },
+  {
+    "id": "grok-cli",
+    "alias": "gcli",
+    "category": "apikey",
+    "capabilities": [
+      "llm"
+    ],
+    "source": "bundled"
+  },
+  {
+    "id": "opencode-go",
+    "alias": "opencode-go",
+    "category": "apikey",
+    "capabilities": [
+      "llm",
+      "image_to_text"
+    ],
+    "source": "bundled"
+  },
+  {
+    "id": "opencode-zen",
+    "alias": "ocz",
+    "category": "apikey",
+    "capabilities": [
+      "llm",
+      "image_to_text"
+    ],
+    "source": "bundled"
+  },
+  {
+    "id": "openrouter",
+    "alias": "openrouter",
+    "category": "freeTier",
+    "capabilities": [
+      "llm",
+      "image",
+      "image_to_text",
+      "video",
+      "tts",
+      "embedding"
+    ],
+    "source": "bundled"
+  },
+  {
+    "id": "xai",
+    "alias": "xai",
+    "category": "apikey",
+    "capabilities": [
+      "llm",
+      "image",
+      "image_to_text",
+      "video"
+    ],
+    "source": "bundled"
+  }
+]
+--- stderr

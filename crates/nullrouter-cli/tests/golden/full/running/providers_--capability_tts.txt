@@ -1,0 +1,5 @@
+exit: 0
+--- stdout
+elevenlabs               el         apikey     tts,stt
+openrouter               openrouter freeTier   llm,image,image_to_text,video,tts,embedding
+--- stderr
