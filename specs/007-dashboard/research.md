@@ -1,7 +1,7 @@
 # Research: Dashboard (slice 007)
 
 Decisions taken in planning. Each one lists what was chosen, why, and what was rejected. The
-brief's ledger (specs/briefs/2026-10-05-dashboard.md) is the authority. Nothing here contradicts a
+brief's ledger (specs/briefs/2026-10-05-dashboard-v1-superseded.md) is the authority. Nothing here contradicts a
 confirmed row; where a decision touches one, the row is named.
 
 ## R1. One view layer shared by the CLI and the dashboard

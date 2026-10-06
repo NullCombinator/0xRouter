@@ -4,7 +4,7 @@
 
 **Input**: Feature specification from `/specs/007-dashboard/spec.md`
 
-**Scope brief**: [specs/briefs/2026-10-05-dashboard.md](../briefs/2026-10-05-dashboard.md). A
+**Scope brief**: [specs/briefs/2026-10-05-dashboard-v1-superseded.md](../briefs/2026-10-05-dashboard-v1-superseded.md). A
 plan decision that contradicts a confirmed ledger row means stop and revisit the brief.
 
 ## Summary
