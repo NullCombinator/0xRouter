@@ -11,7 +11,7 @@ fn name(s: &str) -> Result<HarnessName, String> {
 #[test]
 fn harness_round_trips_through_keys_toml() {
     let dir = tempfile::tempdir().unwrap();
-    let mut keys = Keys { path: dir.path().join("keys.toml"), ..Keys::default() };
+    let mut keys = Keys::load(&dir.path().join("keys.toml")).unwrap();
     keys.issue("laptop", None).unwrap();
     keys.set_harness("laptop", Some(name("hermes").unwrap())).unwrap();
     keys.save().unwrap();
