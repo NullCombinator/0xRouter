@@ -38,9 +38,9 @@ impl Phase {
         Phase::Delivery,
     ];
 
-    fn Phase::slot(self) -> usize {
+    fn slot(self) -> usize {
         match self {
-            Phase::WaitingForProvider => Phase::Headers.Phase::slot(),
+            Phase::WaitingForProvider => Phase::Headers.slot(),
             p => Phase::ALL.iter().position(|q| *q == p).unwrap_or(0),
         }
     }
@@ -132,7 +132,7 @@ impl AttemptPhases {
     }
 
     pub fn value(&self, p: Phase) -> PhaseValue {
-        self.phases[p.Phase::slot()]
+        self.phases[p.slot()]
     }
 
     /// The sum of every `Ms` (in-progress time is not counted).
