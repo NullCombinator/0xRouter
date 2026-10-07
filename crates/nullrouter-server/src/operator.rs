@@ -14,6 +14,8 @@
 //! | `{"op":"routing.health"}` | `{"ok":true,"journal":{kept,since,unkept_requests,held_lines,last_sync,last_sync_age_s}}` |
 //! | `{"op":"server.status"}` | `{"ok":true,"client_listen":"…"\|null,"dashboard":{enabled,listen,serving,error}}`: the address `serve` bound for clients, and the dashboard listener's state |
 //! | `{"op":"quota.list"}`, `{"op":"quota.poll"}`, `{"op":"quota.checkpoint"}` | see [`crate::quota`] |
+//! | `{"op":"test.plan","target"?,"account"?,"all"?}` | `{"ok":true,"pairs":[{provider,account,model,type,skip?}],"calls":{"<type>":N}}` (spec 011) |
+//! | `{"op":"test.run","target"?,"account"?,"all"?}` | streamed: one `{"event":"result","result":TestResult}` line per pair, then `{"ok":true,"done":{pass,broken,unknown,skipped}}`. Closing the connection cancels calls not yet sent |
 
 use std::future::Future;
 use std::io::{BufRead, BufReader, Write};
@@ -25,10 +27,15 @@ use std::time::Duration;
 use nullrouter_engine::journal::records;
 use nullrouter_engine::records::Query;
 use nullrouter_engine::state::Engine;
+use nullrouter_engine::tests::{self as model_tests, Planned};
+use nullrouter_engine::verdict::{Source, State};
 use nullrouter_registry::OperatorHome;
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader, Lines};
+use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 /// The socket's path under the operator home.
 pub fn socket_path(home: &OperatorHome) -> PathBuf {
@@ -75,18 +82,89 @@ pub async fn serve(engine: Arc<Engine>, listener: UnixListener, shutdown: impl F
 
 async fn connection(engine: Arc<Engine>, stream: UnixStream) {
     let (read, mut write) = stream.into_split();
-    let mut lines = tokio::io::BufReader::new(read).lines();
+    let mut lines = AsyncBufReader::new(read).lines();
     while let Ok(Some(line)) = lines.next_line().await {
         let answer = match serde_json::from_str::<Value>(&line) {
+            Ok(req) if req.get("op").and_then(Value::as_str) == Some("test.run") => {
+                match test_run(&engine, &req, &mut lines, &mut write).await {
+                    Some(done) => done,
+                    None => return,
+                }
+            }
             Ok(req) => handle(&engine, &req).await,
             Err(e) => json!({"ok": false, "error": format!("not JSON: {e}")}),
         };
-        let mut out = answer.to_string();
-        out.push('\n');
-        if write.write_all(out.as_bytes()).await.is_err() {
+        if send(&mut write, &answer).await.is_err() {
             return;
         }
     }
+}
+
+async fn send(write: &mut OwnedWriteHalf, v: &Value) -> std::io::Result<()> {
+    let mut out = v.to_string();
+    out.push('\n');
+    write.write_all(out.as_bytes()).await
+}
+
+/// The pairs a `test.plan` or `test.run` request names.
+fn planned(engine: &Engine, req: &Value) -> Result<Vec<Planned>, String> {
+    let target = req.get("target").and_then(Value::as_str);
+    let account = req.get("account").and_then(Value::as_str);
+    let all = req.get("all").and_then(Value::as_bool).unwrap_or(false);
+    if target.is_some() == all {
+        return Err("name a target, or all".into());
+    }
+    model_tests::expand(engine, &engine.snapshot(), target, account)
+}
+
+fn test_plan(engine: &Engine, req: &Value) -> Value {
+    match planned(engine, req) {
+        Ok(p) => json!({"ok": true, "pairs": p, "calls": model_tests::calls(&p)}),
+        Err(e) => json!({"ok": false, "error": e}),
+    }
+}
+
+/// Streams `test.run`'s results; returns the closing line, or `None` once the client has gone
+/// (the calls not yet sent are cancelled; those in flight finish and keep their verdicts).
+async fn test_run(
+    engine: &Arc<Engine>,
+    req: &Value,
+    lines: &mut Lines<AsyncBufReader<OwnedReadHalf>>,
+    write: &mut OwnedWriteHalf,
+) -> Option<Value> {
+    let planned = match planned(engine, req) {
+        Ok(p) => p,
+        Err(e) => return Some(json!({"ok": false, "error": e})),
+    };
+    let stop = CancellationToken::new();
+    let (tx, mut rx) = mpsc::channel(16);
+    tokio::spawn({
+        let (engine, stop, run) = (engine.clone(), stop.clone(), model_tests::run_id());
+        async move { model_tests::run(&engine, planned, Source::Test, &run, stop, tx).await }
+    });
+    let (mut pass, mut broken, mut unknown, mut skipped) = (0, 0, 0, 0);
+    loop {
+        tokio::select! {
+            r = rx.recv() => {
+                let Some(r) = r else { break };
+                match r.state {
+                    Some(State::Pass) => pass += 1,
+                    Some(State::Broken) => broken += 1,
+                    Some(State::Unknown) => unknown += 1,
+                    None => skipped += 1,
+                }
+                if send(write, &json!({"event": "result", "result": r})).await.is_err() {
+                    stop.cancel();
+                    return None;
+                }
+            }
+            l = lines.next_line() => if !matches!(l, Ok(Some(_))) {
+                stop.cancel();
+                return None;
+            },
+        }
+    }
+    Some(json!({"ok": true, "done": {"pass": pass, "broken": broken, "unknown": unknown, "skipped": skipped}}))
 }
 
 /// The listeners `serve` bound (spec 009, R8).
@@ -207,6 +285,8 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         Some("quota.list") => crate::quota::list(engine, req),
         Some("quota.poll") => crate::quota::poll_now(engine, req).await,
         Some("quota.checkpoint") => crate::quota::checkpoint(engine).await,
+        Some("test.plan") => test_plan(engine, req),
+        Some("test.run") => json!({"ok": false, "error": "test.run streams: send it on its own connection"}),
         Some(op) => json!({"ok": false, "error": format!("unknown op {op:?}")}),
         None => json!({"ok": false, "error": "the request names no op"}),
     }
@@ -358,6 +438,27 @@ pub fn call(home: &OperatorHome, req: &Value) -> Result<Value, CallError> {
     let mut answer = String::new();
     BufReader::new(stream).read_line(&mut answer)?;
     serde_json::from_str(&answer).map_err(|e| CallError::BadAnswer(e.to_string()))
+}
+
+/// [`call`] for a streamed answer: `event` is called with each line that carries an `event`,
+/// and the closing line is returned. No read timeout: a test may run for many minutes, and
+/// dropping the connection (the CLI exiting) cancels what is not yet sent.
+pub fn call_stream(home: &OperatorHome, req: &Value, mut event: impl FnMut(&Value)) -> Result<Value, CallError> {
+    let path = socket_path(home);
+    let mut stream =
+        std::os::unix::net::UnixStream::connect(&path).map_err(|_| CallError::NoServer(path.display().to_string()))?;
+    let mut line = req.to_string();
+    line.push('\n');
+    stream.write_all(line.as_bytes())?;
+    for line in BufReader::new(stream).lines() {
+        let v: Value = serde_json::from_str(&line?).map_err(|e| CallError::BadAnswer(e.to_string()))?;
+        if v.get("event").is_some() {
+            event(&v);
+        } else {
+            return Ok(v);
+        }
+    }
+    Err(CallError::BadAnswer("the server closed the connection".into()))
 }
 
 #[cfg(test)]

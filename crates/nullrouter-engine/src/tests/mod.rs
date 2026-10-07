@@ -68,6 +68,9 @@ pub struct TestResult {
     pub record: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped: Option<String>,
+    /// When the stored verdict is due a retest (RFC 3339).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next: Option<String>,
 }
 
 impl TestResult {
@@ -82,6 +85,7 @@ impl TestResult {
             ttft_ms: None,
             record: None,
             skipped: Some(why),
+            next: None,
         }
     }
 }
@@ -342,8 +346,10 @@ pub async fn run_pair(
             judge::judge(&f, provider)
         }
     };
-    store(engine, &st, &p.pair, source, &judged, &id);
-    Some(result(p, judged.state, judged.reason, judged.rejection, ms, ttft_ms, &id))
+    let next = store(engine, &st, &p.pair, source, &judged, &id);
+    let mut r = result(p, judged.state, judged.reason, judged.rejection, ms, ttft_ms, &id);
+    r.next = next.map(crate::clock::rfc3339);
+    Some(r)
 }
 
 fn result(
@@ -364,6 +370,7 @@ fn result(
         ttft_ms,
         record: Some(record.to_owned()),
         skipped: None,
+        next: None,
     }
 }
 
@@ -494,9 +501,16 @@ async fn follow(engine: &Arc<Engine>, st: &EngineState, id: &str, mut status: Jo
     }
 }
 
-/// Stores `j` for `pair` with its retest schedule (research R6): an UNKNOWN's step advances
+/// Stores `j` for `pair` with its retest schedule, returning when the retest is due (research R6): an UNKNOWN's step advances
 /// only on a retest; a test's BROKEN is retested only when `broken_retest` is on.
-fn store(engine: &Engine, st: &EngineState, pair: &Pair, source: Source, j: &judge::Judged, record: &str) {
+fn store(
+    engine: &Engine,
+    st: &EngineState,
+    pair: &Pair,
+    source: Source,
+    j: &judge::Judged,
+    record: &str,
+) -> Option<SystemTime> {
     let tests = &st.registry.runtime().tests;
     let now = SystemTime::now();
     let (step, next) = match j.state {
@@ -524,6 +538,7 @@ fn store(engine: &Engine, st: &EngineState, pair: &Pair, source: Source, j: &jud
         note: None,
     };
     engine.verdicts.set(pair.clone(), v);
+    next
 }
 
 /// What `pair`'s verdict rests on: the account's secret or sign-in, and its plugin. A change in
