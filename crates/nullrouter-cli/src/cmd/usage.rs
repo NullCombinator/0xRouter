@@ -12,7 +12,7 @@ fn grouped(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -54,7 +54,9 @@ pub(crate) fn run(home: Option<PathBuf>, period: &str, as_json: bool) -> Result<
     let zone = v["zone"].as_str().unwrap_or("local");
     let to = local_text(v["to"].as_str().unwrap_or_default());
     match v["from"].as_str() {
-        Some(from) => println!("period: {}, {} → {to} {zone}", v["period"].as_str().unwrap_or(period), local_text(from)),
+        Some(from) => {
+            println!("period: {}, {} → {to} {zone}", v["period"].as_str().unwrap_or(period), local_text(from))
+        }
         None => println!("period: {}, up to {to} {zone}", v["period"].as_str().unwrap_or(period)),
     }
     for w in v["warnings"].as_array().into_iter().flatten().filter_map(Value::as_str) {
@@ -89,11 +91,12 @@ pub(crate) fn run(home: Option<PathBuf>, period: &str, as_json: bool) -> Result<
     let pad = " ".repeat(18);
     let un = &cost["unpriced"];
     if count(un, "requests") > 0 {
-        let reasons: Vec<String> = [("no_price", "no price"), ("account_gone", "account gone"), ("no_output_price", "no output price")]
-            .iter()
-            .filter(|(k, _)| count(un, k) > 0)
-            .map(|(k, label)| format!("{} {label}", count(un, k)))
-            .collect();
+        let reasons: Vec<String> =
+            [("no_price", "no price"), ("account_gone", "account gone"), ("no_output_price", "no output price")]
+                .iter()
+                .filter(|(k, _)| count(un, k) > 0)
+                .map(|(k, label)| format!("{} {label}", count(un, k)))
+                .collect();
         println!("{pad}{} requests not priced: {}", count(un, "requests"), reasons.join(", "));
     }
     println!("{pad}{}", cost["note"].as_str().unwrap_or_default());

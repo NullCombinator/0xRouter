@@ -31,9 +31,7 @@ fn out(o: &Output) -> String {
 fn home() -> tempfile::TempDir {
     let home = tempfile::tempdir().unwrap();
     std::fs::create_dir(home.path().join("records")).unwrap();
-    let open = |id: &str, at: &str, agent: &str| {
-        json!({"v":1,"t":"open","id":id,"arrived":at,"agent":agent,"style":"anthropic-messages","op":"generate","type":"text","target":"sonnet"})
-    };
+    let open = |id: &str, at: &str, agent: &str| json!({"v":1,"t":"open","id":id,"arrived":at,"agent":agent,"style":"anthropic-messages","op":"generate","type":"text","target":"sonnet"});
     let attempt = |id: &str| {
         json!({"v":1,"t":"attempt","id":id,"attempt":{"n":1,"provider":"xai","account":"work","model":"m","kind":"initial",
             "started":4.0,"ended":900.0,"outcome":{"state":"ok"},"dropped":[],"forced":[]}})

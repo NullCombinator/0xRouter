@@ -12,11 +12,11 @@ use std::time::{Duration, SystemTime};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::accounts::Accounts;
 use crate::clock;
 use crate::journal::records::{day_of, fold, segments};
 use crate::routing::price::{PriceSpec, entry_at};
 use nullrouter_registry::Registry;
-use crate::accounts::Accounts;
 
 /// Nearest-rank percentile of `sorted` (ascending): `v[ceil(q·n) − 1]`. One value gives itself
 /// for every `q`; no values give `None` (R6).
@@ -53,11 +53,8 @@ fn split_of(usage: &Value) -> Option<Split> {
     }
     let n = |k: &str| usage[k].as_u64().unwrap_or(0);
     let (read, write) = (n("cache_read"), n("cache_write"));
-    let plain = if usage["input_semantics"] == "includes_cache" {
-        n("input").saturating_sub(read + write)
-    } else {
-        n("input")
-    };
+    let plain =
+        if usage["input_semantics"] == "includes_cache" { n("input").saturating_sub(read + write) } else { n("input") };
     Some(Split { plain, read, write, output: n("output") })
 }
 
@@ -83,7 +80,11 @@ pub fn first_attempt(record: &Value) -> Option<&Value> {
 /// fallbacks, continuations and restarts alike.
 pub fn first_token_attempt(record: &Value) -> Option<&Value> {
     let ttft = record["ttft_ms"].as_f64()?;
-    record["attempts"].as_array()?.iter().filter(|a| !is_skipped(a)).rfind(|a| a["started"].as_f64().is_some_and(|s| s <= ttft))
+    record["attempts"]
+        .as_array()?
+        .iter()
+        .filter(|a| !is_skipped(a))
+        .rfind(|a| a["started"].as_f64().is_some_and(|s| s <= ttft))
 }
 
 /// The provider's own wait for its first token: the record's `ttft_ms` less when that attempt
@@ -254,7 +255,9 @@ fn add_record(t: &mut Totals, r: &Value, prices: Prices<'_>, running: bool) {
 fn segment_totals(path: &Path, w: &Window, prices: Prices<'_>, skip: &HashSet<&str>, running: bool) -> Totals {
     let mut t = Totals::default();
     let Ok(text) = fs::read_to_string(path) else { return t };
-    let wanted = |r: &&Value| r["arrived"].as_str().is_some_and(|a| w.holds(a)) && r["id"].as_str().is_none_or(|id| !skip.contains(id));
+    let wanted = |r: &&Value| {
+        r["arrived"].as_str().is_some_and(|a| w.holds(a)) && r["id"].as_str().is_none_or(|id| !skip.contains(id))
+    };
     for r in fold(&text).iter().filter(wanted) {
         add_record(&mut t, r, prices, running);
     }
@@ -308,10 +311,8 @@ pub fn totals_with(
             out.add(&segment_totals(&path, w, prices, &skip, running));
             continue;
         };
-        let hit = CACHE
-            .lock()
-            .ok()
-            .and_then(|c| c.as_ref()?.get(&path).filter(|(s, _)| *s == stamp).map(|(_, t)| t.clone()));
+        let hit =
+            CACHE.lock().ok().and_then(|c| c.as_ref()?.get(&path).filter(|(s, _)| *s == stamp).map(|(_, t)| t.clone()));
         let day_totals = hit.unwrap_or_else(|| {
             let t = segment_totals(&path, w, prices, &skip, running);
             if let Ok(mut c) = CACHE.lock() {
@@ -368,7 +369,8 @@ mod tests {
 
     #[test]
     fn first_attempt_skips_skipped_ones() {
-        let r = rec(0.0, json!([{"n": 0, "kind": "skipped", "started": 1.0}, {"n": 1, "kind": "initial", "started": 6.0}]));
+        let r =
+            rec(0.0, json!([{"n": 0, "kind": "skipped", "started": 1.0}, {"n": 1, "kind": "initial", "started": 6.0}]));
         assert_eq!(first_attempt(&r).unwrap()["n"], 1);
         assert!(first_attempt(&rec(0.0, json!([{"kind": "skipped", "started": 1.0}]))).is_none());
         assert!(first_attempt(&json!({})).is_none());
@@ -390,7 +392,10 @@ mod tests {
             json!([{"n": 1, "kind": "initial", "started": 5.0, "provider": "a"},
                    {"n": 2, "kind": "continuation", "started": 4000.0, "provider": "b"}]),
         );
-        assert_eq!(own_ttft(&r).map(|(a, o)| (a["provider"].as_str().unwrap().to_owned(), o)), Some(("a".into(), 295.0)));
+        assert_eq!(
+            own_ttft(&r).map(|(a, o)| (a["provider"].as_str().unwrap().to_owned(), o)),
+            Some(("a".into(), 295.0))
+        );
         // A restart before any token, with a skipped attempt in between.
         let r = rec(
             2500.0,
@@ -398,7 +403,10 @@ mod tests {
                    {"n": 2, "kind": "skipped", "started": 2000.0, "provider": "c"},
                    {"n": 3, "kind": "restart", "started": 2100.0, "provider": "b"}]),
         );
-        assert_eq!(own_ttft(&r).map(|(a, o)| (a["provider"].as_str().unwrap().to_owned(), o)), Some(("b".into(), 400.0)));
+        assert_eq!(
+            own_ttft(&r).map(|(a, o)| (a["provider"].as_str().unwrap().to_owned(), o)),
+            Some(("b".into(), 400.0))
+        );
         // No first token, no value.
         assert!(own_ttft(&json!({"ttft_ms": null, "attempts": [{"kind": "initial", "started": 5.0}]})).is_none());
     }
@@ -439,7 +447,8 @@ mod tests {
             ("2026-10-05", &["2026-10-05T00:10:00Z", "2026-10-05T02:00:00Z"]),
         ]);
         let w = Window { from: Some(at("2026-10-04T23:00:00Z")), to: at("2026-10-05T02:00:00Z") };
-        let ids: Vec<String> = records_in(home.path(), &w).iter().map(|r| r["id"].as_str().unwrap().to_owned()).collect();
+        let ids: Vec<String> =
+            records_in(home.path(), &w).iter().map(|r| r["id"].as_str().unwrap().to_owned()).collect();
         // `to` is exclusive, `from` inclusive.
         assert_eq!(ids, ["rq_2026-10-04_1", "rq_2026-10-05_0"]);
         let all = Window { from: None, to: at("2026-10-06T00:00:00Z") };

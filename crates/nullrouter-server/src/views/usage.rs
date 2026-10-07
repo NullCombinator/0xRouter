@@ -30,10 +30,7 @@ pub fn window(period: &str, at: Timestamp, zone: &TimeZone) -> Result<(Option<Ti
     };
     let from = match period {
         "today" => Some(
-            at.to_zoned(zone.clone())
-                .start_of_day()
-                .map_err(|e| ViewError::failed(format!("today: {e}")))?
-                .timestamp(),
+            at.to_zoned(zone.clone()).start_of_day().map_err(|e| ViewError::failed(format!("today: {e}")))?.timestamp(),
         ),
         "24h" => Some(back(24)?),
         "7d" => Some(back(7 * 24)?),
@@ -48,7 +45,9 @@ pub fn window(period: &str, at: Timestamp, zone: &TimeZone) -> Result<(Option<Ti
 /// `at` from the arguments (RFC 3339), else the wall clock.
 pub fn at_of(args: &Value) -> Result<Timestamp, ViewError> {
     let t = match args["at"].as_str() {
-        Some(s) => clock::parse_rfc3339(s).ok_or_else(|| ViewError::failed(format!("{s:?} is not an RFC 3339 time")))?,
+        Some(s) => {
+            clock::parse_rfc3339(s).ok_or_else(|| ViewError::failed(format!("{s:?} is not an RFC 3339 time")))?
+        }
         None => clock::now(),
     };
     Timestamp::try_from(t).map_err(ViewError::failed)
@@ -227,7 +226,10 @@ mod tests {
         assert_eq!(v["tokens"], json!({"input": 10, "cached": 20, "output": 30}));
         assert_eq!(v["cost"]["label"], "Estimated, not actual billing");
         assert_eq!(v["cost"]["note"], NOTE);
-        assert_eq!(v["cost"]["unpriced"], json!({"requests": 3, "no_price": 1, "account_gone": 0, "no_output_price": 2}));
+        assert_eq!(
+            v["cost"]["unpriced"],
+            json!({"requests": 3, "no_price": 1, "account_gone": 0, "no_output_price": 2})
+        );
         // Requests descending, then id; a deleted key's name is null.
         assert_eq!(
             v["agents"],
