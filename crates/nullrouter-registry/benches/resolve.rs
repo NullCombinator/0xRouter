@@ -20,6 +20,14 @@ members = [
 [[unified_model]]
 name = "embed"
 members = [{ provider = "openai", model = "text-embedding-3-large" }]
+
+[[combo]]
+name = "coder"
+members = ["sonnet", "chain"]
+
+[[combo]]
+name = "chain"
+members = ["sonnet"]
 "#;
 
 fn bench(c: &mut Criterion) {
@@ -34,6 +42,7 @@ fn bench(c: &mut Criterion) {
         ("direct", "kr/claude-sonnet-4-5"),
         ("direct_suffix", "kr/claude-sonnet-4-5(high)"),
         ("unified", "sonnet"),
+        ("combo", "coder"),
         ("uncatalogued", "openai/brand-new-model"),
         ("not_found", "claude-sonnet-4.5"),
     ] {

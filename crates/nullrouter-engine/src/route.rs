@@ -272,14 +272,17 @@ pub fn view_all(engine: &Engine, st: &EngineState, only: Option<&str>, now: Syst
 }
 
 /// Places `req` over the plan's candidates. The router lock is held for the warm lookup only.
+/// A unified model is placed under its own name, so each member of a combo keeps its own
+/// ledger (spec 011 research R13).
 pub fn decide(engine: &Engine, st: &EngineState, req: &TextRequest, plan: &RequestPlan<'_>, now: SystemTime) -> Routed {
     let (mut candidates, step_of) = candidates_of(engine, st, plan, now);
+    let target = plan.unified.as_deref().unwrap_or(&req.target);
 
     // A text request that carries a prompt has a chain; media and counts are always cold.
     let chain = (req.media.is_none() && !req.count)
         .then(|| Chain::build(&req.ir, &engine.router.salt, req.client.cache_ttl_key.as_deref()));
     let routing = &st.settings().routing;
-    let length = routing.amortization_for.get(&req.target).copied().unwrap_or(routing.amortization);
+    let length = routing.amortization_for.get(target).copied().unwrap_or(routing.amortization);
 
     // One lock covers the warm lookup, the placement and the debit, so a request placed at the
     // same moment sees this one's debit and doesn't land on the same account.
@@ -327,7 +330,7 @@ pub fn decide(engine: &Engine, st: &EngineState, req: &TextRequest, plan: &Reque
     // Account keys are unique, so both tiers' deficits read from one map.
     let mut deficits: BTreeMap<String, f64> = BTreeMap::new();
     for tier in [Tier::Subscription, Tier::Payg] {
-        let ledger = state.ledgers.entry((req.target.clone(), tier)).or_default();
+        let ledger = state.ledgers.entry((target.to_owned(), tier)).or_default();
         ledger.roll(now, length);
         for c in candidates.iter().filter(|c| c.quota.state.source.tier() == tier) {
             ledger.observe(&c.key.account_key(), c.priority);
@@ -337,7 +340,7 @@ pub fn decide(engine: &Engine, st: &EngineState, req: &TextRequest, plan: &Reque
     drop(state);
 
     let input =
-        RoutingInput { target: req.target.clone(), candidates, amortization: length, size_tokens, warm, deficits };
+        RoutingInput { target: target.to_owned(), candidates, amortization: length, size_tokens, warm, deficits };
     let placement = place(&input, now);
     let (stayed_on, warm_account) = match (&placement.decision.warm, &input.warm) {
         (Some(h), Some(w)) if h.stayed => (Some(w.hash), Some(w.key.clone())),
@@ -352,7 +355,7 @@ pub fn decide(engine: &Engine, st: &EngineState, req: &TextRequest, plan: &Reque
         })
         .collect();
     let tally = Tally {
-        target: req.target.clone(),
+        target: target.to_owned(),
         length,
         shares: placement.shares,
         payg_shares: placement.payg_shares,

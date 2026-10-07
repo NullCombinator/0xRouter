@@ -34,7 +34,8 @@ kind = "embedding"
     ("typed", toml)
 }
 
-/// The server, plus a provider with no account and two unified models, loaded by a reload.
+/// The server, plus a provider with no account, two unified models and a combo over each (spec
+/// 011 US5 scenario 7), loaded by a reload.
 async fn start() -> Server {
     let s = server_with(|mock| vec![typed(mock)]).await;
     let lonely = format!(
@@ -44,7 +45,9 @@ async fn start() -> Server {
     std::fs::write(s.home().join("plugins/lonely.toml"), lonely).unwrap();
     let config = "allow_private_endpoints = true\n\
         [[unified_model]]\nname = \"smart\"\nmembers = [{ provider = \"mockco\", model = \"m1\" }, { provider = \"typed\", model = \"vendor/chat-1\" }]\n\
-        [[unified_model]]\nname = \"vectors\"\nkind = \"embedding\"\nmembers = [{ provider = \"typed\", model = \"emb\" }]\n";
+        [[unified_model]]\nname = \"vectors\"\nkind = \"embedding\"\nmembers = [{ provider = \"typed\", model = \"emb\" }]\n\
+        [[combo]]\nname = \"coder\"\nmembers = [\"smart\"]\n\
+        [[combo]]\nname = \"search\"\nmembers = [\"vectors\"]\n";
     std::fs::write(s.home().join("config.toml"), config).unwrap();
     let r = operator::handle(&s.engine, &json!({"op": "reload"})).await;
     assert_eq!(r["ok"], true, "{r}");
@@ -62,9 +65,11 @@ async fn get(s: &Server, path: &str, anthropic: bool) -> (u16, Value) {
 }
 
 /// The expected listing: id → type.
-const LISTED: [(&str, &str); 5] = [
+const LISTED: [(&str, &str); 7] = [
     ("smart", "text"),
     ("vectors", "embeddings"),
+    ("coder", "text"),
+    ("search", "embeddings"),
     ("mockco/m1", "text"),
     ("typed/vendor/chat-1", "text"),
     ("typed/emb", "embeddings"),

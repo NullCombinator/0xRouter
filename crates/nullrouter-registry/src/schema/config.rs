@@ -17,6 +17,9 @@ pub struct OperatorConfig {
     pub schema: Option<i64>,
     #[serde(default)]
     pub unified_model: Vec<UnifiedModelDecl>,
+    /// `[[combo]]` (spec 011): ordered fallback chains of unified models or other combos.
+    #[serde(default)]
+    pub combo: Vec<ComboDecl>,
     #[serde(default)]
     pub provider: BTreeMap<String, ProviderSettings>,
     #[serde(default)]
@@ -319,6 +322,15 @@ pub struct UnifiedModelDecl {
     pub name: String,
     pub kind: Option<ModelKind>,
     pub members: Vec<MemberDecl>,
+}
+
+/// A `[[combo]]` (spec 011 data-model § Combo): members are unified model or combo names,
+/// tried in order.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComboDecl {
+    pub name: String,
+    pub members: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

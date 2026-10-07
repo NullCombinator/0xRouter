@@ -27,8 +27,8 @@ pub const NEEDS: &[&str] = &["routing.health", "server.status"];
 
 /// The `--json` object. `notices` has every line the text prints after `unified models:`, in
 /// print order, each with the page it concerns (spec 009 research R5). The check fails (exit 1)
-/// when `skipped`, `dropped_unified_models` or `signin.errors` is non-empty or a file mode is an
-/// error.
+/// when `skipped`, `dropped_unified_models`, `dropped_combos` or `signin.errors` is non-empty or a
+/// file mode is an error.
 pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, ViewError> {
     let handle = open_registry(home)?;
     let reg = handle.snapshot();
@@ -56,6 +56,8 @@ pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, Vi
         "logos_ignored": r.logos_ignored.iter().map(|l| json!({ "id": l.id, "reason": l.reason })).collect::<Vec<_>>(),
         "dropped_unified_models": r.dropped_unified_models.iter()
             .map(|d| json!({ "name": d.name, "provider": d.provider })).collect::<Vec<_>>(),
+        "dropped_combos": r.dropped_combos.iter()
+            .map(|d| json!({ "name": d.name, "unified": d.unified })).collect::<Vec<_>>(),
         "limits_notes": r.notes.iter().map(note_json).collect::<Vec<_>>(),
         "journal": journal,
         "unmetered_windows": unmetered.iter().map(|(p, w)| json!({ "provider": p, "window": w })).collect::<Vec<_>>(),
@@ -176,6 +178,9 @@ fn notices(
     for d in &r.dropped_unified_models {
         let text = format!("dropped unified model {}: member provider {} was skipped", d.name, d.provider);
         out.push(Notice::new("error", "combo", text));
+    }
+    for d in &r.dropped_combos {
+        out.push(Notice::new("error", "combo", d.to_string()));
     }
     for n in &r.notes {
         out.push(Notice::new("note", "combo", format!("note: {n}")));

@@ -69,6 +69,9 @@ pub enum PlanError {
     /// FR-012: the route's type isn't the model's declared kind.
     #[error("{target} is a {model} model, and this route takes {route} models")]
     TypeMismatch { target: String, model: ModelType, route: ModelType },
+    /// A combo has no plan of its own: each unified model it walks is planned in its turn.
+    #[error("{name} is a combo")]
+    Combo { name: String },
 }
 
 impl PlanError {
@@ -77,7 +80,7 @@ impl PlanError {
         match self {
             Self::NotFound(_) | Self::NoEndpoint { .. } => 404,
             Self::NoAccount { .. } => 503,
-            Self::TypeMismatch { .. } => 400,
+            Self::TypeMismatch { .. } | Self::Combo { .. } => 400,
         }
     }
 }
@@ -260,6 +263,7 @@ fn plan_all<'s>(
             registry.model(&provider.id, requested).ok().and_then(|m| m.kind)
         }
         Resolution::Unified(u) => u.kind,
+        Resolution::Combo(c) => return Err(PlanError::Combo { name: c.name.clone() }),
     };
     // An undeclared kind passes: the endpoint list decides.
     if let Some(model) = declared.and_then(ModelType::from_capability)
@@ -296,6 +300,7 @@ fn plan_all<'s>(
             }
             Ok(RequestPlan { steps, unified: Some(u.name.clone()) })
         }
+        Resolution::Combo(c) => Err(PlanError::Combo { name: c.name.clone() }),
     }
 }
 

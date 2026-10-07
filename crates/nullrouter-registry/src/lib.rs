@@ -28,6 +28,7 @@ pub mod template;
 pub mod validate;
 mod views;
 
+pub use combos::{Combo, ComboStep, DroppedCombo};
 pub use credentials::{ResolvedCredential, SecretString};
 #[cfg(feature = "parity")]
 pub use load::parity_set;

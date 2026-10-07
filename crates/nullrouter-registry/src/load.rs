@@ -14,6 +14,7 @@ use std::{env, fs, io};
 
 use url::Url;
 
+use crate::combos::{self, Combo, DroppedCombo};
 use crate::convert;
 use crate::fit::{self, FitVerdict};
 use crate::logo::{self, Logo};
@@ -74,6 +75,8 @@ pub struct LoadReport {
     pub skipped: Vec<SkippedPlugin>,
     /// Unified models dropped at startup because a member's plugin was skipped or unsupported.
     pub dropped_unified_models: Vec<DroppedUnifiedModel>,
+    /// Combos dropped at startup with a unified model they need (spec 011).
+    pub dropped_combos: Vec<DroppedCombo>,
     /// Gate warnings and stripped forwarding entries from loaded plugins.
     pub diagnostics: Vec<ValidationError>,
     /// User plugins this core can't support, skipped whole (R19).
@@ -484,6 +487,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
         return Err(errors);
     }
     report.dropped_unified_models = outcome.dropped;
+    report.dropped_combos = outcome.dropped_combos;
     report.unified_models = outcome.unified.len();
     report.notes = limits_notes(&registry, &outcome.unified);
     report.withheld_credentials = registry.withheld_credentials();
@@ -498,7 +502,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
         },
         tests: config.tests.clone(),
     };
-    registry.set_operator_state(outcome.unified, outcome.settings, runtime, report);
+    registry.set_operator_state(outcome.unified, outcome.combos, outcome.settings, runtime, report);
     Ok(registry)
 }
 
@@ -655,6 +659,8 @@ pub(crate) struct ConfigOutcome {
     pub(crate) settings: BTreeMap<String, ProviderSettings>,
     pub(crate) errors: Vec<ValidationError>,
     pub(crate) dropped: Vec<DroppedUnifiedModel>,
+    pub(crate) combos: Vec<Combo>,
+    pub(crate) dropped_combos: Vec<DroppedCombo>,
     /// `[routing.amortization_for]` with each direct target written as `provider-id/model`.
     pub(crate) amortization_for: BTreeMap<String, Duration>,
 }
@@ -747,6 +753,11 @@ pub(crate) fn validate_config(
         }
     }
 
+    let combos = combos::load(config, reg, &unified);
+    for (path, rule) in combos.errors {
+        err(path, rule);
+    }
+
     let mut settings = BTreeMap::new();
     for (token, s) in &config.provider {
         match reg.index_of(token) {
@@ -794,6 +805,8 @@ pub(crate) fn validate_config(
         amortization_for,
         errors: found.into_iter().map(|(path, rule)| positioned(src, file, path, rule)).collect(),
         dropped,
+        combos: combos.combos,
+        dropped_combos: combos.dropped,
     }
 }
 

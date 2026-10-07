@@ -175,6 +175,8 @@ pub fn expand(engine: &Engine, st: &EngineState, target: Option<&str>, account: 
                 add(provider, &m.requested, &m.upstream_id, ty.unwrap_or(ModelType::Text))?;
             }
         }
+        // A combo test is one call through the combo, not a pair per member (research R14).
+        Resolution::Combo(c) => return Err(format!("{} is a combo", c.name)),
     }
     if out.is_empty()
         && let Some(a) = account

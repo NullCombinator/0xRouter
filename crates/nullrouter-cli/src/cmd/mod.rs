@@ -1,6 +1,7 @@
 pub(crate) mod accounts;
 pub(crate) mod behaviour;
 pub(crate) mod check;
+pub(crate) mod combos;
 pub(crate) mod dashboard;
 pub(crate) mod keys;
 pub(crate) mod model;

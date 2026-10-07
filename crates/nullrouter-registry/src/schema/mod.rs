@@ -24,8 +24,9 @@ mod transport;
 
 pub use capability::{CapabilitySection, ModelRoute, SectionEndpoint, SectionLimits, SectionModel};
 pub use config::{
-    BROKEN_RETEST_ON, DashboardSettings, Decision, MemberDecl, OperatorConfig, PipelineSettings, ProviderSettings,
-    RoutingSettings, ServerSettings, TEST_TYPES, TestSettings, TestTimeouts, UnifiedModelDecl, parse_broken_retest,
+    BROKEN_RETEST_ON, ComboDecl, DashboardSettings, Decision, MemberDecl, OperatorConfig, PipelineSettings,
+    ProviderSettings, RoutingSettings, ServerSettings, TEST_TYPES, TestSettings, TestTimeouts, UnifiedModelDecl,
+    parse_broken_retest,
 };
 pub use duration::parse_duration;
 pub use endpoint::{

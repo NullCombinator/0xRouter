@@ -161,6 +161,10 @@ pub struct Attempt {
     /// Why the placement chose this account (slice 006). `None` for skips and for requests that
     /// no placement shaped (a continuation, a job poll).
     pub placement: Option<AttemptPlacement>,
+    /// The combo path to this attempt's unified model, `coder › fallback-chain › gpt` (spec 011);
+    /// `None` outside a combo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member: Option<String>,
 }
 
 /// Why an attempt went where it did, and where it stood in the placement's order.
@@ -483,6 +487,7 @@ mod tests {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            member: None,
         });
         r
     }

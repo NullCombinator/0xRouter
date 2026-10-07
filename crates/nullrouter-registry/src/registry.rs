@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 
+use crate::combos::Combo;
 use crate::credentials::{self, ResolvedCredential};
 use crate::floor::Floor;
 use crate::load::{LoadReport, WithheldCredential, style_carriers};
@@ -81,6 +82,9 @@ pub struct Registry {
     pub(crate) credentials: HashMap<String, ResolvedCredential>,
     unified: Vec<UnifiedModel>,
     unified_index: HashMap<Box<str>, usize>,
+    /// `[[combo]]` (spec 011).
+    combos: Vec<Combo>,
+    combo_index: HashMap<Box<str>, usize>,
     settings: BTreeMap<String, ProviderSettings>,
     report: LoadReport,
     styles: Vec<StyleFile>,
@@ -171,6 +175,8 @@ impl Registry {
             credentials,
             unified: Vec::new(),
             unified_index: HashMap::new(),
+            combos: Vec::new(),
+            combo_index: HashMap::new(),
             settings: BTreeMap::new(),
             report: LoadReport::default(),
             styles: Vec::new(),
@@ -206,6 +212,7 @@ impl Registry {
     pub(crate) fn set_operator_state(
         &mut self,
         unified: Vec<UnifiedModel>,
+        combos: Vec<Combo>,
         settings: BTreeMap<String, ProviderSettings>,
         runtime: RuntimeSettings,
         report: LoadReport,
@@ -213,6 +220,8 @@ impl Registry {
         self.runtime = runtime;
         self.unified_index = unified.iter().enumerate().map(|(i, u)| (u.name.as_str().into(), i)).collect();
         self.unified = unified;
+        self.combo_index = combos.iter().enumerate().map(|(i, c)| (c.name.as_str().into(), i)).collect();
+        self.combos = combos;
         self.settings = settings;
         self.report = report;
     }
@@ -340,6 +349,21 @@ impl Registry {
 
     pub fn unified_models(&self) -> impl Iterator<Item = &UnifiedModel> {
         self.unified.iter()
+    }
+
+    pub fn combo(&self, name: &str) -> Option<&Combo> {
+        self.combo_index.get(name).map(|&i| &self.combos[i])
+    }
+
+    /// In declaration order.
+    pub fn combos(&self) -> impl Iterator<Item = &Combo> {
+        self.combos.iter()
+    }
+
+    /// The unified models a request for `combo` tries, in order, each with its member path
+    /// (`coder › fallback-chain › gpt`).
+    pub fn combo_walk<'a>(&'a self, combo: &'a Combo) -> impl Iterator<Item = (&'a str, &'a UnifiedModel)> {
+        combo.flat.iter().map(|s| (s.path.as_str(), &self.unified[s.unified]))
     }
 
     /// Operator settings for `provider_id`; the default when `config.toml` has none.

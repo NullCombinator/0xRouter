@@ -444,6 +444,30 @@ impl Fail {
     }
 }
 
+/// What a request's walk has gathered across the plans it walked: one, or one per unified
+/// model of a combo.
+struct Walked {
+    tried: Vec<Tried>,
+    /// The `(provider, account, model)` keys that rested or failed, for `retry_after`.
+    rested: Vec<(String, String, String)>,
+    /// The provider of the last attempt, for the next attempt's kind.
+    prev: Option<String>,
+    /// Every plan walked was BROKEN on every pair.
+    all_broken: bool,
+}
+
+impl Default for Walked {
+    fn default() -> Self {
+        Self { tried: Vec::new(), rested: Vec::new(), prev: None, all_broken: true }
+    }
+}
+
+impl Walked {
+    fn rest(&mut self, (p, a, m): (&str, &str, &str)) {
+        self.rested.push((p.to_owned(), a.to_owned(), m.to_owned()));
+    }
+}
+
 enum Ended {
     Ok(Option<Usage>),
     Failed(Fail),
@@ -475,6 +499,9 @@ struct Run {
     routed: Option<crate::route::Routed>,
     /// The step being walked: why the placement chose it and where it ranked.
     placing: Option<AttemptPlacement>,
+    /// The combo path to the unified model being walked (`coder › fallback-chain › gpt`), for
+    /// each attempt's record; `None` outside a combo.
+    member: Option<String>,
     /// A whole (non-stream) answer, kept until the request's `close` line is written so the
     /// client never has the end of the body before the journal has the record (FR-037).
     held: Option<Reply>,
@@ -560,6 +587,7 @@ impl Engine {
             sent: None,
             routed: None,
             placing: None,
+            member: None,
             held: None,
         };
         tokio::spawn(run.run(st));
@@ -619,7 +647,7 @@ impl Run {
             r.model_type = Some(ty);
             r.target = Some(crate::records::plain(&req.target));
         });
-        let (mut target, client_style) = (req.target.clone(), req.client.id.clone());
+        let mut target = req.target.clone();
         // 9router's `provider/model/voice` form for a TTS target: the prefix names a model
         // declared as TTS and the whole target doesn't (an undeclared id would pass through).
         let declared = |t: &str| match st.registry.resolve_with(t, |p, m| st.live_models.has(p, m)) {
@@ -627,7 +655,7 @@ impl Run {
                 st.registry.model(&provider.id, requested).is_ok_and(|m| m.kind.is_some())
                     || st.live_models.has(&provider.id, requested)
             }
-            Ok(Resolution::Unified(_)) => true,
+            Ok(Resolution::Unified(_) | Resolution::Combo(_)) => true,
             Err(_) => false,
         };
         if ty == ModelType::Tts
@@ -642,6 +670,57 @@ impl Run {
             }
             target = model;
         }
+        let mut w = Walked::default();
+        match st.registry.resolve_with(&target, |p, m| st.live_models.has(p, m)) {
+            Ok(Resolution::Combo(c)) => {
+                if let Some(model) = c.kind.and_then(ModelType::from_capability)
+                    && model != ty
+                {
+                    self.end_request(Outcome::Failed, None);
+                    let e = plan::PlanError::TypeMismatch { target: target.clone(), model, route: ty };
+                    return Err(Failure::new(e.status(), format!("0router: {e}")));
+                }
+                let name = c.name.clone();
+                self.engine.records.update(&self.req.id, |r| r.combo = Some(name));
+                // Each unified model in turn, with its own plan and placement (research R13).
+                for (path, u) in st.registry.combo_walk(c) {
+                    self.member = Some(path.to_owned());
+                    if self.walk_plan(st, &u.name, &mut w).await? {
+                        return Ok(());
+                    }
+                    // Never once the answer has started (FR-026).
+                    if self.broken.is_some() {
+                        break;
+                    }
+                }
+            }
+            _ => {
+                if self.walk_plan(st, &target, &mut w).await? {
+                    return Ok(());
+                }
+            }
+        }
+        self.end_request(Outcome::Failed, None);
+        // Every pair BROKEN: nothing was sent, and the error says why (FR-011).
+        let summary = match w.all_broken {
+            true => format!("0router: {} is BROKEN on every account; a test can settle it again", self.req.target),
+            false => format!("0router: no provider could serve {}", self.req.target),
+        };
+        let rested = w.rested.iter().map(|(p, a, m)| (p.as_str(), a.as_str(), m.as_str()));
+        let retry_after = self
+            .engine
+            .cooldowns
+            .earliest_end(rested)
+            .map(|u| u.saturating_duration_since(time::Instant::now()).as_secs_f64().ceil().max(1.0) as u64);
+        let message = error_body::message(&summary, self.id(), &w.tried);
+        Err(Failure { status: 503, message, retry_after, tried: w.tried })
+    }
+
+    /// Walks the plan for `target`, a direct target or a unified model: `Ok(true)` answered,
+    /// `Ok(false)` every step failed or was skipped and the caller may fall back.
+    async fn walk_plan(&mut self, st: &EngineState, target: &str, w: &mut Walked) -> Result<bool, Failure> {
+        let ty = self.req.media.as_ref().map_or(ModelType::Text, |m| m.ty);
+        let client_style = self.req.client.id.clone();
         let verdicts = self.engine.verdicts.snapshot();
         let live = plan::Live {
             tokens: &st.tokens,
@@ -649,7 +728,7 @@ impl Run {
             verdicts: &verdicts,
             pin: self.req.pin.as_ref(),
         };
-        let plan = match plan::plan(&st.registry, &st.accounts, live, &target, ty, &client_style) {
+        let plan = match plan::plan(&st.registry, &st.accounts, live, target, ty, &client_style) {
             Ok(p) => p,
             Err(e) => {
                 self.end_request(Outcome::Failed, None);
@@ -672,13 +751,10 @@ impl Run {
         let (order, decision) = (routed.order.clone(), routed.decision.clone());
         self.engine.records.update(&self.req.id, |r| r.decision = Some(decision));
         self.routed = Some(routed);
-        let mut tried = Vec::new();
-        let mut rested: Vec<(&str, &str, &str)> = Vec::new();
-        let mut prev: Option<&str> = None;
         // What can't be tried at all is recorded first; the rest follows the placement's order.
         for step in &plan.steps {
             if let Step::Skip(s) = step {
-                self.skip(&s.provider, s.account.clone(), &s.model, &s.reason, s.class, &mut tried);
+                self.skip(&s.provider, s.account.clone(), &s.model, &s.reason, s.class, &mut w.tried);
             }
         }
         for slot in &order {
@@ -690,7 +766,7 @@ impl Run {
                 None => self.engine.cooldowns.cooling(key.0, key.1, key.2),
             };
             if let Some(until) = cooling {
-                rested.push(key);
+                w.rest(key);
                 let secs = until.saturating_duration_since(time::Instant::now()).as_secs_f64().ceil();
                 self.skip(
                     &c.provider.id,
@@ -698,21 +774,21 @@ impl Run {
                     &c.upstream_id,
                     &format!("cooling down for {secs} s"),
                     None,
-                    &mut tried,
+                    &mut w.tried,
                 );
                 continue;
             }
-            let kind = match prev {
+            let kind = match w.prev.as_deref() {
                 None => AttemptKind::Initial,
                 Some(p) if p == c.provider.id => AttemptKind::NextAccount,
                 Some(_) => AttemptKind::NextMember,
             };
-            prev = Some(&c.provider.id);
+            w.prev = Some(c.provider.id.clone());
             self.placing = Some(AttemptPlacement { reason: slot.reason, rank: slot.rank });
-            if self.candidate(st, c, kind, &mut tried).await? {
-                return Ok(());
+            if self.candidate(st, c, kind, &mut w.tried).await? {
+                return Ok(true);
             }
-            rested.push(key);
+            w.rest(key);
         }
         // Everyone the placement left out (priority 0, a window at its floor with something else
         // to try, …) is named with its reason: an error that lists only what was tried would hide
@@ -732,23 +808,11 @@ impl Run {
             .unwrap_or_default();
         for (provider, account, model, why) in left_out {
             let reason = format!("not tried: {}", why.map_or(String::new(), |w| w.to_string()));
-            self.skip(&provider, (!account.is_empty()).then_some(account), &model, &reason, None, &mut tried);
+            self.skip(&provider, (!account.is_empty()).then_some(account), &model, &reason, None, &mut w.tried);
         }
-        self.end_request(Outcome::Failed, None);
-        // Every pair BROKEN: nothing was sent, and the error says why (FR-011).
-        let all_broken = !plan.steps.is_empty()
+        w.all_broken &= !plan.steps.is_empty()
             && plan.steps.iter().all(|s| matches!(s, Step::Skip(k) if k.class == Some(ErrorClass::Broken)));
-        let summary = match all_broken {
-            true => format!("0router: {} is BROKEN on every account; a test can settle it again", self.req.target),
-            false => format!("0router: no provider could serve {}", self.req.target),
-        };
-        let retry_after = self
-            .engine
-            .cooldowns
-            .earliest_end(rested)
-            .map(|u| u.saturating_duration_since(time::Instant::now()).as_secs_f64().ceil().max(1.0) as u64);
-        let message = error_body::message(&summary, self.id(), &tried);
-        Err(Failure { status: 503, message, retry_after, tried })
+        Ok(false)
     }
 
     /// Tries `c` with its same-account retries. `Ok(true)`: answered.
@@ -1721,6 +1785,7 @@ impl Run {
                 AttemptKind::Continuation | AttemptKind::Restart => None,
                 _ => self.placing,
             },
+            member: self.member.clone(),
         };
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
         if let (Some(routed), Some(account)) = (&self.routed, c.account) {
@@ -1796,6 +1861,7 @@ impl Run {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            member: self.member.clone(),
         };
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
         tried.push(Tried {

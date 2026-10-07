@@ -761,6 +761,7 @@ mod tests {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            member: None,
         }
     }
 
