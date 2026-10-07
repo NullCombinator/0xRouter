@@ -241,7 +241,7 @@ Every page needs the frame. The style suite and the full component set finish in
 
 ## Phase 12: Polish & cross-cutting gates
 
-- [ ] T069 [P] Write `crates/nullrouter-dashboard/tests/secrets.rs`: extend the slice 005/006 sentinel (`crates/nullrouter-server/tests/secrets.rs`) to fetch every route on the `dashboard()` home with sentinel provider keys, sign-in tokens, agent keys, the dashboard token and a sentinel prompt, and scan every response body and header, the logs and the home (SC-006)
+- [X] T069 [P] Write `crates/nullrouter-dashboard/tests/secrets.rs`: extend the slice 005/006 sentinel (`crates/nullrouter-server/tests/secrets.rs`) to fetch every route on the `dashboard()` home with sentinel provider keys, sign-in tokens, agent keys, the dashboard token and a sentinel prompt, and scan every response body and header, the logs and the home (SC-006)
 - [ ] T070 [P] Write `crates/nullrouter-dashboard/tests/twins.rs`: for each page, render it from its declared views (T016), and fail if any text node or attribute value that varies with the home's data is not found in those views' JSON (SC-002)
 - [ ] T071 Write `crates/nullrouter-dashboard/tests/isolation.rs` (`#[ignore]`, release): 1,000 client requests to a mock provider while 4 workers load pages, and again with a test-only fault feature making every build panic or sleep 20 s; compare client p95 and failures with `enabled = false` (SC-005: ≤ 1 ms p95, 0 extra failures)
 - [ ] T072 [P] Add the `pages` Criterion bench in `crates/nullrouter-dashboard/benches/pages.rs`: each page on a home with 50 accounts, 20 unified models and 100,000 records; each under 1 s (SC-009); baseline in `specs/009-dashboard/bench-baseline.md`

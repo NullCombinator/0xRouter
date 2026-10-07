@@ -36,6 +36,11 @@ impl Index {
     pub fn href(&self, provider: &str) -> Option<&str> {
         self.0.get(provider).map(String::as_str)
     }
+
+    /// Every served logo's address.
+    pub fn hrefs(&self) -> impl Iterator<Item = &str> {
+        self.0.values().map(String::as_str)
+    }
 }
 
 fn href(provider: &str, hash: &str) -> String {
