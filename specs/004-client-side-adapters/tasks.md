@@ -154,13 +154,13 @@ share: edits, selectors, key binding, records.
 
 ### Tests for the foundation ⚠️
 
-- [ ] T010 [P] Selector tests in `crates/nullrouter-adapters/tests/selector.rs`.
+- [X] T010 [P] Selector tests in `crates/nullrouter-adapters/tests/selector.rs`.
   - Parse `messages[*].content[*]`, `tools`, `$`, `messages[2].images` and quoted keys.
   - Refuse more than 8 segments, empty segments and bad brackets.
   - Extract matches with concrete paths from a nested body. `$` yields the whole body at
     path `$`.
   - No match yields an empty list.
-- [ ] T011 [P] Edit-check and apply tests in `crates/nullrouter-adapters/tests/apply.rs`, one
+- [X] T011 [P] Edit-check and apply tests in `crates/nullrouter-adapters/tests/apply.rs`, one
   test per rule of [R5](research.md#r5-checking-an-adapters-edits-before-the-guardrail). Each
   rule is refused with its named `invalid_output` rule:
   - a path not under a selector;
@@ -207,7 +207,7 @@ share: edits, selectors, key binding, records.
 
 ### Implementation
 
-- [ ] T015 [P] Kit edit model in `crates/nullrouter-adapter-kit/src/edit.rs`.
+- [X] T015 [P] Kit edit model in `crates/nullrouter-adapter-kit/src/edit.rs`.
   - `Path`: a vector of key or index segments, with `Display` as `a[1].b` and a round-trip
     parser.
   - `Kind { Removed, Converted }`.
@@ -217,7 +217,7 @@ share: edits, selectors, key binding, records.
   - `Edit { op, path, kind, value? }`, and `Edits` with `remove(path, reason)` and
     `convert(path, value, reason)`.
   - JSON shapes as in [contracts/adapter-kit.md](contracts/adapter-kit.md#call-sequence).
-- [ ] T016 [P] Kit context and input in `crates/nullrouter-adapter-kit/src/context.rs` and
+- [X] T016 [P] Kit context and input in `crates/nullrouter-adapter-kit/src/context.rs` and
   `src/input.rs`.
   - `Context { direction, provider, target_style, same_style, model, model_type,
     capabilities { vision, file_input, reasoning }, stream, attempt }`, with capabilities
@@ -225,13 +225,13 @@ share: edits, selectors, key binding, records.
   - `Input { parts: Vec<Part { path, value }> }`.
   - The `Adapter` trait with `on_request`, and default no-op `on_response` and `on_event`.
   - `KIT_ABI: u32 = 1`.
-- [ ] T017 Selectors in `crates/nullrouter-adapters/src/selector.rs`.
+- [X] T017 Selectors in `crates/nullrouter-adapters/src/selector.rs`.
   - `Selector::parse`, with at most 8 segments.
   - `extract(&Value, &[Selector]) -> Vec<Part>`, a native walk that clones only the matched
     subtrees.
   - `covers(&[Selector], &Path) -> bool`.
   - Make T010 pass.
-- [ ] T018 Edit checks and apply in `crates/nullrouter-adapters/src/apply.rs`.
+- [X] T018 Edit checks and apply in `crates/nullrouter-adapters/src/apply.rs`.
   - `check(&Value, &[Selector], &[Edit]) -> Result<(), InvalidOutput{rule}>` with the R5
     limits.
   - `apply(&Value, &[Edit]) -> Value` works on a clone. Array removals run in descending
