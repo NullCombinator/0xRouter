@@ -7,19 +7,23 @@
 //! schedule applies to the next retest without a restart. A pair whose account can't serve, or
 //! couldn't take cold work, waits ([`waiting`]) and keeps its verdict. Two tests of one pair at
 //! once (an operator's and a retest) both run; the one that finishes last is kept.
+//!
+//! An UNKNOWN combo result is retested the same way, one call through the combo each time,
+//! held while no account of the first unified model it would try can serve (FR-030).
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use nullrouter_registry::Combo;
 use nullrouter_registry::schema::{ModelType, TestSettings};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 
 use super::Planned;
 use crate::state::{Engine, EngineState};
-use crate::verdict::{Pair, Source, State, Verdict};
+use crate::verdict::{ComboVerdict, NO_ACCOUNT, Pair, Source, State, Verdict};
 
 /// After a restart, the n-th overdue retest waits n × this.
 pub const SPREAD: Duration = Duration::from_secs(10);
@@ -32,14 +36,21 @@ pub const IDLE_WAKE: Duration = Duration::from_secs(30);
 /// BROKEN and a PASS never.
 pub fn due(v: &Verdict, tests: &TestSettings) -> Option<SystemTime> {
     match v.state {
-        State::Unknown => {
-            let step = v.step.unwrap_or(0) as usize;
-            let wait = tests.retest.get(step).or(tests.retest.last())?;
-            Some(v.at + *wait)
-        }
+        State::Unknown => unknown_due(v.at, v.step, tests),
         State::Broken if v.source != Source::Operator => tests.broken_retest.map(|w| v.at + w),
         _ => None,
     }
+}
+
+/// When a combo result is next due a retest: an UNKNOWN on the `retest` schedule, as a pair's.
+pub fn combo_due(v: &ComboVerdict, tests: &TestSettings) -> Option<SystemTime> {
+    (v.state == State::Unknown).then(|| unknown_due(v.at, v.step, tests)).flatten()
+}
+
+fn unknown_due(at: SystemTime, step: Option<u32>, tests: &TestSettings) -> Option<SystemTime> {
+    let step = step.unwrap_or(0) as usize;
+    let wait = tests.retest.get(step).or(tests.retest.last())?;
+    Some(at + *wait)
 }
 
 /// Why `pair`'s retest waits, if it does: its account can't serve (disabled, needs sign-in,
@@ -54,6 +65,24 @@ pub fn waiting(engine: &Engine, st: &EngineState, pair: &Pair, now: SystemTime) 
     crate::route::account_quota(engine, provider, a, now)
         .at_floor()
         .then(|| "a quota window is at its reserve floor".to_owned())
+}
+
+/// Why `combo`'s retest waits, if it does: no account of the first unified model it would try
+/// can serve now. Shown in the verdict list, never stored.
+pub fn combo_waiting(engine: &Engine, st: &EngineState, combo: &Combo) -> Option<String> {
+    let (_, first) = st.registry.combo_walk(combo).next()?;
+    let serves = first.members.iter().any(|m| {
+        let Ok(provider) = st.registry.provider(&m.provider) else { return false };
+        if provider.auth.as_ref().is_some_and(|a| a.no_auth) {
+            let pair = Pair::new(&provider.id, NO_ACCOUNT, &m.upstream_id);
+            return super::skip_reason(engine, st, &pair).is_none();
+        }
+        st.accounts.iter().filter(|a| a.provider == provider.id).any(|a| {
+            let pair = Pair::new(&provider.id, &a.name, &m.upstream_id);
+            super::skip_reason(engine, st, &pair).is_none()
+        })
+    });
+    (!serves).then(|| format!("no account of {} can serve", first.name))
 }
 
 /// `pair` as a test would call it; `None` when its provider is gone.
@@ -73,6 +102,7 @@ pub struct Retester {
     /// When each pair overdue at the first wake may run, `n × SPREAD` apart.
     spread: Option<HashMap<Pair, SystemTime>>,
     running: HashSet<Pair>,
+    running_combos: HashSet<String>,
 }
 
 impl Retester {
@@ -112,15 +142,53 @@ impl Retester {
         (out, next)
     }
 
+    /// The combo retests due at `now` that can run, each marked running until
+    /// [`Retester::combo_done`], and when to look again.
+    pub fn due_combos(&mut self, engine: &Engine, now: SystemTime) -> (Vec<String>, SystemTime) {
+        let st = engine.snapshot();
+        let tests = &st.registry.runtime().tests;
+        let board = engine.verdicts.snapshot();
+        let mut out = Vec::new();
+        let mut next = now + IDLE_WAKE;
+        for (name, v) in &board.combos {
+            let Some(at) = combo_due(v, tests) else { continue };
+            if self.running_combos.contains(name) {
+                continue;
+            }
+            if at > now {
+                next = next.min(at);
+                continue;
+            }
+            let Some(combo) = st.registry.combo(name) else { continue };
+            if combo_waiting(engine, &st, combo).is_some() {
+                continue;
+            }
+            self.running_combos.insert(name.clone());
+            out.push(name.clone());
+        }
+        (out, next)
+    }
+
     /// `pair`'s retest has finished.
     pub fn done(&mut self, pair: &Pair) {
         self.running.remove(pair);
     }
 
-    /// Retests in flight.
-    pub fn running(&self) -> usize {
-        self.running.len()
+    /// `combo`'s retest has finished.
+    pub fn combo_done(&mut self, combo: &str) {
+        self.running_combos.remove(combo);
     }
+
+    /// Retests in flight, combos included.
+    pub fn running(&self) -> usize {
+        self.running.len() + self.running_combos.len()
+    }
+}
+
+/// A retest in flight.
+enum Job {
+    Pair(Pair),
+    Combo(String),
 }
 
 /// Spawns the retest task over `engine`; it runs until `stop` completes, then cancels the
@@ -129,7 +197,7 @@ pub fn spawn(engine: Arc<Engine>, stop: impl Future<Output = ()> + Send + 'stati
     tokio::spawn(async move {
         let root = CancellationToken::new();
         let mut r = Retester::default();
-        let mut jobs: JoinSet<Pair> = JoinSet::new();
+        let mut jobs: JoinSet<Job> = JoinSet::new();
         tokio::pin!(stop);
         loop {
             while let Some(done) = jobs.try_join_next() {
@@ -144,9 +212,22 @@ pub fn spawn(engine: Arc<Engine>, stop: impl Future<Output = ()> + Send + 'stati
                         () = token.cancelled() => {}
                         _ = super::run_pair(&engine, &p, Source::Retest, &run, &token) => {}
                     }
-                    p.pair
+                    Job::Pair(p.pair)
                 });
             }
+            let (combos, later) = r.due_combos(&engine, SystemTime::now());
+            for name in combos {
+                let (engine, token) = (engine.clone(), root.child_token());
+                jobs.spawn(async move {
+                    let run = super::run_id();
+                    tokio::select! {
+                        () = token.cancelled() => {}
+                        _ = super::combo::run_combo(&engine, &name, Source::Retest, &run, &token) => {}
+                    }
+                    Job::Combo(name)
+                });
+            }
+            let next = next.min(later);
             let wait = next.duration_since(SystemTime::now()).unwrap_or_default();
             tokio::select! {
                 () = &mut stop => break,
@@ -160,14 +241,16 @@ pub fn spawn(engine: Arc<Engine>, stop: impl Future<Output = ()> + Send + 'stati
     })
 }
 
-fn finished(r: &mut Retester, jobs: &JoinSet<Pair>, done: Result<Pair, tokio::task::JoinError>) {
+fn finished(r: &mut Retester, jobs: &JoinSet<Job>, done: Result<Job, tokio::task::JoinError>) {
     match done {
-        Ok(pair) => r.done(&pair),
+        Ok(Job::Pair(pair)) => r.done(&pair),
+        Ok(Job::Combo(name)) => r.combo_done(&name),
         Err(e) => {
             tracing::error!("retest failed: {e}");
             // The pair is lost with the task: once none run, none are marked.
             if jobs.is_empty() {
                 r.running.clear();
+                r.running_combos.clear();
             }
         }
     }

@@ -4,6 +4,9 @@
 //! `test.plan` names the pairs and the calls first; more than one call asks before it runs.
 //! `test.run` then streams one result per pair as it finishes. Ctrl-C closes the socket: the
 //! server sends no more calls, and the finished results stay saved.
+//!
+//! A combo's test is one call through the combo; its answer is one nested result, printed as a
+//! tree of the members the walk reached.
 
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
@@ -12,7 +15,7 @@ use std::time::{Duration, SystemTime};
 
 use clap::Args as ClapArgs;
 use nullrouter_engine::clock;
-use nullrouter_engine::verdict::Rejection;
+use nullrouter_engine::verdict::{Rejection, State};
 use nullrouter_registry::OperatorHome;
 use nullrouter_server::operator::{self, CallError};
 use serde_json::{Value, json};
@@ -65,15 +68,28 @@ pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<Ex
 
     req["op"] = "test.run".into();
     let mut results = Vec::new();
+    let mut combo = None;
     let done = answer(operator::call_stream(&home, &req, |line| {
         let r = &line["result"];
-        if !as_json {
-            println!("{}", result_line(r, SystemTime::now()));
+        if line["event"] == "combo" {
+            combo = Some(r.clone());
+        } else {
+            if !as_json {
+                println!("{}", result_line(r, SystemTime::now()));
+            }
+            results.push(r.clone());
         }
-        results.push(r.clone());
     }))?;
     let done = &done["done"];
-    if as_json {
+    if let Some(c) = combo {
+        if as_json {
+            println!("{}", json!({"combo": c, "done": done}));
+        } else {
+            for l in combo_lines(&c, SystemTime::now()) {
+                println!("{l}");
+            }
+        }
+    } else if as_json {
         println!("{}", json!({"results": results, "done": done}));
     } else {
         let count = |k: &str| done[k].as_u64().unwrap_or(0);
@@ -123,6 +139,66 @@ pub(crate) fn result_line(r: &Value, now: SystemTime) -> String {
     format!("{label:<8} {who:<20} {:<26} {text}", s("model"))
 }
 
+/// A combo result as its output tree (contracts/cli.md § Combo output). An UNKNOWN attempt
+/// changes no verdict, so it reads `(not saved)`.
+pub(crate) fn combo_lines(r: &Value, now: SystemTime) -> Vec<String> {
+    let s = |k: &str| r[k].as_str().unwrap_or_default();
+    let mut head = format!("combo {}: {}", s("combo"), label(r));
+    match r["answered_by"].as_str() {
+        Some(by) => head += &format!(", answered by {by}"),
+        None if !s("reason").is_empty() => head += &format!(": {}", s("reason")),
+        None => {}
+    }
+    if let Some(next) = r["next"].as_str().and_then(clock::parse_rfc3339) {
+        head += &format!("; retest in {}", short(next.duration_since(now).unwrap_or_default()));
+    }
+    let mut out = vec![head];
+    tree(&r["tried"], 1, &mut out);
+    out
+}
+
+fn label(v: &Value) -> &'static str {
+    v["state"].as_str().and_then(State::parse).map_or("SKIPPED", State::label)
+}
+
+fn tree(tried: &Value, depth: usize, out: &mut Vec<String>) {
+    let pad = "  ".repeat(depth);
+    for t in tried.as_array().into_iter().flatten() {
+        let name = format!("{pad}{}", t["member"].as_str().unwrap_or_default());
+        let attempts = t["attempts"].as_array().map_or(&[][..], Vec::as_slice);
+        let every_skip = !attempts.is_empty() && attempts.iter().all(|a| a["skipped"].is_string());
+        let text = match attempts {
+            _ if t["kind"] == "combo" => String::new(),
+            _ if every_skip && t["state"] == "broken" => t["reason"].as_str().unwrap_or_default().to_owned(),
+            [one] => attempt_text(one),
+            _ => String::new(),
+        };
+        out.push(format!("{name:<18} {:<8} {text}", label(t)).trim_end().to_owned());
+        if t["kind"] == "combo" {
+            tree(&t["tried"], depth + 1, out);
+        } else if attempts.len() > 1 && text.is_empty() {
+            for a in attempts {
+                out.push(format!("{pad}  {:<16} {:<8} {}", "", label(a), attempt_text(a)).trim_end().to_owned());
+            }
+        }
+    }
+}
+
+/// `openrouter/main 503 upstream overloaded (not saved)`, `opencode-go/main 2.1 s`.
+fn attempt_text(a: &Value) -> String {
+    let s = |k: &str| a[k].as_str().unwrap_or_default();
+    let who = format!("{}/{}", s("provider"), s("account"));
+    match (a["skipped"].as_str(), s("state")) {
+        (Some(why), _) => format!("{who} skipped: {why}"),
+        (None, "pass") => format!("{who} {}", timing(a)),
+        (None, "broken") => {
+            let what = Rejection::parse(s("rejection")).map_or("rejected", |x| x.describe());
+            format!("{who} {what}: {}", s("reason"))
+        }
+        (None, _) => format!("{who} {} (not saved)", s("reason")),
+    }
+}
+
 fn timing(r: &Value) -> String {
     let secs = |ms: &Value| ms.as_f64().unwrap_or(0.0) / 1000.0;
     match r.get("ttft_ms") {
@@ -158,5 +234,40 @@ mod tests {
         assert!(result_line(&unknown, now).ends_with("503: upstream overloaded; retest in 1 min"), "{}", result_line(&unknown, now));
         let skipped = json!({"provider": "xai", "account": "backup", "model": "grok-4", "state": null, "reason": "rate-limited until 09:14 UTC", "skipped": "rate-limited until 09:14 UTC", "ms": 0});
         assert!(result_line(&skipped, now).starts_with("SKIPPED  xai/backup"));
+    }
+
+    #[test]
+    fn a_combo_prints_as_the_contract_shows() {
+        let now = clock::parse_rfc3339("2026-10-07T09:00:00Z").unwrap();
+        let skip = "BROKEN since 2026-10-07 08:00: 404: no such model";
+        let r = json!({
+            "combo": "coder", "state": "pass", "answered_by": "glm", "reason": "", "ms": 2400,
+            "tried": [
+                {"member": "sonnet", "kind": "unified", "state": "broken", "reason": "skipped: BROKEN on every account",
+                 "attempts": [{"provider": "anthropic", "account": "max", "model": "s", "state": "broken",
+                               "reason": skip, "skipped": skip, "ms": 0}]},
+                {"member": "fallback-chain", "kind": "combo", "state": "pass", "reason": "", "tried": [
+                    {"member": "gpt", "kind": "unified", "state": "unknown", "reason": "503: upstream overloaded",
+                     "attempts": [{"provider": "openrouter", "account": "main", "model": "g", "state": "unknown",
+                                   "reason": "503: upstream overloaded", "ms": 300}]},
+                    {"member": "glm", "kind": "unified", "state": "pass", "reason": "",
+                     "attempts": [{"provider": "opencode-go", "account": "main", "model": "z", "state": "pass",
+                                   "reason": "", "ms": 2100}]}
+                ]}
+            ]
+        });
+        assert_eq!(
+            combo_lines(&r, now),
+            [
+                "combo coder: PASS, answered by glm",
+                "  sonnet           BROKEN   skipped: BROKEN on every account",
+                "  fallback-chain   PASS",
+                "    gpt            UNKNOWN  openrouter/main 503: upstream overloaded (not saved)",
+                "    glm            PASS     opencode-go/main 2.1 s",
+            ]
+        );
+        let unknown = json!({"combo": "writer", "state": "unknown", "reason": "503: busy", "ms": 1,
+                             "next": "2026-10-07T09:05:00Z", "tried": []});
+        assert_eq!(combo_lines(&unknown, now), ["combo writer: UNKNOWN: 503: busy; retest in 5 min"]);
     }
 }

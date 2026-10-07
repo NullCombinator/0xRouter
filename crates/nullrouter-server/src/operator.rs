@@ -14,8 +14,8 @@
 //! | `{"op":"routing.health"}` | `{"ok":true,"journal":{kept,since,unkept_requests,held_lines,last_sync,last_sync_age_s}}` |
 //! | `{"op":"server.status"}` | `{"ok":true,"client_listen":"…"\|null,"dashboard":{enabled,listen,serving,error}}`: the address `serve` bound for clients, and the dashboard listener's state |
 //! | `{"op":"quota.list"}`, `{"op":"quota.poll"}`, `{"op":"quota.checkpoint"}` | see [`crate::quota`] |
-//! | `{"op":"test.plan","target"?,"account"?,"all"?}` | `{"ok":true,"pairs":[{provider,account,model,type,skip?}],"calls":{"<type>":N}}` (spec 011) |
-//! | `{"op":"test.run","target"?,"account"?,"all"?}` | streamed: one `{"event":"result","result":TestResult}` line per pair, then `{"ok":true,"done":{pass,broken,unknown,skipped}}`. Closing the connection cancels calls not yet sent |
+//! | `{"op":"test.plan","target"?,"account"?,"all"?}` | `{"ok":true,"pairs":[{provider,account,model,type,skip?}],"calls":{"<type>":N}}` (spec 011); a combo target adds `"combo":NAME` and counts as 1 call of its kind |
+//! | `{"op":"test.run","target"?,"account"?,"all"?}` | streamed: one `{"event":"result","result":TestResult}` line per pair (a combo: one `{"event":"combo","result":ComboResult}`), then `{"ok":true,"done":{pass,broken,unknown,skipped}}`. Closing the connection cancels calls not yet sent |
 //! | `{"op":"verdicts.list","provider"?,"account"?,"model"?,"state"?}` | `{"ok":true,"verdicts":[{provider,account,model,…Verdict,"waiting"?}],"combos":[{combo,…,"waiting"?}]}`: `waiting` says why a due retest can't run yet |
 //! | `{"op":"verdicts.set","provider","account","model","state":"broken"\|"clear","note"?}` | `{"ok":true}`, or `{"ok":false,"error":"no verdict for …"}` on clearing an untested pair |
 
@@ -119,7 +119,24 @@ fn planned(engine: &Engine, req: &Value) -> Result<Vec<Planned>, String> {
     model_tests::expand(engine, &engine.snapshot(), target, account)
 }
 
+/// The combo `req` targets, if it names one, with the type of its call: its test is one call
+/// through it (research R14).
+fn combo_target(engine: &Engine, req: &Value) -> Option<Result<(String, String), String>> {
+    let target = req.get("target").and_then(Value::as_str)?;
+    let st = engine.snapshot();
+    let combo = st.registry.combo(target)?;
+    if req.get("account").is_some_and(|a| !a.is_null()) {
+        return Some(Err(format!("{target} is a combo: its test isn't per account")));
+    }
+    Some(Ok((combo.name.clone(), model_tests::combo::kind(combo).to_string())))
+}
+
 fn test_plan(engine: &Engine, req: &Value) -> Value {
+    match combo_target(engine, req) {
+        Some(Ok((name, ty))) => return json!({"ok": true, "pairs": [], "combo": name, "calls": {ty: 1}}),
+        Some(Err(e)) => return json!({"ok": false, "error": e}),
+        None => {}
+    }
     match planned(engine, req) {
         Ok(p) => json!({"ok": true, "pairs": p, "calls": model_tests::calls(&p)}),
         Err(e) => json!({"ok": false, "error": e}),
@@ -134,6 +151,11 @@ async fn test_run(
     lines: &mut Lines<AsyncBufReader<OwnedReadHalf>>,
     write: &mut OwnedWriteHalf,
 ) -> Option<Value> {
+    match combo_target(engine, req) {
+        Some(Ok((name, _))) => return combo_run(engine, name, lines, write).await,
+        Some(Err(e)) => return Some(json!({"ok": false, "error": e})),
+        None => {}
+    }
     let planned = match planned(engine, req) {
         Ok(p) => p,
         Err(e) => return Some(json!({"ok": false, "error": e})),
@@ -167,6 +189,41 @@ async fn test_run(
         }
     }
     Some(json!({"ok": true, "done": {"pass": pass, "broken": broken, "unknown": unknown, "skipped": skipped}}))
+}
+
+/// `test.run` for a combo: one call through it, then its nested result as one line.
+async fn combo_run(
+    engine: &Arc<Engine>,
+    name: String,
+    lines: &mut Lines<AsyncBufReader<OwnedReadHalf>>,
+    write: &mut OwnedWriteHalf,
+) -> Option<Value> {
+    let stop = CancellationToken::new();
+    let mut task = tokio::spawn({
+        let (engine, stop, run) = (engine.clone(), stop.clone(), model_tests::run_id());
+        async move { model_tests::combo::run_combo(&engine, &name, Source::Test, &run, &stop).await }
+    });
+    let ended = loop {
+        tokio::select! {
+            r = &mut task => break r,
+            l = lines.next_line() => if !matches!(l, Ok(Some(_))) {
+                stop.cancel();
+                return None;
+            },
+        }
+    };
+    let r = match ended {
+        Ok(Ok(Some(r))) => r,
+        Ok(Ok(None)) => return Some(json!({"ok": false, "error": "the combo test was cancelled"})),
+        Ok(Err(e)) => return Some(json!({"ok": false, "error": e})),
+        Err(e) => return Some(json!({"ok": false, "error": format!("the combo test failed: {e}")})),
+    };
+    let mut done = json!({"pass": 0, "broken": 0, "unknown": 0, "skipped": 0});
+    done[r.state.as_str()] = json!(1);
+    if send(write, &json!({"event": "combo", "result": r})).await.is_err() {
+        return None;
+    }
+    Some(json!({"ok": true, "done": done}))
 }
 
 /// The listeners `serve` bound (spec 009, R8).
@@ -345,7 +402,14 @@ fn verdicts_list(engine: &Engine, req: &Value) -> Value {
             .filter(|(_, c)| state.is_none_or(|s| s == c.state))
             .map(|(name, c)| {
                 let mut line = store::combo_line(name, c);
+                if let Some(map) = line.as_object_mut() {
+                    map.remove("definition");
+                }
                 redact(&mut line);
+                let combo = c.next.and_then(|_| st.registry.combo(name));
+                if let Some(why) = combo.and_then(|k| retest::combo_waiting(engine, &st, k)) {
+                    line["waiting"] = json!(why);
+                }
                 line
             })
             .collect()

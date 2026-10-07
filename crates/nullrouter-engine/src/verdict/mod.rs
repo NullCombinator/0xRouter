@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use arc_swap::ArcSwap;
+use nullrouter_registry::Combo;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::journal::{Journal, Target};
@@ -213,10 +214,38 @@ fn stale(engine: &Engine, st: &EngineState, pair: &Pair, v: &Verdict) -> Option<
     }
 }
 
-/// Clears every verdict [`stale`] under `st`, each with a `cleared` line. Runs at open, after
-/// every reload and after a token swap. Returns how many.
+/// Clears every verdict [`stale`] under `st`, and every combo result whose combo is gone or
+/// changed, each with a `cleared` line. Runs at open, after every reload and after a token swap.
+/// Returns how many.
 pub fn recheck(engine: &Engine, st: &EngineState, at: SystemTime) -> usize {
-    engine.verdicts.clear_where(at, |pair, v| stale(engine, st, pair, v))
+    let pairs = engine.verdicts.clear_where(at, |pair, v| stale(engine, st, pair, v));
+    let combos: Vec<(String, &str)> = engine
+        .verdicts
+        .snapshot()
+        .combos
+        .iter()
+        .filter_map(|(name, c)| match st.registry.combo(name) {
+            None => Some((name.clone(), "combo removed")),
+            Some(now) if definition(now) != c.definition => Some((name.clone(), "combo changed")),
+            Some(_) => None,
+        })
+        .collect();
+    for (name, why) in &combos {
+        engine.verdicts.clear_combo(name, why, at);
+    }
+    pairs + combos.len()
+}
+
+/// `sha256:<hex>` of `combo`'s flattened member list: the unified models a request walks, each
+/// with its path. A combo result reached under another definition no longer holds.
+pub fn definition(combo: &Combo) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    for step in &combo.flat {
+        h.update(step.path.as_bytes());
+        h.update([b'\n']);
+    }
+    format!("sha256:{:x}", h.finalize())
 }
 
 /// What the operator does to a pair (`verdicts mark`, `verdicts clear`).

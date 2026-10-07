@@ -43,7 +43,13 @@ pub fn build(home: &OperatorHome, args: &Value, live: &Live) -> Result<View, Vie
         .combos
         .iter()
         .filter(|(_, c)| !by_pair && state.is_none_or(|s| s == c.state))
-        .map(|(name, c)| store::combo_line(name, c))
+        .map(|(name, c)| {
+            let mut line = store::combo_line(name, c);
+            if let Some(map) = line.as_object_mut() {
+                map.remove("definition");
+            }
+            line
+        })
         .collect();
     Ok(View::new(json!({ "verdicts": verdicts, "combos": combos })))
 }

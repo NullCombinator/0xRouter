@@ -7,6 +7,7 @@
 //! was reached on.
 
 pub mod bodies;
+pub mod combo;
 pub mod retest;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -318,25 +319,16 @@ pub async fn run_pair_at(
         return Some(TestResult::skipped(&p.pair, why));
     }
     let started = Instant::now();
-    let id = records::new_id();
-    let mut record = RequestRecord::new(id.clone(), crate::clock::now_rfc3339_millis(), bodies::STYLE);
-    record.model_type = Some(p.ty);
-    record.test = Some(TestMark { run: run.to_owned(), source });
-    engine.records.insert(record);
+    let id = open_record(engine, p.ty, run, source);
     let cancel = CancellationToken::new();
     let tag = TestTag { run: run.to_owned(), source };
-    let req = match request(&st, p, &id, cancel.clone(), tag) {
+    let pin = Pin { provider: p.pair.provider.clone(), account: p.pair.account.clone() };
+    let target = format!("{}/{}", p.pair.provider, p.requested);
+    let req = match request(&st, p.ty, target, Some(pin), &id, cancel.clone(), tag) {
         Ok(r) => r,
         Err(e) => return Some(TestResult::skipped(&p.pair, e)),
     };
-    let limit = st.registry.runtime().tests.timeout.for_kind(Some(p.ty.capability()));
-    let called = match tokio::time::timeout(limit, call(engine, &st, req, p.ty)).await {
-        Ok(c) => c,
-        Err(_) => {
-            cancel.cancel();
-            Called::Failed { status: None, message: format!("timeout after {}", seconds(limit)) }
-        }
-    };
+    let called = within(engine, &st, req, p.ty, cancel).await;
     let ms = started.elapsed().as_millis() as u64;
     let rec = engine.records.get(&id);
     let ttft_ms = rec.as_ref().and_then(|r| r.ttft_ms).map(|t| t as u64);
@@ -366,6 +358,34 @@ pub async fn run_pair_at(
     let mut r = result(p, judged.state, judged.reason, judged.rejection, ms, ttft_ms, &id);
     r.next = next.map(crate::clock::rfc3339);
     Some(r)
+}
+
+/// Opens the test call's record: tagged with the run, no agent, no prompt (research R9).
+fn open_record(engine: &Engine, ty: ModelType, run: &str, source: Source) -> String {
+    let id = records::new_id();
+    let mut record = RequestRecord::new(id.clone(), crate::clock::now_rfc3339_millis(), bodies::STYLE);
+    record.model_type = Some(ty);
+    record.test = Some(TestMark { run: run.to_owned(), source });
+    engine.records.insert(record);
+    id
+}
+
+/// Makes the call under the `[tests]` timeout for `ty`, cancelling it when the time runs out.
+async fn within(
+    engine: &Arc<Engine>,
+    st: &Arc<EngineState>,
+    req: TextRequest,
+    ty: ModelType,
+    cancel: CancellationToken,
+) -> Called {
+    let limit = st.registry.runtime().tests.timeout.for_kind(Some(ty.capability()));
+    match tokio::time::timeout(limit, call(engine, st, req, ty)).await {
+        Ok(c) => c,
+        Err(_) => {
+            cancel.cancel();
+            Called::Failed { status: None, message: format!("timeout after {}", seconds(limit)) }
+        }
+    }
 }
 
 fn result(
@@ -405,19 +425,21 @@ fn last_failed(r: &RequestRecord) -> Option<(Option<u16>, records::ErrorClass, S
     })
 }
 
-/// The test's request in the Chat Completions style, pinned to the pair's account.
+/// The test's request for `ty` in the Chat Completions style: a pair's pinned to its account, a
+/// combo's unpinned, as a client would send it.
 fn request(
     st: &EngineState,
-    p: &Planned,
+    ty: ModelType,
+    target: String,
+    pin: Option<Pin>,
     id: &str,
     cancel: CancellationToken,
     tag: TestTag,
 ) -> Result<TextRequest, String> {
     let style = st.style(bodies::STYLE).ok_or_else(|| format!("style {} isn't loaded", bodies::STYLE))?.clone();
-    let target = format!("{}/{}", p.pair.provider, p.requested);
-    let mut body = bodies::body(p.ty);
+    let mut body = bodies::body(ty);
     body["model"] = target.clone().into();
-    let (ir, media) = match p.ty {
+    let (ir, media) = match ty {
         ModelType::Text => (request::decode(&style, &body).map_err(|e| e.to_string())?, None),
         ty => {
             let codec = style.type_codec(ty).map_err(|e| e.to_string())?.variant(None).into_owned();
@@ -439,7 +461,7 @@ fn request(
         cancel,
         media,
         count: false,
-        pin: Some(Pin { provider: p.pair.provider.clone(), account: p.pair.account.clone() }),
+        pin,
         test: Some(tag),
     })
 }
@@ -529,10 +551,8 @@ fn store(
     record: &str,
     now: SystemTime,
 ) -> Option<SystemTime> {
-    let step = (j.state == State::Unknown).then(|| match engine.verdicts.get(pair) {
-        Some(v) if v.state == State::Unknown && source == Source::Retest => v.step.map_or(0, |s| s + 1),
-        _ => 0,
-    });
+    let before = engine.verdicts.get(pair).map(|v| (v.state, v.step));
+    let step = step(before, j.state, source);
     let mut v = Verdict {
         state: j.state,
         reason: j.reason.clone(),
@@ -549,6 +569,15 @@ fn store(
     let next = v.next;
     engine.verdicts.set(pair.clone(), v);
     next
+}
+
+/// The retest step of a new `state` set by `source` over `before`: an UNKNOWN's step advances
+/// only on a retest of an UNKNOWN; any other UNKNOWN starts at 0; a settled state has none.
+fn step(before: Option<(State, Option<u32>)>, state: State, source: Source) -> Option<u32> {
+    (state == State::Unknown).then(|| match before {
+        Some((State::Unknown, s)) if source == Source::Retest => s.map_or(0, |s| s + 1),
+        _ => 0,
+    })
 }
 
 pub use crate::verdict::basis;
