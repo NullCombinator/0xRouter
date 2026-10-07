@@ -42,9 +42,9 @@ priority").
 
 ## Phase 1: Setup
 
-- [ ] T001 Create the module skeleton `crates/nullrouter-engine/src/quota/fit/mod.rs` with submodules `rows`, `model`, `linalg`, `test`, `classify`, `split`, `breaks`, `outside`, `store` (empty files with module doc comments citing research R2–R12), and declare `pub mod fit;` in `crates/nullrouter-engine/src/quota/mod.rs`
-- [ ] T002 [P] Add the `MeterNumber` enum (`Capacity`, `Weight(TokenClass)`, `Multiplier(String)`) with text forms `capacity`, `weight.input`, `weight.output`, `weight.cache_read`, `weight.cache_write`, `multiplier.<glob>`, `FromStr`/`Display` and serde as those strings, and `Source` (`AccountOverride`, `PluginOverride`, `Fit`, `Declared`; serialized `account_override`, `plugin_override`, `fit`, `declared`) in `crates/nullrouter-engine/src/quota/fit/mod.rs` (data-model § Meter number, § Source)
-- [ ] T003 [P] Add the test target stubs `crates/nullrouter-engine/tests/quota_fit.rs` and `crates/nullrouter-engine/tests/sim_suite.rs` (the latter's tests `#[ignore]`), with module docs naming the SCs each covers
+- [X] T001 Create the module skeleton `crates/nullrouter-engine/src/quota/fit/mod.rs` with submodules `rows`, `model`, `linalg`, `test`, `classify`, `split`, `breaks`, `outside`, `store` (empty files with module doc comments citing research R2–R12), and declare `pub mod fit;` in `crates/nullrouter-engine/src/quota/mod.rs`
+- [X] T002 [P] Add the `MeterNumber` enum (`Capacity`, `Weight(TokenClass)`, `Multiplier(String)`) with text forms `capacity`, `weight.input`, `weight.output`, `weight.cache_read`, `weight.cache_write`, `multiplier.<glob>`, `FromStr`/`Display` and serde as those strings, and `Source` (`AccountOverride`, `PluginOverride`, `Fit`, `Declared`; serialized `account_override`, `plugin_override`, `fit`, `declared`) in `crates/nullrouter-engine/src/quota/fit/mod.rs` (data-model § Meter number, § Source)
+- [X] T003 [P] Add the test target stubs `crates/nullrouter-engine/tests/quota_fit.rs` and `crates/nullrouter-engine/tests/sim_suite.rs` (the latter's tests `#[ignore]`), with module docs naming the SCs each covers
 
 ---
 

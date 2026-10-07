@@ -2,6 +2,7 @@
 //! decoder, polling, poll history and the per-model traffic tally.
 
 pub mod extract;
+pub mod fit;
 pub mod grpc_web;
 pub mod history;
 pub mod poll;
