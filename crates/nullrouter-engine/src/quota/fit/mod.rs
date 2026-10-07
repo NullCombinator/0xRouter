@@ -18,9 +18,11 @@ pub mod test;
 use std::fmt;
 use std::str::FromStr;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 use std::time::SystemTime;
 
+use arc_swap::ArcSwap;
 use indexmap::IndexMap;
 use nullrouter_registry::schema::{MeterDecl, TokenWeights};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -257,5 +259,51 @@ impl Fits {
     /// The significant numbers of one window; empty when none (or the window is unknown).
     pub fn window(&self, provider: &str, window: &str) -> WindowFit {
         self.windows.get(provider).and_then(|w| w.get(window)).cloned().unwrap_or_default()
+    }
+}
+
+/// One account's meters in effect: its provider's declared windows with the numbers the fit and
+/// the overrides replaced, and where each replaced number came from, by window name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AccountMeters {
+    pub windows: Arc<[MeterDecl]>,
+    pub sources: BTreeMap<String, BTreeMap<MeterNumber, Source>>,
+}
+
+/// The meters in effect of every account that has any replaced number, swapped whole after each
+/// change (research R15). An account with none isn't here: routing reads its provider's
+/// declaration, so placements equal today's by construction (FR-011).
+#[derive(Debug, Default)]
+pub struct Meters {
+    cells: ArcSwap<HashMap<(String, String), Arc<AccountMeters>>>,
+}
+
+impl Meters {
+    /// One load per candidate on the request path.
+    pub fn get(&self, provider: &str, account: &str) -> Option<Arc<AccountMeters>> {
+        self.cells.load().get(&(provider.to_owned(), account.to_owned())).cloned()
+    }
+
+    /// Recomputes every account's meters from the registry in `st` and the fits.
+    pub fn rebuild(&self, st: &crate::state::EngineState, fits: &Fits) {
+        let mut next = HashMap::new();
+        for account in st.accounts.iter() {
+            let Some(provider) = st.registry.providers().find(|p| p.id == account.provider) else { continue };
+            let declared = provider.routing().windows;
+            let mut windows = Vec::with_capacity(declared.len());
+            let mut sources = BTreeMap::new();
+            for meter in declared {
+                let fit = fits.window(&account.provider, &meter.name);
+                let (m, src) = in_effect(meter, None, None, &fit, &account.name);
+                if !src.is_empty() {
+                    sources.insert(meter.name.clone(), src);
+                }
+                windows.push(m);
+            }
+            if !sources.is_empty() {
+                next.insert((account.provider.clone(), account.name.clone()), Arc::new(AccountMeters { windows: windows.into(), sources }));
+            }
+        }
+        self.cells.store(Arc::new(next));
     }
 }

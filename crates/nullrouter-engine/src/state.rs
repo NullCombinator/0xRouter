@@ -123,6 +123,10 @@ pub struct Engine {
     /// Poll history and the running per-account traffic tally (research R15). Every
     /// completed poll is written to it through a [`quota`](Self::quota) hook.
     pub history: Arc<crate::quota::history::History>,
+    /// The quota fit's significant numbers (spec 012).
+    pub fits: ArcSwap<crate::quota::fit::Fits>,
+    /// The meters in effect, rebuilt at start, on reload and when a fit changes (spec 012, R15).
+    pub meters: crate::quota::fit::Meters,
     /// Live model lists, shared with every snapshot.
     pub live_models: Arc<LiveModels>,
     /// The listeners `serve` bound, for the operator socket's `server.status`.
@@ -232,6 +236,8 @@ impl Engine {
             refresher: Default::default(),
             quota,
             history,
+            fits: ArcSwap::from_pointee(Default::default()),
+            meters: Default::default(),
             live_models,
             changed: tokio::sync::Notify::new(),
             status: Default::default(),
@@ -240,6 +246,7 @@ impl Engine {
             reload: Mutex::new(()),
         };
         let st = engine.snapshot();
+        engine.rebuild_meters();
         let restored = crate::route::restore(&engine, &st, crate::clock::now());
         tracing::info!("routing state restored: {} fingerprints, {} ledgers", restored.fingerprints, restored.ledgers);
         Ok((engine, report))
@@ -254,6 +261,11 @@ impl Engine {
         let closed = crate::journal::records::recover(self.home().path(), now)?;
         self.history.recover_counters(now);
         Ok(closed)
+    }
+
+    /// Recomputes the meters in effect from the current snapshot and fits (spec 012).
+    pub fn rebuild_meters(&self) {
+        self.meters.rebuild(&self.snapshot(), &self.fits.load());
     }
 
     /// The snapshot to hold for one request.
@@ -343,6 +355,7 @@ impl Engine {
             crate::route::drop_account(self, &state, provider, name, SystemTime::now());
         }
         self.state.store(Arc::new(state));
+        self.rebuild_meters();
         self.changed.notify_one();
         Ok(report)
     }

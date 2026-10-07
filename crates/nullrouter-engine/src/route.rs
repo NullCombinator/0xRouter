@@ -144,9 +144,10 @@ fn candidate_of(engine: &Engine, c: &plan::Candidate<'_>, order: i64, now: Syste
             } else {
                 Vec::new()
             };
+            let in_effect = engine.meters.get(&a.provider, &a.name);
             meter::quota_for(
                 &MeterInput {
-                    declared: routing.windows,
+                    declared: in_effect.as_ref().map_or(routing.windows, |m| &m.windows[..]),
                     overrides: &a.routing,
                     report_declared: reported,
                     polled,
