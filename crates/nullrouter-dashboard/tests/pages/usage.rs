@@ -46,20 +46,18 @@ fn slots(html: &str) -> Vec<String> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_period_filter_the_stat_cards_and_the_graph_are_slots_with_no_numbers() {
-    // Records exist, so a digit that leaks in from them would show.
+async fn only_the_topology_graph_is_still_a_slot_here() {
+    // Spec 010 fills the period filter and the stat cards; the graph is T045.
     let d = Dash::dashboard().await;
     let html = d.ok("/usage").await;
     let found = slots(&html);
-    assert_eq!(found.len(), 3, "the period filter, the stat cards and the topology graph");
-    for slot in &found {
-        assert!(!slot.chars().any(|c| c.is_ascii_digit()), "a slot shows no digits: {slot}");
-        assert!(text_of(slot).contains("Arrives with the next dashboard slice."), "{slot}");
-    }
+    assert_eq!(found.len(), 1, "the topology graph");
+    assert!(text_of(&found[0]).contains("Topology graph"));
     let text = text_of(&html);
-    for title in ["Period filter", "Requests, input, cached, output, Est. Cost", "Topology graph"] {
+    for title in ["Total Requests", "Total Input Tokens", "Cached Tokens", "Output Tokens", "Est. Cost"] {
         assert!(text.contains(title), "{title}");
     }
+    assert!(text.contains("Estimated, not actual billing"));
 }
 
 #[tokio::test(flavor = "multi_thread")]

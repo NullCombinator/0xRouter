@@ -33,7 +33,7 @@ other provider with a `latency` row.
 |---|---|---|
 | Period filter | Today, 24h, 7D, 30D, 60D, All; the chosen one marked; a `GET` form | `usage --period` values |
 | Card "Total Requests" | requests; small print "N in flight · N not reported" | `usage` `requests`, `in_flight`, `not_reported` |
-| Card "Total Input Tokens" | input (uncached), compact | `usage` `tokens.input` |
+| Card "Total Input Tokens" | input (uncached), the full number grouped as 9router prints it | `usage` `tokens.input` |
 | Card "Cached Tokens" | cached | `usage` `tokens.cached` |
 | Card "Output Tokens" | output | `usage` `tokens.output` |
 | Card "Est. Cost" | `~$X.XX`, "Estimated, not actual billing", "N not priced" with reasons, the note | `usage` `cost` |

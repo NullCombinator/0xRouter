@@ -652,6 +652,15 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .usage-overview__pair { display: grid; grid-template-columns: var(--grid-usage); align-items: stretch; gap: var(--space-2); }
 .usage-overview__graph { display: flex; flex-direction: column; min-width: 0; }
 .usage-overview__graph .slot { flex: var(--flex-1); }
+.usage-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--card-min), var(--fr))); gap: var(--space-3); }
+.usage-stat { display: flex; flex-direction: column; align-items: center; min-width: 0; padding: var(--space-3); gap: var(--space-1); text-align: center; }
+.usage-stat__label { color: var(--color-text-muted); font-size: var(--text-xs); line-height: var(--text-xs-leading); font-weight: var(--weight-semibold); text-transform: uppercase; }
+.usage-stat__value { width: var(--size-full); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-lg); line-height: var(--text-lg-leading); font-weight: var(--weight-bold); }
+.usage-stat__value--input { color: var(--color-primary); }
+.usage-stat__value--cached { color: var(--color-blue-500); }
+.usage-stat__value--output { color: var(--color-green-500); }
+.usage-stat__value--cost { color: var(--color-yellow-500); }
+.usage-stat__small { color: var(--color-text-muted); font-size: var(--text-10); }
 .usage-recent { min-width: 0; }
 .usage-recent > .card { height: var(--size-full); padding: var(--space-3); }
 .usage-recent__none { color: var(--color-text-muted); font-size: var(--text-sm); line-height: var(--text-sm-leading); }
@@ -757,6 +766,9 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .provider-window__models { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .kind-filter { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
 .kind-filter__item {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1-5);

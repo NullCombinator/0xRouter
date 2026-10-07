@@ -755,6 +755,14 @@ source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/Provider
 uses = ["space-6", "grid-usage", "space-2", "flex-1"]
 source = "src/shared/components/UsageStats.js:475"
 
+[component.usage-stats]
+uses = ["card-min", "fr", "space-3"]
+source = "src/app/(dashboard)/dashboard/usage/components/OverviewCards.js:11"
+
+[component.usage-stat]
+uses = ["space-3", "space-1", "color-text-muted", "text-xs", "text-xs-leading", "weight-semibold", "size-full", "text-lg", "text-lg-leading", "weight-bold", "color-primary", "color-blue-500", "color-green-500", "color-yellow-500", "text-10"]
+source = "src/app/(dashboard)/dashboard/usage/components/OverviewCards.js:12"
+
 [component.usage-recent]
 uses = ["size-full", "space-3", "color-text-muted", "text-sm", "text-sm-leading", "space-1-5", "space-1", "text-xs", "text-xs-leading", "size-1-5", "radius-full", "color-green-500", "color-red-500", "color-blue-500"]
 source = "src/app/(dashboard)/dashboard/usage/components/UsageTable.js:163"

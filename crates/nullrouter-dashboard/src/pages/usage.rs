@@ -9,10 +9,22 @@ use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
 use crate::access::encode_component;
-use crate::components::{Head, Tone, badge, card, empty, kv, modal, name, slot};
+use crate::components::{Head, Tone, badge, card, empty, kv, modal, name, notice, slot};
 use crate::page::{ViewName, Want};
 
-pub const VIEWS: &[ViewName] = &[ViewName::Records, ViewName::Record, ViewName::Check];
+pub const VIEWS: &[ViewName] = &[ViewName::Usage, ViewName::Records, ViewName::Record, ViewName::Check];
+
+/// The period filter: the value `usage --period` takes, and its label (9router's filter).
+pub const PERIODS: [(&str, &str); 6] =
+    [("today", "Today"), ("24h", "24h"), ("7d", "7D"), ("30d", "30D"), ("60d", "60D"), ("all", "All")];
+
+pub const UNKNOWN_PERIOD: &str = "Unknown period; showing Today";
+pub const NO_REQUESTS: &str = "No requests in this period";
+
+/// The period the page shows: the query's when it names one, else Today.
+fn period_of(req: &Req) -> &'static str {
+    PERIODS.iter().find(|(p, _)| Some(*p) == req.get("period")).map_or("today", |(p, _)| p)
+}
 
 /// How many records a page of the table holds (`records list --limit 50`).
 pub const PAGE: usize = 50;
@@ -24,7 +36,10 @@ pub const EMPTY: &str = "No request records yet.";
 pub const NO_OLDER: &str = "No older request records.";
 
 pub fn wants(req: &Req) -> Vec<Want> {
-    let mut wants = vec![Want::new(ViewName::Records, json!({"limit": PAGE, "before": req.get("before")}))];
+    let mut wants = vec![
+        Want::new(ViewName::Usage, json!({"period": period_of(req)})),
+        Want::new(ViewName::Records, json!({"limit": PAGE, "before": req.get("before")})),
+    ];
     if let Some(id) = &req.window {
         wants.push(Want::new(ViewName::Record, json!({"id": id})));
     }
@@ -189,12 +204,80 @@ fn record_href(req: &Req, id: &str) -> String {
 fn overview(ctx: &Ctx<'_>, records: &[Value]) -> Markup {
     html! {
         div class="usage-overview" {
-            div class="usage-overview__period" { (slot("Period filter")) }
-            div class="usage-overview__stats" { (slot("Requests, input, cached, output, Est. Cost")) }
+            @if ctx.req.get("period").is_some_and(|p| PERIODS.iter().all(|(v, _)| *v != p)) {
+                (notice("warning", UNKNOWN_PERIOD))
+            }
+            div class="usage-overview__period" { (period_filter(ctx)) }
+            div class="usage-overview__stats" { (stats(ctx.json(ViewName::Usage))) }
             div class="usage-overview__pair" {
                 div class="usage-overview__graph" { (slot("Topology graph")) }
                 (recent(ctx, records))
             }
+        }
+    }
+}
+
+/// The period filter: a `GET` form of six buttons, the chosen one marked. No script (R4).
+fn period_filter(ctx: &Ctx<'_>) -> Markup {
+    let chosen = period_of(ctx.req);
+    html! {
+        form class="kind-filter" method="get" action=(ctx.req.base()) aria-label="Period" {
+            @for (value, label) in PERIODS {
+                @let current = value == chosen;
+                button type="submit" name="period" value=(value)
+                    class=(if current { "kind-filter__item kind-filter__item--current" } else { "kind-filter__item" })
+                    aria-pressed=(current) { (label) }
+            }
+        }
+    }
+}
+
+fn number(n: u64) -> String {
+    grouped_comma(n)
+}
+
+fn stat(label: &str, value: &str, tone: &str, small: Markup) -> Markup {
+    let class = if tone.is_empty() { "usage-stat__value".to_owned() } else { format!("usage-stat__value usage-stat__value--{tone}") };
+    html! {
+        div class="card usage-stat" {
+            span class="usage-stat__label" { (label) }
+            span class=(class) title=(value) { (value) }
+            (small)
+        }
+    }
+}
+
+/// The five cards, each a number `usage --json` holds (9router's OverviewCards, in its words).
+fn stats(u: &Value) -> Markup {
+    let n = |v: &Value| v.as_u64().unwrap_or(0);
+    let requests = n(&u["requests"]);
+    let (in_flight, not_reported) = (n(&u["in_flight"]), n(&u["not_reported"]));
+    let cost = &u["cost"];
+    let un = &cost["unpriced"];
+    let reasons: Vec<String> = [("no_price", "no price"), ("account_gone", "account gone"), ("no_output_price", "no output price")]
+        .iter()
+        .filter(|(k, _)| n(&un[*k]) > 0)
+        .map(|(k, label)| format!("{} {label}", n(&un[*k])))
+        .collect();
+    html! {
+        div class="usage-stats" {
+            (stat("Total Requests", &number(requests), "", html! {
+                @if requests == 0 {
+                    span class="usage-stat__small" { (NO_REQUESTS) }
+                } @else if in_flight > 0 || not_reported > 0 {
+                    span class="usage-stat__small" { (number(in_flight)) " in flight · " (number(not_reported)) " not reported" }
+                }
+            }))
+            (stat("Total Input Tokens", &number(n(&u["tokens"]["input"])), "input", html! {}))
+            (stat("Cached Tokens", &number(n(&u["tokens"]["cached"])), "cached", html! {}))
+            (stat("Output Tokens", &number(n(&u["tokens"]["output"])), "output", html! {}))
+            (stat("Est. Cost", &format!("~${:.2}", cost["usd"].as_f64().unwrap_or(0.0)), "cost", html! {
+                span class="usage-stat__small" { (cost["label"].as_str().unwrap_or_default()) }
+                @if n(&un["requests"]) > 0 {
+                    span class="usage-stat__small" { (number(n(&un["requests"]))) " not priced: " (reasons.join(", ")) }
+                }
+                span class="usage-stat__small" { (cost["note"].as_str().unwrap_or_default()) }
+            }))
         }
     }
 }
