@@ -31,10 +31,16 @@ tempfile.workspace = true
 reqwest.workspace = true
 tower = { version = "0.5", features = ["util"] }
 toml.workspace = true
+criterion.workspace = true
+ulid.workspace = true
 
 [[test]]
 name = "isolation"
 required-features = ["fault"]
+
+[[bench]]
+name = "pages"
+harness = false
 
 [lints]
 workspace = true
