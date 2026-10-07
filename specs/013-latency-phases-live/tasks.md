@@ -122,20 +122,23 @@ match slice 010's definitions (spec US1).
   - (5) headers flushed with the first frame: `merged_wait`;
   - (6) a slow client: time in delivery;
   - (7) a whole JSON answer: generation "not applicable";
-  - (8) a pre-slice journal record: "not recorded"
-- [ ] T016 [P] [US1] Write SC-003's test in `crates/nullrouter-server/tests/phases.rs`: over the same run, `phases::of`'s request-level router overhead (the first non-skipped attempt) equals the first non-skipped attempt's `started` when no refresh happened, and request TTFT equals `ttft_ms`. These are slice 010's definitions, copied into the test with a `// 010:` comment until 010 is merged (plan, Coordination)
+  - (8) a pre-slice journal record: "not recorded";
+  - a client that disconnects mid-generation: the attempt ends in `generation`, later phases "not applicable", and the live entry is gone;
+  - a stream broken mid-way and resumed by attempt 2: each attempt has its own first token and generation, and request TTFT is the first output the client got;
+  - an async media job: the phases end when 0router answers with the job ID, and later polls add nothing
+- [ ] T016 [P] [US1] Write SC-003's test in `crates/nullrouter-server/tests/phases.rs`: over the same run, `phases::of`'s request-level router overhead (the first non-skipped attempt) equals the first non-skipped attempt's `started` minus any refresh span, and request TTFT equals `ttft_ms`. Include a request whose account needed a token refresh. These are slice 010's definitions as re-pointed to `phases::of` (spec Clarifications, analyze note), copied into the test with a `// 010:` comment until 010 is merged (plan, Coordination)
 - [ ] T017 [P] [US1] Write CLI rendering tests in `crates/nullrouter-cli/src/cmd/records.rs` (`#[cfg(test)]`):
   - `list` shows the `SLOWEST` column, e.g. `first token 41.2 s (provider)`, `…` for in-flight, and `not recorded`;
   - `show` prints the phase table, with `new connection · HTTP/2 · proxy <name>`, `failed in <phase> (timeout: …)`, `(includes token refresh N ms)`, `(of which record close N ms)` and `total … = sum of phases`, as in contracts/cli.md
 
 ### Implementation for User Story 1
 
-- [ ] T018 [US1] In `crates/nullrouter-engine/src/attempt.rs`, create an `Arc<AttemptClock>` in `start_attempt` and hold it on the attempt runner. Wrap `once`'s `send()` in `timing::ATTEMPT.scope(clock.clone(), …)`. Set `headers` when `send()` resolves. Set `http` from `resp.version()`. In `end_attempt`, store `timing = Some(clock.to_timing())` in the same `records.update` call (research R2; no new `update` calls)
+- [ ] T018 [US1] In `crates/nullrouter-engine/src/attempt.rs`, create an `Arc<AttemptClock>` in `start_attempt` and hold it on the attempt runner. Wrap the upstream `send()` of `once`, `media_once` and `count_once` in `timing::ATTEMPT.scope(clock.clone(), …)`, so whole answers, media and token counts record connect, reuse and HTTP version too (FR-012). Set `headers` when `send()` resolves. Set `http` from `resp.version()`. In `end_attempt`, store `timing = Some(clock.to_timing())` in the same `records.update` call (research R2; no new `update` calls)
 - [ ] T019 [US1] Set `first_output` in `crates/nullrouter-engine/src/attempt.rs` at every place `self.ttft()` is called today (whole answers, media, count, the stream's first `is_output()` piece). Set `upstream_done` where `read_all` returns and where `pump` sees EOF. Set `merged_wait` when the first body read after headers already holds output (research R13)
 - [ ] T020 [US1] Replace `send()` in `crates/nullrouter-engine/src/attempt.rs` with `try_send` first. Only on `Full`, time the awaited send and add it to the clock's `blocked_ms`, keepalives included (research R4). Keep the cancellation `select!` as it is
 - [ ] T021 [US1] Time the same-account retry `self.pause(b.delay)` in `walk` (`crates/nullrouter-engine/src/attempt.rs`) and hand the duration to the next attempt's clock as `retry_wait_ms`. Time `fresh_for_use` and `refresh_rejected` and hand each to the next attempt as `refresh_ms` (research R6)
 - [ ] T022 [US1] Record `closing_ms` for the serving attempt: the time from `upstream_done` until the engine releases the record's `close` line (the FR-037 hold in `run`, `crates/nullrouter-engine/src/attempt.rs`). Store it with a `records.update` merged into the existing close update, not a new one
-- [ ] T023 [US1] In `crates/nullrouter-server/src/operator.rs`, make `records.get` add `phases` per attempt (from `phases::of`), and `records.list` add `slowest: {phase, ms, side, in_progress}` or `null` per record (contracts/operator-socket.md)
+- [ ] T023 [US1] In `crates/nullrouter-server/src/operator.rs`, make `records.get` add `phases` per attempt (from `phases::of`), and `records.list` add `slowest: {phase, ms, side, in_progress}` or `null` per record (contracts/operator-socket.md). For a request still in flight, this task returns `{in_progress: true}` with no phase yet; T031 fills in the current phase from the live table
 - [ ] T024 [US1] Render the `SLOWEST` column in `list` and the per-attempt phase table in `show` in `crates/nullrouter-cli/src/cmd/records.rs`, as in contracts/cli.md § `nullrouter records`. `--json` passes `timing` and `phases` through
 - [ ] T025 [US1] Make the records views in `crates/nullrouter-server/src/views/` carry `phases` and `slowest`, so the dashboard's request window shows the same numbers later (no dashboard change in this slice)
 
@@ -159,7 +162,8 @@ gone one refresh after it ends, and `--json` gives one snapshot (spec US2).
   - each current phase is correct within one second of the change;
   - attempt 2 shows with attempt 1 in `finished`;
   - a request before its first attempt shows `router_overhead`;
-  - a snapshot with nothing in flight gives `[]`
+  - a snapshot with nothing in flight gives `[]`;
+  - a socket client that requests a snapshot and never reads the reply doesn't slow requests: 50 requests complete within the same time as without it (FR-020)
 - [ ] T027 [P] [US2] Write the content check in `crates/nullrouter-server/tests/live.rs` (FR-019): a request whose prompt, answer and headers carry marker strings, and whose account secret is a marker. The serialized snapshot contains none of them
 - [ ] T028 [P] [US2] Write CLI tests in `crates/nullrouter-cli/src/cmd/live.rs` (`#[cfg(test)]`): rendering of a snapshot as in contracts/cli.md (`nothing in flight`, the paused-proxy line, the finished-phases column), and `no server is running` exiting 1
 
@@ -178,7 +182,7 @@ gone one refresh after it ends, and `--json` gives one snapshot (spec US2).
   - set the attempt at `start_attempt`;
   - finish at `end_attempt`;
   - remove in `end_request` and on every early return or drop path. Use a drop guard on the request runner, so a panic or cancellation can't leave an entry
-- [ ] T031 [US2] Add the `live.snapshot` op to `crates/nullrouter-server/src/operator.rs`. It returns `{ok, as_of, paused_proxies, in_flight}`, newest first, and lists paused proxies as an empty list until US4 (contracts/operator-socket.md)
+- [ ] T031 [US2] Add the `live.snapshot` op to `crates/nullrouter-server/src/operator.rs`. It returns `{ok, as_of, paused_proxies, in_flight}`, newest first, and lists paused proxies as an empty list until US4 (contracts/operator-socket.md). Also make `records.list` give an in-flight request's `slowest` its current phase and time from the live table, marked in progress (FR-013, research R14)
 - [ ] T032 [US2] Implement `nullrouter live [--json]` in `crates/nullrouter-cli/src/cmd/live.rs` and register it in `crates/nullrouter-cli/src/cmd/mod.rs`:
   - poll once a second;
   - redraw with ANSI clear when `std::io::IsTerminal` says stdout is a terminal, else print one snapshot per poll;
@@ -207,7 +211,8 @@ is never cut (spec US3).
   - SC-006: a thinking stream of 5 min (paused tokio clock) with gaps below stall completes with defaults;
   - SC-007: change a timeout with `reload` while a request is in flight; it keeps the old one and the next request uses the new one;
   - a timeout's record carries `timeout: {which, ms, source}`;
-  - the header timeout counts from the attempt's start, connect included (research R12)
+  - the header timeout counts from the attempt's start, connect included (research R12);
+  - a hand-edited invalid `config.toml` (a 0 header timeout) on `reload` is refused with the field named, and the previous settings stay in force (FR-032)
 - [ ] T035 [P] [US3] Write schema tests in `crates/nullrouter-registry/tests/` (the existing plugin-validation test file):
   - `connect_timeout_ms`, `first_token_timeout_ms` and `[[models]] timeouts` parse;
   - `config.toml` `[provider.P.connection]` and `[provider.P.model."M".connection]` parse;
@@ -226,7 +231,7 @@ is never cut (spec US3).
   - add the first-token deadline (from `headers` until `first_output`) to `pump`'s `select!` beside stall and cancellation, failing with `ErrorClass::Timeout` and reason `no model output within N ms`;
   - set `clock.timeout` on every timeout (research R12)
 - [ ] T040 [US3] Add the `connection.view` op in `crates/nullrouter-server/src/operator.rs`: per provider, every timeout with `{ms|null, source}`, the models whose timeouts differ, and (after US4–US6) proxy, reuse, http2 and retry (contracts/operator-socket.md)
-- [ ] T041 [US3] Implement `nullrouter connection show [<provider>] [--json]`, `set <provider> [--model M] <key> <value>` and `unset …` in `crates/nullrouter-cli/src/cmd/connection.rs` for the four timeout keys. Durations parse through `nullrouter-registry`'s `schema/duration.rs`, and `off` is allowed for first token only. The command writes `config.toml` atomically and reloads (prints `applied` / `saved; applies at next start`). Register it in `cmd/mod.rs`
+- [ ] T041 [US3] Implement `nullrouter connection show [<provider>] [--json]`, `set <provider> [--model M] <key> <value>` and `unset …` in `crates/nullrouter-cli/src/cmd/connection.rs` for the four timeout keys. Durations parse through `nullrouter-registry`'s `schema/duration.rs`, and `off` is allowed for first token only. The command writes `config.toml` atomically and reloads (prints `applied` / `saved; applies at next start`). A provider that isn't installed is refused with the list of known providers, and nothing is written (spec Edge Cases); test it in the module. Register it in `cmd/mod.rs`
 
 **Checkpoint**: US3 works with the MVP.
 
@@ -281,7 +286,7 @@ resumes. A secret scan finds no credentials (spec US4, SC-008, SC-011).
   - the password comes from stdin or `--password-env`, never argv;
   - `list` shows `user ✓` or `—`;
   - `remove` is refused while the proxy is assigned, naming the assignments;
-  - `use` and `clear` write `config.toml` or `accounts.toml`.
+  - `use` and `clear` write `config.toml` or `accounts.toml`; an unknown provider or account is refused with the list of known ones.
 
   Follow contracts/cli.md § `nullrouter proxy`, and register the command in `cmd/mod.rs`
 - [ ] T054 [US4] Add a `PROXY` column to `nullrouter accounts list` in `crates/nullrouter-cli/src/cmd/accounts.rs`. In `crates/nullrouter-cli/src/cmd/check.rs`, report paused proxies as errors, assignments that name undefined proxies, and `proxies.toml`'s file mode
@@ -329,14 +334,14 @@ same-account retry with a 500 ms `retry wait` before falling over (spec US6).
 ## Phase 9: Polish & Cross-Cutting Concerns
 
 - [ ] T065 [P] Write `crates/nullrouter-engine/tests/routing_latency_blind.rs` (SC-009, FR-035): a unified model with two members, one 10× slower via `Step::Phased`. The sequence of placements equals the run where both are equally fast. Also check by search that no `routing/` or `route.rs` code reads `timing` or `phases`
-- [ ] T066 [P] Add the criterion group `phases` to `crates/nullrouter-server/benches/server.rs`: one streamed request through the in-process server against `MockUpstream`, with timing on and off (a `testkit` switch that makes the clock a no-op). Record the local baseline in `target/` only (research R15, SC-004)
+- [ ] T066 [P] Add the criterion group `phases` to `crates/nullrouter-server/benches/server.rs`: one streamed request through the in-process server against `MockUpstream`, with timing on and off (a `testkit` switch that makes the clock a no-op). **User-gated**: running it needs local cargo, which the project rule forbids by default. Ask the user before one `nice` run with 2 jobs on and off; record the result in `target/` and the pass or fail in the slice notes. Without that run, report SC-004 as unverified (research R15, SC-004)
 - [ ] T067 [P] Document in `docs/operator-config.md`:
   - new sections "Phases in records", "The live view", "Connection settings" (timeouts and precedence, reuse, HTTP/2, retries) and "Proxies" (files, levels, pause and `proxy fixed`);
   - `proxies.toml` and `routing/proxies.json` in the directory tree;
   - the new mutating commands in the reload list
 - [ ] T068 [P] Document the plugin fields `connect_timeout_ms`, `first_token_timeout_ms`, `[[models]] timeouts`, `[transport] http2 = false` and the retry cap, plus the proxy refusal, in `docs/plugins.md`
-- [ ] T069 Coordination note in `specs/013-latency-phases-live/plan.md` § Coordination: list the exact edits slice 010 needs on rebase (`journal/summary.rs` router overhead → `phases::of`; SC-003's test switches from the copied definitions to 010's functions) and slice 011's (`clients.for_account` in model tests; a paused proxy makes the test skip). Save the note to agentmemory (both instances)
-- [ ] T070 Run quickstart.md §1–5 against a real provider with the user (only with their OK; `serve` built by CI or locally per the build budget), and record the outcome in `specs/013-latency-phases-live/quickstart.md`
+- [ ] T069 Coordination note in `specs/013-latency-phases-live/plan.md` § Coordination: list the exact edits slice 010 needs on rebase (`journal/summary.rs` router overhead → `phases::of`; SC-003's test switches from the copied definitions to 010's functions) and slice 011's (`clients.for_account` in model tests; a paused proxy makes the test skip). FR-025's model-test leg is verified by whichever slice merges second, with a test that a model test goes through the account's proxy. Save the note to agentmemory (both instances)
+- [ ] T070 Run quickstart.md §1–5 against a real provider with the user (only with their OK; `serve` needs a local build, which the no-local-cargo rule forbids unless the user allows it for this run), and record the outcome in `specs/013-latency-phases-live/quickstart.md`
 
 ---
 

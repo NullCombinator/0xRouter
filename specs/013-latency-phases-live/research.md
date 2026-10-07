@@ -326,9 +326,9 @@ be told apart.
 
 **Decision**: A new criterion group `phases` in `crates/nullrouter-server/benches/server.rs` runs
 one full streamed request through the in-process server against a local mock provider, with
-phase timing on and off (a `cfg(test)` switch on the clock). The pass rule is that on-off stays
+phase timing on and off (a `testkit` feature switch that makes the clock a no-op; benches don't compile with `cfg(test)`). The pass rule is that on-off stays
 within the group's noise (criterion's 95% interval overlaps). Baselines stay local in `target/`,
-as for every bench.
+as for every bench. Running it needs local cargo, so it is user-gated (tasks T066).
 
 The added cost per request:
 - one map insert and one remove;

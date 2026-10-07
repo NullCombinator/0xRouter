@@ -43,6 +43,10 @@ confirmed claim by claim on 2026-10-07.
   HTTP/2 wherever a provider offers it, so the default stays that way and a plugin declares only
   that its provider doesn't support HTTP/2. The earlier text would have quietly moved every
   undeclared provider to HTTP/1.1.
+- Analyze note (2026-10-07, delegated by the user, not a clarify answer): a sign-in token refresh
+  just before an attempt counts in connect (FR-002), since it is network time on the provider's
+  side, and FR-008 keeps it out of router overhead. Slice 010's router overhead uses the same
+  definition on rebase, so FR-010 holds for requests with a refresh too.
 - Q: Should the request list show where each request's time went? → A: Yes, one column: the
   request's longest phase, its time and its side (FR-013). Full detail stays in a single record
   and `--json`. This extends brief row 8.
@@ -52,8 +56,8 @@ confirmed claim by claim on 2026-10-07.
 ### User Story 1 - Phase times in every request record (Priority: P1)
 
 The operator opens a request's record and sees where its time went, for each attempt, failed
-attempts included. The six phases are router overhead, connect, response headers, first token,
-generation, and delivery to the client, plus a "retry wait" when 0router waits on purpose before
+attempts included. The seven phases are router overhead, connect, response headers, first token,
+generation, delivery to the client, and a "retry wait" when 0router waits on purpose before
 retrying the same account. A phase that didn't happen shows "not applicable" and
 never "0 ms", so the operator can tell what was slow and whose side it was on: 0router's, the
 network's, the provider's, or the client's.
@@ -74,7 +78,8 @@ the same requests.
    response headers, first token, generation and delivery, and these add up to the request's
    total.
 2. **Given** a request served over a reused connection, **When** the operator shows its record,
-   **Then** connect shows "not applicable" and the record says the connection was reused.
+   **Then** connect shows "not applicable" (unless a token refresh preceded the attempt, which
+   connect then holds and names) and the record says the connection was reused.
 3. **Given** a request whose first attempt failed with a server error and whose second attempt
    (another account) served it, **When** the operator shows its record, **Then** the first
    attempt shows its phases up to the failure and names the phase it failed in, its later phases
@@ -286,7 +291,8 @@ about 500 ms apart, before falling over.
   client never slows or blocks client requests.
 - **Invalid setting** (for example, a zero or negative timeout, a malformed proxy address, a retry
   count above the allowed maximum): the change is refused with a message that names the field, and
-  the previous settings stay in force.
+  the previous settings stay in force. The one exception is the first-token timeout, where zero
+  means off (FR-022).
 - **Setting for an unknown provider**: refused, with the list of known providers.
 - **Plugin reload while overrides exist**: overrides stay. An override for a provider that no
   longer exists is kept and reported by `nullrouter check` as unused.
@@ -311,7 +317,9 @@ about 500 ms apart, before falling over.
     retry policy's wait, or the provider's own retry-after wait). "Not applicable" when there was
     no such wait.
   - **Connect**: from the attempt's start until the connection to the provider is ready to send
-    (name lookup, connection, encryption handshake and any proxy handshake).
+    (name lookup, connection, encryption handshake and any proxy handshake), plus any sign-in
+    token refresh 0router ran just before the attempt, which the record names with its duration.
+    On a reused connection with no refresh, connect is "not applicable".
   - **Response headers**: from the connection being ready (or from the attempt's start on a reused
     connection) until the provider's response headers arrive.
   - **First token**: from the response headers until the provider's first model output.
