@@ -12,6 +12,31 @@ stop and revisit the brief.
 
 **Input**: User description: "Quota fit, outside use and leak detection: 0router learns each account's real quota costs from the provider's polls and corrects a plugin's wrong numbers by itself, never mistakes usage it didn't cause for a wrong plugin, and can tell the operator when an account declared as used only through 0router loses quota 0router didn't spend. Polls are the source of truth: a plugin's wrong numbers must not fool the router for long, though a one-off misplaced session is tolerated. The fit covers every number a plugin's quota meter declares that polls can reveal: each window's capacity, the four token weights (input, output, cache read, cache write) and the per-model multipliers. Token weights and model multipliers are learned across all accounts of one plugin; capacity is learned per account; an account whose own polls disagree significantly with the pooled value is learned on its own, and the CLI says so. A mismatch between polls and 0router's own counted traffic is classified by its pattern against the fitted model: one that grows with 0router's tokens and points consistently one way is a wrong number and is corrected; one that doesn't track 0router's traffic, including quota that drops while 0router sent nothing, is outside use, is left out of the fit, and is never blamed on the plugin. Every estimate carries a 95% range, a significance test decides when to act, and the polls' whole-percent rounding is the noise the test accounts for. Until a correction is significant, routing behaves exactly as it does today; once it is, routing uses the fitted number. The operator can override every fitted number, token weights and model multipliers included, and the override always wins: operator override, then significant fit, then the plugin's declaration. The plugin's file is never rewritten. If recent polls disagree significantly and consistently with a fitted value, 0router concludes the provider changed its rules, falls back to the declared or overridden number, relearns from that point and says so; a fit also restarts when the plugin's declared meter changes, and fits and their history survive restarts. Outside-use detection runs for every polled account and lists the intervals it found, without alerting. Leak alerts are opt-in per account: the operator declares from the CLI that an account is used only through 0router, and only such an account can raise an alert, only for unexplained use beyond the rounding noise; the alert states facts (when and how much), never claims a key leaked, and takes no action on the account. Per account and window, the CLI routing view shows the plugin's declared value, the fitted range, which number routing uses now and why, and each number's state: not enough evidence yet (with progress), fitted, split off, or relearning since a given time; a number the traffic can't separate stays at the plugin's value and the view says why. Leak alerts and detected rule changes also go to the serve log. Between polls, the estimate stays the last poll minus 0router's own counted traffic, with no forecast of outside use. The slice fails if: a plugin whose numbers are right gets corrected; outside use pulls a fitted number away from the truth; a leak alert fires on an account not declared as used only through 0router, or within rounding noise; routing places cold work worse than today while the fit is still learning. Evidence: a simulated week at 10-minute, whole-percent polls with a mock provider whose real weights are 3× its plugin's (corrected), one whose plugin is right (never corrected), injected outside use (moves no fitted number), and idle-time drops plus rounding-sized noise (alerts only on the drops, only on opted-in accounts); capacity and the input and output weights must reach significance within the week; an opt-in live check on the operator's real accounts reports how far the fit got, with no time target. Constraints: constitution Principle II as amended before this slice (plugins declare, polls correct once the evidence is significant, the operator overrides both); plugins are data and never see secrets; decisions use the present state, never forecasts; fitted values and outside-use intervals never leave the operator's machine. Out of scope: the fit, outside use and alerts on the dashboard → later; fitting accounts whose provider reports no quota, and learning limits from rate-limit refusals → later; pausing or disabling an account on a leak signal → not planned; forecasting outside use between polls → later, if the live check shows it matters; Jev integration → later; sending fitted values anywhere → not planned; exporting a fitted meter as plugin TOML for authors → later. Scope brief: specs/briefs/2026-10-07-quota-fit.md"
 
+## Clarifications
+
+### Session 2026-10-07
+
+- Q: On a percent window, the polls can't tell "every token costs 3× more" apart from "the window
+  is 3× smaller", so which number should 0router hold fixed as the yardstick so the others can be
+  learned? → A: The input weight. On percent windows it stays at its declared or overridden value
+  and is never fitted; capacity is learned per account, and the other three token weights and the
+  model multipliers are learned relative to input. Counted and balance windows report absolute
+  units and need no yardstick. Brief row 22 amended to match.
+- Q: How strict should the test be that decides a correction is real, given that 0router re-checks
+  it at every poll for weeks? → A: Ranges stay 95%, but routing acts only when a test that stays
+  valid under checking at every poll rejects the declared value, with at most a 0.1% chance over
+  a number's whole life of falsely correcting it. SC-002 keeps "0 in 100 seeded weeks".
+- Q: On an account you've declared as used only through 0router, should a leak alert also fire
+  when outside use happens while 0router is sending traffic, or only during idle time and as a
+  steady rate? → A: Also during traffic, when the excess beyond what the fit can explain passes
+  FR-010's test. Idle drops still alert as soon as they exceed rounding noise.
+- Q: Do you accept the seven items the spec chose on its own (SC-001 10%, SC-006 1 day, SC-002 100
+  weeks, SC-004 90%, alert acknowledgement, per-record meter sources, refusal on unpolled
+  accounts)? → A: Yes, all seven as written.
+- Q: Should token-weight and model-multiplier overrides be set per account, per plugin (covering
+  all its accounts), or both? → A: Both. A plugin-level override covers all the plugin's accounts;
+  an account-level override wins over it. Capacity overrides stay per account.
+
 ## User Scenarios & Testing *(mandatory)*
 
 This slice has two kinds of user:
@@ -38,6 +63,11 @@ Terms used throughout:
   have used, costed by the meter numbers in effect. **Unexplained use** is what the polls show
   beyond that.
 - The **fit** is 0router's estimate of each meter number from poll intervals, with a 95% range.
+- The **yardstick** is the input weight of a percent window. A percent poll only shows the cost of
+  the traffic divided by the capacity, so scaling every weight and the capacity by the same factor
+  leaves every poll unchanged. The yardstick holds the input weight at its declared or overridden
+  value, so the other numbers can be learned relative to it. A plugin whose weights are all off by
+  the same factor therefore shows up as a capacity correction, with the same placements.
 - A correction is **significant** when the fit's evidence rejects the declared value under the
   significance test of FR-010. Before that, the number is **learning**.
 - **Outside use** is unexplained use that doesn't track 0router's traffic: use while 0router sent
@@ -69,8 +99,9 @@ amended): a plugin's wrong numbers must not fool the router for long. A correcti
 a right plugin is the failure the user named first.
 
 **Independent Test**: On a simulated clock, run a week of traffic at 10-minute, whole-percent
-polls against two mock providers: one whose real token weights are 3× its plugin's, one whose
-plugin is exactly right. The first is corrected, with ranges that contain the true values; the
+polls against two mock providers: one whose real output and cache weights are 3× its plugin's
+relative to input, and whose real capacity differs from its plugin's, and one whose plugin is
+exactly right. The first is corrected, with ranges that contain the true values; the
 second is never corrected.
 
 **Acceptance Scenarios**:
@@ -194,6 +225,10 @@ use and the fitted range beside it.
 4. **Given** an override value that breaks the rules the plugin's own value must follow, **When**
    the operator sets it, **Then** it is refused with the same wording the plugin check uses, as
    for today's overrides.
+5. **Given** a plugin-level override of the output weight and an account-level override of the
+   same weight on one of the plugin's accounts, **When** requests are placed, **Then** that
+   account uses its own override and every other account of the plugin uses the plugin-level
+   one.
 
 ---
 
@@ -261,6 +296,9 @@ rounding noise, and only on the declared account.
    **Then** it leaves the alert list and stays in the account's outside-use history.
 7. **Given** the operator withdraws the exclusive-use declaration, **When** new unexplained use
    occurs, **Then** no alert is raised.
+8. **Given** an exclusive-use account, **When** a burst of outside use lands in an interval where
+   0router also sent traffic and its excess beyond what the fit can explain passes FR-010's test,
+   **Then** a leak alert names the account, the window, the interval and the excess.
 
 ### Edge Cases
 
@@ -277,6 +315,11 @@ rounding noise, and only on the declared account.
 - **Balance windows** (credits with no reset): their token weights and multipliers can be fitted;
   their capacity is not a fitted number.
 - **Request-counted windows**: their capacity can be fitted; they have no token weights.
+- **Counted and balance windows** report absolute units, so they need no yardstick: their input
+  weight is fitted like any other number.
+- **A plugin whose weights are all off by the same factor** on a percent window: the polls can't
+  show it as a weight error. It is fitted as a capacity correction, which gives the same
+  placements.
 - **Pay-as-you-go accounts** and accounts with no quota reports: nothing is fitted (out of scope),
   and pooled weights are not applied to them.
 - **A plugin with one account**: pooling has nothing to pool; the account's weights are fitted
@@ -303,7 +346,9 @@ rounding noise, and only on the declared account.
 
 - **FR-001**: 0router MUST estimate, from poll intervals, every meter number of every window of
   every polled subscription account: capacity, the four token weights and the per-model
-  multipliers, where the window's kind has them (Edge Cases).
+  multipliers, where the window's kind has them (Edge Cases). On a percent window the input
+  weight is the yardstick: it MUST NOT be fitted, MUST stay at its declared or overridden value,
+  and the other numbers MUST be fitted relative to it. The view MUST show it as "yardstick".
 - **FR-002**: Token weights and model multipliers MUST be fitted per plugin and window name,
   pooled over all polled accounts of that plugin. Capacity MUST be fitted per account and window.
 - **FR-003**: When an account's own intervals disagree significantly with the pooled token
@@ -330,13 +375,18 @@ rounding noise, and only on the declared account.
 
 **Significance and routing**
 
-- **FR-010**: A fitted number MUST become significant only when a significance test, at the 95%
-  level and accounting for rounding noise and for the number of meter numbers tested at once,
-  rejects the value currently declared or overridden. Until then it is learning.
+- **FR-010**: A fitted number MUST become significant only when a significance test rejects the
+  value currently declared or overridden. The test MUST stay valid although it is re-checked at
+  every poll, MUST account for rounding noise and for the number of meter numbers tested at once,
+  and MUST give each number at most a 0.1% chance, over its whole life, of becoming significant
+  when the declared value is right. Until then the number is learning. The 95% range of FR-004 is
+  what the view shows; it is not this test. Split-offs (FR-003), breaks (FR-015) and a leak
+  alert's steady rate (FR-024) use the same test.
 - **FR-011**: Until a number is significant, routing MUST use exactly the value it uses today
   (override, else declaration), and every placement MUST equal the placement 0router makes
   without this slice.
-- **FR-012**: Routing MUST take each meter number from, in order: the operator's override; else a
+- **FR-012**: Routing MUST take each meter number from, in order: the operator's account
+  override; else the operator's plugin override (token weights and multipliers only); else a
   significant fit; else the plugin's declaration (Constitution II as amended).
 - **FR-013**: Every request record MUST state, for the windows its placement used, whether each
   meter number in effect came from an override, a fit or the declaration.
@@ -362,7 +412,10 @@ rounding noise, and only on the declared account.
 
 - **FR-019**: The operator MUST be able to override, per account and window, every meter number:
   capacity (as today), each token weight and each model multiplier, and remove each override,
-  from the CLI. Overrides MUST be checked by the same rules as the plugin's values.
+  from the CLI. Token weights and model multipliers MUST also be overridable per plugin and
+  window, applying to every account of that plugin; an account override wins over a plugin
+  override. Capacity has no plugin-level override. Overrides MUST be checked by the same rules as
+  the plugin's values.
 - **FR-020**: An override MUST NOT stop the fit: the fit keeps learning, and the view keeps
   showing its range beside the override.
 
@@ -380,8 +433,9 @@ rounding noise, and only on the declared account.
   account is used only through 0router. Declaring it for an account that isn't polled MUST be
   refused with the reason.
 - **FR-024**: Only an exclusive-use account MUST raise a leak alert, and only for (a) outside use
-  beyond rounding noise in an interval where 0router sent nothing, or (b) a steady unexplained
-  rate significantly above zero.
+  beyond rounding noise in an interval where 0router sent nothing, (b) outside use in an interval
+  where 0router sent traffic, when the excess beyond what the fit can explain passes FR-010's
+  test, or (c) a steady unexplained rate significantly above zero.
 - **FR-025**: A leak alert MUST state facts: account, window, interval or rate, and amount. It
   MUST NOT say the key leaked.
 - **FR-026**: A leak alert MUST NOT change the account's state, priority, routing or sign-in.
@@ -393,7 +447,8 @@ rounding noise, and only on the declared account.
 
 - **FR-028**: For each polled account and window, the routing view MUST show per meter number: the
   declared value, any override, the fitted 95% range, the value in use, its source, and its state
-  (learning with progress, fitted since, split off, relearning since, not separable, restarted).
+  (learning with progress, fitted since, split off, relearning since, not separable, restarted,
+  yardstick).
   The machine-readable form MUST carry the same facts.
 - **FR-029**: For an account with no quota reports, the view MUST say it is not fitted and why.
 
@@ -409,9 +464,10 @@ rounding noise, and only on the declared account.
 **Evidence**
 
 - **FR-033**: A simulated-clock test MUST run a week of traffic at 10-minute, whole-percent polls
-  against: a mock provider whose real token weights are 3× its plugin's; one whose plugin is
-  right; injected outside use (idle bursts, a steady rate, bursts during traffic); idle-time
-  drops and rounding-sized noise on an exclusive-use and a non-exclusive account; and a capacity
+  against: a mock provider whose real output and cache weights are 3× its plugin's relative to
+  input, and whose real capacity differs from its plugin's; one whose plugin is right; injected outside use (idle bursts, a steady rate, bursts during traffic); idle-time
+  drops, busy-time bursts and rounding-sized noise on an exclusive-use and a non-exclusive
+  account; and a capacity
   that halves mid-week.
 - **FR-034**: An opt-in live check MUST report, for the operator's real polled accounts, the state
   and progress of every meter number, with no time target.
@@ -432,16 +488,17 @@ rounding noise, and only on the declared account.
   through 0router, with the time it was made.
 - **Leak alert**: an outside-use entry on an exclusive-use account that meets FR-024, with its
   acknowledged state.
-- **Meter override**: the operator's value for one meter number of one account (extends slice
-  006's account overrides).
+- **Meter override**: the operator's value for one meter number, either of one account (extends
+  slice 006's account overrides) or, for token weights and model multipliers, of one plugin
+  (applies to all its accounts; an account override wins).
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: In the simulated week, for the 3×-off mock, capacity and the input and output
-  weights become significant within 7 simulated days, and each final fitted value is within 10%
-  of the true value.
+- **SC-001**: In the simulated week, for the 3×-off mock, capacity and the output weight become
+  significant within 7 simulated days, and each final fitted value is within 10% of the true
+  value (the output weight measured relative to the input weight, the yardstick).
 - **SC-002**: Over a seeded suite of at least 100 simulated weeks with a right plugin, with and
   without outside use, 0 meter numbers become significant, and 100% of placements equal those
   0router makes without this slice.
@@ -456,7 +513,9 @@ rounding noise, and only on the declared account.
   and 0 placements after the report use the old fitted capacity.
 - **SC-007**: 0 leak alerts on accounts not declared exclusive-use; 0 leak alerts from
   rounding-sized noise; 100% of injected idle-time drops beyond rounding noise on the
-  exclusive-use account raise an alert at the first poll that shows them.
+  exclusive-use account raise an alert at the first poll that shows them; 0 leak alerts on busy
+  intervals of the exclusive-use account without injected outside use, and an alert for every
+  injected busy-time burst whose excess passes FR-010's test.
 - **SC-008**: Across a restart and a crash, 100% of fits, states, breaks, outside-use entries,
   declarations and alerts are as they were. After a plugin meter change, 100% of that window's
   numbers have restarted and no other number changed.
@@ -471,22 +530,24 @@ rounding noise, and only on the declared account.
 
 ## Assumptions
 
-- The rate at which a correction is accepted is set by FR-010's 95% test with a correction for
-  testing many numbers at once; the exact test and the evidence it needs are for the plan. The
+- The rate at which a correction is accepted is set by FR-010's test: valid under checking at
+  every poll, at most a 0.1% lifetime false-correction chance per number, corrected for testing
+  many numbers at once. The exact test and the evidence it needs are for the plan. The strict
+  test slows the correction of small errors; brief row 2 tolerates that. The
   user's failure condition ("a right plugin gets corrected") is measured as SC-002 (no number
   becomes significant on a right plugin across the seeded suite); a 95% range, by its nature,
   misses the truth in about 5% of checks, which SC-003 measures and does not count as a failure.
 - "Within 10% of the true value" (SC-001), "within 1 simulated day" (SC-006), the 100-week suite
-  (SC-002) and "90% of injected intervals" (SC-004) are targets chosen in this spec, not by the
-  brief. So are three behaviours: acknowledging a leak alert (FR-027), the request record naming
-  each meter number's source (FR-013), and refusing an exclusive-use declaration on an account
-  that isn't polled (FR-023).
+  (SC-002) and "90% of injected intervals" (SC-004) were chosen in this spec, not by the brief, as
+  were three behaviours: acknowledging a leak alert (FR-027), the request record naming each
+  meter number's source (FR-013), and refusing an exclusive-use declaration on an account that
+  isn't polled (FR-023). The user confirmed all seven in clarify (2026-10-07).
 - A one-off session placed badly before a correction is significant is tolerated (brief row 2).
 - Rounding noise is one resolution step per window per interval: one percentage point on a
   percent window, one unit on a counted window.
 - Fits work on whatever polls slice 005 already makes (every 10 minutes by default); this slice
   adds no polls and changes no poll interval.
-- A leak alert's "steady rate significantly above zero" uses the same 95% test as FR-010.
+- A leak alert's "steady rate significantly above zero" uses the same test as FR-010.
 - Acknowledging an alert is a CLI action on 0router's own state; it changes nothing at the
   provider.
 - Fits apply at the next decision after they become significant; no reload is needed.
