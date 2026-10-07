@@ -231,10 +231,11 @@ async fn two_tests_of_one_pair_keep_the_one_that_finished_last() {
     let s = alpha(&[("alpha", "main")], "[tests.timeout]\ntext = \"5s\"\n").await;
     s.mock.on("/alpha", [Step::StallHeaders { hold: Duration::from_secs(60) }, ok()]);
     let p = planned(&s, "main");
-    let slow = tests::run_pair(&s.engine, &p, Source::Test, "tr_1", &CancellationToken::new());
+    let stop = CancellationToken::new();
+    let slow = tests::run_pair(&s.engine, &p, Source::Test, "tr_1", &stop);
     let fast = async {
         tokio::time::sleep(Duration::from_millis(200)).await;
-        tests::run_pair(&s.engine, &p, Source::Retest, "tr_2", &CancellationToken::new()).await
+        tests::run_pair(&s.engine, &p, Source::Retest, "tr_2", &stop).await
     };
     let (slow, fast) = tokio::join!(slow, fast);
     assert_eq!(fast.unwrap().state, Some(State::Pass));
