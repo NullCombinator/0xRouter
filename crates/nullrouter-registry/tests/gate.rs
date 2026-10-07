@@ -52,7 +52,7 @@ fn valid_corpus_is_accepted() {
 #[test]
 fn invalid_corpus_is_rejected_with_one_positioned_error() {
     let files = corpus("invalid");
-    assert_eq!(files.len(), 23);
+    assert_eq!(files.len(), 26);
     for path in files {
         let src = fs::read_to_string(&path).unwrap();
         let rule = path.file_stem().unwrap().to_str().unwrap();
@@ -487,4 +487,16 @@ reset = "rolling"
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert!(errors[0].to_string().contains("routing.window[0].reset"), "{}", errors[0]);
     assert!(errors[0].to_string().contains("unreported windows"), "{}", errors[0]);
+}
+
+/// Slice 011: `[[rejections]]` loads into the entity; 4xx other than 408 and 429 only.
+#[test]
+fn rejections_load_into_the_entity() {
+    let src = "id = \"x\"\ncategory = \"apikey\"\n\n[[rejections]]\nstatus = [400, 404]\nbody_contains = \"model_retired\"\nreason = \"model_not_found\"\n\n[[rejections]]\nstatus = 403\nreason = \"model_not_available\"\n";
+    let p = validate_user_plugin(src, Path::new("x.toml")).unwrap();
+    assert_eq!(p.rejections.len(), 2);
+    assert!(p.rejections[0].matches(404, "{\"error\":\"model_retired\"}"));
+    assert_eq!(p.rejections[1].reason, nullrouter_registry::schema::RejectionReason::ModelNotAvailable);
+    let none = validate_user_plugin("id = \"x\"\ncategory = \"apikey\"\n", Path::new("x.toml")).unwrap();
+    assert!(none.rejections.is_empty());
 }

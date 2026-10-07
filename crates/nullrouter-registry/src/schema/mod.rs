@@ -14,6 +14,7 @@ mod oauth_params;
 mod plugin;
 mod primitives;
 mod quota;
+mod rejection;
 mod routing;
 mod section_formats;
 mod session;
@@ -23,15 +24,17 @@ mod transport;
 
 pub use capability::{CapabilitySection, ModelRoute, SectionEndpoint, SectionLimits, SectionModel};
 pub use config::{
-    DashboardSettings, Decision, MemberDecl, OperatorConfig, PipelineSettings, ProviderSettings, RoutingSettings,
-    ServerSettings, UnifiedModelDecl,
+    BROKEN_RETEST_ON, DashboardSettings, Decision, MemberDecl, OperatorConfig, PipelineSettings, ProviderSettings,
+    RoutingSettings, ServerSettings, TEST_TYPES, TestSettings, TestTimeouts, UnifiedModelDecl, parse_broken_retest,
 };
 pub use duration::parse_duration;
 pub use endpoint::{
     Continuation, Endpoint, EndpointAuth, Endpoints, ErrorRule, ErrorRules, ForceMap, ForcedParam, JobMapping,
     JobState, RetryOverride, TokenCount,
 };
-pub use enums::{AuthHook, AuthKind, AuthScheme, CapabilityKind, Category, ContentKind, ModelKind, Quirk, WireFormat};
+pub use enums::{
+    AuthHook, AuthKind, AuthScheme, CapabilityKind, Category, ContentKind, ModelKind, Quirk, RejectionReason, WireFormat,
+};
 pub use forwarding::{ForwardHeader, Forwarding, ToClient, ToUpstream};
 pub use identity::{HeaderValue, IdentityDecl, Placeholder};
 pub use model::Model;
@@ -49,6 +52,7 @@ pub use quota::{
     QuotaAccounts, QuotaBody, QuotaDecl, QuotaDecoder, QuotaRequest, QuotaSource, QuotaUnit, ResetsFormat, ValuePath,
     WindowRule,
 };
+pub use rejection::RejectionRule;
 pub use routing::*;
 pub use section_formats::KNOWN_SECTION_FORMATS;
 pub use session::ProviderSession;

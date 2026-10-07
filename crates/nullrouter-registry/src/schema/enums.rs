@@ -179,6 +179,15 @@ closed_enum!(
 pub type ModelKind = CapabilityKind;
 
 closed_enum!(
+    /// Why a provider's answer definitively rejects a model (spec 011 research R3/R4).
+    RejectionReason, "reason" {
+        ModelNotFound = "model_not_found",
+        ModelNotAvailable = "model_not_available",
+        TypeNotSupported = "type_not_supported",
+    }
+);
+
+closed_enum!(
     /// Request content a model cannot accept (9router `strip`).
     ContentKind, "content kind" {
         Image = "image",

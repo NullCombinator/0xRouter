@@ -12,7 +12,7 @@ use crate::resolve::NotFound;
 use crate::schema::{
     CapabilityKind, CapabilitySection, ContentKind, DashboardSettings, Endpoint, Model, ModelKind, ModelType,
     PipelineSettings, ProviderEntity, ProviderSettings, RoutingSettings, SectionModel, ServerSettings, StyleFile,
-    WireFormat,
+    TestSettings, WireFormat,
 };
 use crate::validate::FieldPath;
 
@@ -88,6 +88,8 @@ pub struct Registry {
     runtime: RuntimeSettings,
     /// Logos that passed the check at load, by provider id (spec 009 research R10).
     logos: BTreeMap<String, Logo>,
+    /// `sha256:<hex>` of each provider's plugin source, by provider id (spec 011 research R7).
+    plugin_digests: HashMap<String, String>,
 }
 
 /// The `config.toml` settings the request pipeline reads (spec 003).
@@ -100,6 +102,8 @@ pub struct RuntimeSettings {
     pub dashboard: DashboardSettings,
     /// `[routing]`, with target keys written as unified names or `provider-id/model`.
     pub routing: RoutingSettings,
+    /// `[tests]` (spec 011).
+    pub tests: TestSettings,
 }
 
 /// A lookup token claimed by two providers.
@@ -173,6 +177,7 @@ impl Registry {
             floor: Floor::default(),
             runtime: RuntimeSettings::default(),
             logos: BTreeMap::new(),
+            plugin_digests: HashMap::new(),
         };
         registry.compute_floor();
         registry
@@ -192,6 +197,10 @@ impl Registry {
 
     pub(crate) fn set_logos(&mut self, logos: BTreeMap<String, Logo>) {
         self.logos = logos;
+    }
+
+    pub(crate) fn set_plugin_digests(&mut self, digests: HashMap<String, String>) {
+        self.plugin_digests = digests;
     }
 
     pub(crate) fn set_operator_state(
@@ -349,6 +358,12 @@ impl Registry {
 
     pub fn runtime(&self) -> &RuntimeSettings {
         &self.runtime
+    }
+
+    /// `sha256:<hex>` of the plugin source `provider_id` was loaded from: a verdict's basis
+    /// (spec 011 research R7), so any change to the file resets that provider's verdicts.
+    pub fn plugin_digest(&self, provider_id: &str) -> Option<&str> {
+        self.plugin_digests.get(provider_id).map(String::as_str)
     }
 
     /// `provider_id`'s logo, when its plugin declared one that passed the check at load; `None`

@@ -125,6 +125,8 @@ pub struct Engine {
     pub history: Arc<crate::quota::history::History>,
     /// Live model lists, shared with every snapshot.
     pub live_models: Arc<LiveModels>,
+    /// Model verdicts per account (spec 011). Kept across reloads.
+    pub verdicts: crate::verdict::Board,
     /// The listeners `serve` bound, for the operator socket's `server.status`.
     pub status: crate::status::ServerStatus,
     /// Wakes the maintenance task after a reload or a token change.
@@ -205,6 +207,10 @@ impl Engine {
             crate::journal::Journal::start(registry.home().path(), Default::default())
                 .map_err(|e| StateError::Journal(e.to_string()))?,
         );
+        let (verdicts, replay) = crate::verdict::Board::open(registry.home().path(), journal.clone());
+        if replay.malformed > 0 {
+            tracing::warn!("routing/verdicts.jsonl: {} malformed lines skipped", replay.malformed);
+        }
         let live_models = Arc::new(LiveModels::default());
         let shared_redactor = Arc::new(SharedRedactor::new(Redactor::for_state(&accounts, &tokens)));
         let (state, report) = assemble(
@@ -233,6 +239,7 @@ impl Engine {
             quota,
             history,
             live_models,
+            verdicts,
             changed: tokio::sync::Notify::new(),
             status: Default::default(),
             install_id: OnceLock::new(),

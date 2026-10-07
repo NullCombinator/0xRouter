@@ -473,7 +473,9 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
     let skipped_ids: BTreeSet<String> =
         report.skipped.iter().map(|s| s.id.clone()).chain(report.unsupported.iter().map(|u| u.id.clone())).collect();
 
+    let digests = active.iter().map(|l| (l.entity.id.clone(), source_digest(&l.src))).collect();
     let mut registry = Registry::new(active.into_iter().map(|l| l.entity).collect());
+    registry.set_plugin_digests(digests);
     registry.set_styles(styles);
     registry.set_logos(logos);
     let outcome = validate_config(&config, &config_src, &config_name, &registry, &bundled_ids, mode, &skipped_ids);
@@ -494,6 +496,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
             amortization: config.routing.amortization,
             amortization_for: outcome.amortization_for,
         },
+        tests: config.tests.clone(),
     };
     registry.set_operator_state(outcome.unified, outcome.settings, runtime, report);
     Ok(registry)
@@ -637,6 +640,12 @@ fn read_optional(path: &Path) -> io::Result<Option<String>> {
     }
 }
 
+/// `sha256:<hex>` of a plugin's source bytes.
+fn source_digest(src: &str) -> String {
+    use sha2::{Digest, Sha256};
+    format!("sha256:{:x}", Sha256::digest(src.as_bytes()))
+}
+
 fn io_error(path: &Path, e: &io::Error) -> ValidationError {
     ValidationError { file: path.display().to_string(), line: 0, col: 0, path: FieldPath::root(), rule: e.to_string() }
 }
@@ -769,6 +778,10 @@ pub(crate) fn validate_config(
             None if key.split_once('/').is_some_and(|(token, _)| excused(token)) => {}
             None => err(at, "names no unified model and no known provider/model".into()),
         }
+    }
+
+    for (path, rule) in config.tests.check() {
+        err(path, rule);
     }
 
     for id in config.plugin_decisions.keys().filter(|id| !bundled_ids.contains(*id)) {
