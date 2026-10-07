@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,9 +31,9 @@
 
 ## Notes
 
-- One marker open: FR-004, the reach of "test everything" (Q1 to the user).
+- FR-004 resolved by the user (Q1: B): "test everything" covers the pairs unified models and combos route to, no combo tests.
 - `config.toml`, the CLI and client model lists are the operator's and clients' surface, named as
   earlier specs name them; they are not implementation choices.
 - Defaults the brief didn't set are listed under Assumptions as chosen by this spec (FR-005
   confirmation, BROKEN retest interval, test calls at once, restart catch-up, combo type check,
-  no repeat of a tried unified model, combo-test attempts update pair verdicts).
+  no repeat of a tried unified model).

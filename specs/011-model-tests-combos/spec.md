@@ -12,6 +12,23 @@ stop and revisit the brief.
 
 **Input**: User description: "Model tests and combos: the operator can prove which models work, routing stops sending to a model only when a provider has definitively rejected it, and the operator can define combos that clients ask for by name. A test is one real, minimal call through 0router to a model on one account, for every model type (text, embedding, speech, image and video), billed like any call; it gives PASS, BROKEN or UNKNOWN with the reason. The CLI tests one model, a unified model, a combo, or everything, and only when the operator asks. BROKEN comes only from a definitive rejection: 0router's own list (the model doesn't exist, isn't available to this account, or doesn't support the request type) plus rejection signals a provider plugin declares as data; rate limits, server errors and timeouts give UNKNOWN. A verdict belongs to one account and one model: BROKEN takes that model away from that account only, and a rejected key or expired sign-in still marks the account, not its models. Untested models route normally. UNKNOWN is retested automatically, by default after about 1 minute, 5 minutes, 30 minutes and then every 6 hours until it settles; BROKEN is not retested automatically unless the operator turns that on. The operator sets the retest schedule, the test timeouts (by default 30 seconds for text, embedding and speech, 5 minutes for image and video) and the other test limits. The operator can clear a verdict or mark a model BROKEN for an account by hand, and the CLI shows it as set by the operator. Verdicts survive restarts and return to untested when the account's secret or sign-in or its plugin changes. Test calls are recorded like any request, marked as tests and without the prompt, and count against quota and pacing. A combo is an ordered fallback chain of unified models or other combos, defined by the operator in config.toml; plugins cannot declare combos. A combo is checked at load (its name may not clash with a unified model, and it may not contain itself), appears in clients' model lists next to unified models, and moves to its next member only after the current member has used up its own retries and fallbacks, never once the answer has started. A combo test makes one real call through the combo as a client would and shows the combo's verdict, which member answered, and the verdict of each member it tried, walking nested combos the same way. Plugins stay data and never see secrets; the core makes every call. Out of scope: load-balancing groups across unified models and 9router's fusion → not planned; operator-written test cases for a combo → later; combos and verdicts on the dashboard → later; scheduled test runs and testing models when they first appear → not planned. Scope brief: specs/briefs/2026-10-07-model-tests-combos.md"
 
+## Clarifications
+
+### Session 2026-10-07
+
+- Q: Which pairs does "test everything" cover? → A: Only the pairs routing can reach: each
+  member model of each loaded unified model, on every account that serves it, once each. Not
+  every model a provider declares, and no combo tests; the operator names combos to test them.
+- Q: When every account behind a target is BROKEN for it, do clients still see it in their model
+  lists? → A: Yes. It stays listed, and a request for it fails at once with no upstream call and
+  an error listing each pair's verdict and reason.
+- Q: When a combo test's attempt lands on a pair, does it update that pair's verdict? → A: Only
+  PASS and BROKEN do. A non-definitive failure is shown in the combo test's output, and the pair
+  keeps its verdict, so no retests start for a pair the operator didn't test.
+- Q: Do automatic retests wait while an account is rate-limited or at its reserve floor? → A: Yes.
+  They wait, as cold work does, and run once the account can serve again. Tests the operator
+  asks for still run at once.
+
 ## User Scenarios & Testing *(mandatory)*
 
 This slice has three kinds of user:
@@ -141,8 +158,8 @@ and is not retested again.
 5. **Given** the server was stopped while retests were due, **When** it starts again, **Then**
    overdue retests run soon after start, spread out rather than all at once.
 6. **Given** a pair is UNKNOWN on an account that can't currently serve (disabled, needs sign-in,
-   refreshing), **When** its retest falls due, **Then** the retest waits until the account can
-   serve again.
+   refreshing, rate-limited, or at its reserve floor), **When** its retest falls due, **Then** the
+   retest waits until the account can serve again, and the verdict list shows why it waits.
 
 ---
 
@@ -242,8 +259,10 @@ reason, indented under their combos.
    definitive, **When** it is tested, **Then** the result is UNKNOWN.
 3. **Given** a combo where every member is BROKEN or definitively rejected, **When** it is
    tested, **Then** the result is BROKEN.
-4. **Given** a combo test whose attempt reached a pair, **When** that attempt ends, **Then** the
-   pair's verdict is updated as a single-pair test would update it.
+4. **Given** a combo test whose attempt reached a pair, **When** that attempt gives PASS or a
+   definitive rejection, **Then** the pair's verdict becomes PASS or BROKEN. **When** it fails
+   for any other reason, **Then** the output shows UNKNOWN for that attempt, and the pair keeps
+   its verdict and starts no retests.
 
 ---
 
@@ -292,9 +311,10 @@ reason, indented under their combos.
   tested as text.
 - **FR-003**: Tests MUST run only when the operator asks, apart from automatic retests (FR-012).
   0router MUST NOT test models on its own when they first appear or on a timetable.
-- **FR-004**: "Test everything" MUST test [NEEDS CLARIFICATION: which pairs does "test
-  everything" cover: every model each account's provider declares, or only the pairs that the
-  loaded unified models and combos use, and does it also run each combo's test?].
+- **FR-004**: "Test everything" MUST test every pair that a loaded unified model or combo can
+  route to: each member model of each unified model, on every account that serves it, once each
+  even when several unified models or combos share it. It MUST NOT test models that no unified
+  model or combo uses, and MUST NOT run combo tests; the operator names those separately.
 - **FR-005**: Before a test that will make more than one call, the CLI MUST say how many calls
   it will make, by model type, and ask the operator to confirm. A flag MUST skip the prompt.
 - **FR-006**: Each test result MUST show the pair, its verdict, the reason, the duration and,
@@ -327,8 +347,11 @@ reason, indented under their combos.
 - **FR-013**: A BROKEN pair from a test MUST NOT be retested automatically unless the operator
   turns BROKEN retests on, with an interval they set (by default once a day). An operator-set
   BROKEN MUST never be retested automatically.
-- **FR-014**: A retest MUST wait while its account can't serve (disabled, needs sign-in,
-  refreshing). After a restart, overdue retests MUST run soon after start, spread out.
+- **FR-014**: An automatic retest MUST wait while its account can't serve (disabled, needs
+  sign-in, refreshing) or couldn't take cold work (rate-limited, or a quota window at its reserve
+  floor), and MUST run once the account can serve again; the verdict list shows why it waits.
+  Tests the operator asks for are not held back by the reserve floor or priority. After a restart,
+  overdue retests MUST run soon after start, spread out.
 - **FR-015**: The operator MUST be able to set the retest schedule, BROKEN retests on or off and
   their interval, a test timeout per model type (by default 30 seconds for text, embedding and
   speech, 5 minutes for image and video) and how many test calls run at once (by default 4).
@@ -367,7 +390,8 @@ reason, indented under their combos.
   errors, reported and handled as unified-model errors are today. A combo that needs a unified
   model dropped because of a skipped plugin MUST be dropped and reported.
 - **FR-025**: Combos MUST appear in every client style's model list next to unified models, and
-  in the CLI wherever unified models are listed and resolved.
+  in the CLI wherever unified models are listed and resolved. Verdicts MUST NOT change any
+  model list: a target whose every pair is BROKEN stays listed (FR-011 gives its error).
 - **FR-026**: A request to a combo MUST try members in order. It MUST move to the next member
   only after the current member has used up its own retries and fallbacks, and MUST NOT move
   once output has reached the client. An error that slice 003 returns without fallback MUST be
@@ -382,8 +406,9 @@ reason, indented under their combos.
   request would, and report the combo's verdict (PASS if a member answered; BROKEN if every
   member was BROKEN or definitively rejected; UNKNOWN otherwise), which member answered, and
   each member tried with its verdict and reason, walking nested combos the same way.
-- **FR-029**: Each attempt a combo test makes MUST update the verdict of the pair it reached, as
-  a single-pair test would.
+- **FR-029**: An attempt a combo test makes MUST set the verdict of the pair it reached to PASS
+  or BROKEN when it gives that result. A non-definitive failure MUST be shown as UNKNOWN in the
+  combo test's output only: the pair keeps its verdict, and no retest starts.
 
 ### Key Entities
 
