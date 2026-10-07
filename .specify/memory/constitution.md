@@ -72,12 +72,18 @@ four properties:
 - **Per-agent isolation** — concurrent callers of the same unified model MUST have fully
   independent cache bookkeeping; no cross-caller state.
 - **Windowed amortization** — over a configurable window, traffic spreads across providers
-  weighted by declared parameters (rate limits, quotas, offers). Plugins declare, the user
-  overrides.
+  weighted by declared parameters (rate limits, quotas, offers), corrected by what polls
+  prove. Plugins declare, polls correct once the evidence is significant, and the operator
+  overrides both. Precedence MUST be: operator override, then a significant fitted value,
+  then the plugin's declaration. Until a correction is significant, the declared or
+  overridden value MUST be used unchanged. Quota used outside 0router MUST NOT count as
+  evidence against a plugin's declaration.
 - **Priority order** — warm cache preference takes unconditional priority over amortization.
 
 **Rationale**: These four properties are the entire reason 0router exists. A routing
-implementation that omits or weakens any of them is not 0router.
+implementation that omits or weakens any of them is not 0router. A provider's polls are
+the source of truth for its quota: a plugin's wrong numbers must not fool the router for
+long, but noise and outside use must never be mistaken for a wrong number.
 
 ---
 
@@ -92,7 +98,8 @@ abstractions — not per-modality endpoints.
   offers that capability.
 - A **unified model** is a named target that gathers one or more provider entities
   offering the same model. Clients route to a unified model; the router selects the
-  provider based on cache state, amortization, and declared weights.
+  provider based on cache state, amortization, and declared weights as corrected by polls
+  (II).
 - **Combos** are policies over unified models (e.g. fallback chains, load-balancing
   groups). Nested combos are first-class. A combo can be tested with its own test suite,
   independent of the providers inside it.
@@ -265,7 +272,14 @@ guidance, PATCH for clarifications and wording fixes.
 or SSE streaming MUST reference the relevant principle(s) in its description. Reviewers
 MUST verify compliance before approving.
 
-**Version**: 3.0.1 | **Ratified**: 2026-09-26 | **Last Amended**: 2026-09-28
+**Version**: 3.1.0 | **Ratified**: 2026-09-26 | **Last Amended**: 2026-10-07
+
+**v3.1.0 changes (MINOR)**: Expanded windowed amortization in Routing Fidelity (II). Polls
+now correct a plugin's declared quota parameters once the evidence is significant; the
+operator's override still wins, and until a correction is significant the declared or
+overridden value is used unchanged. Outside use never counts against a declaration.
+Unified Models (III) refers to the corrected weights. The four routing properties and the
+warm-first priority are unchanged.
 
 **v3.0.1 changes (PATCH)**: Clarified the optimizer pass-through in Scope Discipline (IV).
 It is guaranteed where the provider speaks the client's API style. Across styles, a field
