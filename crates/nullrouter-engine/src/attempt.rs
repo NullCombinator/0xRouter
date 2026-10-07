@@ -688,8 +688,9 @@ impl Run {
                     if self.walk_plan(st, &u.name, &mut w).await? {
                         return Ok(());
                     }
-                    // Never once the answer has started (FR-026).
-                    if self.broken.is_some() {
+                    // Never once the client has seen part of an answer (FR-026): a streamed break
+                    // after output marks the request segmented for good; `broken` clears on resume.
+                    if self.segmented {
                         break;
                     }
                 }
