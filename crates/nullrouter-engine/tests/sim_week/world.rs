@@ -345,7 +345,7 @@ impl TrueAccount {
     }
 
     /// What a poll shows: every reported window, percent or request counts, with its next reset.
-    pub fn report(&self, t: u64) -> Vec<QuotaWindow> {
+    pub fn report(&self, t: u64, rounding: Option<Rounding>) -> Vec<QuotaWindow> {
         self.windows
             .iter()
             .filter(|w| w.reported)
@@ -364,7 +364,7 @@ impl TrueAccount {
                     MeterUnit::WeightedTokens => QuotaWindow {
                         name: w.meter.name.clone(),
                         unit: QuotaUnit::Percent,
-                        used: Some(w.used / cap * 100.0),
+                        used: Some(round_to(rounding, w.used / cap * 100.0)),
                         limit: None,
                         remaining: None,
                         resets_at,
@@ -382,6 +382,20 @@ pub struct World {
     /// `(account, prefix seed)` → `(prefix tokens, last used)`.
     cache: HashMap<(usize, u64), (u64, u64)>,
     pub events: Vec<ResetEvent>,
+    /// How a poll rounds a percent reading to whole steps; `None` reports the exact value (the
+    /// default, so slice 006's checks see what they always saw).
+    #[allow(dead_code)]
+    pub rounding: Option<Rounding>,
+    /// Use the router didn't cause (spec 012, research R14).
+    #[allow(dead_code)]
+    pub outside: Vec<OutsideUse>,
+    /// Every drop the injector applied, for SC-004 and SC-007.
+    #[allow(dead_code)]
+    pub injected: Vec<Injected>,
+    /// True capacity changes still to come: `(at_ms, account, window, capacity)`.
+    capacity_at: Vec<(u64, usize, String, f64)>,
+    /// The instant the injector and the capacity schedule have been applied up to.
+    outside_t: u64,
 }
 
 /// What the provider reports for one served request.
@@ -417,6 +431,7 @@ impl World {
     }
 
     pub fn roll(&mut self, t: u64) {
+        self.advance_outside(t);
         for (i, a) in self.accounts.iter_mut().enumerate() {
             a.roll(t, i, &mut self.events);
         }
@@ -458,6 +473,118 @@ impl World {
 
     pub fn polls(&mut self, account: usize, t: u64) -> Vec<QuotaWindow> {
         self.roll(t);
-        self.accounts[account].report(t)
+        self.accounts[account].report(t, self.rounding)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rounded readings, outside use, and a provider that changes its rules (spec 012, R14)
+
+/// How a provider rounds a percent reading to a whole step.
+// Used by the slice 012 runs (T017–T020, T046); allowed until they land.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rounding {
+    HalfUp,
+    Floor,
+}
+
+fn round_to(rounding: Option<Rounding>, x: f64) -> f64 {
+    match rounding {
+        None => x,
+        Some(Rounding::HalfUp) => (x + 0.5).floor(),
+        Some(Rounding::Floor) => x.floor(),
+    }
+}
+
+/// Use of an account the router didn't send. Amounts are percent of the window's true capacity.
+// Used by the slice 012 runs (T017–T020, T046); allowed until they land.
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub enum OutsideUse {
+    /// One drop at `at_ms`. `busy` only labels it: whether it falls in a stretch of traffic.
+    Drop { account: usize, window: String, at_ms: u64, pct: f64, busy: bool },
+    /// A steady rate in percent per hour. `office` shapes it like the agents' traffic: the same
+    /// daily and weekly intensity, so it is high exactly when the router is busy.
+    Rate { account: usize, window: String, pct_per_hour: f64, office: bool },
+}
+
+/// One drop the injector applied.
+// Used by the slice 012 runs (T017–T020, T046); allowed until they land.
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Injected {
+    pub account: usize,
+    pub window: String,
+    pub at_ms: u64,
+    pub pct: f64,
+    pub busy: bool,
+}
+
+// Used by the slice 012 runs (T017–T020, T046); allowed until they land.
+#[allow(dead_code)]
+impl World {
+    /// The provider changes a window's capacity at `at_ms`. The percent already used stays put,
+    /// as at a real provider: only what is charged from then on weighs differently.
+    pub fn set_true_capacity(&mut self, at_ms: u64, account: usize, window: &str, value: f64) {
+        self.capacity_at.push((at_ms, account, window.to_owned(), value));
+        self.capacity_at.sort_by_key(|c| c.0);
+    }
+
+    fn window_mut(&mut self, account: usize, name: &str) -> Option<&mut TrueWindow> {
+        self.accounts.get_mut(account)?.windows.iter_mut().find(|w| w.meter.name == name)
+    }
+
+    /// Applies the capacity schedule and the outside use falling in `(outside_t, t]`.
+    fn advance_outside(&mut self, t: u64) {
+        let from = self.outside_t;
+        if t <= from && !(from == 0 && t == 0) {
+            return;
+        }
+        while self.capacity_at.first().is_some_and(|c| c.0 <= t) {
+            let (_, account, window, value) = self.capacity_at.remove(0);
+            if let Some(w) = self.window_mut(account, &window) {
+                let old = w.meter.capacity.unwrap_or(value);
+                // The percent shown stays continuous: the used amount is rescaled.
+                w.used *= value / old;
+                w.meter.capacity = Some(value);
+            }
+        }
+        for u in self.outside.clone() {
+            match u {
+                OutsideUse::Drop { account, window, at_ms, pct, busy } => {
+                    if (from < at_ms || (from == 0 && at_ms == 0)) && at_ms <= t {
+                        self.charge_outside(account, &window, at_ms, pct);
+                        self.injected.push(Injected { account, window, at_ms, pct, busy });
+                    }
+                }
+                OutsideUse::Rate { account, window, pct_per_hour, office } => {
+                    // Ten-minute chunks, each weighted by the intensity at its start.
+                    let mut at_ms = from;
+                    let mut pct = 0.0;
+                    while at_ms < t {
+                        let step = (10 * MIN).min(t - at_ms);
+                        let weight = if office { intensity(at_ms) } else { 1.0 };
+                        pct += pct_per_hour * weight * step as f64 / HOUR as f64;
+                        at_ms += step;
+                    }
+                    self.charge_outside(account, &window, t, pct);
+                }
+            }
+        }
+        self.outside_t = t;
+    }
+
+    fn charge_outside(&mut self, account: usize, window: &str, at_ms: u64, pct: f64) {
+        let Some(w) = self.window_mut(account, window) else { return };
+        if w.admission() {
+            return;
+        }
+        if w.start.is_none() {
+            w.start = Some(at_ms);
+            w.end = at_ms + w.len_ms;
+            w.used = 0.0;
+        }
+        w.used += w.meter.capacity.unwrap_or(0.0) * pct / 100.0;
     }
 }
