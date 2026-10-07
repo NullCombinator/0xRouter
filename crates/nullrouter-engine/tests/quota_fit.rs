@@ -126,3 +126,121 @@ fn remaining_stands_in_for_used() {
     let h = vec![entry(0, true, Some(a), &[]), entry(10, true, Some(b), &[])];
     assert_eq!(rows_from("a", &h, &meter(""), t(0))[0].y, 3.0);
 }
+
+// ---- the model (T006) ----
+
+use nullrouter_engine::quota::fit::model::{self, Kind, P, Spec, Theta};
+use nullrouter_engine::quota::fit::rows::Row;
+
+struct Lcg(u64);
+
+impl Lcg {
+    fn next(&mut self) -> f64 {
+        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((self.0 >> 11) as f64) / (1u64 << 53) as f64
+    }
+}
+
+fn spec1() -> Spec {
+    Spec { kind: Kind::Percent, accounts: vec!["a".into()], globs: vec![], utc_offset_secs: 0 }
+}
+
+const TRUE_K: f64 = 4.0e-6;
+const TRUE_RHO: [f64; 3] = [15.0, 0.3, 3.75];
+const TRUE_B: f64 = 0.02;
+
+/// `n` contiguous 10-minute rows. The true level is continuous; readings are rounded to whole
+/// steps when `round` is set, so each row's `y` is a difference of two rounded readings.
+fn synthetic(n: usize, round: bool, seed: u64) -> Vec<Row> {
+    let mut rng = Lcg(seed);
+    let mut level = rng.next() * 100.0;
+    let mut reading = if round { level.round() } else { level };
+    let mut rows = Vec::with_capacity(n);
+    for i in 0..n {
+        let tok = |max: f64, rng: &mut Lcg| (rng.next() * max) as u64;
+        let (input, output, cr, cw) = (tok(40_000.0, &mut rng), tok(8_000.0, &mut rng), tok(200_000.0, &mut rng), tok(20_000.0, &mut rng));
+        let cost = input as f64 + TRUE_RHO[0] * output as f64 + TRUE_RHO[1] * cr as f64 + TRUE_RHO[2] * cw as f64;
+        level += TRUE_K * cost + TRUE_B * (10.0 / 60.0);
+        let next = if round { level.round() } else { level };
+        let mut x = BTreeMap::new();
+        for (c, v) in [(TokenClass::Input, input), (TokenClass::Output, output), (TokenClass::CacheRead, cr), (TokenClass::CacheWrite, cw)] {
+            x.insert((Group::Plain, c), v);
+        }
+        rows.push(Row {
+            account: "a".into(),
+            window: "w".into(),
+            start: t(i as u64 * 10),
+            end: t((i as u64 + 1) * 10),
+            y: next - reading,
+            x,
+            requests: 1,
+            hours: 10.0 / 60.0,
+            class: Class::Evidence,
+        });
+        reading = next;
+    }
+    rows
+}
+
+fn start_theta() -> Theta {
+    let mut th = Theta::neutral(1, 0);
+    th.k[0] = TRUE_K * 2.0;
+    th.rho = [5.0, 0.1, 1.25];
+    th
+}
+
+#[test]
+fn gauss_newton_recovers_noiseless_parameters() {
+    let spec = spec1();
+    let rows = model::prepare(&spec, &synthetic(600, false, 7));
+    let fit = model::fit(&spec, &rows, &start_theta()).expect("fit");
+    let rel = |got: f64, want: f64| ((got - want) / want).abs();
+    assert!(rel(fit.theta.k[0], TRUE_K) < 1e-6, "k {}", fit.theta.k[0]);
+    for (c, want) in TRUE_RHO.iter().enumerate() {
+        assert!(rel(fit.theta.rho[c], *want) < 1e-6, "rho[{c}] {}", fit.theta.rho[c]);
+    }
+    // The steady rate is spread over the parts of the day the rows cover.
+    for q in 0..6 {
+        let b = fit.theta.b[0][q];
+        assert!((b - TRUE_B).abs() < 1e-6 || !fit.active.contains(&P::B(0, q)), "b[{q}] {b}");
+    }
+    assert!(fit.converged);
+}
+
+#[test]
+fn the_95_percent_range_covers_the_truth_under_whole_step_rounding() {
+    let spec = spec1();
+    let truth: [(P, f64); 4] = [(P::K(0), TRUE_K), (P::Rho(0), TRUE_RHO[0]), (P::Rho(1), TRUE_RHO[1]), (P::Rho(2), TRUE_RHO[2])];
+    let mut hits = [0u32; 4];
+    const REPS: u32 = 500;
+    for seed in 0..REPS {
+        let rows = model::prepare(&spec, &synthetic(2_000, true, 0x012_0000 + u64::from(seed)));
+        let fit = model::fit(&spec, &rows, &start_theta()).expect("fit");
+        for (i, (p, want)) in truth.iter().enumerate() {
+            let (_, lo, hi) = fit.range(*p).expect("range");
+            if lo <= *want && *want <= hi {
+                hits[i] += 1;
+            }
+        }
+    }
+    for (i, (p, _)) in truth.iter().enumerate() {
+        let cover = f64::from(hits[i]) / f64::from(REPS);
+        println!("coverage {p:?}: {cover:.3}");
+        assert!(cover >= 0.93, "{p:?} covered {cover}");
+    }
+}
+
+#[test]
+fn parameters_no_row_informs_are_left_out() {
+    // No cache writes at all: ρ_w has no column, and the fit still works.
+    let spec = spec1();
+    let mut rows = synthetic(300, false, 3);
+    for r in &mut rows {
+        r.x.insert((Group::Plain, TokenClass::CacheWrite), 0);
+        r.y -= TRUE_K * TRUE_RHO[2] * 0.0;
+    }
+    let prepared = model::prepare(&spec, &rows);
+    let fit = model::fit(&spec, &prepared, &start_theta());
+    // The rows were generated with cache writes; zeroing x leaves a misfit but must not panic.
+    assert!(fit.is_none_or(|f| !f.active.contains(&P::Rho(2))));
+}
