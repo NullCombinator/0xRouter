@@ -92,14 +92,14 @@ one push with the user's OK, and read CI results with the github MCP (read-only)
 
 ### Tests for User Story 2
 
-- [ ] T024 [P] [US2] Routing tests in `crates/nullrouter-engine/tests/verdict_routing.rs`: US2 scenarios 1–5 (BROKEN on A, untested on B → B serves and the record has a `skipped` attempt `BROKEN since …`; N on A still served; UNKNOWN routes; every pair BROKEN → informational error listing verdicts with zero upstream calls; a client request meeting a rejection doesn't change any verdict) (SC-002)
-- [ ] T025 [P] [US2] Model-list test in `crates/nullrouter-server/tests/models.rs`: a target whose every pair is BROKEN is still listed in all four styles (clarify Q2)
+- [X] T024 [P] [US2] Routing tests in `crates/nullrouter-engine/tests/verdict_routing.rs`: US2 scenarios 1–5 (BROKEN on A, untested on B → B serves and the record has a `skipped` attempt `BROKEN since …`; N on A still served; UNKNOWN routes; every pair BROKEN → informational error listing verdicts with zero upstream calls; a client request meeting a rejection doesn't change any verdict) (SC-002)
+- [X] T025 [P] [US2] Model-list test in `crates/nullrouter-server/tests/models.rs`: a target whose every pair is BROKEN is still listed in all four styles (clarify Q2)
 
 ### Implementation for User Story 2
 
 - [X] T026 [US2] Add `ErrorClass::Broken` in `crates/nullrouter-engine/src/records.rs`; pass the board's snapshot into `plan::plan` in `crates/nullrouter-engine/src/plan.rs` and turn a step whose pair is BROKEN into `Step::Skip` with class `Broken` and reason `BROKEN since <time>: <reason>`; update every `plan` caller (`crates/nullrouter-engine/src/attempt.rs`, `crates/nullrouter-engine/src/route.rs`, server views)
 - [X] T027 [US2] In `walk` (`crates/nullrouter-engine/src/attempt.rs`), when every step is a `Broken` skip, fail before any upstream call with slice 003's informational error whose tried list carries each pair's verdict and reason (FR-011)
-- [ ] T028 [P] [US2] Extend `crates/nullrouter-engine/benches/engine.rs` with a plan over a unified model of 4 members × 4 accounts with 0 and 1000 verdicts on the board (research R16)
+- [X] T028 [P] [US2] Extend `crates/nullrouter-engine/benches/engine.rs` with a plan over a unified model of 4 members × 4 accounts with 0 and 1000 verdicts on the board (research R16)
 
 **Checkpoint**: US1 + US2 make tests pay off in routing.
 

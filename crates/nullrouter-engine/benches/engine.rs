@@ -8,6 +8,10 @@
 //! attempt ends (drained outside the measurement, like the rest of the stream).
 //! `tally/attempt` is the tally update alone.
 //!
+//! `plan/verdicts_0` and `plan/verdicts_1000` (spec 011 T028, research R16): the plan of a
+//! unified model over 4 members × 4 accounts, with an empty verdict board and with 1000
+//! verdicts on it, one in four BROKEN, the target's own pairs among them.
+//!
 //! `cargo bench -p nullrouter-engine --bench engine -- --save-baseline slice-003`
 
 #[path = "../tests/common/mod.rs"]
@@ -140,6 +144,54 @@ fn bench(c: &mut Criterion) {
         estimated: false,
     };
     group.bench_function("attempt", |b| b.iter(|| tally.attempt("signco", "main", black_box("m1"), Some(&usage))));
+    group.finish();
+
+    plan_bench(c, &rt);
+}
+
+fn plan_bench(c: &mut Criterion, rt: &Runtime) {
+    use nullrouter_engine::plan::{self, Live};
+    use nullrouter_engine::verdict::{Basis, Pair, Rejection, Source, State, Verdict, Verdicts};
+    use nullrouter_registry::schema::ModelType;
+
+    const IDS: [&str; 4] = ["p0", "p1", "p2", "p3"];
+    let accounts: Vec<(&str, &str)> = IDS.iter().flat_map(|p| ["a0", "a1", "a2", "a3"].map(|a| (*p, a))).collect();
+    let members: Vec<String> = IDS.iter().map(|p| format!("{{ provider = \"{p}\", model = \"m1\" }}")).collect();
+    let config = format!("[[unified_model]]\nname = \"u\"\nmembers = [{}]\n", members.join(", "));
+    let s = rt.block_on(setup(|m| IDS.iter().map(|p| (*p, chat_plugin(m, p, ""))).collect(), &accounts, &config));
+    for i in 0..1000u32 {
+        let state = if i % 4 == 0 { State::Broken } else { State::Pass };
+        // The first 16 land on the target's own pairs; the rest on other models.
+        let (p, a) = accounts[i as usize % accounts.len()];
+        let model = if i < 16 { "m1".to_owned() } else { format!("other-{i}") };
+        let v = Verdict {
+            state,
+            reason: "404: model does not exist".into(),
+            rejection: (state == State::Broken).then_some(Rejection::ModelNotFound),
+            source: Source::Test,
+            at: std::time::SystemTime::now(),
+            record: None,
+            step: None,
+            next: None,
+            basis: Basis::default(),
+            note: None,
+        };
+        s.engine.verdicts.set(Pair::new(p, a, model), v);
+    }
+    let full = s.engine.verdicts.snapshot();
+    let empty = Verdicts::default();
+    let st = s.engine.snapshot();
+
+    let mut group = c.benchmark_group("plan");
+    for (name, verdicts) in [("verdicts_0", &empty), ("verdicts_1000", &*full)] {
+        group.bench_function(name, |b| {
+            b.iter(|| {
+                let live = Live { tokens: &st.tokens, live: &st.live_models, verdicts, pin: None };
+                let plan = plan::plan(&st.registry, &st.accounts, live, black_box("u"), ModelType::Text, "openai-chat");
+                black_box(plan.map(|p| p.steps.len()).unwrap_or(0))
+            })
+        });
+    }
     group.finish();
 }
 

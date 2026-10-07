@@ -140,3 +140,34 @@ async fn get_model_takes_ids_with_slashes() {
     let (status, _) = get(&s, "/v1/models/lonely/alone", false).await;
     assert_eq!(status, 404, "a provider with no account has no models to get");
 }
+
+/// Spec 011 T025, clarify Q2: a BROKEN pair stays listed; the list says what a client may ask
+/// for, and the error at request time says why it failed.
+#[tokio::test]
+async fn a_target_broken_on_every_pair_is_still_listed() {
+    use nullrouter_engine::verdict::{Basis, Pair, Rejection, Source, State, Verdict};
+    let s = start().await;
+    for (provider, model) in [("mockco", "m1"), ("typed", "vendor/chat-1"), ("typed", "emb")] {
+        let v = Verdict {
+            state: State::Broken,
+            reason: "404: model does not exist".into(),
+            rejection: Some(Rejection::ModelNotFound),
+            source: Source::Operator,
+            at: std::time::SystemTime::now(),
+            record: None,
+            step: None,
+            next: None,
+            basis: Basis::default(),
+            note: None,
+        };
+        s.engine.verdicts.set(Pair::new(provider, "main", model), v);
+    }
+    let (_, body) = get(&s, "/v1/models", false).await;
+    check("openai", body["data"].as_array().unwrap(), |e| e["id"].as_str().unwrap().to_owned());
+    let (_, body) = get(&s, "/v1/models", true).await;
+    check("anthropic", body["data"].as_array().unwrap(), |e| e["id"].as_str().unwrap().to_owned());
+    let (_, body) = get(&s, "/v1beta/models", false).await;
+    check("gemini", body["models"].as_array().unwrap(), |e| {
+        e["name"].as_str().unwrap().strip_prefix("models/").unwrap().to_owned()
+    });
+}
