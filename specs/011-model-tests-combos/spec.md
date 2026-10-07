@@ -28,6 +28,10 @@ stop and revisit the brief.
 - Q: Do automatic retests wait while an account is rate-limited or at its reserve floor? → A: Yes.
   They wait, as cold work does, and run once the account can serve again. Tests the operator
   asks for still run at once.
+- Q (analyze, Constitution VII): a combo test that gives UNKNOWN, what retests it? → A: The
+  combo itself. Its result is kept, and it is retested on the same schedule (one call through
+  the combo each time) until it gives PASS or BROKEN. Pairs it reached still change only on PASS
+  or BROKEN.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -263,6 +267,9 @@ reason, indented under their combos.
    definitive rejection, **Then** the pair's verdict becomes PASS or BROKEN. **When** it fails
    for any other reason, **Then** the output shows UNKNOWN for that attempt, and the pair keeps
    its verdict and starts no retests.
+5. **Given** a combo test that gave UNKNOWN, **When** no one intervenes, **Then** the combo is
+   retested on the UNKNOWN schedule, one call through the combo each time, until it gives PASS or
+   BROKEN, and `verdicts` shows its result and next retest.
 
 ---
 
@@ -345,7 +352,7 @@ reason, indented under their combos.
   5 minutes and 30 minutes after it became UNKNOWN, then every 6 hours, until it gives PASS or
   BROKEN. A new UNKNOWN from an operator-requested test restarts the schedule.
 - **FR-013**: A BROKEN pair from a test MUST NOT be retested automatically unless the operator
-  turns BROKEN retests on, with an interval they set (by default once a day). An operator-set
+  turns BROKEN retests on, once a day by default or at an interval they set. An operator-set
   BROKEN MUST never be retested automatically.
 - **FR-014**: An automatic retest MUST wait while its account can't serve (disabled, needs
   sign-in, refreshing) or couldn't take cold work (rate-limited, or a quota window at its reserve
@@ -409,6 +416,11 @@ reason, indented under their combos.
 - **FR-029**: An attempt a combo test makes MUST set the verdict of the pair it reached to PASS
   or BROKEN when it gives that result. A non-definitive failure MUST be shown as UNKNOWN in the
   combo test's output only: the pair keeps its verdict, and no retest starts.
+- **FR-030**: A combo test's result MUST be kept, survive restarts like pair verdicts, and be
+  listed by the CLI. A combo whose result is UNKNOWN MUST be retested automatically on the
+  FR-012 schedule (one call through the combo each time, under FR-014's waits for the accounts
+  it would reach first) until it gives PASS or BROKEN (Constitution VII). A combo's result never
+  steers routing, and it returns to untested when the combo's definition changes.
 
 ### Key Entities
 
@@ -423,6 +435,8 @@ reason, indented under their combos.
   calls at once. Set by the operator, with 0router's defaults.
 - **Combo**: operator-declared name and ordered members (unified models or combos), with the
   model type its members share.
+- **Combo result**: the last combo test's PASS, BROKEN or UNKNOWN, with the member that
+  answered, its time and, for UNKNOWN, the next retest.
 
 ## Success Criteria *(mandatory)*
 
@@ -462,7 +476,8 @@ reason, indented under their combos.
 - A test needs a running server, as `quota poll` does; it goes through the server so that it is
   recorded, counted and paced like client traffic.
 - A test goes to the named account regardless of its routing priority or reserve floor, because
-  the operator asked for it; it is not sent to an account that can't serve.
+  the operator asked for it; it is not sent to an account that can't serve, nor to one resting
+  after a rate limit: that pair is skipped with `rate-limited until <time>`.
 - The confirmation before multi-call tests (FR-005), BROKEN retests defaulting to once a day,
   4 test calls at once, and the spread-out restart catch-up are defaults chosen in this spec,
   not by the brief; all are operator-settable.
@@ -472,8 +487,8 @@ reason, indented under their combos.
   `provider/model` target is not a combo member (a one-member unified model serves that need).
 - Combos, like unified models, apply at the next start or at the next reload a mutating command
   triggers; this slice adds no reload command.
-- The verdict of a combo is shown in the test output and in the test's records; it is not stored
-  apart from the pair verdicts, and it doesn't steer routing.
+- A combo's result is kept beside the pair verdicts (FR-030) so that an UNKNOWN combo can be
+  retested; it doesn't steer routing.
 - Depends on: unified models (002), the request pipeline's retry, fallback, classification and
   informational errors (003), account states (005), routing, quota tally and durability (006),
   and records (006, 008).

@@ -59,12 +59,13 @@ used only for tests (client traffic keeps `classify` unchanged, FR-010). Order:
    already decide it (FR-009: the account is marked, the model isn't).
 2. The plugin's `[[rejections]]` rules (R4), first match wins.
 3. The core list. The status must be 400, 403, 404, 405 or 422, and the provider's message
-   (lower-cased, as `classify::text` reads it) must name the model and say why:
+   (lower-cased, as `classify::text` reads it) must contain `model` and one phrase of a row; the
+   rows are tried in this order, and the same status rule applies to all three:
 
    | Reason | Message must contain `model` and one of |
    |---|---|
    | `model_not_found` | `not found`, `does not exist`, `not_found`, `unknown model`, `no such model`, `invalid model`, `not a valid model` |
-   | `model_not_available` (403 only, or any listed status with) | `access to`, `not available`, `not allowed`, `not enabled`, `permission`, `not entitled`, `your plan`, `tier` |
+   | `model_not_available` | `access to`, `not available`, `not allowed`, `not enabled`, `permission`, `not entitled`, `your plan`, `tier` |
    | `type_not_supported` | `does not support`, `not supported`, `unsupported`, `only supports`, `is not a chat model`, `not a text model` |
 
 4. Anything else is UNKNOWN with the provider's status and message as the reason.
@@ -146,9 +147,12 @@ start is caught too.
 **Alternatives considered**: clearing from each CLI command. Rejected: misses hand edits and
 `plugins/` changes picked up at start.
 
-## R8. Retests run from the maintenance queue
+## R8. Retests run on their own task, not the maintenance queue
 
-**Decision**: a new `maintenance::JobKind::Retest`, one slot per pair that is due:
+**Decision**: a retest task (`tests::retest`), spawned by `serve` beside the maintenance task,
+with its own timer over the board's `next` times. It never takes a maintenance slot
+(`maintenance::MAX_JOBS = 4`), so a 5-minute video retest can't hold back a token refresh or a
+quota poll. Its only limit is the test semaphore (R10), shared with operator tests. What is due:
 
 - UNKNOWN: due at `became_unknown + schedule[step]`; after the last step, every `schedule.last()`.
   A test's new UNKNOWN restarts at step 0 (FR-012).
@@ -158,16 +162,20 @@ start is caught too.
   a quota window at its reserve floor (`routing` view data). The verdict list shows `waiting:
   <reason>` (clarify Q4).
 - After a restart, overdue retests are spread: the n-th overdue pair waits `n × 10 s`.
-- Retests count against `MAX_JOBS` like other maintenance jobs, and the test concurrency limit
-  (R10) as well.
+- A combo whose result is UNKNOWN: due on the same schedule; held while the first unified model
+  it would try has no account that can serve. It runs `run_combo` (R14) with source `retest`.
+- Two tests of one pair at once (an operator test and a retest): both run and are recorded, and
+  the result that finishes last is kept.
 
-**Rationale**: the maintenance queue already rebuilds slots per wake, drops removed accounts, and
-runs jobs with child cancellation tokens; a new kind needs only `due` and `run` arms.
+**Rationale**: the maintenance queue has 4 slots shared by token refreshes and quota polls; four
+long retests would fill it, and a sign-in token could expire unrefreshed. A separate task keeps
+that failure impossible, at the cost of a second, small timer loop. Cancellation works as in
+maintenance: the task's token is a child of the server's.
 
 ## R9. Test records
 
 **Decision**: `RequestRecord` gains `test: Option<TestMark>` (`{ run, source }`), and test
-records use the pseudo-agent `test` (no key id). Records already keep no prompt; the test also
+records carry no agent (no key id) and are tagged `test`. Records already keep no prompt; the test also
 keeps no output: the attempt loop's `ForClient` answer is dropped after `judge` reads it.
 `records list --test` / `--no-test` filter them; by default `records list` shows them with a
 `test` tag.
@@ -239,6 +247,11 @@ output (clarify Q3). The combo verdict: PASS when a member answered; BROKEN when
 model it reached was skipped as BROKEN or definitively rejected on every account; UNKNOWN
 otherwise. The output nests attempts under each combo level from the record's `member` path.
 
+The combo's result (`ComboResult` without the attempt list) is kept on the board under the key
+`combo:<name>` and journalled in `verdicts.jsonl` like a pair verdict, so it survives restarts.
+An UNKNOWN result is retested (R8) until PASS or BROKEN, as Constitution VII requires. The
+result stores a digest of the combo's flattened member list; a changed definition clears it.
+
 ## R15. Settings
 
 **Decision**: `config.toml` `[tests]`:
@@ -246,7 +259,7 @@ otherwise. The output nests attempts under each combo level from the record's `m
 ```toml
 [tests]
 retest = ["1m", "5m", "30m", "6h"]   # the last repeats
-broken_retest = "off"                # or an interval, e.g. "24h"
+broken_retest = "off"                # "on" (every 24h) or an interval ≥ 1h
 concurrency = 4                      # 1–32
 [tests.timeout]
 text = "30s"; embedding = "30s"; tts = "30s"; stt = "30s"; image = "5m"; video = "5m"

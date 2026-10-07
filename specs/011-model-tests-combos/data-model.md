@@ -36,7 +36,8 @@ any ──mark (op)──▶ broken (source operator; never retested)
 any ──basis change──▶ untested
 ```
 
-A combo test sets only `pass` or `broken` (clarify Q3). A retest that is `waiting` keeps its
+A combo test sets only `pass` or `broken` on pairs (clarify Q3); its own result is a Combo
+result (below). When two tests of one pair overlap, the one that finishes last is kept. A retest that is `waiting` keeps its
 verdict; `waiting` is computed for display, never stored.
 
 ### On disk: `routing/verdicts.jsonl` (mode 0600)
@@ -48,6 +49,13 @@ One line per change, newest last; last line per pair wins:
 {"provider":"anthropic","account":"max","model":"claude-opus-4-1","cleared":true,"why":"account changed","at":"2026-10-08T10:00:00Z"}
 ```
 
+## Combo result
+
+Kept on the board under `combo:<name>` and in `verdicts.jsonl` as
+`{"combo":"coder","state":…,"answered_by"?,"reason","at","record","step"?,"next"?,"definition":"sha256:…"}`.
+`state` is `pass` | `broken` | `unknown`; `unknown` is retested on the `retest` schedule; a
+changed `definition` (digest of the flattened member list) clears it. It never steers routing.
+
 ## Rejection rule (plugin)
 
 `[[rejections]]`: `status` (u16 or list, each 400–499, not 408 or 429), `body_contains`
@@ -58,7 +66,7 @@ One line per change, newest last; last line per pair wins:
 | Field | Default | Rule |
 |---|---|---|
 | `retest` | `["1m","5m","30m","6h"]` | 1–10 steps, each ≥ 30 s, non-decreasing; the last repeats |
-| `broken_retest` | `"off"` | `"off"` or an interval ≥ 1 h |
+| `broken_retest` | `"off"` | `"off"`, `"on"` (every 24 h), or an interval ≥ 1 h |
 | `concurrency` | 4 | 1–32 |
 | `timeout.text`, `.embedding`, `.tts`, `.stt` | `"30s"` | 5 s–30 min |
 | `timeout.image`, `.video` | `"5m"` | 5 s–30 min |

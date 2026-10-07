@@ -15,7 +15,7 @@ members = ["gpt", "glm"]
 
 [tests]
 retest = ["1m", "5m", "30m", "6h"]     # after an UNKNOWN; the last step repeats until it settles
-broken_retest = "off"                  # or an interval ≥ 1h
+broken_retest = "off"                  # "on" (every 24h) or an interval ≥ 1h
 concurrency = 4                        # test calls at once, retests included (1–32)
 
 [tests.timeout]
@@ -38,7 +38,7 @@ Load errors, reported as `config.toml:L:C path: rule` and handled like unified-m
 | `combo[i]` | `contains itself: coder → fallback-chain → coder` |
 | `combo[i].members` | `members disagree on kind: sonnet is llm, embed is embedding` |
 | `tests.retest[k]` | `at least 30s` / `steps must not get shorter` / `1 to 10 steps` |
-| `tests.broken_retest` | `"off" or at least 1h` |
+| `tests.broken_retest` | `"off", "on" or at least 1h` |
 | `tests.concurrency` | `1 to 32` |
 | `tests.timeout.<type>` | `5s to 30m` / `unknown type "x"` |
 

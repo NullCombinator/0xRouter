@@ -28,6 +28,7 @@ PASS     anthropic/max        claude-sonnet-4-5          1.8 s (first output 0.9
 BROKEN   anthropic/max        claude-opus-4-1            model not available: 403 model claude-opus-4-1 is not available on your plan
 UNKNOWN  openrouter/main      anthropic/claude-sonnet-4.5  503 upstream overloaded; retest in 1 min
 SKIPPED  xai/main             grok-4                     account needs sign-in: run nullrouter accounts signin xai main
+SKIPPED  xai/backup           grok-4                     rate-limited until 09:14
 4 pairs: 1 pass, 1 broken, 1 unknown, 1 skipped
 ```
 
@@ -58,6 +59,14 @@ xai         main     grok-4-imagine     UNKNOWN  2026-10-07 08:00  test      tim
 anthropic   api      claude-haiku-4-5   BROKEN   2026-10-06 18:00  operator  set by the operator: not on our plan
 ```
 
+Combo results follow the pair table:
+
+```text
+combo    verdict  since             answered by  next
+coder    PASS     2026-10-07 09:20  glm
+writer   UNKNOWN  2026-10-07 09:21  —            retest 09:26 (step 1)
+```
+
 ```text
 nullrouter verdicts clear <provider> <account> <model>        # → untested; `applied` / error if none
 nullrouter verdicts mark <provider> <account> <model> [--note TEXT]   # → BROKEN, source operator
@@ -71,7 +80,7 @@ Both write through the server (`verdicts.set` op); with no server running, they 
 ```text
 nullrouter verdicts settings                                  # show the [tests] values and defaults
 nullrouter verdicts settings retest 1m,5m,30m,6h              # or `default`
-nullrouter verdicts settings broken-retest 24h                # or `off`
+nullrouter verdicts settings broken-retest 24h                # or `on` (24h) or `off`
 nullrouter verdicts settings timeout image 10m                # type: text|embedding|tts|stt|image|video
 nullrouter verdicts settings concurrency 2
 ```
