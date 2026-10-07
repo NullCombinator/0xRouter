@@ -2,7 +2,7 @@
 //! per provider (spec 010, research R3 to R6). Reads only the day segments a window needs and
 //! writes nothing.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -15,7 +15,8 @@ use serde_json::Value;
 use crate::clock;
 use crate::journal::records::{day_of, fold, segments};
 use crate::routing::price::{PriceSpec, entry_at};
-use crate::state::EngineState;
+use nullrouter_registry::Registry;
+use crate::accounts::Accounts;
 
 /// Nearest-rank percentile of `sorted` (ascending): `v[ceil(q·n) − 1]`. One value gives itself
 /// for every `q`; no values give `None` (R6).
@@ -178,23 +179,26 @@ impl Totals {
 /// has none).
 pub type Prices<'a> = &'a dyn Fn(&str, Option<&str>) -> Option<PriceSpec>;
 
-/// The price lookup of one engine snapshot, built as `route.rs` builds a `PriceSpec`: the
+/// The price lookup of a registry and the accounts, built as `route.rs` builds a `PriceSpec`: the
 /// provider's declared schedule, replaced by the account's flat override.
-pub fn prices_of(st: &EngineState) -> impl Fn(&str, Option<&str>) -> Option<PriceSpec> + '_ {
+pub fn prices_of<'a>(
+    registry: &'a Registry,
+    accounts: &'a Accounts,
+) -> impl Fn(&str, Option<&str>) -> Option<PriceSpec> + 'a {
     move |provider, account| {
-        let entity = st.registry.provider(provider).ok()?;
+        let entity = registry.provider(provider).ok()?;
         let schedule = entity.routing().prices.to_vec();
         match account {
             None => Some(PriceSpec { schedule, flat: None }),
             Some(name) => {
-                let a = st.accounts.get(provider, name)?;
+                let a = accounts.get(provider, name)?;
                 Some(PriceSpec { schedule, flat: a.routing.price })
             }
         }
     }
 }
 
-fn add_record(t: &mut Totals, r: &Value, prices: Prices<'_>) {
+fn add_record(t: &mut Totals, r: &Value, prices: Prices<'_>, running: bool) {
     t.requests += 1;
     if let Some(a) = r["agent"]["key"].as_str() {
         *t.agents.entry(a.to_owned()).or_default() += 1;
@@ -208,7 +212,9 @@ fn add_record(t: &mut Totals, r: &Value, prices: Prices<'_>) {
             *t.providers.entry(p.to_owned()).or_default() += 1;
         }
     }
-    if r["outcome"] == "in_progress" {
+    // An unfinished request is in flight with a server, and cut short (not reported) without one,
+    // unless it is a submitted job, which stays in progress.
+    if r["outcome"] == "in_progress" && (running || !r["job"].is_null()) {
         t.in_flight += 1;
         return;
     }
@@ -245,11 +251,12 @@ fn add_record(t: &mut Totals, r: &Value, prices: Prices<'_>) {
     t.cost_usd += usd / 1e6;
 }
 
-fn segment_totals(path: &Path, w: &Window, prices: Prices<'_>) -> Totals {
+fn segment_totals(path: &Path, w: &Window, prices: Prices<'_>, skip: &HashSet<&str>, running: bool) -> Totals {
     let mut t = Totals::default();
     let Ok(text) = fs::read_to_string(path) else { return t };
-    for r in fold(&text).iter().filter(|r| r["arrived"].as_str().is_some_and(|a| w.holds(a))) {
-        add_record(&mut t, r, prices);
+    let wanted = |r: &&Value| r["arrived"].as_str().is_some_and(|a| w.holds(a)) && r["id"].as_str().is_none_or(|id| !skip.contains(id));
+    for r in fold(&text).iter().filter(wanted) {
+        add_record(&mut t, r, prices, running);
     }
     t
 }
@@ -265,27 +272,40 @@ struct Stamp {
 /// Finished days' totals, one entry per segment file. Process-wide, like the segment index.
 static CACHE: Mutex<Option<HashMap<PathBuf, (Stamp, Totals)>>> = Mutex::new(None);
 
-/// Totals over the window, computed from the journal alone and from no cache.
-pub fn totals(home: &Path, w: &Window, prices: Prices<'_>) -> Totals {
-    totals_cached(home, w, prices, None)
+/// Totals over the window, computed from the journal alone and from no cache. `running` says
+/// whether a server runs: without one an unfinished request was cut short, not in flight.
+pub fn totals(home: &Path, w: &Window, prices: Prices<'_>, running: bool) -> Totals {
+    totals_with(home, w, prices, None, &[], running)
 }
 
-/// As [`totals`], serving each day that lies wholly inside the window from the cache, keyed by the
-/// file's inode and length and by `generation` (the engine's reload generation, since a reload
-/// can change prices or accounts). The edge days, and any day in `to`'s own day, are read.
-pub fn totals_cached(home: &Path, w: &Window, prices: Prices<'_>, generation: Option<u64>) -> Totals {
+/// Totals over the window with the requests the server still holds in memory. `live` records
+/// replace their copies in the journal (they are the fresher ones), so they are left out of the
+/// segment reads and added from memory; a day that has one is read, not cached.
+///
+/// A day that lies wholly inside the window is served from the cache, keyed by the file's inode
+/// and length and by `generation` (the engine's reload generation, since a reload can change
+/// prices or accounts). `generation: None` reads everything.
+pub fn totals_with(
+    home: &Path,
+    w: &Window,
+    prices: Prices<'_>,
+    generation: Option<u64>,
+    live: &[Value],
+    running: bool,
+) -> Totals {
+    let live: Vec<&Value> = live.iter().filter(|r| r["arrived"].as_str().is_some_and(|a| w.holds(a))).collect();
+    let skip: HashSet<&str> = live.iter().filter_map(|r| r["id"].as_str()).collect();
     let mut out = Totals::default();
     for (day, path) in segments_for(home, w) {
         let start = clock::parse_rfc3339(&format!("{day}T00:00:00Z"));
-        let whole = start.is_some_and(|s| {
-            w.from.is_none_or(|f| f <= s) && s + Duration::from_secs(86_400) <= w.to
-        });
-        let stamp = generation.filter(|_| whole).and_then(|generation| {
+        let whole = start.is_some_and(|s| w.from.is_none_or(|f| f <= s) && s + Duration::from_secs(86_400) <= w.to);
+        let has_live = live.iter().any(|r| r["arrived"].as_str().is_some_and(|a| day_of(a) == day));
+        let stamp = generation.filter(|_| whole && !has_live).and_then(|generation| {
             let m = fs::metadata(&path).ok()?;
             Some(Stamp { inode: m.ino(), len: m.len(), generation })
         });
         let Some(stamp) = stamp else {
-            out.add(&segment_totals(&path, w, prices));
+            out.add(&segment_totals(&path, w, prices, &skip, running));
             continue;
         };
         let hit = CACHE
@@ -293,7 +313,7 @@ pub fn totals_cached(home: &Path, w: &Window, prices: Prices<'_>, generation: Op
             .ok()
             .and_then(|c| c.as_ref()?.get(&path).filter(|(s, _)| *s == stamp).map(|(_, t)| t.clone()));
         let day_totals = hit.unwrap_or_else(|| {
-            let t = segment_totals(&path, w, prices);
+            let t = segment_totals(&path, w, prices, &skip, running);
             if let Ok(mut c) = CACHE.lock() {
                 c.get_or_insert_with(HashMap::new).insert(path.clone(), (stamp, t.clone()));
             }
@@ -301,6 +321,11 @@ pub fn totals_cached(home: &Path, w: &Window, prices: Prices<'_>, generation: Op
         });
         out.add(&day_totals);
     }
+    let mut live_totals = Totals::default();
+    for r in live {
+        add_record(&mut live_totals, r, prices, running);
+    }
+    out.add(&live_totals);
     out
 }
 

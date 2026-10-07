@@ -25,6 +25,7 @@ pub mod records;
 pub mod resolve;
 pub mod routing;
 pub mod unified;
+pub mod usage;
 
 use crate::operator::{self, CallError};
 
@@ -111,6 +112,9 @@ pub fn request(op: &str, args: &Value) -> Value {
         _ => &[],
     };
     let mut req = json!({ "op": op });
+    if op == "usage.totals" {
+        (req["from"], req["to"]) = usage::op_window(args);
+    }
     for k in keys {
         req[*k] = args.get(*k).cloned().unwrap_or(Value::Null);
     }

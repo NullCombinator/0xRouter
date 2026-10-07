@@ -48,6 +48,12 @@ enum Command {
         #[arg(long, value_name = "KIND")]
         capability: Option<String>,
     },
+    /// Request and token totals and Est. Cost for one period.
+    Usage {
+        /// today, 24h, 7d, 30d, 60d or all.
+        #[arg(long, value_name = "PERIOD", default_value = "today")]
+        period: String,
+    },
     /// Run the server in the foreground. Logs go to stderr, redacted.
     Serve {
         #[arg(long, value_name = "ADDR")]
@@ -95,6 +101,7 @@ fn main() -> ExitCode {
         Command::Unified { name } => cmd::unified::run(cli.home, name.as_deref(), cli.json),
         Command::Model { provider, model } => cmd::model::run(cli.home, &provider, model.as_deref(), cli.json),
         Command::Providers { capability } => cmd::providers::run(cli.home, capability.as_deref(), cli.json),
+        Command::Usage { period } => cmd::usage::run(cli.home, &period, cli.json),
         Command::Serve { listen } => cmd::serve::run(cli.home, listen),
         Command::Accounts(c) => cmd::accounts::run(cli.home, c, cli.json),
         Command::Keys(c) => cmd::keys::run(cli.home, c, cli.json),

@@ -101,7 +101,7 @@ fn totals_match_the_hand_figures_for_every_window() {
     assert!(windows.len() >= 5);
     for want in windows {
         let name = want["name"].as_str().unwrap();
-        let got = summary::totals(&fixture(), &window(want), &prices);
+        let got = summary::totals(&fixture(), &window(want), &prices, true);
         check(name, &got, want);
     }
 }
@@ -111,10 +111,18 @@ fn the_cached_path_gives_the_same_totals_and_serves_finished_days() {
     let expected = table("expected.toml");
     for want in expected["totals"].as_array().unwrap() {
         let name = want["name"].as_str().unwrap();
-        let cold = summary::totals_cached(&fixture(), &window(want), &prices, Some(1));
+        let cold = summary::totals_with(&fixture(), &window(want), &prices, Some(1), &[], true);
         check(name, &cold, want);
         // The second read is served from the cache for whole days and must not differ.
-        let warm = summary::totals_cached(&fixture(), &window(want), &prices, Some(1));
+        let warm = summary::totals_with(&fixture(), &window(want), &prices, Some(1), &[], true);
         assert_eq!(cold, warm, "{name}: warm equals cold");
     }
+}
+
+#[test]
+fn without_a_server_an_unfinished_request_was_cut_short() {
+    let expected = table("expected.toml");
+    let all = expected["totals"].as_array().unwrap().iter().find(|t| t["name"].as_str() == Some("all")).unwrap();
+    let got = summary::totals(&fixture(), &window(all), &prices, false);
+    assert_eq!((got.in_flight, got.not_reported), (0, 4), "fx15 is now not reported, not in flight");
 }
