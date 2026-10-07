@@ -205,11 +205,13 @@ mod tests {
     #[test]
     fn the_view_has_the_data_model_shape_with_names_joined_and_sorted() {
         let home = tempfile::tempdir().unwrap();
+        let keys = home.path().join("keys.toml");
         std::fs::write(
-            home.path().join("keys.toml"),
+            &keys,
             "schema = 1\n\n[[key]]\nid = \"ak_a\"\nname = \"alice\"\ndigest = \"sha256:00\"\nlast4 = \"0000\"\ncreated = \"2026-09-01T00:00:00Z\"\n",
         )
         .unwrap();
+        std::fs::set_permissions(&keys, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
         let mut live = Live::none();
         live.answers.insert(
             "usage.totals",

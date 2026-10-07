@@ -112,5 +112,5 @@ async fn an_empty_home_says_there_are_no_records_yet() {
     assert!(text.contains(usage::EMPTY), "{text}");
     assert!(!html.contains("usage-row"), "no rows");
     assert!(!text.contains("Older"), "no Older link");
-    assert_eq!(slots(&html).len(), 3, "the slots stay");
+    assert_eq!(slots(&html).len(), 1, "the topology graph stays a slot until T045");
 }
