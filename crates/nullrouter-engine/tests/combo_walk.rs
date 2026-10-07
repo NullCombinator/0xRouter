@@ -146,14 +146,18 @@ async fn a_unified_model_reached_twice_is_tried_once() {
 #[tokio::test]
 async fn never_the_next_member_once_the_answer_has_started() {
     let s = fleet(CODER).await;
-    let cut = Step::sse(
-        &[(
-            None,
-            json!({"id": "c1", "object": "chat.completion.chunk", "model": "m1", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hel"}, "finish_reason": Value::Null}]}),
-        )],
-        true,
-    )
-    .cut_after(1);
+    // Two deltas sent 5 ms apart, then the stream drops: the client has seen output (as the
+    // breaks tests script it, so the cut can't overtake the frames).
+    let chunk = |content: &str| {
+        let c = json!({"index": 0, "delta": {"role": "assistant", "content": content}, "finish_reason": Value::Null});
+        (None, json!({"id": "c1", "object": "chat.completion.chunk", "model": "m1", "choices": [c]}))
+    };
+    let cut = match Step::sse(&[chunk("Hel"), chunk("lo")], true).cut_after(2) {
+        Step::Stream { status, headers, frames, cut, .. } => {
+            Step::Stream { status, headers, frames, every: Duration::from_millis(5), cut }
+        }
+        other => other,
+    };
     s.mock.respond(move |r| if r.path_and_query.starts_with("/alpha") { cut.clone() } else { ok() });
     let req = request(&s, "openai-chat", "coder", chat_body("coder", true), "ak_test", CancellationToken::new());
     let id = req.id.clone();
