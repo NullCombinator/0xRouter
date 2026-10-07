@@ -129,12 +129,17 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         Some("records.get") => {
             let Some(id) = str_of("id") else { return json!({"ok": false, "error": "the request names no id"}) };
             if let Some(r) = engine.records.get(&id) {
-                return json!({"ok": true, "record": r});
+                let mut record = json!(r);
+                nullrouter_engine::phases::decorate(&mut record, None);
+                return json!({"ok": true, "record": record});
             }
             let home = engine.home().path().to_owned();
             let found = tokio::task::spawn_blocking(move || nullrouter_engine::journal::records::get(&home, &id)).await;
             match found {
-                Ok(Some(r)) => json!({"ok": true, "record": r}),
+                Ok(Some(mut r)) => {
+                    nullrouter_engine::phases::decorate(&mut r, None);
+                    json!({"ok": true, "record": r})
+                }
                 _ => json!({"ok": false, "error": "no such record"}),
             }
         }
@@ -284,6 +289,7 @@ async fn records_list(engine: &Arc<Engine>, req: &Value) -> Value {
         live.iter().filter_map(|r| r["id"].as_str().map(str::to_owned)).collect();
     disk.retain(|r| r["id"].as_str().is_none_or(|id| !ids.contains(id)));
     disk.extend(live);
+    disk.iter_mut().for_each(|r| nullrouter_engine::phases::decorate(r, None));
     disk.sort_by(|a, b| b["id"].as_str().cmp(&a["id"].as_str()));
     disk.truncate(limit.unwrap_or(usize::MAX));
     json!({"ok": true, "records": disk})

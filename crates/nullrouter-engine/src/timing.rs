@@ -69,6 +69,8 @@ pub struct AttemptClock {
     refresh: Span,
     closing: Mark,
     merged_wait: AtomicBool,
+    /// A response came back, whatever its status.
+    answered: AtomicBool,
     /// 0 unset, 1 HTTP/1.1, 2 HTTP/2.
     http: AtomicU8,
     proxy: Mutex<Option<String>>,
@@ -90,6 +92,7 @@ impl AttemptClock {
             refresh: Span::default(),
             closing: Mark::new(),
             merged_wait: AtomicBool::new(false),
+            answered: AtomicBool::new(false),
             http: AtomicU8::new(0),
             proxy: Mutex::new(None),
             timeout: Mutex::new(None),
@@ -153,6 +156,12 @@ impl AttemptClock {
         self.refresh.add(d);
     }
 
+    /// A response came back. A non-2xx one doesn't mark `headers`: its time, the error body
+    /// included, is the headers phase the attempt ended in.
+    pub fn mark_answered(&self) {
+        self.answered.store(true, Relaxed);
+    }
+
     pub fn set_merged_wait(&self) {
         self.merged_wait.store(true, Relaxed);
     }
@@ -196,10 +205,10 @@ impl AttemptClock {
     pub fn to_timing(&self) -> AttemptTiming {
         let connected = self.connected.get();
         let headers = self.headers.get();
-        let connection = match (connected, headers) {
+        let connection = match (connected, headers.is_some() || self.answered.load(Relaxed)) {
             (Some(_), _) => Connection::New,
-            (None, Some(_)) => Connection::Reused,
-            (None, None) => Connection::None,
+            (None, true) => Connection::Reused,
+            (None, false) => Connection::None,
         };
         AttemptTiming {
             retry_wait_ms: self.retry_wait.nonzero_ms(),
@@ -291,6 +300,14 @@ mod tests {
         let t = c.to_timing();
         assert_eq!(t.connection, Connection::Reused);
         assert_eq!(t.connected, None);
+    }
+
+    #[test]
+    fn an_error_response_counts_as_answered_without_headers() {
+        let c = clock();
+        c.mark_answered();
+        let t = c.to_timing();
+        assert_eq!((t.connection, t.headers), (Connection::Reused, None));
     }
 
     #[test]

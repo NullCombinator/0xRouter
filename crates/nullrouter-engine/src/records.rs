@@ -5,7 +5,7 @@ use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use nullrouter_registry::schema::{InputSemantics, ModelType, RouteOp};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::keys::AgentId;
@@ -87,7 +87,7 @@ impl Usage {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AttemptKind {
     Initial,
@@ -165,7 +165,7 @@ pub struct Attempt {
 }
 
 /// How an attempt got its connection.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Connection {
     New,
@@ -177,7 +177,8 @@ pub enum Connection {
 
 /// The marks of one attempt, in milliseconds from the request's arrival (spec 013, data-model).
 /// Phases are derived from these by `phases::of`; nothing here is a duration except the spans.
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AttemptTiming {
     /// The deliberate wait before this same-account retry.
     pub retry_wait_ms: Option<f64>,
@@ -202,7 +203,7 @@ pub struct AttemptTiming {
     pub timeout: Option<TimeoutHit>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TimeoutKind {
     Connect,
@@ -212,20 +213,20 @@ pub enum TimeoutKind {
 }
 
 /// The timeout that ended an attempt, and where its value came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimeoutHit {
     pub which: TimeoutKind,
     pub ms: u64,
     pub source: Source,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Source {
     pub by: SourceBy,
     pub level: SourceLevel,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceBy {
     Operator,
@@ -233,7 +234,7 @@ pub enum SourceBy {
     BuiltIn,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceLevel {
     Model,

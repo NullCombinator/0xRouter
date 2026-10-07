@@ -59,6 +59,7 @@ use crate::records::{
 use crate::routing::{CandidateKey, PlacementReason, WhyNot};
 use crate::signin::refresh::Refreshed;
 use crate::state::{Engine, EngineState};
+use crate::timing::{self, AttemptClock, DEFAULT_CONNECT_TIMEOUT};
 use crate::upstream::{self, RequestParts, SignedIn};
 
 /// Events buffered between the upstream reader and the client relay.
@@ -179,6 +180,9 @@ impl Failure {
         Self { status, message: message.into(), retry_after: None, tried: Vec::new() }
     }
 }
+
+/// A first body read this soon after the headers means the provider flushed them together.
+const MERGED_WITHIN_MS: f64 = 2.0;
 
 fn ms(since: Instant) -> f64 {
     since.elapsed().as_secs_f64() * 1000.0
@@ -460,6 +464,12 @@ struct Run {
     /// A whole (non-stream) answer, kept until the request's `close` line is written so the
     /// client never has the end of the body before the journal has the record (FR-037).
     held: Option<Reply>,
+    /// The running attempt's marks (spec 013). Kept after the attempt ends, for the close wait.
+    clock: Option<Arc<AttemptClock>>,
+    /// Deliberate retry waiting since the last attempt began, handed to the next attempt's clock.
+    pending_retry: Duration,
+    /// Sign-in token refresh time since the last attempt began, handed on the same way.
+    pending_refresh: Duration,
 }
 
 fn cooldown_key<'c>(c: &'c Candidate<'_>) -> (&'c str, &'c str, &'c str) {
@@ -543,6 +553,9 @@ impl Engine {
             routed: None,
             placing: None,
             held: None,
+            clock: None,
+            pending_retry: Duration::ZERO,
+            pending_refresh: Duration::ZERO,
         };
         tokio::spawn(run.run(st));
         answer.await.unwrap_or_else(|_| Err(Failure::new(500, "0router: the request ended without an answer")))
@@ -568,6 +581,7 @@ impl Run {
         {
             let _ = first.send(Ok(reply));
         }
+        self.record_close_wait();
         let Err(f) = walked else { return };
         if let Some(first) = self.first.take() {
             let _ = first.send(Err(f));
@@ -584,6 +598,22 @@ impl Run {
             let _ = tx.send(Piece::Event(Event::BlockStop)).await;
             let _ = tx.send(Piece::Event(ev)).await;
         }
+    }
+
+    /// Stores how long the serving attempt's last byte waited for the record's close line
+    /// (spec 013, FR-037): the part of delivery that isn't the client's.
+    fn record_close_wait(&self) {
+        let Some(clock) = &self.clock else { return };
+        let Some(done) = clock.upstream_done() else { return };
+        let closing = (self.now() - done).max(0.0);
+        clock.set_closing(closing);
+        self.engine.records.update(self.id(), |r| {
+            if r.outcome == Outcome::Succeeded
+                && let Some(t) = r.attempts.last_mut().and_then(|a| a.timing.as_mut())
+            {
+                t.closing_ms = Some(closing);
+            }
+        });
     }
 
     async fn walk(&mut self, st: &EngineState) -> Result<(), Failure> {
@@ -819,11 +849,15 @@ impl Run {
             };
             // Use-time freshness: a token about to expire is refreshed before it is sent; a
             // failed refresh leaves the cell valid or out of service, which `outgoing` reads.
+            let refreshing = Instant::now();
             if let Some(a) = signin
                 && self.wait(self.engine.fresh_for_use(&a.provider, &a.name)).await.is_none()
             {
                 self.end_request(Outcome::Cancelled, None);
                 return Err(Failure::new(499, "0router: the client went away"));
+            }
+            if signin.is_some() {
+                self.pending_refresh += refreshing.elapsed();
             }
             let sent = signin.and_then(|a| st.tokens.get(&a.provider, &a.name));
             let out = match self.outgoing(st, c, ob) {
@@ -879,7 +913,10 @@ impl Run {
                 && token_rejected(c, &f)
             {
                 refreshed = true;
-                let Some(r) = self.wait(self.engine.refresh_rejected(&a.provider, &a.name, sent)).await else {
+                let refreshing = Instant::now();
+                let refreshed_to = self.wait(self.engine.refresh_rejected(&a.provider, &a.name, sent)).await;
+                self.pending_refresh += refreshing.elapsed();
+                let Some(r) = refreshed_to else {
                     self.end_request(Outcome::Cancelled, None);
                     return Err(Failure::new(499, "0router: the client went away"));
                 };
@@ -957,7 +994,10 @@ impl Run {
             if retries < b.retries {
                 retries += 1;
                 kind = AttemptKind::SameAccountRetry;
-                if !self.pause(b.delay).await {
+                let waiting = Instant::now();
+                let paused = self.pause(b.delay).await;
+                self.pending_retry += waiting.elapsed();
+                if !paused {
                     self.end_request(Outcome::Cancelled, None);
                     return Err(Failure::new(499, "0router: the client went away"));
                 }
@@ -1059,7 +1099,8 @@ impl Run {
         out: upstream::Outgoing,
     ) -> Ended {
         let timeout = out.header_timeout;
-        let send = time::timeout(timeout, out.into_request(&st.http).send());
+        let clock = self.clock();
+        let send = time::timeout(timeout, timing::ATTEMPT.scope(clock.clone(), out.into_request(&st.http).send()));
         let resp = match self.wait(send).await {
             None => return Ended::Cancelled,
             Some(Err(_)) => {
@@ -1072,6 +1113,11 @@ impl Run {
             }
             Some(Ok(Ok(r))) => r,
         };
+        clock.mark_answered();
+        clock.set_http(match resp.version() {
+            reqwest::Version::HTTP_2 => "2",
+            _ => "1.1",
+        });
         let status = resp.status().as_u16();
         let content_type =
             resp.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_owned);
@@ -1080,6 +1126,7 @@ impl Run {
         let stall = upstream::stall_timeout(c.endpoint);
         let ok = (200..300).contains(&status);
         if ok {
+            clock.mark_headers();
             let allow = c.provider.forwarding.as_ref().map_or(&[][..], |f| &f.to_client.headers[..]);
             self.forward =
                 forwarding::provider_headers(allow, resp.headers(), st.registry.floor(), &st.redactor.current());
@@ -1138,7 +1185,7 @@ impl Run {
                 };
                 let usage = r.usage.map(|u| Usage::reported(&u, semantics));
                 self.commit();
-                self.ttft();
+                self.ttft_whole();
                 for ev in r.events() {
                     if !self.send(Piece::Event(ev)).await {
                         return Ended::Cancelled;
@@ -1156,7 +1203,7 @@ impl Run {
                 ForClient::Rebuilt { read, .. } => Some(read),
             };
             let usage = read.and_then(|r| r.usage).map(|u| Usage::reported(&u, semantics));
-            self.ttft();
+            self.ttft_whole();
             self.answer(Answer::Whole { status, content_type, raw, answer: Box::new(answer) });
             return Ended::Ok(usage);
         }
@@ -1239,7 +1286,7 @@ impl Run {
             let job = JobRef { nullrouter_job_id: nullrouter_job_id.clone(), upstream_id };
             self.engine.records.update(&self.req.id, |r| r.job = Some(job));
             let id = nullrouter_job_id;
-            self.ttft();
+            self.ttft_whole();
             self.answer(Answer::Media(MediaAnswer::Job { id, status, bindings }));
             return Ended::Ok(None);
         }
@@ -1267,7 +1314,10 @@ impl Run {
                         }
                         continue;
                     }
-                    Ok(Ok(None)) => return Ended::Ok(None),
+                    Ok(Ok(None)) => {
+                        self.clock().mark_upstream_done();
+                        return Ended::Ok(None);
+                    }
                     Err(_) => (ErrorClass::Stall, format!("no byte for {} ms", stall.as_millis())),
                     Ok(Err(e)) => {
                         (ErrorClass::Network, format!("stream read failed: {}", st.redactor.redact(&e.to_string())))
@@ -1297,7 +1347,7 @@ impl Run {
             Err(e) => return in_band(format!("0router: {e}")),
         };
         let usage = media_usage(&value);
-        self.ttft();
+        self.ttft_whole();
         self.answer(Answer::Media(MediaAnswer::Value(value)));
         Ended::Ok(usage)
     }
@@ -1326,7 +1376,7 @@ impl Run {
         let n =
             v.as_ref().and_then(|v| nullrouter_wire::template::match_value(t, v)).and_then(|b| b.u64("count.input"));
         let Some(n) = n else { return in_band("the count answer doesn't have the wire's shape".into()) };
-        self.ttft();
+        self.ttft_whole();
         self.answer(Answer::Count { input_tokens: n, estimated: false });
         Ended::Ok(Some(count_usage(n, false)))
     }
@@ -1397,6 +1447,7 @@ impl Run {
         let mut failed: Option<ErrorEvent> = None;
         let mut held: Vec<(Piece, Vec<Event>)> = Vec::new();
         let mut output = false;
+        let mut reads = 0u32;
         // A continuation's first text block merges into the one the client has open.
         let mut merge = self.broken.as_ref().is_some_and(|b| b.resume == Some(Resume::Continue))
             && self.seen.open == breaks::Open::Text;
@@ -1421,8 +1472,14 @@ impl Run {
                         ..Fail::transport(ErrorClass::Network, reason, output)
                     });
                 }
-                Ok(Ok(Some(b))) => (framer.feed(&b), false),
-                Ok(Ok(None)) => (framer.finish(), true),
+                Ok(Ok(Some(b))) => {
+                    reads += 1;
+                    (framer.feed(&b), false)
+                }
+                Ok(Ok(None)) => {
+                    reads += 1;
+                    (framer.finish(), true)
+                }
             };
             // Each piece with the events it carries.
             let mut items: Vec<(Option<Piece>, Vec<Event>)> = Vec::new();
@@ -1492,7 +1549,7 @@ impl Run {
                 }
                 if !output {
                     output = true;
-                    self.ttft();
+                    self.ttft_stream(reads == 1);
                     if !self.resume().await {
                         return Ended::Cancelled;
                     }
@@ -1507,6 +1564,7 @@ impl Run {
                 }
             }
             if eof || reader.saw_done() {
+                self.clock().mark_upstream_done();
                 if let Some(e) = failed.take() {
                     let reason = st.redactor.redact(&e.message).into_owned();
                     let f = Fail {
@@ -1612,10 +1670,24 @@ impl Run {
     /// Sends one piece to the client stream; `false` when the client has gone.
     async fn send(&self, piece: Piece) -> bool {
         let Some(tx) = &self.tx else { return true };
-        tokio::select! {
+        if self.req.cancel.is_cancelled() {
+            return false;
+        }
+        // Only a full channel is waiting on the client, and only that wait is timed (R4).
+        let piece = match tx.try_send(piece) {
+            Ok(()) => return true,
+            Err(mpsc::error::TrySendError::Closed(_)) => return false,
+            Err(mpsc::error::TrySendError::Full(piece)) => piece,
+        };
+        let from = Instant::now();
+        let sent = tokio::select! {
             _ = self.req.cancel.cancelled() => false,
             r = tx.send(piece) => r.is_ok(),
+        };
+        if let Some(c) = &self.clock {
+            c.add_blocked(from.elapsed());
         }
+        sent
     }
 
     /// A keepalive on a started stream; `false` when the client has gone.
@@ -1646,6 +1718,31 @@ impl Run {
         self.engine.records.update(self.id(), |r| {
             r.ttft_ms.get_or_insert(at);
         });
+        self.clock().set_first_output(at);
+    }
+
+    /// The first output of a stream. `first_read`: it came in the first body read, so when that
+    /// read followed the headers at once the provider flushed them together (research R13).
+    fn ttft_stream(&self, first_read: bool) {
+        self.ttft();
+        let clock = self.clock();
+        if first_read && clock.headers().is_some_and(|h| clock.now_ms() - h < MERGED_WITHIN_MS) {
+            clock.set_merged_wait();
+        }
+    }
+
+    /// The answer came whole: first output and last byte are one reading.
+    fn ttft_whole(&self) {
+        self.ttft();
+        let clock = self.clock();
+        if let Some(at) = clock.first_output() {
+            clock.set_upstream_done(at);
+        }
+    }
+
+    /// The running attempt's clock; a detached one when no attempt is running.
+    fn clock(&self) -> Arc<AttemptClock> {
+        self.clock.clone().unwrap_or_else(|| Arc::new(AttemptClock::new(self.req.arrived, DEFAULT_CONNECT_TIMEOUT)))
     }
 
     fn start_attempt(
@@ -1678,6 +1775,10 @@ impl Run {
             },
             timing: None,
         };
+        let clock = Arc::new(AttemptClock::new(self.req.arrived, DEFAULT_CONNECT_TIMEOUT));
+        clock.add_retry_wait(std::mem::take(&mut self.pending_retry));
+        clock.add_refresh(std::mem::take(&mut self.pending_refresh));
+        self.clock = Some(clock);
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
         if let (Some(routed), Some(account)) = (&self.routed, c.account) {
             let at = CandidateKey::new(&c.provider.id, &account.name, &c.upstream_id);
@@ -1709,11 +1810,13 @@ impl Run {
                 SystemTime::now(),
             );
         }
+        let timing = self.clock.as_ref().map(|c| c.to_timing());
         self.engine.records.update(self.id(), |r| {
             if let Some(a) = r.attempts.last_mut() {
                 a.ended = Some(at);
                 a.outcome = Some(outcome);
                 a.usage = usage;
+                a.timing = timing;
             }
         });
     }

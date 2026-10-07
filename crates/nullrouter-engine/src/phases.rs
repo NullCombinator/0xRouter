@@ -365,6 +365,54 @@ fn compute(a: &Attempt, t: &AttemptTiming, ctx: Ctx) -> AttemptPhases {
     out
 }
 
+/// Adds `phases` to each attempt of a record in its JSON form, and `slowest` to the record
+/// (contracts/record.md, operator-socket.md). The journal and the live ring both hand records
+/// over as JSON, so views decorate the JSON instead of keeping a typed copy. `now` is ms from
+/// arrival for a request still running; `None` uses the latest time the record knows.
+pub fn decorate(record: &mut serde_json::Value, now: Option<f64>) {
+    use serde_json::{Value, json};
+    let Some(items) = record.get("attempts").and_then(Value::as_array) else { return };
+    let mut rec = RequestRecord::new(String::new(), String::new(), String::new());
+    rec.ttft_ms = record["ttft_ms"].as_f64();
+    rec.total_ms = record["total_ms"].as_f64();
+    let mut recorded = false;
+    for a in items {
+        let timing = a.get("timing").filter(|t| !t.is_null()).and_then(|t| serde_json::from_value(t.clone()).ok());
+        recorded |= timing.is_some();
+        rec.attempts.push(Attempt {
+            n: a["n"].as_u64().unwrap_or(0) as u32,
+            provider: String::new(),
+            account: None,
+            model: String::new(),
+            kind: serde_json::from_value(a["kind"].clone()).unwrap_or(AttemptKind::Initial),
+            started: a["started"].as_f64().unwrap_or(0.0),
+            ended: a["ended"].as_f64(),
+            outcome: None,
+            usage: None,
+            dropped: Vec::new(),
+            forced: Vec::new(),
+            placement: None,
+            timing,
+        });
+    }
+    let running = record["outcome"] == "in_progress";
+    let phases = match (running, now) {
+        (true, Some(now)) => of_at(&rec, now),
+        _ => of(&rec),
+    };
+    let best = slowest(&phases);
+    let in_progress = best.is_some_and(|(p, ms)| {
+        phases.iter().any(|a| a.slowest == Some((p, ms)) && matches!(a.value(p), PhaseValue::InProgress(_)))
+    });
+    for (a, p) in record["attempts"].as_array_mut().into_iter().flatten().zip(&phases) {
+        a["phases"] = if recorded || a["kind"] == "skipped" { json!(p) } else { json!("not_recorded") };
+    }
+    record["slowest"] = match best {
+        Some((p, ms)) => json!({"phase": p.name(), "ms": ms, "side": side(p), "in_progress": in_progress}),
+        None => Value::Null,
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::PhaseValue::{Ms, NotApplicable, NotRecorded};

@@ -7,6 +7,7 @@ use std::time::SystemTime;
 use nullrouter_engine::clock;
 use nullrouter_engine::journal::records;
 use nullrouter_engine::keys::{self, Keys};
+use nullrouter_engine::phases;
 use nullrouter_registry::OperatorHome;
 use serde_json::{Map, Value, json};
 
@@ -61,6 +62,7 @@ pub fn build(home: &OperatorHome, args: &Value, live: &Live) -> Result<View, Vie
     }
     let mut found = records::read(home.path(), &filter);
     settle_open(&mut found, live.running);
+    found.iter_mut().for_each(|r| phases::decorate(r, None));
     Ok(View::new(Value::Array(found)))
 }
 
@@ -75,6 +77,7 @@ pub fn record(home: &OperatorHome, args: &Value, live: &Live) -> Result<View, Vi
     let fresh = live.answer("records.get").filter(|a| a["ok"] == true).map(|a| a["record"].clone());
     let mut found = fresh.or_else(|| records::get(home.path(), id)).into_iter().collect::<Vec<_>>();
     settle_open(&mut found, live.running);
+    found.iter_mut().for_each(|r| phases::decorate(r, None));
     let Some(record) = found.pop() else { return Err(ViewError::failed(format!("no record {id}"))) };
     Ok(View { json: record, extra: json!({ "key_names": names }) })
 }
