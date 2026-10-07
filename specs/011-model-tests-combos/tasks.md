@@ -193,7 +193,7 @@ one push with the user's OK, and read CI results with the github MCP (read-only)
 
 ## Phase 9: Polish & Cross-Cutting
 
-- [ ] T051 [P] Extend the secrets sentinel in `crates/nullrouter-server/tests/secrets.rs`: no secret, test prompt or generated output in test records, `test.run`/`verdicts.list` answers or `routing/verdicts.jsonl` (SC-008)
+- [X] T051 [P] Extend the secrets sentinel in `crates/nullrouter-server/tests/secrets.rs`: no secret, test prompt or generated output in test records, `test.run`/`verdicts.list` answers or `routing/verdicts.jsonl` (SC-008)
 - [ ] T052 [P] Docs: `docs/operator-config.md` gains "Model tests", "Verdicts", "Combos" and the `[tests]` reference, and `routing/verdicts.jsonl` in the file list and modes; `docs/plugins.md` gains `[[rejections]]`; `check` warns `verdicts not being kept` when the journal can't write (`crates/nullrouter-server/src/views/check.rs`)
 - [ ] T053 [P] Opt-in live check in `crates/nullrouter-engine/tests/live.rs` (`NR_LIVE=1`, `.nr-live/` home): one real model of each type the operator holds an account for; every result PASS or a recognisable UNKNOWN (SC-010). Bills real calls; the user runs it
 - [ ] T054 Bench baseline: the user runs `cargo bench -p nullrouter-engine --bench engine` and `-p nullrouter-registry --bench resolve` locally before and after; record in `specs/011-model-tests-combos/bench-baseline.md` (SC-009, target within 5 %). CI doesn't compare benches, so the branch is not merged until this file holds both runs (constitution, Performance gate)
