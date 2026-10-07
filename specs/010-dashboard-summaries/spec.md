@@ -19,6 +19,30 @@ slice adds no latency summaries" and the harness-tag line of 009's Assumptions. 
 
 **Input**: User description: "Dashboard summaries and landscape: fills the slots the dashboard left for them, with real numbers, and the CLI shows the same numbers. Two new read-only CLI views, each with --json: latency over the last 24 hours per agent and per provider (router overhead, median and 95th-percentile time to first token, request counts, and whether the last response resolved or failed), and request and token totals for a chosen period (Today, 24h, 7D, 30D, 60D, All). The Usage page fills its period filter, its five stat cards (requests, input, cached, output, Est. Cost) and its circular topology graph. Est. Cost uses the prices plugins already declare and the operator's account overrides, priced at the time of each request; requests with no price are left out of the total and counted on the card; it is always labelled \"Estimated, not actual billing\". The Endpoint page fills the traffic landscape: agents on the left, the router in the centre, providers on the right, one pipe per agent and per provider, a gauge on each hop, a colour per agent, with gauge numbers and request counts for the last 24 hours, labelled so. Each agent key card fills its \"Requests today\" from the totals for Today. The provider window fills its \"Last response\" from the latency view: resolved or failed, and when. An agent key gains a free-text harness tag: `nullrouter keys issue <name> --harness <text>`, shown in `keys list` and on the agent cards; it is display only, existing keys show none, and the core keeps no list of client names. The dashboard stays look only and without scripts; every number a page shows equals the CLI's for the same moment; a page never shows a secret or a prompt; a fault in the dashboard never slows or breaks client requests. The slice fails if: a page disagrees with the CLI for the same moment; the look visibly departs from the style guide taken from 9router. Out of scope: latency trends over time → the latency slice; extra Usage charts and breakdown tables → later; per-model prices → later; changing anything from the dashboard → later; live auto-refresh → later; client-side adapters → slice 004. Scope brief: specs/briefs/2026-10-05-dashboard.md"
 
+## Clarifications
+
+### Session 2026-10-06
+
+- Q: On the landscape's "router → provider" gauge, should the time to first token cover only that
+  provider's own wait, or the client's whole wait for that request? → A: Only the provider's own
+  wait: from the start of the attempt that served the request to its first token. Router overhead
+  and earlier failed attempts are left out (FR-010, FR-018).
+- Q: Should the latency view also give figures per unified model, or stay per agent and per
+  provider as the brief confirmed? → A: Per agent and per provider only. Per-unified-model figures
+  go to the latency slice; constitution Principle VIII's measuring is met by the records and its
+  surfacing by spec 009's Requests table (Out of Scope).
+- Q: What should the two new CLI commands be called? → A: `nullrouter usage [--period
+  today|24h|7d|30d|60d|all]` for the totals view and `nullrouter latency` for the latency view
+  (FR-001, FR-008).
+- Q: On Usage's topology graph, should the providers and their counts follow the period filter or
+  stay fixed to the last 24 hours, and should it show "connections routed now"? → A: They follow
+  the period filter (from `nullrouter usage`); each provider's last response comes from
+  `nullrouter latency`, labelled "last 24 h"; no in-flight count (FR-016).
+- Q: Should the operator be able to set or change the harness tag on a key that already exists, or
+  only when issuing a new key? → A: Both: at issue with `--harness`, and later with
+  `nullrouter keys tag <name> <text>` (set or change) and `keys tag <name> --clear` (remove); the
+  key itself is unchanged (FR-023a).
+
 ## User Scenarios & Testing *(mandatory)*
 
 This slice has one user: the **operator**, who reads 0router's state from the CLI and, since spec
@@ -28,17 +52,23 @@ changes nothing about how its requests are handled.
 Terms used throughout (spec 009's terms, such as *twin*, *for the same moment*, *slot* and *as of*,
 keep their meaning):
 
-- The **latency view** is the new CLI read of the last 24 hours of request records, per agent and
+- The **latency view** (`nullrouter latency`) is the new CLI read of the last 24 hours of request
+  records, per agent and
   per provider. Its twins on the dashboard are the traffic landscape and each provider's "last
   response".
-- The **totals view** is the new CLI read of request and token totals for one period. Its twins on
+- The **totals view** (`nullrouter usage`) is the new CLI read of request and token totals for one
+  period. Its twins on
   the dashboard are Usage's stat cards and topology graph and each key card's "requests today".
 - A **period** is one of Today, 24h, 7D, 30D, 60D and All. Today starts at midnight in this
   machine's time zone; 24h, 7D, 30D and 60D are the 24 hours, 7, 30 and 60 days that end at the
   read's time; All is every record the journal holds.
 - **Router overhead** is the time from a request's arrival to the start of its first upstream
   attempt: the time 0router itself took before calling a provider.
-- **Time to first token** is the record's time to first token, as `records list` shows it.
+- **Time to first token** is the record's time to first token, as `records list` shows it: the
+  client's whole wait, from arrival to the first token.
+- A provider's **own time to first token** is the part of that wait spent on the provider that
+  served the request: from the start of its serving attempt to the first token. It leaves out
+  router overhead and any earlier failed attempt.
 - A **hop** is one pipe of the landscape: an agent into the router, or the router out to a
   provider.
 - A **last response** is the result of the newest finished attempt: *resolved* if the provider
@@ -93,9 +123,9 @@ each total equals the sum worked out by hand from the records.
 ### User Story 2 — See latency over the last 24 hours, per agent and per provider (Priority: P1)
 
 The operator asks the CLI for the latency view and gets, for each agent key and each provider,
-the number of requests in the last 24 hours, the router overhead (median and 95th percentile), the
-time to first token (median and 95th percentile), and the last response: resolved or failed, and
-when.
+the number of requests in the last 24 hours, the latency figures (median and 95th percentile), and
+the last response: resolved or failed, and when. An agent's figures are its router overhead and
+its time to first token; a provider's figure is its own time to first token.
 
 **Why this priority**: It is the data under the landscape, the provider window's "last response"
 and the topology graph. Without it, three of the slots stay empty. It also answers "is 0router
@@ -115,11 +145,13 @@ hand from the records of the last 24 hours.
    row shows its request count and the median and 95th percentile of its router overhead and of
    its time to first token.
 3. **Given** a provider that served requests in the window, **When** the view is read, **Then** its
-   row shows its request count, the median and 95th percentile of the time to first token of the
-   requests it served, and how many requests each agent sent it.
+   row shows its request count, the median and 95th percentile of its own time to first token on
+   the requests it served, and how many requests each agent sent it.
 4. **Given** a request whose first attempt on provider A failed and whose fallback on provider B
    succeeded, **When** the view is read, **Then** A's last response is failed and B's is resolved,
-   each with its time, if those are the newest finished attempts on each.
+   each with its time, if those are the newest finished attempts on each; and B's own time to
+   first token for that request is measured from the start of B's attempt, so the time lost on A
+   and the router overhead are not in B's figures.
 5. **Given** a request that has no time to first token (it failed, or is still in flight), **When**
    the view is read, **Then** it counts as a request but is left out of the time-to-first-token
    figures.
@@ -135,7 +167,8 @@ hand from the records of the last 24 hours.
 The operator opens Endpoint & Key and sees the traffic landscape where spec 009 drew its slot:
 agents on the left, each in its own colour, the router in the centre, providers on the right. One
 pipe joins each agent to the router and one joins the router to each provider. A gauge on each
-hop shows its latency: router overhead on agent pipes, time to first token on provider pipes. Each
+hop shows its own latency: router overhead on agent pipes, the provider's own time to first token
+on provider pipes. Each
 pipe shows its request count. Every number is for the last 24 hours, and the landscape says so.
 
 **Why this priority**: It is the picture that tells the operator at a glance who is sending
@@ -152,8 +185,8 @@ across reloads and pages, and that the landscape works with scripts turned off i
    count and gauge, labelled "last 24 h".
 2. **Given** an agent pipe, **When** the operator reads its gauge, **Then** it shows the agent's
    router overhead median and 95th percentile as the latency view shows them.
-3. **Given** a provider pipe, **When** the operator reads its gauge, **Then** it shows the provider's
-   time-to-first-token median and 95th percentile, and the request count from each agent, as the
+3. **Given** a provider pipe, **When** the operator reads its gauge, **Then** it shows the median and 95th
+   percentile of the provider's own time to first token, and the request count from each agent, as the
    latency view shows them, each agent in its colour.
 4. **Given** an agent, **When** any page shows it, **Then** it has the same colour, on every load.
 5. **Given** no traffic in the last 24 hours, **When** the page loads, **Then** the landscape shows
@@ -197,17 +230,20 @@ for the same moment.
 
 ### User Story 5 — Tag a key with its harness (Priority: P3)
 
-The operator issues a key with `nullrouter keys issue <name> --harness <text>`. `keys list` shows
-the tag, in text and with `--json`, and the key's card on Endpoint & Key shows it as a badge. Keys
-issued without a tag, and every key issued before this slice, show none.
+The operator issues a key with `nullrouter keys issue <name> --harness <text>`, or tags an existing
+key with `nullrouter keys tag <name> <text>`. `keys list` shows the tag, in text and with `--json`,
+and the key's card on Endpoint & Key shows it as a badge. Keys issued without a tag, and every key
+issued before this slice, show none until the operator tags them. Changing or clearing a tag never
+changes the key.
 
 **Why this priority**: It makes the key cards and the landscape easier to read, but no number
 depends on it.
 
 **Independent Test**: Issue one key with `--harness claude-code`, one with `--harness "my own
-tool"`, and one without. Check `keys list`, `keys list --json` and the cards. Send requests with
-each key and check that their records, placements and responses are the same as for an untagged
-key.
+tool"`, and one without; then tag the untagged one with `keys tag`, change one tag and clear
+another. Check `keys list`, `keys list --json` and the cards after each step, and that each key's
+secret still works unchanged. Send requests with each key and check that their records,
+placements and responses are the same as for an untagged key.
 
 **Acceptance Scenarios**:
 
@@ -220,7 +256,15 @@ key.
 4. **Given** a tagged key, **When** its requests are served, **Then** the tag changes nothing about
    how they are handled.
 5. **Given** a tag with control characters or longer than the limit, **When** the key is issued,
-   **Then** the command refuses it, says why, and issues no key.
+   **Then** the command refuses it, says why, and issues no key; **When** it is given to
+   `keys tag`, **Then** the command refuses it, says why, and the key's tag is unchanged.
+6. **Given** a key issued before this slice, **When** the operator runs `keys tag <name> hermes`,
+   **Then** `keys list` and its card show "hermes", and the agent using that key keeps working
+   with the same secret.
+7. **Given** a tagged key, **When** the operator runs `keys tag <name> --clear`, **Then** it shows
+   no tag again.
+8. **Given** a revoked key, **When** the operator tags it, **Then** the tag is set as for any key;
+   the key stays revoked.
 
 ---
 
@@ -255,8 +299,9 @@ key.
 
 **Totals view**
 
-- **FR-001**: The CLI MUST offer a read-only totals view for one period (Today, 24h, 7D, 30D, 60D or
-  All; Today when none is given), in text and with `--json`.
+- **FR-001**: The CLI MUST offer a read-only totals view, `nullrouter usage [--period
+  today|24h|7d|30d|60d|all]`, for one period (Today when none is given), in text and with
+  `--json`.
 - **FR-002**: The totals view MUST show, for the records that arrived in the period: the number of
   requests; input, cached and output tokens; Est. Cost; how many requests Est. Cost left out
   because no price applies; and how many requests had no usage reported.
@@ -276,14 +321,16 @@ key.
 
 **Latency view**
 
-- **FR-008**: The CLI MUST offer a read-only latency view of the 24 hours that end at the read's
-  time, in text and with `--json`, labelled "last 24 h". The window is fixed; it takes no period.
+- **FR-008**: The CLI MUST offer a read-only latency view, `nullrouter latency`, of the 24 hours
+  that end at the read's time, in text and with `--json`, labelled "last 24 h". The window is fixed; it takes no period.
 - **FR-009**: For each agent key with requests in the window, the latency view MUST show its request
   count, the median and 95th percentile of its router overhead and of its time to first token, and
   its last response.
 - **FR-010**: For each provider with attempts in the window, the latency view MUST show its request
-  count, the median and 95th percentile of the time to first token of the requests it served, the
-  request count from each agent, and its last response (resolved or failed, and when).
+  count, the median and 95th percentile of its own time to first token on the requests it served
+  (from the start of the serving attempt to the first token; router overhead and earlier failed
+  attempts left out), the request count from each agent, and its last response (resolved or
+  failed, and when).
 - **FR-011**: A request with no time to first token MUST count as a request and be left out of the
   time-to-first-token figures. A row with no value to summarize MUST say so rather than show zero.
 - **FR-012**: A request refused before a key matched MUST NOT appear in any agent or provider row.
@@ -301,7 +348,8 @@ key.
 - **FR-016**: Usage MUST fill its circular topology graph: the router in the middle and, around it,
   each provider that took requests in the chosen period, with its request count from the totals
   view and its last response from the latency view, labelled "last 24 h". The graph shows no agent
-  nodes and no number that neither view shows.
+  nodes, no count of requests in flight now (the mockup's "connections routed now"), and no number
+  that neither view shows.
 
 **Endpoint & Key page**
 
@@ -310,8 +358,8 @@ key.
   it; a gauge on each hop; each pipe's request count; all from the latency view and labelled
   "last 24 h".
 - **FR-018**: An agent's gauge MUST show its router overhead median and 95th percentile; a provider's
-  gauge MUST show its time-to-first-token median and 95th percentile and, per agent, the requests
-  that agent sent it.
+  gauge MUST show the median and 95th percentile of its own time to first token (FR-010) and, per
+  agent, the requests that agent sent it.
 - **FR-019**: Each agent MUST have one colour, taken from the style guide, the same on every page
   and every load. A provider pipe shows the colours of the agents that used it.
 - **FR-020**: The landscape MUST show every active key and every provider with an account, even
@@ -330,9 +378,13 @@ key.
 - **FR-023**: `nullrouter keys issue <name>` MUST accept `--harness <text>` and store the text with
   the key. The text is free; it MUST be refused, with no key issued, only if it is empty, holds
   control characters, or exceeds a length limit the command states.
+- **FR-023a**: `nullrouter keys tag <name> <text>` MUST set or replace the harness tag of an existing
+  key, and `nullrouter keys tag <name> --clear` MUST remove it, by the same text rules as FR-023.
+  Neither changes the key's secret, id, state or anything else about it; a refused tag leaves the
+  old one in place. It works on revoked keys too.
 - **FR-024**: `keys list` MUST show each key's harness tag, in text and with `--json`, and each key
-  card MUST show it as a badge. Keys without one, including every key issued before this slice,
-  show none.
+  card MUST show it as a badge. Keys without one, including every key issued before this slice
+  until it is tagged, show none.
 - **FR-025**: The harness tag MUST be display only: it changes nothing about how a request is
   checked, routed, changed, recorded or answered. The core MUST NOT keep a list of client or
   harness names.
@@ -367,14 +419,16 @@ key.
   (Today starts at local midnight; All starts at the oldest record).
 - **Period totals**: For one period: requests, input, cached and output tokens, Est. Cost, unpriced
   and not-reported counts, and requests per agent key and per provider.
-- **Latency summary**: For the last 24 hours: per agent and per provider, request count, router
-  overhead and time-to-first-token median and 95th percentile, last response; and per provider,
-  the requests from each agent.
+- **Latency summary**: For the last 24 hours: per agent, request count, router overhead and time
+  to first token (median and 95th percentile), last response; per provider, request count, its own
+  time to first token (median and 95th percentile), last response, and the requests from each
+  agent.
 - **Last response**: Resolved or failed, the time, and the provider; from the newest finished
   attempt.
 - **Price in effect**: The price used for a request's tokens: the account override, or the plugin
   schedule entry for the request's arrival time.
-- **Harness tag**: Free text stored with an agent key at issue; shown, never acted on.
+- **Harness tag**: Free text stored with an agent key, set at issue or with `keys tag`, changed or
+  cleared without touching the key; shown, never acted on.
 - **Agent colour**: A colour from the style guide fixed for each agent key.
 
 ## Success Criteria *(mandatory)*
@@ -407,18 +461,11 @@ key.
 ## Assumptions
 
 Items marked *(technical decision)* are Claude's. They may be revised in planning without asking
-the user, as long as nothing the user sees changes. Items marked *(to confirm)* are visible to the
-user and are open for `/speckit-clarify`.
+the user, as long as nothing the user sees changes. The user-visible choices this list first left
+open were settled in clarify (see Clarifications).
 
-- The two views are new commands: `nullrouter usage [--period today|24h|7d|30d|60d|all]` for totals
-  and `nullrouter latency` for the last 24 hours. Neither name is taken today; the later latency
-  slice extends `latency` with trends. *(to confirm)*
-- The harness tag is set only when a key is issued. Changing it means issuing a new key; there is
-  no command to edit it in this slice. *(to confirm)*
-- The topology graph follows Usage's period filter for its provider list and counts, and shows each
-  provider's last response from the latency view, labelled "last 24 h". The mockup's "connections
-  routed now" count is not shown: no CLI read shows in-flight connections as a number, and live
-  state is out of scope. *(to confirm)*
+- Neither `usage` nor `latency` is a command today; the later latency slice extends `latency` with
+  trends (names clarified 2026-10-06).
 - Today, 24h, 7D, 30D, 60D and All mean what 9router's usage periods mean (`usageRepo.js`): Today
   from local midnight, the others rolling back from now, All without a start.
 - Cached tokens are tokens read from cache, as 9router counts them (`cache_read_input_tokens`).
@@ -429,9 +476,10 @@ user and are open for `/speckit-clarify`.
   uses for that plugin; the plan names it. *(technical decision)*
 - Router overhead is the first attempt's start, which a record holds in milliseconds after arrival
   (brief P note; confirmed in plan). *(technical decision)*
-- A provider's time to first token is the record's, for requests that provider served; it includes
-  router overhead and any earlier failed attempt, as `records list` shows it. Per-attempt
-  first-token times are not recorded today and are not added. *(technical decision)*
+- A provider's own time to first token (clarified 2026-10-06) is derived from what a record
+  already holds: the record's time to first token minus the start of the attempt that served the
+  request. Nothing new is recorded. Its exact derivation for requests whose stream was continued
+  or restarted after a break is a plan decision. *(technical decision)*
 - A provider's request count is the number of requests with at least one attempt on it in the
   window. An attempt the client cancelled is neither resolved nor failed and does not set the last
   response. An agent's last response is its newest finished request: resolved if it was served,
@@ -451,6 +499,9 @@ user and are open for `/speckit-clarify`.
 ## Out of Scope
 
 - Latency trends over time (change charts): the latency slice.
+- Latency figures per unified model, and total request time summarized over a window: the latency
+  slice. Constitution Principle VIII is met here by the records, which measure both per request,
+  and by spec 009's Requests table, which shows them (clarified 2026-10-06).
 - Extra Usage charts and breakdown tables, including 9router's "Details" tab: later.
 - Per-model prices: later. Prices stay per provider and per account.
 - Changing anything from the dashboard, including issuing keys or editing tags: later.
