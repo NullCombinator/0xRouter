@@ -203,3 +203,24 @@ fn settings_show_and_set_each_value_and_refuse_a_broken_rule() {
     assert_eq!(ok(h, &["verdicts", "settings", "concurrency", "2"]), "concurrency = 2: applied\n");
     assert!(rows(h).contains(&"concurrency 2 4".to_owned()));
 }
+
+#[test]
+fn unified_shows_each_members_verdicts_per_account() {
+    let dir = home();
+    let h = dir.path();
+    let config = "[[unified_model]]\nname = \"opus\"\n\
+                  members = [{ provider = \"anthropic\", model = \"claude-opus-4-20250514\" }, \
+                  { provider = \"anthropic\", model = \"claude-sonnet-4-20250514\" }]\n";
+    std::fs::write(h.join("config.toml"), config).unwrap();
+    let plain = ok(h, &["unified", "opus"]);
+    assert!(!plain.contains("verdicts"), "no column while every member is untested: {plain}");
+
+    let entry = json(h, &["unified", "opus"]);
+    let upstream = |i: usize| entry["members"][i]["upstream_id"].as_str().unwrap().to_owned();
+    ok(h, &["verdicts", "mark", "anthropic", "max", &upstream(0)]);
+    let shown = ok(h, &["unified", "opus"]);
+    let lines: Vec<&str> = shown.lines().collect();
+    assert!(lines[1].ends_with(&format!("→ upstream {}  verdicts: max BROKEN", upstream(0))), "{shown}");
+    assert!(lines[2].ends_with(&format!("→ upstream {}  verdicts: untested", upstream(1))), "{shown}");
+    assert_eq!(json(h, &["unified", "opus"]), entry, "the JSON is resolve's, unchanged");
+}
