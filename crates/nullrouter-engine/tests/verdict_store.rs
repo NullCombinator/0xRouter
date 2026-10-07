@@ -267,7 +267,8 @@ async fn a_removed_account_or_provider_drops_its_pairs() {
 async fn a_new_sign_in_resets_the_account_and_a_refresh_does_not() {
     let plugins = |m: &MockUpstream| {
         let signin = format!(
-            "[signin]\nflow = \"device_code\"\nclient_id = \"c\"\ndevice_url = \"{}\"\ntoken_url = \"{}\"\n",
+            "[signin]\nflow = \"device_code\"\nclient_id = \"c\"\nrefresh_lead = \"5m\"\n\
+             device_url = \"{}\"\ntoken_url = \"{}\"\n",
             m.url("/idp/device"),
             m.url("/idp/token")
         );

@@ -279,8 +279,10 @@ fn set_setting(home: &OperatorHome, args: &[String]) -> Result<ExitCode, ExitCod
     let (table, key, value, shown) = match args {
         [name, v] if name == "retest" => {
             let steps: Vec<&str> = v.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
-            for s in &steps {
-                parse_duration(s).map_err(|e| fail(format!("tests.retest: {s}: {e}")))?;
+            if v != "default" {
+                for s in &steps {
+                    parse_duration(s).map_err(|e| fail(format!("tests.retest: {s}: {e}")))?;
+                }
             }
             let quoted: Vec<String> = steps.iter().map(|s| format!("\"{s}\"")).collect();
             let toml = (v != "default").then(|| format!("[{}]", quoted.join(", ")));
@@ -354,7 +356,7 @@ mod tests {
         let text = render(&view, now);
         let lines: Vec<&str> = text.lines().collect();
         assert!(lines[0].starts_with("provider    account  model"), "{text}");
-        assert!(lines[1].ends_with("test      model not available: 403: not on your plan"), "{text}");
+        assert!(lines[1].ends_with("  test    model not available: 403: not on your plan"), "{text}");
         assert!(lines[2].ends_with("503: overloaded; next retest 09:43 (step 3)"), "{text}");
         assert!(lines[3].ends_with("timeout after 5 min; waiting: needs sign-in"), "{text}");
         assert!(lines[2].contains("UNKNOWN  2026-10-07 09:13  retest"), "{text}");

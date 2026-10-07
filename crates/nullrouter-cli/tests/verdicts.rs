@@ -210,7 +210,7 @@ fn unified_shows_each_members_verdicts_per_account() {
     let h = dir.path();
     let config = "[[unified_model]]\nname = \"opus\"\n\
                   members = [{ provider = \"anthropic\", model = \"claude-opus-4-20250514\" }, \
-                  { provider = \"anthropic\", model = \"claude-sonnet-4-20250514\" }]\n";
+                  { provider = \"openrouter\", model = \"openai/gpt-5\" }]\n";
     std::fs::write(h.join("config.toml"), config).unwrap();
     let plain = ok(h, &["unified", "opus"]);
     assert!(!plain.contains("verdicts"), "no column while every member is untested: {plain}");
