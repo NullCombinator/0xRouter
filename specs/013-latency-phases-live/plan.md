@@ -136,7 +136,7 @@ crates/nullrouter-registry/src/schema/
 
 crates/nullrouter-engine/src/
 ├── phases.rs            # NEW: AttemptPhases, phases::of, sides, slowest (R1, R14)
-├── clock.rs             # AttemptClock (atomic marks); task_local ATTEMPT (R2, R3)
+├── timing.rs            # NEW: AttemptClock (atomic marks); task_local ATTEMPT (R2, R3)
 ├── live.rs              # NEW: LiveEntry, live table, snapshot (R9)
 ├── connection/          # NEW
 │   ├── mod.rs           # Effective settings resolution and sources (R5)
