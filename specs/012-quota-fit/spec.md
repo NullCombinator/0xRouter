@@ -69,13 +69,17 @@ Terms used throughout:
   value, so the other numbers can be learned relative to it. A plugin whose weights are all off by
   the same factor therefore shows up as a capacity correction, with the same placements.
 - A correction is **significant** when the fit's evidence rejects the declared value under the
-  significance test of FR-010. Before that, the number is **learning**.
+  significance test of FR-010. Before that, the number is **learning**. A capacity the provider
+  reports exactly (a counted window's `limit`) goes through the same test, with one unit as its
+  rounding.
 - **Outside use** is unexplained use that doesn't track 0router's traffic: use while 0router sent
   nothing, or use beyond what any fitted meter could explain from 0router's traffic.
 - A **break** is a change in a provider's rules, seen as recent polls that disagree significantly
   and consistently with a fitted number.
 - An **exclusive-use account** is one the operator has declared used only through 0router. Only
-  such an account can raise a **leak alert**.
+  such an account can raise a **leak alert**. The operator sees it as a **usage alert**: its name
+  and text state what was used, never a cause (FR-025). The operator sees it as a **usage alert**: its name
+  and text state what was used, never a cause (FR-025).
 - **Rounding noise** is what a provider's reporting resolution can produce with no real use: a
   reading can move by at most one resolution step (one percentage point on a percent window, one
   unit on a counted window) from rounding alone.
@@ -184,7 +188,7 @@ and how far its fit has progressed.
 
 1. **Given** a number still learning, **When** the operator reads the routing view, **Then** it
    shows the declared value as in use, "learning", the number of poll intervals used and the
-   current width of the range (for example "312 intervals, input weight ±40%").
+   current width of the range (for example "312 intervals, output weight ±40%").
 2. **Given** a fitted number, **When** the operator reads the view, **Then** it shows the
    declared value, the fitted 95% range, the fitted value as in use and "fitted since <time>".
 3. **Given** a number the traffic can't separate from another, **When** the operator reads the
@@ -328,7 +332,29 @@ rounding noise, and only on the declared account.
   remains.
 - **A plugin removed**: its fits are dropped with it. Reinstalling it starts from nothing.
 - **An account removed or re-added**: its capacity fit and outside-use list go with it; the
-  pooled weights keep the evidence its polls already gave.
+  pooled weights keep the evidence its polls already gave. Its poll history is kept (slice 005),
+  but a re-added account's capacity fit starts from nothing and its old outside-use list is not
+  shown.
+- **Pruned history**: pruning poll history from inside a fit's evidence keeps what those
+  intervals proved, in summary form; no fitted number moves because of a prune.
+- **Outside use with a daily rhythm** (claude.ai during office hours, while 0router is also
+  busy): outside use is allowed its own rate per part of the day, learned from the intervals in
+  which 0router sent nothing. A part of the day in which 0router is never idle leaves that rate
+  and the meter numbers unseparable, so those numbers stay at the declared value (FR-005), and
+  the view names the part of the day as the reason. Outside use that rises and falls with
+  0router's own traffic within the same part of the day can't be told apart from a wrong number
+  by any poll; the split-off test (FR-003) keeps it out of the pooled weights. Its poll history is kept (slice 005),
+  but a re-added account's capacity fit starts from nothing and its old outside-use list is not
+  shown.
+- **Pruned history**: pruning poll history from inside a fit's evidence keeps what those
+  intervals proved, in summary form; no fitted number moves because of a prune.
+- **Outside use with a daily rhythm** (claude.ai during office hours, while 0router is also
+  busy): outside use is allowed its own rate per part of the day, learned from the intervals in
+  which 0router sent nothing. A part of the day in which 0router is never idle leaves that rate
+  and the meter numbers unseparable, so those numbers stay at the declared value (FR-005), and
+  the view names the part of the day as the reason. Outside use that rises and falls with
+  0router's own traffic within the same part of the day can't be told apart from a wrong number
+  by any poll; the split-off test (FR-003) keeps it out of the pooled weights.
 - **A capacity the plugin doesn't declare** ("assumed from peers" in slice 006): the fit learns
   it like any other capacity, starting from the assumed value as the declaration.
 - **Outside use large enough to empty a window**: the window is shown as exhausted from the poll,
@@ -368,8 +394,9 @@ rounding noise, and only on the declared account.
   0router's own traffic explains under the fitted meter. A mismatch that grows with 0router's
   traffic and points consistently one way MUST be treated as evidence about meter numbers.
 - **FR-008**: Use that doesn't track 0router's traffic MUST be classified as outside use and left
-  out of the fit: use in an interval where 0router sent nothing, and use beyond what any meter
-  within the fit's ranges could explain from 0router's traffic in that interval.
+  out of the fit: use in an interval where 0router sent nothing, use beyond what any meter
+  within the fit's ranges could explain from 0router's traffic in that interval, and a steady
+  rate per part of the day (Edge Cases: outside use with a daily rhythm).
 - **FR-009**: Use within rounding noise (at most one resolution step per window per interval)
   MUST NOT be classified as outside use.
 
@@ -502,8 +529,9 @@ rounding noise, and only on the declared account.
 - **SC-002**: Over a seeded suite of at least 100 simulated weeks with a right plugin, with and
   without outside use, 0 meter numbers become significant, and 100% of placements equal those
   0router makes without this slice.
-- **SC-003**: Across that suite, the 95% ranges contain the true value in at least 95% of checks
-  for every number that is reported.
+- **SC-003**: Across that suite, the 95% ranges contain the true value in at least 93% of at least
+  1,000 checks for every number that is reported (a calibrated 95% range lands below 95% about
+  half the time by chance; 93% is the sampling tolerance).
 - **SC-004**: With outside use injected, every final fitted value of the 3×-off mock lies within
   the 95% range of the same run without outside use, and at least 90% of injected outside-use
   intervals beyond rounding noise are listed.

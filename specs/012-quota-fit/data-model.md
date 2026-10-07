@@ -35,7 +35,8 @@ Text form (CLI, records, JSON): `capacity`, `weight.input`, `weight.output`, `we
     │
     └── meter changed at load ── Restarted(since)  (shown as Learning, with the reason)
 
- NotSeparable(partner)   VIF > 50 or |corr| > 0.98 (R7); re-evaluated each refit
+ NotSeparable(partner)   VIF > 50 or |corr| > 0.98 (R7); re-evaluated each refit; the partner
+                         may be a part-of-day outside rate
  Yardstick               weight.input on a percent window; constant
  NotReported             capacity of an absolute window with no reported limit
  NotFitted(reason)       account with no quota reports, or pay-as-you-go (FR-029)
@@ -69,7 +70,7 @@ Derived from history, never stored separately (R2).
 | `epoch` | `SystemTime`: rows before it don't count (R11) |
 | `meter_hash` | SHA-256 of the declared `MeterDecl` (canonical TOML); a mismatch at load restarts |
 | `pooled` | estimates, covariance, state per pooled number |
-| `accounts` | per account: `capacity` estimate and state, `rate` (b_a) estimate, `split: Option<Split>`, own pooled-number estimates when split |
+| `accounts` | per account: `epoch` (set when (re-)added), `capacity` estimate and state, `rates` (six part-of-day `b_{a,q}` estimates), `split: Option<Split>`, own pooled-number estimates when split |
 | `prior` | optional folded prior from pruned rows: mean and information matrix |
 | `breaks` | list of `Break` |
 | `in_effect` | `Arc<[MeterDecl]>` per account: the meter in effect, rebuilt on any state or override change (R15) |
@@ -95,7 +96,7 @@ are persisted (`quota/fit/<provider>.json`). Estimates are rebuilt from history 
 | `account`, `window` | | |
 | `kind` | `Idle \| Busy \| SteadyRate` | |
 | `start`, `end` | `SystemTime` | `end` absent for an ongoing steady rate |
-| `amount` | f64, report units | excess beyond the fit's upper range plus one step, for `Busy`; per hour for `SteadyRate` |
+| `amount` | f64, report units | excess beyond the fit's upper range plus one step, for `Busy`; per hour for `SteadyRate`, with its part of the day |
 | `found_at` | `SystemTime` | |
 
 ## Exclusive-use declaration (FR-023)

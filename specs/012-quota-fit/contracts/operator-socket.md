@@ -9,7 +9,6 @@ object per line, `{"ok":true,…}` or `{"ok":false,"error":…}`).
 | `{"op":"quota.outside","provider"?,"account"?,"since"?,"limit"?}` | `{"ok":true,"entries":[OutsideEntry]}` |
 | `{"op":"quota.alerts"}` | `{"ok":true,"alerts":[Alert]}` (unacknowledged only) |
 | `{"op":"quota.ack","id"?,"provider"?,"account"?}` | `{"ok":true,"acknowledged":N}`; no `id` means all (optionally narrowed) |
-| `{"op":"quota.refit","provider","account"?}` | `{"ok":true}`: rejoins a split account, or restarts the account's epochs |
 | `{"op":"reload"}` | as today; also rebuilds the meters in effect from the new overrides and exclusive-use declarations |
 
 ## `WindowMeterView`
@@ -40,7 +39,9 @@ object per line, `{"ok":true,…}` or `{"ok":false,"error":…}`).
 ```
 
 - `state`: `learning`, `fitted`, `relearning`, `restarted`, `not_separable`, `yardstick`,
-  `not_reported`.
+  `not_reported`. Split-off is a state of the account (the window's `split`), not of a number:
+  FR-028's "split off" is shown there, and every pooled number of a split account reads its own
+  fit.
 - `since`: for `fitted`, `relearning` and `restarted`.
 - `partner`: for `not_separable`.
 - `reason`: for `relearning` and `restarted`.
@@ -49,7 +50,9 @@ object per line, `{"ok":true,…}` or `{"ok":false,"error":…}`).
 
 ## `outside_use` (per account, summary)
 
-`{"intervals_7d": 3, "last": OutsideEntry|null, "steady": {"rate_per_hour": 0.2, "since": T}|null}`
+`{"intervals_7d": 3, "last": OutsideEntry|null, "steady": [{"part": "08-12", "rate_per_hour": 0.2, "since": T}], "alerts": [Alert]}`
+
+`alerts` holds the account's unacknowledged alerts with their text (FR-027).
 
 ## `fit_note`
 

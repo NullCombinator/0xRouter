@@ -19,7 +19,7 @@ Expected table rows (one per check, each `ok`):
 | right plugin: significant numbers | 0 |
 | outside use injected: fitted values | inside the no-outside-use run's 95% ranges; ≥ 90% of injected intervals listed (SC-004) |
 | capacity halved day 4 | break reported ≤ 1 simulated day; 0 placements after it use the old capacity (SC-006) |
-| alerts | 0 on the non-exclusive account; 0 from 1-step noise; every idle drop ≥ 2 steps alerted at the first poll; busy bursts alerted only when they pass the test (SC-007) |
+| alerts | 0 on the non-exclusive account; 0 from sub-step and 1-step noise; every idle drop of ≥ 2.0 true steps alerted at the first poll; busy bursts alerted only when they pass the test (SC-007) |
 | restart and crash | fits, states, breaks, outside use, declarations, alerts identical (SC-008) |
 | meter change at load | that window's numbers restarted; no other number changed (SC-008) |
 
@@ -29,8 +29,10 @@ Expected table rows (one per check, each `ok`):
 nice cargo test -p nullrouter-engine --release --test sim_suite -j 2 -- --ignored --nocapture
 ```
 
-Expected: `significant numbers: 0 / 100 weeks` with and without outside use; `placements equal
-to baseline: 100%`; `range coverage ≥ 95%` for every reported number. A failing seed is
+Expected: `significant numbers: 0 / 100 weeks` with and without outside use, including
+office-hours outside use; `placements equal to baseline: 100%`; `range coverage ≥ 93%` over at
+least 1,000 checks for every reported number; and the measured null rejection rate printed beside
+the 0.1% bound. A failing seed is
 investigated, never replaced (research R5).
 
 ## 3. Contracts and invariants (unit and integration tests)

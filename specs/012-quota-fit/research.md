@@ -57,9 +57,9 @@ drift from it.
 **Decision**: For one window of one plugin, the expected use change of a row is
 
 ```
-percent window:   E[y] = k_a · Σ_g μ_g · (I_g + ρ_o·O_g + ρ_r·R_g + ρ_w·W_g) + b_a·t
-counted/balance:  E[y] =       Σ_g μ_g · (w_i·I_g + w_o·O_g + w_r·R_g + w_w·W_g) + b_a·t
-request-counted:  E[y] = N + b_a·t                       (N = requests in the interval)
+percent window:   E[y] = k_a · Σ_g μ_g · (I_g + ρ_o·O_g + ρ_r·R_g + ρ_w·W_g) + b_{a,q}·t
+counted/balance:  E[y] =       Σ_g μ_g · (w_i·I_g + w_o·O_g + w_r·R_g + w_w·W_g) + b_{a,q}·t
+request-counted:  E[y] = N + b_{a,q}·t                   (N = requests in the interval)
 ```
 
 - `k_a = 100 · w_i / C_a`: the account's percent per input-weighted token. The **yardstick**
@@ -68,15 +68,21 @@ request-counted:  E[y] = N + b_a·t                       (N = requests in the i
 - `ρ_c = w_c / w_i`: the other weights relative to input. They are reported as weights:
   `w_c = ρ_c · w_i`.
 - `μ_g`: the multiplier of glob `g`. Models no glob matches have factor 1, fixed.
-- `b_a ≥ 0`: the account's steady unexplained rate, in report units per hour (Story 2 scenario 2).
+- `b_{a,q} ≥ 0`: the account's steady unexplained rate in **part of the day** `q`, in report
+  units per hour (Story 2 scenario 2). There are six parts of 4 hours (00–04 … 20–24, operator
+  local time from the system clock). A row spanning two parts splits `t` between them. Idle rows
+  pin each part's rate. This is the answer to outside use with a daily rhythm (spec Edge Cases,
+  analysis C1). A flat rate is the case of six equal parts. The view reports the parts' rates
+  and the largest of them as "steady".
 
-A request-counted window reported in percent uses `E[y] = k_a · N + b_a · t`, which is the same
+A request-counted window reported in percent uses `E[y] = k_a · N + b_{a,q} · t`, which is the same
 capacity fit with no weights.
 
 **Capacity of a window reported in absolute units.** When the poll reports a `limit`, the limit
 *is* the capacity, known to one unit. Its "fit" is the reported value, with a range of ±1 unit.
-It becomes significant when two consecutive good polls report the same limit and that limit
-differs from the declared or overridden capacity by more than one unit. A window that reports
+It goes through the R5 test like any other number: each reported limit is one reading, with
+rounding variance `1/12` unit², so two or three agreeing polls that differ from the declared
+value by more than a unit are enough to reject it. A window that reports
 `used` but no `limit` gives no information about capacity, and the view shows "capacity: not
 reported by the provider". Balance windows have no capacity number (Edge Cases).
 
@@ -138,8 +144,9 @@ significant  ⇔  |Z| ≥ sqrt( (V + ρ) · ( ln((V + ρ)/ρ) + 2 · ln(m / α) 
 - `m`: the number of numbers tested at once in the window's fit. The Bonferroni split gives
   each number `α/m`, so the window as a whole stays under 0.1%.
 - `ρ`: the mixture's tuning, set so the boundary is tightest at the information a factor-2
-  error reaches in about a day of typical traffic. It is a constant in code, chosen once against
-  the simulated week (R14), and recorded with its derivation.
+  error reaches in about a day of typical traffic. It is a constant in code, derived in closed
+  form from the information per row of the sim world's traffic mix (no sim run is used to tune
+  it, so the week that grades SC-001 doesn't also choose it), and recorded with its derivation.
 
 The boundary holds at every poll for the number's whole life, so re-checking at every poll
 costs nothing (the reason for the clarification). The same test (same `α`, own `m`) decides
@@ -153,7 +160,8 @@ reading noise is bounded (uniform), so its sub-Gaussian assumption holds conserv
 The bound allows up to about 0.4 false significances across the suite in the worst case. Mixture
 boundaries are conservative in practice, but this is a bound, not a guarantee. If a seed trips,
 that is a finding to investigate (is the noise model wrong?). It is never a reason to change the
-seed (anti-cheat).
+seed (anti-cheat). To tell the two apart, the suite also reports the **measured** null rejection
+rate of the test on synthetic rows with the sim's noise (T007), beside the bound.
 
 **Alternatives considered**: (a) Plain sequential probability ratio tests per number. They need a
 fixed alternative, and the error size is unknown. (b) Alpha-spending over a fixed horizon. Fits
@@ -194,7 +202,8 @@ once and never revisiting. Early outside use would stay in the fit forever.
 
 **Decision**: After each refit, for each number, compute its variance inflation factor (VIF)
 from the information matrix, and its most collinear partner (the largest absolute correlation in
-the inverse). A number is **not separable** when its VIF exceeds 50, or its partner correlation
+the inverse). The partner may be a part-of-day outside rate `b_{a,q}`: then the view names that
+part of the day ("not separable from outside use 08–12: 0router is never idle then"). A number is **not separable** when its VIF exceeds 50, or its partner correlation
 exceeds 0.98. It is then held at the value in effect, excluded from the test, and the view names
 the partner. A number with no traffic at all (no rows with that class or group) is **learning**
 with 0 rows, not "not separable".
@@ -216,9 +225,11 @@ confidence sequence of R5 with `m` covering every account and number tested. Whe
 - its rows stop counting in the pooled fit;
 - its own `ρ, μ` are fitted from its own rows.
 
-A split is permanent until a break or restart of that window (R9, R11), or until the operator
-runs `nullrouter quota refit <provider> <account>`, which rejoins it. With one account, there is
-nothing to split from (Edge Cases).
+A split is permanent until a break or restart of that window (R9, R11). A rejoin command was
+considered and left out: it isn't in the spec, and a break or meter change already rejoins.
+With one account, there is nothing to split from (Edge Cases). The split test is also the guard
+for outside use that tracks 0router's traffic on one account (spec Edge Cases): that account
+disagrees with its peers and is split off, so the pooled weights stay clean.
 
 **Rationale**: The promotion case (Story 1 scenario 5) is exactly a rejection of the pooled value
 by one account. Using the same always-valid test keeps a right account from being split off by
@@ -277,11 +288,18 @@ is set by:
   `MeterDecl` per window. A different hash at load restarts that window's epoch, and the view
   says "restarted: plugin meter changed".
 
+An account also has its own **account epoch**, set when it is (re-)added: its rows before that
+time count for nothing, neither its capacity nor the pooled weights' new evidence. The pooled
+weights keep what its earlier rows gave only through the prior folded at removal (spec Edge
+Cases). At `accounts remove`, its `.outside.jsonl` is renamed `.outside.jsonl.removed-<time>`:
+kept on disk, never shown or read again.
+
 At start, the fit is rebuilt by replaying the history rows of the current epoch. Fits are
 deterministic in their rows, so a restart and a crash give the same fits (SC-008).
 
 When the operator prunes history from inside an epoch (`quota prune`), the fit loses those rows.
-Before pruning, the CLI folds them into the state file as a **prior**: the estimate and
+Before pruning, the CLI folds them into the state file as a **prior** (spec Edge Cases: pruned
+history): the estimate and
 information matrix of the pruned rows, added to the refit as one Gaussian term. Nothing else is
 pruned automatically (slice 005).
 

@@ -18,6 +18,7 @@ through `crate::files`. None is ever sent anywhere or read by a plugin (FR-030, 
         "capacity@max": {"state": "fitted", "since": "2026-10-08T07:40:00.000Z"}
       },
       "splits": {"team": {"since": "2026-10-09T11:00:00.000Z", "reason": "weight.output 2.1× the pooled value"}},
+      "account_epochs": {"max": "2026-10-07T10:00:00.000Z"},
       "breaks": [
         {"at": "2026-10-13T14:00:00.000Z", "detected_at": "2026-10-13T17:20:00.000Z",
          "number": "capacity@max", "replaced": 13800000}
@@ -44,7 +45,7 @@ interleaves safely with `quota prune`.
 
 ```json
 {"v":1,"kind":"entry","id":"01JB7…","window":"weekly","type":"idle","start":"…","end":"…","amount":4.0,"unit":"percent","found_at":"…"}
-{"v":1,"kind":"entry","id":"01JB9…","window":"weekly","type":"steady","start":"…","rate_per_hour":0.2,"unit":"percent","found_at":"…"}
+{"v":1,"kind":"entry","id":"01JB9…","window":"weekly","type":"steady","part":"08-12","start":"…","rate_per_hour":0.2,"unit":"percent","found_at":"…"}
 {"v":1,"kind":"alert","id":"01JB8…","entry":"01JB7…","raised_at":"…"}
 {"v":1,"kind":"ack","alert":"01JB8…","at":"…"}
 {"v":1,"kind":"reclassified","entry":"01JBA…","at":"…","reason":"break"}
@@ -52,7 +53,9 @@ interleaves safely with `quota prune`.
 
 - `reclassified`: a provisional busy entry that turned out to be a rule change (research R6).
   Readers drop the entry.
-- `quota forget <p> <a>` deletes it with the history. `quota prune --before T` drops lines whose
+- `quota forget <p> <a>` deletes it with the history. `accounts remove` renames it
+  `<account>.outside.jsonl.removed-<time>` (never read again), so a re-added account starts with
+  an empty list (spec Edge Cases). `quota prune --before T` drops lines whose
   `start` is before T, except unacknowledged alerts and their entries.
 
 ## `accounts.toml`

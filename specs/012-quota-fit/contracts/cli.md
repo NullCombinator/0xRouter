@@ -43,7 +43,8 @@ shows, so one call answers SC-009:
                    weight.cache_write 1.25 declared · not separable from weight.cache_read
                    multiplier.claude-opus-*  1.67 declared · learning 40 intervals ±120%
     meter weekly   capacity      90.0M declared · relearning since Tue 14:00 (provider rules changed)
-    outside use    3 intervals this week (last Wed 02:10–02:30, 4% of weekly) · steady 0.2%/h since Mon
+    outside use    3 intervals this week (last Wed 02:10–02:30, 4% of weekly) · steady up to 0.2%/h (08–12) since Mon
+    usage alert    01JB7… 4% of weekly used 02:10–02:30 Wed with no traffic from 0router (nullrouter quota ack 01JB7…)
   anthropic/team   polled      …
     meter 5-hour   split off since Wed 11:00: weight.output 2.1× the pooled value
   opencode-go/main estimated   …
@@ -55,7 +56,8 @@ number in use is the declared one, `in use` is left out. Warnings (existing line
 
 - `anthropic/max: provider rules changed around Tue 14:00 on weekly capacity, relearning`;
 - `fit state not saved since 09:01 (disk full)`;
-- `anthropic/max: 2 unacknowledged usage alerts (nullrouter quota alerts)`.
+- `anthropic/max: 2 unacknowledged usage alerts (nullrouter quota alerts)`, in addition to the
+  `usage alert` lines under the account, which give each alert's text (FR-027).
 
 `--json`: each `AccountView` gains `meter` (`[WindowMeterView]`), `outside_use` (summary) and
 `fit_note` (for an unfitted account). See [operator-socket.md](operator-socket.md) for the shape.
@@ -66,13 +68,12 @@ number in use is the declared one, `in use` is left out. Warnings (existing line
 nullrouter quota outside [provider [account]] [--since T] [--limit N]   # the outside-use list
 nullrouter quota alerts                                                 # unacknowledged usage alerts
 nullrouter quota ack <alert-id>|all [provider [account]]                # acknowledge
-nullrouter quota refit <provider> [account]                             # rejoin a split account to the pool
 ```
 
 ```text
 anthropic/max            weekly   idle   Wed 02:10–02:30   4%
 anthropic/max            5-hour   busy   Wed 15:40–15:50   3% beyond explained use
-anthropic/max            weekly   steady since Mon 08:00   0.2%/h
+anthropic/max            weekly   steady 08–12 since Mon 08:00   0.2%/h
 xai/main                 not polled: no outside-use detection
 ```
 
@@ -83,7 +84,7 @@ xai/main                 not polled: no outside-use detection
 
 `quota outside`, `quota alerts` and `quota ack` read and write files and work without a server.
 With a server running, `ack` goes through the operator socket, so the server's view updates at
-once. `refit` needs a running server.
+once.
 
 ## Exclusive use (FR-023)
 
@@ -98,8 +99,9 @@ nullrouter accounts exclusive anthropic max off
 
 ## check (FR-027)
 
-`nullrouter check` adds one line per unacknowledged alert, and exits 1 when there is any, as for
-other warnings:
+`nullrouter check` adds one warning line per unacknowledged alert. Like every other warning, it
+leaves the exit status alone (`check` exits 1 only on errors), because an alert changes nothing
+on the account (FR-026):
 
 ```text
 warn  anthropic/max: 4% of weekly used 02:10–02:30 Wed with no traffic from 0router (nullrouter quota ack 01JB7…)

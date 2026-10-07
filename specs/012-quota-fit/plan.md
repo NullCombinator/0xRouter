@@ -22,7 +22,8 @@ The approach:
 - **Evidence is the history that already exists.** Rows are consecutive good polls with slice
   006's per-interval tally, read from `quota/<provider>/<account>.jsonl`. A restart replays them
   ([R2](research.md#r2-what-one-row-of-evidence-is), [R11](research.md#r11-epochs-and-restarts-fr-017-fr-018)).
-- **One small model per plugin window.** Per-account capacity and steady rate, plus pooled
+- **One small model per plugin window.** Per-account capacity and a steady outside rate per
+  4-hour part of the day (so outside use with a daily rhythm isn't read as a wrong weight), plus pooled
   weights relative to the input yardstick and pooled multipliers. It is fitted by Gauss–Newton in
   log space. Its noise model is exact for whole-step rounding (variance 1/6 per row, −1/12
   between adjacent rows) ([R3](research.md#r3-the-model), [R4](research.md#r4-noise-and-the-95-range)).
@@ -144,12 +145,12 @@ crates/nullrouter-engine/src/
 └── state.rs                     # EngineState holds Fits and meters in effect
 
 crates/nullrouter-server/src/
-├── operator.rs                  # quota.outside/alerts/ack/refit ops; routing.view additions
+├── operator.rs                  # quota.outside/alerts/ack ops; routing.view additions
 └── quota.rs                     # op handlers
 
 crates/nullrouter-cli/src/
 ├── cmd/routing.rs               # weight/multiplier keys; set-plugin/unset-plugin
-├── cmd/quota.rs                 # outside, alerts, ack, refit
+├── cmd/quota.rs                 # outside, alerts, ack
 ├── cmd/accounts.rs              # exclusive on|off; list column
 ├── cmd/check.rs                 # unacknowledged alerts
 └── routing_text.rs              # meter block rendering
@@ -177,7 +178,7 @@ existing op/command patterns. The dashboard is untouched (FR-032).
    right-plugin and outside-use runs, plus `sim_suite`.
 3. **US3**: view and socket additions, CLI rendering.
 4. **US4**: overrides at both levels, with parsing, checks and precedence.
-5. **US5**: break detector, meter-change restart, crash and restart evidence.
+5. **US5**: break detector, meter-change restart, account epochs, crash and restart evidence.
 6. **US6**: exclusive use, alerts, ack, `check`, serve log.
 7. **Polish**: docs, live check, bench, CI step, SC-010 secret scan.
 
@@ -194,3 +195,4 @@ existing op/command patterns. The dashboard is untouched (FR-032).
 | Hand-written small linear algebra (`linalg.rs`) instead of a crate | ≤ 30×30 dense matrices; only Cholesky, solve and inverse | `nalgebra` is a large dependency for about 100 lines, and adds compile time on a 4-core machine |
 | Always-valid confidence sequences instead of a fixed-sample test | Clarify Q2: re-checked at every poll for a number's whole life | A fixed 95% test re-checked each poll corrects right plugins almost surely (fails SC-002) |
 | Busy outside use is provisional for 6 rows | A rule change looks like outside use for its first rows | Classifying at once raises false leak alerts at every provider rule change |
+| Six part-of-day outside rates per account instead of one | Outside use often follows office hours, as 0router's traffic does (analysis C1, Principle II) | One flat rate lets daytime outside use be fitted as a too-low weight, i.e. counted against the plugin |
