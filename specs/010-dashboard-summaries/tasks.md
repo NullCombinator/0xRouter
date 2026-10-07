@@ -15,8 +15,10 @@ Spec 009's tasks and code are the base; this slice changes them only where named
 story has test tasks. Write them first; they must fail before the code exists.
 
 **Build**: never run cargo on this machine (no test, clippy, check, build or bench). Commit, push
-the group with the user's OK, and let GitHub Actions run. Benches and the style-source test are
-the user's to run locally. Work only in `.worktrees/010`; check `git branch --show-current` is
+the group with the user's OK, and let GitHub Actions run. Benches and the isolation run are the
+user's to run locally. The style-guide test (`crates/nullrouter-dashboard/tests/style_guide.rs`)
+runs in CI, which clones `ref/9router`: every new token must trace to a light 9router line, and
+`tokens.css` must match what the test generates from `tokens.toml`. Work only in `.worktrees/010`; check `git branch --show-current` is
 `010-dashboard-summaries` before each commit. CLI goldens
 (`crates/nullrouter-cli/tests/golden/`) change only in the commit that changes the read; mark them
 for re-blessing (`NR_BLESS=1 cargo test -p nullrouter-cli --test read_golden`) in the commit
@@ -81,10 +83,10 @@ each period equals `usage --json` at the page's `as of`.
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Implement `pub struct Totals` (fields of data-model.md) with `add`, and `summary::totals(home, window, prices) -> Totals` in `crates/nullrouter-engine/src/journal/summary.rs`: count every record in the window; `in_flight` for `in_progress`; `not_reported` for finished records with no `usage`; tokens by `tokens_of`; cost by `entry_at` at `arrived` for the `served_by` account, missing cache rates at the input rate, output above 0 with no output rate → unpriced `no_output_price`, no spec → `no_price`, account not in `accounts.toml` → `account_gone`; per-agent counts by `agent.key`; per-provider counts for records with a non-skipped attempt on the provider. `prices` is a lookup built from the registry and accounts as `route.rs:170` builds a `PriceSpec`
+- [ ] T015 [US1] Implement `pub struct Totals` (fields of data-model.md) with `add`, and `summary::totals(home, window, prices) -> Totals` in `crates/nullrouter-engine/src/journal/summary.rs`: count every record in the window; `in_flight` for `in_progress`; `not_reported` for finished records with no `usage`; tokens by `tokens_of`; cost by `entry_at` at `arrived` for the `served_by` account, missing cache rates at the input rate, output above 0 with no output rate → unpriced `no_output_price`, no spec → `no_price`, account not in `accounts.toml` → `account_gone`; per-agent counts by `agent.key`; per-provider counts for records with a non-skipped attempt on the provider. `prices` is a lookup built from the registry and accounts as `crates/nullrouter-engine/src/route.rs:170` builds a `PriceSpec`
 - [ ] T016 [US1] Add the segment totals cache to the engine state in `crates/nullrouter-engine/src/state.rs` (or a `summary::Cache` it owns): one `Totals` per segment path, keyed by inode, length and engine generation; used only for segments whose whole UTC day lies inside the window; dropped on inode change or reload
 - [ ] T017 [US1] Add the operator op `usage.totals {from, to}` in `crates/nullrouter-server/src/operator.rs` (protocol table in the doc comment; runs on the blocking pool; merges the live ring over disk by id as `records.list` does) and its args line in `views::request` in `crates/nullrouter-server/src/views/mod.rs`
-- [ ] T018 [US1] Implement the `usage` view in `crates/nullrouter-server/src/views/usage.rs` (`NEEDS = ["usage.totals"]`; args `period`, `at`; resolves the window with `jiff` in `TimeZone::system()`; without a server calls `summary::totals` in process and settles open records as `views::records::settle_open` does; joins key names; adds `check`'s "records not kept" warning when the window touches one) and register it in `crates/nullrouter-server/src/views/mod.rs`
+- [ ] T018 [US1] Implement the `usage` view in `crates/nullrouter-server/src/views/usage.rs` (`NEEDS = ["usage.totals"]`; args `period`, `at`; resolves the window with `jiff` in `TimeZone::system()`; without a server calls `summary::totals` in process and settles open records with `views::records::settle_open`, made `pub(crate)` for this; joins key names; adds `check`'s "records not kept" warning when the window touches one) and register it in `crates/nullrouter-server/src/views/mod.rs`
 - [ ] T019 [US1] Add the `usage` command (`--period`, default `today`) to `crates/nullrouter-cli/src/main.rs` and its text renderer in `crates/nullrouter-cli/src/cmd/usage.rs` per contracts/cli.md; declare the module in `crates/nullrouter-cli/src/cmd/mod.rs`
 - [ ] T020 [US1] Add `ViewName::Usage` (needs and builder) in `crates/nullrouter-dashboard/src/page.rs`; on Usage (`crates/nullrouter-dashboard/src/pages/usage.rs`) replace the "Period filter" and "Requests, input, cached, output, Est. Cost" slots with the period `GET` form (Today, 24h, 7D, 30D, 60D, All; chosen one marked) and the five cards of contracts/dashboard.md, passing the page's `as_of` as `at`; style with the existing card and filter components
 
@@ -108,7 +110,7 @@ each period equals `usage --json` at the page's `as of`.
 
 - [ ] T024 [US2] Implement `Pct`, `Last`, `AgentLatency`, `ProviderLatency`, `Latency` and `summary::latency(home, window) -> Latency` in `crates/nullrouter-engine/src/journal/summary.rs` per research R6 and data-model.md; never cached
 - [ ] T025 [US2] Add the operator op `latency.summary {from, to}` in `crates/nullrouter-server/src/operator.rs` (blocking pool, ring merge) and its args line in `crates/nullrouter-server/src/views/mod.rs`
-- [ ] T026 [US2] Implement the `latency` view in `crates/nullrouter-server/src/views/latency.rs` (`NEEDS = ["latency.summary"]`; arg `at`; cold path in process; names joined) and register it
+- [ ] T026 [US2] Implement the `latency` view in `crates/nullrouter-server/src/views/latency.rs` (`NEEDS = ["latency.summary"]`; arg `at`; cold path in process, settling open records with `views::records::settle_open` as `usage` does; names joined) and register it
 - [ ] T027 [US2] Add the `latency` command to `crates/nullrouter-cli/src/main.rs` and its text renderer in `crates/nullrouter-cli/src/cmd/latency.rs` per contracts/cli.md
 - [ ] T028 [US2] Add `ViewName::Latency` (needs and builder) in `crates/nullrouter-dashboard/src/page.rs`
 
@@ -141,7 +143,7 @@ untagged keys are handled the same.
 
 ## Phase 6: Style tokens for the new parts (US3, US4)
 
-- [ ] T035 [US3] Add `[token.agent-1]` to `[token.agent-7]` to `crates/nullrouter-dashboard/style/tokens.toml` (`#6366f1 #14b8a6 #f59e0b #8b5cf6 #06b6d4 #10b981 #f97316`, source `ref/9router/src/app/(dashboard)/dashboard/usage/components/ProviderBarChart.js:17`, red dropped, research R8), and `[component.gauge]`, `[component.pipe]` and `[component.topology]` with their 9router sources (`ProviderTopology.js` `edgeStyle` :294, node styles :35–:86; gauge zones from the existing status colours); regenerate `crates/nullrouter-dashboard/style/tokens.css` in the same commit (mark for `NR_BLESS=1` re-bless); add the new sections to `docs/dashboard/style-guide.md`
+- [ ] T035 [US3] Add `[token.agent-1]` to `[token.agent-7]` to `crates/nullrouter-dashboard/style/tokens.toml` (`#6366f1 #14b8a6 #f59e0b #8b5cf6 #06b6d4 #10b981 #f97316`, source `ref/9router/src/app/(dashboard)/dashboard/usage/components/ProviderBarChart.js:17`, red dropped, research R8), and `[component.gauge]`, `[component.pipe]` and `[component.topology]` with their 9router sources (`ProviderTopology.js` `edgeStyle` :294, node styles :35–:86; gauge zones from the existing status colours); write `crates/nullrouter-dashboard/style/tokens.css` in the same commit exactly as `style_guide.rs:57` generates it (no local cargo; if CI shows a diff, take CI's output); add the rules for the period filter, gauge, pipe, topology graph and harness badge to `crates/nullrouter-dashboard/style/dashboard.css`, each using only the tokens of the component its selector names; add the new sections to `docs/dashboard/style-guide.md`
 - [ ] T036 [US3] Add `pub fn agent_colour(index: usize) -> &'static str` (`agent-(index mod 7) + 1`) in `crates/nullrouter-dashboard/src/components.rs`, with a unit test that colours never change when keys are appended
 
 ---
@@ -154,12 +156,12 @@ untagged keys are handled the same.
 
 ### Tests for User Story 3
 
-- [ ] T037 [P] [US3] Unit tests in `crates/nullrouter-dashboard/src/landscape.rs` (`#[cfg(test)]`): node set per FR-020 (every unrevoked key, every provider with an account, plus revoked keys and other providers with a latency row, marked); needle at p50 on a 40 ms (overhead) or 3 s (TTFT) full scale, pinned beyond it; p50, p95 and request counts printed as text beside every gauge; one stroke per agent on a provider pipe in that agent's colour; the empty state "No requests in the last 24 hours"; no `<script>`, no animation, no external reference
+- [ ] T037 [P] [US3] Unit tests in `crates/nullrouter-dashboard/src/landscape.rs` (`#[cfg(test)]`): node set per FR-020 (every unrevoked key, every provider with an account, plus revoked keys and other providers with a latency row, marked); needle at p50 on a 40 ms (overhead) or 3 s (TTFT) full scale, pinned beyond it; p50, p95 and request counts printed as text beside every gauge; one stroke per agent on a provider pipe in that agent's colour; the empty state "No requests in the last 24 hours"; a long key name or harness tag is shown as spec 009 shows long names (in full, or shortened with the full text in the node's hover card); no `<script>`, no animation, no external reference
 - [ ] T038 [P] [US3] Dashboard agreement test `crates/nullrouter-dashboard/tests/agreement/endpoint.rs`: every number in the landscape equals `latency --json` at the page's `as_of`; the heading says "last 24 h"; each agent's colour is the same on two loads and after a key is appended
 
 ### Implementation for User Story 3
 
-- [ ] T039 [US3] Implement `crates/nullrouter-dashboard/src/landscape.rs`: layout from row counts (agents in a left column, router centre, providers right, cubic Bézier pipes, after `docs/dashboard/mockups/topo.py` gauges mode), half-dial gauges (green to 50%, amber to 80%, red above, from the style guide), labels, a CSS-only `:hover`/`:focus-within` card repeating the printed numbers, rendered with maud as inline SVG
+- [ ] T039 [US3] Implement `crates/nullrouter-dashboard/src/landscape.rs`: layout from row counts (agents in a left column, router centre, providers right, cubic Bézier pipes, after `docs/dashboard/mockups/topo.py` gauges mode), half-dial gauges (green to 50%, amber to 80%, red above, from the style guide), labels, a CSS-only `:hover`/`:focus-within` card repeating the printed numbers and the full name of a shortened node, rendered with maud as inline SVG
 - [ ] T040 [US3] On Endpoint & Key (`crates/nullrouter-dashboard/src/pages/endpoint.rs`) read `Latency` and `Accounts` (with `at` = `as_of`) and replace the "Agent traffic" slot with the landscape, headed "Agent traffic · last 24 h · as of HH:MM:SS"
 
 **Checkpoint**: US3 complete.
@@ -192,9 +194,9 @@ untagged keys are handled the same.
 - [ ] T046 [P] Twin test `crates/nullrouter-dashboard/tests/twins.rs`: register the `Usage` and `Latency` views for Endpoint & Key, Providers and Usage; it fails if a page renders a value absent from those views' JSON (SC-001)
 - [ ] T047 [P] Secrets scan `crates/nullrouter-dashboard/tests/secrets.rs` and `crates/nullrouter-server/tests/secrets.rs`: cover the new pages, `usage`, `latency` and `keys list` output (SC-010)
 - [ ] T048 [P] Benches (written here; the user runs them locally): `crates/nullrouter-engine/benches/usage_totals_100k.rs` (`today`, `30d`, `all`, warm and cold; reuse `keys_last_used_100k`'s fixture builder) and `crates/nullrouter-engine/benches/latency_24h_100k.rs` (100,000 records over 30 days and in one day); add `/usage?period=all` and `/` to `crates/nullrouter-dashboard/benches/pages.rs`; leave `specs/010-dashboard-summaries/bench-baseline.md` with empty rows for the user's run, including the `engine` bench before/after `entry_at`
-- [ ] T049 [P] Docs: `docs/operator-config.md` gains `nullrouter usage`, `nullrouter latency`, `keys issue --harness`, `keys tag`, what Est. Cost includes and leaves out, and the downgrade note (a tagged `keys.toml` needs `keys tag <key> --clear` before an older binary reads it)
+- [ ] T049 [P] Docs: `docs/operator-config.md` gains `nullrouter usage`, `nullrouter latency`, `keys issue --harness`, `keys tag`, what Est. Cost includes and leaves out (the three unpriced reasons; cache tokens with no cache rate at the input rate), that the per-agent rows can sum to less than the total because requests refused before a key matched have no agent, and the downgrade note (a tagged `keys.toml` needs `keys tag <key> --clear` before an older binary reads it)
 - [ ] T050 Run the quickstart's CI-covered steps through GitHub Actions on the pushed branch (user's OK to push); record the run number in `specs/010-dashboard-summaries/tasks.md` beside this task
-- [ ] T051 The user's side-by-side review of the cards, filter, topology graph and landscape against 9router and the mockups (SC-008), with scripts off; record the verdict in `specs/010-dashboard-summaries/look-review.md`
+- [ ] T051 The user's side-by-side review of the cards, filter, topology graph and landscape against 9router and the mockups (SC-008), with scripts off, and whether Endpoint & Key alone tells which agents sent traffic, to which providers, and which hop is slowest (SC-009); record the verdict in `specs/010-dashboard-summaries/look-review.md`
 - [ ] T052 The isolation run (SC-005, local, user): `cargo test -p nullrouter-dashboard --release --features fault -- --ignored isolation` with the landscape and Usage pages in the load mix (add them to `crates/nullrouter-dashboard/tests/isolation.rs`)
 
 ---

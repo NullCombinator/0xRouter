@@ -43,6 +43,13 @@ slice adds no latency summaries" and the harness-tag line of 009's Assumptions. 
   `nullrouter keys tag <name> <text>` (set or change) and `keys tag <name> --clear` (remove); the
   key itself is unchanged (FR-023a).
 
+### Session 2026-10-06 (analyze)
+
+- Q: A price that declares no output rate, and one that declares no cache rates: how does Est.
+  Cost treat them? → A: Output tokens with no output rate leave the request unpriced, reason "no
+  output price"; cache tokens with no cache rate are priced at the input rate, as 9router does
+  (FR-005, FR-006). Decided by Claude on the user's instruction to fix the analyze findings.
+
 ## User Scenarios & Testing *(mandatory)*
 
 This slice has one user: the **operator**, who reads 0router's state from the CLI and, since spec
@@ -312,10 +319,13 @@ placements and responses are the same as for an untagged key.
 - **FR-005**: Est. Cost MUST price each request's tokens with the price of the account that used
   them, at the request's arrival time: the account's price override if it has one, otherwise the
   price its provider's plugin declares, choosing the schedule entry in effect at that time. Input,
-  cached, cache-write and output tokens are each priced at their own declared price.
+  cached, cache-write and output tokens are each priced at their own declared price; cached and
+  cache-write tokens whose price declares no rate of their own are priced at its input rate, as
+  9router does.
 - **FR-006**: A request with tokens on an account that has no price (no plugin price and no
-  override, or an account that no longer exists) MUST be left out of Est. Cost and counted as
-  unpriced.
+  override, or an account that no longer exists), or with output tokens on a price that declares
+  no output rate, MUST be left out of Est. Cost and counted as unpriced, with its reason: no
+  price, account gone, or no output price.
 - **FR-007**: Est. Cost MUST always be labelled "Estimated, not actual billing", on the page and in
   the CLI's text output, and MUST say that prices changed after a request are not tracked.
 

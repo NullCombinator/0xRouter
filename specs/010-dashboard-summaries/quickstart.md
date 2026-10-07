@@ -87,7 +87,7 @@ which passes the page's `as_of` as the views' `at`.
 ## 5. The look (SC-007, SC-008)
 
 ```bash
-cargo test -p nullrouter-dashboard --test style_guide      # local; new tokens carry 9router sources
+cargo test -p nullrouter-dashboard --test style_guide      # CI runs it; new tokens carry 9router sources
 ```
 
 Side by side (the user's judgement): 9router's Usage page (cards, period filter, provider

@@ -32,6 +32,9 @@ xai                   384
 - The cost line is always followed by the label. The "not priced" line appears only when the
   count is above 0. The note line always appears.
 - An empty period prints `requests 0 (no requests in this period)` and no tables.
+- The agent rows can sum to less than `requests`: a request refused before a key matched counts
+  in the total but has no agent. A request that fell back counts once for each provider it
+  attempted, so the provider rows can sum to more.
 - When the window touches a period while records were not kept, `check`'s warning line follows
   the header, in `check`'s words.
 - An unknown period exits 1: `unknown period "<p>"; use today, 24h, 7d, 30d, 60d or all`.
