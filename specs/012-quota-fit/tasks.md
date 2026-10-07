@@ -118,7 +118,7 @@ priority").
 ### Tests for US3
 
 - [ ] T034 [P] [US3] In `crates/nullrouter-engine/tests/routing_state.rs`, assert the view's `meter` per account and window carries `declared`, `account_override`, `plugin_override`, `fit {value, low, high}`, `in_use`, `source`, `state`, `since`, `progress {intervals, half_width}`, `partner` and `reason`, for learning, fitted, not-separable and yardstick numbers (Story 3 scenarios 1–4, contracts/operator-socket.md § WindowMeterView)
-- [ ] T035 [P] [US3] In `crates/nullrouter-cli/tests/` (existing CLI test file for `routing`), add a golden-text test of the meter block for one learning, one fitted, one yardstick and one not-separable number, plus the `not fitted: provider reports no quota` line (contracts/cli.md § The routing view; Story 3 scenario 5)
+- [ ] T035 [P] [US3] In `crates/nullrouter-cli/tests/routing.rs`, add a golden-text test of the meter block for one learning, one fitted, one yardstick and one not-separable number, plus the `not fitted: provider reports no quota` line (contracts/cli.md § The routing view; Story 3 scenario 5)
 
 ### Implementation for US3
 
@@ -188,7 +188,7 @@ priority").
 
 - [ ] T055 [P] [US6] In `crates/nullrouter-engine/tests/sim_week.rs`, inject idle drops, 1-step noise and busy-time bursts on one exclusive-use and one non-exclusive account. Assert 0 alerts on the non-exclusive account, 0 alerts from 1-step noise, every idle drop of ≥ 2 steps alerted at the first poll that shows it, 0 alerts on busy intervals without injected use, and an alert for each busy burst whose excess passes the test (SC-007, Story 6 scenarios 1, 3, 4, 8)
 - [ ] T056 [P] [US6] In `crates/nullrouter-engine/tests/quota_fit.rs`, assert alert text matches `"<provider>/<account>: N% of <window> used HH:MM–HH:MM with no traffic from 0router"` (idle) and contains no "leak" or "key". Assert the account's state, priority and routing are unchanged after an alert, and that withdrawing the declaration stops new alerts (FR-025, FR-026; Story 6 scenarios 5, 7)
-- [ ] T057 [P] [US6] In `crates/nullrouter-cli/tests/`, assert `accounts exclusive xai main on` on an unpolled account exits 2 with `account xai/main: exclusive use needs quota polls; xai reports no quota for this account` (FR-023); `quota ack <id>` removes the alert from `quota alerts` and keeps the entry in `quota outside` (Story 6 scenario 6); `check` lists unacknowledged alerts and exits 1
+- [ ] T057 [P] [US6] In `crates/nullrouter-cli/tests/accounts_keys.rs`, `quota.rs` and `check.rs`, assert `accounts exclusive xai main on` on an unpolled account exits 2 with `account xai/main: exclusive use needs quota polls; xai reports no quota for this account` (FR-023); `quota ack <id>` removes the alert from `quota alerts` and keeps the entry in `quota outside` (Story 6 scenario 6); `check` lists unacknowledged alerts and exits 1
 
 ### Implementation for US6
 
