@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+pub use nullrouter_adapters::HarnessName;
 pub use nullrouter_registry::schema::BreakBehaviour;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -33,6 +34,9 @@ pub struct AgentKey {
     pub revoked: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub break_behaviour: Option<BreakBehaviour>,
+    /// The client harness this key's requests come from; its adapter runs on them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness: Option<HarnessName>,
 }
 
 /// The agent a request belongs to: its key, and the client's session when it sends one.
@@ -170,6 +174,7 @@ impl Keys {
             created: clock::now_rfc3339(),
             revoked: None,
             break_behaviour,
+            harness: None,
         });
         Ok((key, self.list.last().expect("just pushed")))
     }
@@ -184,6 +189,12 @@ impl Keys {
     pub fn revoke(&mut self, name_or_id: &str) -> Result<(), KeyError> {
         let k = self.find_mut(name_or_id)?;
         k.revoked.get_or_insert_with(clock::now_rfc3339);
+        Ok(())
+    }
+
+    /// Binds the key to a harness; `None` makes it a plain client again.
+    pub fn set_harness(&mut self, name_or_id: &str, h: Option<HarnessName>) -> Result<(), KeyError> {
+        self.find_mut(name_or_id)?.harness = h;
         Ok(())
     }
 

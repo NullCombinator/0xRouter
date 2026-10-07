@@ -21,6 +21,8 @@ pub enum Rule {
     ValueTooLarge,
     KindMismatch,
     UnknownReason,
+    InputTooLarge,
+    OutputTooLarge,
     Undecodable,
 }
 

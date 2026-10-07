@@ -173,12 +173,12 @@ share: edits, selectors, key binding, records.
 
   Removing array elements at several indices applies from the highest index down, so the
   paths stay valid. The original body is untouched after apply.
-- [ ] T012 [P] Key binding tests in `crates/nullrouter-engine/tests/keys_harness.rs`.
+- [X] T012 [P] Key binding tests in `crates/nullrouter-engine/tests/keys_harness.rs`.
   - `harness` round-trips through `keys.toml`, and files without it still load.
   - Reserved names (`opencode`, `grok-build`, `zcode`) and malformed names are refused.
   - `^[a-z][a-z0-9-]{1,31}$` is enforced.
   - An unknown well-formed name is accepted.
-- [ ] T013 [P] Record tests in `crates/nullrouter-engine/tests/records_adapter.rs`.
+- [X] T013 [P] Record tests in `crates/nullrouter-engine/tests/records_adapter.rs`.
   - `AdapterRun`, `ContentChange` and `GuardrailEvent` serialise with exactly the
     [data-model.md](data-model.md#adapterrun-on-attempt-and-response_adapter-on-requestrecord)
     fields.
@@ -238,10 +238,10 @@ share: edits, selectors, key binding, records.
     index order.
   - `changes(&[Edit]) -> Vec<ContentChange>`.
   - Make T011 pass.
-- [ ] T019 `AgentKey.harness` in `crates/nullrouter-engine/src/keys.rs`, plus `HarnessName`
+- [X] T019 `AgentKey.harness` in `crates/nullrouter-engine/src/keys.rs`, plus `HarnessName`
   with its validation and the `BUILTIN` and `RESERVED` name tables in
   `crates/nullrouter-adapters/src/lib.rs`. Keep `deny_unknown_fields`. Make T012 pass.
-- [ ] T020 Record types in `crates/nullrouter-engine/src/records.rs`.
+- [X] T020 Record types in `crates/nullrouter-engine/src/records.rs`.
   - `Attempt.adapter: Option<AdapterRun>` and `RequestRecord.response_adapter:
     Option<AdapterRun>`.
   - `AdapterRun { harness, version, outcome, changes, guardrail, duration_us }`.

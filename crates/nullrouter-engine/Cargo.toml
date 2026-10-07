@@ -33,6 +33,8 @@ indexmap.workspace = true
 url.workspace = true
 nullrouter-wire.workspace = true
 nullrouter-registry.workspace = true
+nullrouter-adapters.workspace = true
+nullrouter-adapter-kit.workspace = true
 axum = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 

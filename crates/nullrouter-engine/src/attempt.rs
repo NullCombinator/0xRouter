@@ -1675,6 +1675,7 @@ impl Run {
                 AttemptKind::Continuation | AttemptKind::Restart => None,
                 _ => self.placing,
             },
+            adapter: None,
         };
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
         if let (Some(routed), Some(account)) = (&self.routed, c.account) {
@@ -1750,6 +1751,7 @@ impl Run {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            adapter: None,
         };
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
         tried.push(Tried {

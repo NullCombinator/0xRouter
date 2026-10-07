@@ -740,6 +740,7 @@ mod tests {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            adapter: None,
         }
     }
 
@@ -913,6 +914,44 @@ mod tests {
         assert_eq!(forget(home.path(), &Who::Agent("key_a".into()), Duration::from_secs(1)).unwrap(), 1);
         assert!(read(home.path(), &Filter::default()).is_empty());
         assert!(segments(home.path()).is_empty(), "an emptied segment is removed");
+    }
+
+    #[test]
+    fn an_adapter_run_survives_the_journal_unchanged() {
+        use crate::records::{AdapterOutcome, AdapterRun};
+        use nullrouter_adapters::apply::ContentChange;
+        use nullrouter_adapter_kit::{Kind, Reason};
+
+        let mut start = record("rq_1", "2026-10-07T09:00:00Z");
+        let mut done = start.clone();
+        let mut a = attempt(1, "max");
+        let mut run = AdapterRun::new("hermes", "builtin", AdapterOutcome::Ran);
+        run.changes.push(ContentChange {
+            path: "messages[1].reasoning_content".into(),
+            kind: Kind::Removed,
+            reason: Reason::TargetRejectsField,
+        });
+        a.adapter = Some(run.clone());
+        done.attempts.push(a);
+        done.response_adapter = Some(run);
+        done.outcome = Outcome::Succeeded;
+        start.outcome = Outcome::InProgress;
+        let blank = RequestRecord::new("rq_1".into(), start.arrived.clone(), "anthropic-messages");
+        let mut lines = lines_for(&blank, &start, true);
+        lines.extend(lines_for(&start, &done, false));
+        let folded = fold(&text(&lines));
+        assert_eq!(folded.len(), 1);
+        assert_eq!(folded[0], serde_json::to_value(&done).unwrap());
+        assert_eq!(folded[0]["attempts"][0]["adapter"]["changes"][0]["reason"], "target_rejects_field");
+    }
+
+    #[test]
+    fn lines_written_before_adapters_still_fold() {
+        let start = record("rq_2", "2026-10-07T09:00:00Z");
+        let blank = RequestRecord::new("rq_2".into(), start.arrived.clone(), "anthropic-messages");
+        let folded = fold(&text(&lines_for(&blank, &start, true)));
+        assert!(folded[0].get("response_adapter").is_none());
+        assert!(folded[0]["attempts"].as_array().is_none_or(|a| a.iter().all(|x| x.get("adapter").is_none())));
     }
 
     #[test]
