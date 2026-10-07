@@ -159,6 +159,88 @@ pub struct Attempt {
     /// Why the placement chose this account (slice 006). `None` for skips and for requests that
     /// no placement shaped (a continuation, a job poll).
     pub placement: Option<AttemptPlacement>,
+    /// The attempt's marks (spec 013). `None` on records written before that slice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timing: Option<AttemptTiming>,
+}
+
+/// How an attempt got its connection.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Connection {
+    New,
+    Reused,
+    /// The attempt ended before a connection (skipped, refused at build).
+    #[default]
+    None,
+}
+
+/// The marks of one attempt, in milliseconds from the request's arrival (spec 013, data-model).
+/// Phases are derived from these by `phases::of`; nothing here is a duration except the spans.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct AttemptTiming {
+    /// The deliberate wait before this same-account retry.
+    pub retry_wait_ms: Option<f64>,
+    /// Sign-in token refresh before this attempt; reported inside connect.
+    pub refresh_ms: Option<f64>,
+    /// Connection ready. `None` for a reused connection or one never reached.
+    pub connected: Option<f64>,
+    pub connection: Connection,
+    /// `"1.1"` or `"2"`, from the response.
+    pub http: Option<String>,
+    /// The proxy's name only.
+    pub proxy: Option<String>,
+    pub headers: Option<f64>,
+    pub first_output: Option<f64>,
+    /// Headers and first output arrived together.
+    pub merged_wait: bool,
+    pub upstream_done: Option<f64>,
+    /// Time the engine waited on the client channel during this attempt.
+    pub blocked_ms: f64,
+    /// The serving attempt only: the wait for the record's close line, inside delivery.
+    pub closing_ms: Option<f64>,
+    pub timeout: Option<TimeoutHit>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TimeoutKind {
+    Connect,
+    Headers,
+    FirstToken,
+    Stall,
+}
+
+/// The timeout that ended an attempt, and where its value came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct TimeoutHit {
+    pub which: TimeoutKind,
+    pub ms: u64,
+    pub source: Source,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Source {
+    pub by: SourceBy,
+    pub level: SourceLevel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceBy {
+    Operator,
+    Plugin,
+    BuiltIn,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceLevel {
+    Model,
+    Provider,
+    Endpoint,
+    Env,
+    Default,
 }
 
 /// Why an attempt went where it did, and where it stood in the placement's order.
@@ -463,6 +545,7 @@ mod tests {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            timing: None,
         });
         r
     }

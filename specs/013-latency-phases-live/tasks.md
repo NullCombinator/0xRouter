@@ -66,7 +66,7 @@ the record field and the test double. No story can start before these.
 
 ### Tests first
 
-- [ ] T006 [P] Write `phases::of` unit tests in `crates/nullrouter-engine/src/phases.rs` (`#[cfg(test)]`) on hand-built records, one per case:
+- [X] T006 [P] Write `phases::of` unit tests in `crates/nullrouter-engine/src/phases.rs` (`#[cfg(test)]`) on hand-built records, one per case:
   - a streamed success on a new connection: seven phases, retry wait "not applicable", sum = `total_ms` within 1 ms;
   - reused: connect "not applicable";
   - a failed then a successful attempt: `ended_in` names the failing phase, later phases "not applicable", router overhead of attempt 2 = `started₂ − ended₁ − retry_wait`;
@@ -78,12 +78,12 @@ the record field and the test double. No story can start before these.
   - a pre-slice record with no `timing`: every phase "not recorded";
   - the phases up to the first output sum to `ttft_ms` within 1 ms;
   - `slowest` picks the largest phase across attempts, with sides as in data-model § Side of a phase
-- [ ] T007 [P] Write `AttemptClock` tests in `crates/nullrouter-engine/src/timing.rs` (`#[cfg(test)]`): marks set from several tasks are read back exactly; `blocked` and `retry_wait` spans accumulate; turning the clock into `AttemptTiming` keeps the invariant "`connection == reused` ⇒ `connected == None`"
-- [ ] T008 [P] Write serde tests in `crates/nullrouter-engine/tests/records_journal.rs`: a journal line from before this slice (no `timing`) loads with `timing: None`, and a record with `timing` round-trips through the journal unchanged
+- [X] T007 [P] Write `AttemptClock` tests in `crates/nullrouter-engine/src/timing.rs` (`#[cfg(test)]`): marks set from several tasks are read back exactly; `blocked` and `retry_wait` spans accumulate; turning the clock into `AttemptTiming` keeps the invariant "`connection == reused` ⇒ `connected == None`"
+- [X] T008 [P] Write serde tests in `crates/nullrouter-engine/tests/records_journal.rs`: a journal line from before this slice (no `timing`) loads with `timing: None`, and a record with `timing` round-trips through the journal unchanged
 
 ### Implementation
 
-- [ ] T009 Implement `AttemptClock` in `crates/nullrouter-engine/src/timing.rs`:
+- [X] T009 Implement `AttemptClock` in `crates/nullrouter-engine/src/timing.rs`:
   - atomic `f64` slots (bit-cast `AtomicU64`, NaN = unset) for `connected`, `headers`, `first_output`, `upstream_done`;
   - accumulating spans `blocked_ms`, `retry_wait_ms`, `refresh_ms`;
   - `merged_wait`, `http`, `proxy` name, `timeout: Option<TimeoutHit>`;
@@ -92,10 +92,12 @@ the record field and the test double. No story can start before these.
   - `tokio::task_local! { pub static ATTEMPT: Arc<AttemptClock> }`.
 
   Times are ms from the request's arrival `Instant` (data-model § AttemptTiming)
-- [ ] T010 Add `AttemptTiming`, `Connection` (`new`/`reused`/`none`), `TimeoutHit { which: connect|headers|first_token|stall, ms: u64, source: Source }` and `Source { by: operator|plugin|built_in, level: model|provider|endpoint|env|default }` to `crates/nullrouter-engine/src/records.rs`, and add `Attempt.timing: Option<AttemptTiming>` with `#[serde(default, skip_serializing_if = "Option::is_none")]` (contracts/record.md). Update every `Attempt { … }` constructor (`attempt.rs` `start_attempt`, `skip`, and tests)
-- [ ] T011 Implement `phases::of(&RequestRecord) -> Vec<AttemptPhases>`, `Phase`, `PhaseValue` (`Ms`, `NotApplicable`, `NotRecorded`, `InProgress`), `side(Phase)` and `slowest(&[AttemptPhases])` in `crates/nullrouter-engine/src/phases.rs`, with exactly research R1's formulas. Serialize phase names as `router_overhead`, `retry_wait`, `connect`, `headers`, `first_token`, `waiting_for_provider`, `generation`, `delivery`
-- [ ] T012 Implement the connector layer `ConnectClock` (a `tower::Layer` over reqwest's `BoxedConnectorService`) in `crates/nullrouter-engine/src/connection/clients.rs`, as T004 proved. At completion, inside an `ATTEMPT` scope, it sets `connected` and the connect span. It enforces the scope's `connect_timeout`, or the built-in default outside a scope, with `tokio::time::timeout`
-- [ ] T013 Extend `crates/nullrouter-engine/src/testkit/mock_upstream.rs` with `Step::Phased { accept_delay, headers_delay, first_frame_delay, frames, every }`, and a slow-reading client helper in `crates/nullrouter-engine/src/testkit/mod.rs` that reads a stream with a set pause between reads
+- [X] T010 Add `AttemptTiming`, `Connection` (`new`/`reused`/`none`), `TimeoutHit { which: connect|headers|first_token|stall, ms: u64, source: Source }` and `Source { by: operator|plugin|built_in, level: model|provider|endpoint|env|default }` to `crates/nullrouter-engine/src/records.rs`, and add `Attempt.timing: Option<AttemptTiming>` with `#[serde(default, skip_serializing_if = "Option::is_none")]` (contracts/record.md). Update every `Attempt { … }` constructor (`attempt.rs` `start_attempt`, `skip`, and tests)
+- [X] T011 Implement `phases::of(&RequestRecord) -> Vec<AttemptPhases>`, `Phase`, `PhaseValue` (`Ms`, `NotApplicable`, `NotRecorded`, `InProgress`), `side(Phase)` and `slowest(&[AttemptPhases])` in `crates/nullrouter-engine/src/phases.rs`, with exactly research R1's formulas. Serialize phase names as `router_overhead`, `retry_wait`, `connect`, `headers`, `first_token`, `waiting_for_provider`, `generation`, `delivery`
+- [X] T012 Implement the connector layer `ConnectClock` (a `tower::Layer` over reqwest's `BoxedConnectorService`) in `crates/nullrouter-engine/src/connection/clients.rs`, as T004 proved. At completion, inside an `ATTEMPT` scope, it sets `connected` and the connect span. It enforces the scope's `connect_timeout`, or the built-in default outside a scope, with `tokio::time::timeout`
+- [X] T013 Extend `crates/nullrouter-engine/src/testkit/mock_upstream.rs` with `Step::Phased { accept_delay, headers_delay, first_frame_delay, frames, every }`, and a slow-reading client helper in `crates/nullrouter-engine/src/testkit/mod.rs` that reads a stream with a set pause between reads
+
+  **Done without `accept_delay`**: a TCP accept can't delay the client's connect (the kernel completes it), so `Step::Phased` has `headers_delay`, `first_frame_delay`, `frames`, `every`. T014's connect case needs a delaying connector layer in the test client instead
 
 **Checkpoint**: the clock, the phase function, the record field and the layer exist and are tested.
 

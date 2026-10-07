@@ -53,7 +53,8 @@ use crate::jobs::Job;
 use crate::keys::AgentId;
 use crate::plan::{self, Candidate, Step};
 use crate::records::{
-    Attempt, AttemptKind, AttemptOutcome, AttemptPlacement, BreakHandling, ErrorClass, JobRef, Outcome, ServedBy, Usage,
+    Attempt, AttemptKind, AttemptOutcome, AttemptPlacement, AttemptTiming, BreakHandling, ErrorClass, JobRef, Outcome,
+    ServedBy, Usage,
 };
 use crate::routing::{CandidateKey, PlacementReason, WhyNot};
 use crate::signin::refresh::Refreshed;
@@ -1675,6 +1676,7 @@ impl Run {
                 AttemptKind::Continuation | AttemptKind::Restart => None,
                 _ => self.placing,
             },
+            timing: None,
         };
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
         if let (Some(routed), Some(account)) = (&self.routed, c.account) {
@@ -1750,6 +1752,7 @@ impl Run {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            timing: Some(AttemptTiming::default()),
         };
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
         tried.push(Tried {
