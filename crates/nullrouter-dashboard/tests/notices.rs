@@ -18,6 +18,19 @@ fn element<'a>(html: &'a str, class: &str, tag: &str) -> Option<&'a str> {
     Some(&html[start..end])
 }
 
+/// The text of the notices above the page: the run of notice elements inside `.notices`.
+fn above_page(html: &str) -> String {
+    let Some(start) = html.find("<div class=\"notices\">") else { return String::new() };
+    let mut rest = &html[start + "<div class=\"notices\">".len()..];
+    let mut out = String::new();
+    while rest.starts_with("<div class=\"notice") {
+        let end = rest.find("</div>").expect("a notice closes") + "</div>".len();
+        out.push_str(&rest[..end]);
+        rest = &rest[end..];
+    }
+    text_of(&out)
+}
+
 /// The panel: from its section to the end of the chat box.
 fn panel(html: &str) -> String {
     let start = html.find("class=\"house-panel\"").expect("the panel is open");
@@ -66,7 +79,7 @@ async fn each_notice_stands_above_the_page_its_subject_names() {
     let check = d.view(ViewName::Check, json!({})).await;
     for id in Id::ALL {
         let html = d.ok(id.path()).await;
-        let above = element(&html, "notices", "div").map(text_of).unwrap_or_default();
+        let above = above_page(&html);
         for n in check["notices"].as_array().unwrap() {
             let want = text_of(n["text"].as_str().unwrap());
             let here = id.subject().is_some_and(|s| n["subject"] == s);
