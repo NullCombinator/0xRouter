@@ -82,9 +82,7 @@ pub fn auth_rejection(provider: &ProviderEntity, status: u16, message: &str) -> 
 /// Whether `f` is about the account rather than the model: the test leaves the verdict as it
 /// was (FR-009).
 pub fn account_fault(f: &Failed<'_>, provider: &ProviderEntity) -> bool {
-    account_class(f.class)
-        || f.class == ErrorClass::Auth
-        || f.status.is_some_and(|s| auth_rejection(provider, s, f.message))
+    account_class(f.class) || f.status.is_some_and(|s| auth_rejection(provider, s, f.message))
 }
 
 /// What `f` says about the model. Order (R3): not definitive first (no status, 408, 429, 5xx, an

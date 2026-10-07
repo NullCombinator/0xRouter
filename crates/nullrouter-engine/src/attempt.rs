@@ -684,7 +684,12 @@ impl Run {
         for slot in &order {
             let Step::Try(c) = &plan.steps[slot.step] else { continue };
             let key = cooldown_key(c);
-            if let Some(until) = self.engine.cooldowns.cooling(key.0, key.1, key.2) {
+            // A test is sent through any rest but a rate limit's (spec 011, Assumptions).
+            let cooling = match self.req.test {
+                Some(_) => self.engine.cooldowns.rate_limited(key.0, key.1, key.2),
+                None => self.engine.cooldowns.cooling(key.0, key.1, key.2),
+            };
+            if let Some(until) = cooling {
                 rested.push(key);
                 let secs = until.saturating_duration_since(time::Instant::now()).as_secs_f64().ceil();
                 self.skip(

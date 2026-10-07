@@ -66,7 +66,7 @@ one push with the user's OK, and read CI results with the github MCP (read-only)
 ### Tests for User Story 1
 
 - [X] T013 [P] [US1] Table test of `verdict::judge` in `crates/nullrouter-engine/tests/verdict_judge.rs`: for each row of research R3 (core list per status and phrase; a bare 404 with no model wording → UNKNOWN; 408, 429, 5xx, no status, stall, break → UNKNOWN; a 401 and a `[[signin.refused]]` match → account, not verdict; a plugin rule wins over the core list) and for a malformed success per type (SC-001)
-- [ ] T014 [P] [US1] End-to-end single-pair tests in `crates/nullrouter-engine/tests/model_test.rs` using the testkit mock upstream: one pair of each type (text, embedding, tts, stt, image, video) answering success, each core rejection, a plugin rule, 429, 503 and a hang past a shortened timeout; assert the verdict, that exactly one account was called (no fallback), that the record is marked `test` with no prompt or output, and that the quota tally counted the call (US1 scenarios 1–8, SC-008)
+- [X] T014 [P] [US1] End-to-end single-pair tests in `crates/nullrouter-engine/tests/model_test.rs` using the testkit mock upstream: one pair of each type (text, embedding, tts, stt, image, video) answering success, each core rejection, a plugin rule, 429, 503 and a hang past a shortened timeout; assert the verdict, that exactly one account was called (no fallback), that the record is marked `test` with no prompt or output, and that the quota tally counted the call (US1 scenarios 1–8, SC-008)
 
 ### Implementation for User Story 1
 

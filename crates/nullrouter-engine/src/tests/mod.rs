@@ -249,7 +249,7 @@ pub fn skip_reason(engine: &Engine, st: &EngineState, pair: &Pair) -> Option<Str
             n
         }
     };
-    let until = engine.cooldowns.cooling(&pair.provider, name, &pair.model)?;
+    let until = engine.cooldowns.rate_limited(&pair.provider, name, &pair.model)?;
     let left = until.saturating_duration_since(tokio::time::Instant::now());
     let at = crate::clock::rfc3339(SystemTime::now() + left);
     Some(format!("rate-limited until {} UTC", at.get(11..16).unwrap_or(&at)))
