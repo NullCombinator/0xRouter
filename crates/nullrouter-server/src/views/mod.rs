@@ -26,6 +26,7 @@ pub mod records;
 pub mod resolve;
 pub mod routing;
 pub mod unified;
+pub mod verdicts;
 
 use crate::operator::{self, CallError};
 
@@ -109,6 +110,7 @@ pub fn request(op: &str, args: &Value) -> Value {
         "records.get" => &["id"],
         "routing.view" => &["target"],
         "quota.list" => &["provider", "name"],
+        "verdicts.list" => &["provider", "account", "model", "state"],
         _ => &[],
     };
     let mut req = json!({ "op": op });

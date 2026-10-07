@@ -15,6 +15,7 @@ pub(crate) mod serve;
 pub(crate) mod test;
 pub(crate) mod unified;
 pub(crate) mod validate;
+pub(crate) mod verdicts;
 
 use std::process::ExitCode;
 

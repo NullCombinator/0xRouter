@@ -17,6 +17,7 @@ use arc_swap::ArcSwap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::journal::{Journal, Target};
+use crate::state::{Engine, EngineState};
 
 /// The account a no-auth provider's pairs use.
 pub const NO_ACCOUNT: &str = "-";
@@ -168,6 +169,103 @@ pub struct Basis {
     pub signed_in_at: Option<String>,
     /// `sha256:<hex>` of the provider's plugin source.
     pub plugin: String,
+}
+
+/// What `pair`'s verdict rests on now: the account's secret or sign-in, and its plugin. A change
+/// in any returns the pair to untested.
+pub fn basis(engine: &Engine, st: &EngineState, pair: &Pair) -> Basis {
+    use sha2::{Digest, Sha256};
+    let account = st.accounts.get(&pair.provider, &pair.account);
+    let secret = account.filter(|a| !a.is_signin()).and_then(|a| a.secret.as_ref()).and_then(|s| {
+        let install = engine.install_id().ok()?;
+        Some(s.with_exposed(|k| {
+            let mut h = Sha256::new();
+            h.update(install.as_bytes());
+            h.update([0u8]);
+            h.update(k.as_bytes());
+            format!("sha256:{:x}", h.finalize())
+        }))
+    });
+    let signed_in_at = account
+        .filter(|a| a.is_signin())
+        .and_then(|a| st.tokens.get(&a.provider, &a.name))
+        .map(|t| crate::clock::rfc3339(t.entry.signed_in_at));
+    let plugin = st.registry.plugin_digest(&pair.provider).unwrap_or_default().to_owned();
+    Basis { secret, signed_in_at, plugin }
+}
+
+/// Why `pair`'s verdict no longer holds under `st`, if it doesn't: its provider or account is
+/// gone, or its plugin, secret or sign-in changed (research R7).
+fn stale(engine: &Engine, st: &EngineState, pair: &Pair, v: &Verdict) -> Option<&'static str> {
+    if st.registry.provider(&pair.provider).is_err() {
+        return Some("provider removed");
+    }
+    if pair.account != NO_ACCOUNT && st.accounts.get(&pair.provider, &pair.account).is_none() {
+        return Some("account removed");
+    }
+    let now = basis(engine, st, pair);
+    if now.plugin != v.basis.plugin {
+        Some("plugin changed")
+    } else if now.secret != v.basis.secret || now.signed_in_at != v.basis.signed_in_at {
+        Some("account changed")
+    } else {
+        None
+    }
+}
+
+/// Clears every verdict [`stale`] under `st`, each with a `cleared` line. Runs at open, after
+/// every reload and after a token swap. Returns how many.
+pub fn recheck(engine: &Engine, st: &EngineState, at: SystemTime) -> usize {
+    engine.verdicts.clear_where(at, |pair, v| stale(engine, st, pair, v))
+}
+
+/// What the operator does to a pair (`verdicts mark`, `verdicts clear`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Mark {
+    /// BROKEN, source operator, never retested.
+    Broken { note: Option<String> },
+    /// Back to untested.
+    Clear,
+}
+
+/// Applies the operator's `mark` to `provider/account model`. The error is what the CLI prints:
+/// an unknown provider or account, or clearing a pair that has no verdict.
+pub fn mark(engine: &Engine, provider: &str, account: &str, model: &str, mark: Mark) -> Result<(), String> {
+    let st = engine.snapshot();
+    let now = crate::clock::now();
+    // The canonical id when the provider is loaded; a removed provider's pair can still be cleared.
+    let id = st.registry.provider(provider).map(|p| p.id.as_str()).unwrap_or(provider);
+    let pair = Pair::new(id, account, model);
+    match mark {
+        Mark::Clear if engine.verdicts.clear(&pair, "cleared by the operator", now) => Ok(()),
+        Mark::Clear => Err(format!("no verdict for {pair}")),
+        Mark::Broken { note } => {
+            if st.registry.provider(provider).is_err() {
+                return Err(format!("no provider {provider:?}"));
+            }
+            if account != NO_ACCOUNT && st.accounts.get(id, account).is_none() {
+                return Err(format!("no account {id}/{account}"));
+            }
+            let reason = match &note {
+                Some(n) => format!("set by the operator: {n}"),
+                None => "set by the operator".to_owned(),
+            };
+            let v = Verdict {
+                state: State::Broken,
+                reason,
+                rejection: None,
+                source: Source::Operator,
+                at: now,
+                record: None,
+                step: None,
+                next: None,
+                basis: basis(engine, &st, &pair),
+                note,
+            };
+            engine.verdicts.set(pair, v);
+            Ok(())
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

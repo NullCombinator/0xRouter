@@ -16,6 +16,8 @@
 //! | `{"op":"quota.list"}`, `{"op":"quota.poll"}`, `{"op":"quota.checkpoint"}` | see [`crate::quota`] |
 //! | `{"op":"test.plan","target"?,"account"?,"all"?}` | `{"ok":true,"pairs":[{provider,account,model,type,skip?}],"calls":{"<type>":N}}` (spec 011) |
 //! | `{"op":"test.run","target"?,"account"?,"all"?}` | streamed: one `{"event":"result","result":TestResult}` line per pair, then `{"ok":true,"done":{pass,broken,unknown,skipped}}`. Closing the connection cancels calls not yet sent |
+//! | `{"op":"verdicts.list","provider"?,"account"?,"model"?,"state"?}` | `{"ok":true,"verdicts":[{provider,account,model,…Verdict,"waiting"?}],"combos":[{combo,…,"waiting"?}]}`: `waiting` says why a due retest can't run yet |
+//! | `{"op":"verdicts.set","provider","account","model","state":"broken"\|"clear","note"?}` | `{"ok":true}`, or `{"ok":false,"error":"no verdict for …"}` on clearing an untested pair |
 
 use std::future::Future;
 use std::io::{BufRead, BufReader, Write};
@@ -287,8 +289,86 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         Some("quota.checkpoint") => crate::quota::checkpoint(engine).await,
         Some("test.plan") => test_plan(engine, req),
         Some("test.run") => json!({"ok": false, "error": "test.run streams: send it on its own connection"}),
+        Some("verdicts.list") => verdicts_list(engine, req),
+        Some("verdicts.set") => verdicts_set(engine, req),
         Some(op) => json!({"ok": false, "error": format!("unknown op {op:?}")}),
         None => json!({"ok": false, "error": "the request names no op"}),
+    }
+}
+
+/// `verdicts.list`: every verdict the filter keeps, with why its retest waits, and the combo
+/// results (those only with no provider, account or model filter). Reasons pass the redactor.
+fn verdicts_list(engine: &Engine, req: &Value) -> Value {
+    use nullrouter_engine::tests::retest;
+    use nullrouter_engine::verdict::{Filter, State, store};
+
+    let str_of = |k: &str| req.get(k).and_then(Value::as_str).map(str::to_owned);
+    let state = match str_of("state") {
+        Some(s) => match State::parse(&s) {
+            Some(s) => Some(s),
+            None => return json!({"ok": false, "error": "--state is pass, broken or unknown"}),
+        },
+        None => None,
+    };
+    let filter = Filter { provider: str_of("provider"), account: str_of("account"), model: str_of("model"), state };
+    let st = engine.snapshot();
+    let now = nullrouter_engine::clock::now();
+    let redact = |line: &mut Value| {
+        if let Some(r) = line["reason"].as_str() {
+            let shown = st.redactor.redact(r).into_owned();
+            line["reason"] = json!(shown);
+        }
+    };
+    let verdicts: Vec<Value> = engine
+        .verdicts
+        .list(&filter)
+        .into_iter()
+        .map(|(pair, v)| {
+            let mut line = store::set_line(&pair, &v);
+            if let Some(map) = line.as_object_mut() {
+                map.remove("basis");
+            }
+            redact(&mut line);
+            if let Some(why) = v.next.and_then(|_| retest::waiting(engine, &st, &pair, now)) {
+                line["waiting"] = json!(why);
+            }
+            line
+        })
+        .collect();
+    let by_pair = filter.provider.is_some() || filter.account.is_some() || filter.model.is_some();
+    let combos: Vec<Value> = if by_pair {
+        Vec::new()
+    } else {
+        let all = engine.verdicts.snapshot();
+        all.combos
+            .iter()
+            .filter(|(_, c)| state.is_none_or(|s| s == c.state))
+            .map(|(name, c)| {
+                let mut line = store::combo_line(name, c);
+                redact(&mut line);
+                line
+            })
+            .collect()
+    };
+    json!({"ok": true, "verdicts": verdicts, "combos": combos})
+}
+
+/// `verdicts.set`: the operator marks a pair BROKEN (with an optional note) or clears it.
+fn verdicts_set(engine: &Engine, req: &Value) -> Value {
+    use nullrouter_engine::verdict::{self, Mark};
+
+    let str_of = |k: &str| req.get(k).and_then(Value::as_str).map(str::to_owned);
+    let (Some(provider), Some(account), Some(model)) = (str_of("provider"), str_of("account"), str_of("model")) else {
+        return json!({"ok": false, "error": "verdicts.set names a provider, an account and a model"});
+    };
+    let mark = match str_of("state").as_deref() {
+        Some("broken") => Mark::Broken { note: str_of("note").filter(|n| !n.trim().is_empty()) },
+        Some("clear") => Mark::Clear,
+        _ => return json!({"ok": false, "error": "state is broken or clear"}),
+    };
+    match verdict::mark(engine, &provider, &account, &model, mark) {
+        Ok(()) => json!({"ok": true}),
+        Err(e) => json!({"ok": false, "error": e}),
     }
 }
 

@@ -252,6 +252,7 @@ impl Engine {
         let st = engine.snapshot();
         let restored = crate::route::restore(&engine, &st, crate::clock::now());
         tracing::info!("routing state restored: {} fingerprints, {} ledgers", restored.fingerprints, restored.ledgers);
+        engine.recheck_verdicts(&st);
         Ok((engine, report))
     }
 
@@ -352,7 +353,9 @@ impl Engine {
         for (provider, name) in &removed {
             crate::route::drop_account(self, &state, provider, name, SystemTime::now());
         }
-        self.state.store(Arc::new(state));
+        let state = Arc::new(state);
+        self.state.store(state.clone());
+        self.recheck_verdicts(&state);
         self.changed.notify_one();
         Ok(report)
     }
@@ -364,7 +367,17 @@ impl Engine {
         let _guard = self.reload.lock().unwrap_or_else(|e| e.into_inner());
         let st = self.snapshot();
         self.swap_redactor(self.build_redactor(&st.accounts, std::iter::empty()));
+        self.recheck_verdicts(&st);
         self.changed.notify_one();
+    }
+
+    /// Returns to untested every verdict whose account, sign-in or plugin changed, or whose
+    /// account or provider is gone (research R7).
+    fn recheck_verdicts(&self, st: &EngineState) {
+        let cleared = crate::verdict::recheck(self, st, crate::clock::now());
+        if cleared > 0 {
+            tracing::info!("{cleared} model verdicts back to untested: their account or plugin changed");
+        }
     }
 
     /// Adds `secrets` to the redactor before they go into a token cell (security review

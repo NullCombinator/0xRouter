@@ -29,7 +29,7 @@ use crate::keys::AgentId;
 use crate::records::{self, AttemptOutcome, RequestRecord, TestMark};
 use crate::state::{Engine, EngineState};
 use crate::verdict::judge::{self, Failed};
-use crate::verdict::{Basis, NO_ACCOUNT, Pair, Rejection, Source, State, Verdict};
+use crate::verdict::{NO_ACCOUNT, Pair, Rejection, Source, State, Verdict};
 
 /// The agent key a test's request runs under; its record keeps no agent.
 pub const AGENT: &str = "nullrouter-test";
@@ -551,28 +551,7 @@ fn store(
     next
 }
 
-/// What `pair`'s verdict rests on: the account's secret or sign-in, and its plugin. A change in
-/// any returns the pair to untested.
-pub fn basis(engine: &Engine, st: &EngineState, pair: &Pair) -> Basis {
-    use sha2::{Digest, Sha256};
-    let account = st.accounts.get(&pair.provider, &pair.account);
-    let secret = account.filter(|a| !a.is_signin()).and_then(|a| a.secret.as_ref()).and_then(|s| {
-        let install = engine.install_id().ok()?;
-        Some(s.with_exposed(|k| {
-            let mut h = Sha256::new();
-            h.update(install.as_bytes());
-            h.update([0u8]);
-            h.update(k.as_bytes());
-            format!("sha256:{:x}", h.finalize())
-        }))
-    });
-    let signed_in_at = account
-        .filter(|a| a.is_signin())
-        .and_then(|a| st.tokens.get(&a.provider, &a.name))
-        .map(|t| crate::clock::rfc3339(t.entry.signed_in_at));
-    let plugin = st.registry.plugin_digest(&pair.provider).unwrap_or_default().to_owned();
-    Basis { secret, signed_in_at, plugin }
-}
+pub use crate::verdict::basis;
 
 #[cfg(test)]
 mod gate_tests {
