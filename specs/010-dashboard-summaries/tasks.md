@@ -102,17 +102,17 @@ each period equals `usage --json` at the page's `as of`.
 
 ### Tests for User Story 2
 
-- [ ] T021 [P] [US2] Engine test in `crates/nullrouter-engine/tests/summary.rs`: `summary::latency` over the fixture's last 24 h matches `expected.toml`: agent requests, overhead and TTFT p50/p95 with `n`; provider requests, own TTFT p50/p95, per-agent counts; last response (provider: newest `Ok`/`Failed` attempt at `arrived + ended`, with the HTTP status when failed; agent: newest finished request, `Succeeded` resolved, `Failed`/`Refused`/`Interrupted` failed, `Cancelled` ignored); the refused-before-key record in no row; a row with no values gives `None`, not 0; records older than 24 h excluded
-- [ ] T022 [P] [US2] View and CLI tests: `crates/nullrouter-server/src/views/latency.rs` (`#[cfg(test)]`, JSON shape of data-model.md, `window` = "last 24 h", window `[at − 24 h, at)`) and `crates/nullrouter-cli/tests/latency.rs` with golden `crates/nullrouter-cli/tests/golden/latency.txt` (ms under a second, seconds with one decimal above; `none`; `own ttft` heading; "no requests in the last 24 h"; local times with a date when not the read's date)
-- [ ] T023 [P] [US2] Server test `crates/nullrouter-server/tests/latency_summary.rs`: `latency.summary` with a running server equals the cold path, and includes a record finished in the ring but not yet on disk
+- [x] T021 [P] [US2] Engine test in `crates/nullrouter-engine/tests/summary.rs`: `summary::latency` over the fixture's last 24 h matches `expected.toml`: agent requests, overhead and TTFT p50/p95 with `n`; provider requests, own TTFT p50/p95, per-agent counts; last response (provider: newest `Ok`/`Failed` attempt at `arrived + ended`, with the HTTP status when failed; agent: newest finished request, `Succeeded` resolved, `Failed`/`Refused`/`Interrupted` failed, `Cancelled` ignored); the refused-before-key record in no row; a row with no values gives `None`, not 0; records older than 24 h excluded
+- [x] T022 [P] [US2] View and CLI tests: `crates/nullrouter-server/src/views/latency.rs` (`#[cfg(test)]`, JSON shape of data-model.md, `window` = "last 24 h", window `[at − 24 h, at)`) and `crates/nullrouter-cli/tests/latency.rs` with golden `crates/nullrouter-cli/tests/golden/latency.txt` (ms under a second, seconds with one decimal above; `none`; `own ttft` heading; "no requests in the last 24 h"; local times with a date when not the read's date)
+- [x] T023 [P] [US2] Server test `crates/nullrouter-server/tests/latency_summary.rs`: `latency.summary` with a running server equals the cold path, and includes a record finished in the ring but not yet on disk
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Implement `Pct`, `Last`, `AgentLatency`, `ProviderLatency`, `Latency` and `summary::latency(home, window) -> Latency` in `crates/nullrouter-engine/src/journal/summary.rs` per research R6 and data-model.md; never cached
-- [ ] T025 [US2] Add the operator op `latency.summary {from, to}` in `crates/nullrouter-server/src/operator.rs` (blocking pool, ring merge) and its args line in `crates/nullrouter-server/src/views/mod.rs`
-- [ ] T026 [US2] Implement the `latency` view in `crates/nullrouter-server/src/views/latency.rs` (`NEEDS = ["latency.summary"]`; arg `at`; cold path in process, settling open records with `views::records::settle_open` as `usage` does; names joined) and register it
-- [ ] T027 [US2] Add the `latency` command to `crates/nullrouter-cli/src/main.rs` and its text renderer in `crates/nullrouter-cli/src/cmd/latency.rs` per contracts/cli.md
-- [ ] T028 [US2] Add `ViewName::Latency` (needs and builder) in `crates/nullrouter-dashboard/src/page.rs`
+- [x] T024 [US2] Implement `Pct`, `Last`, `AgentLatency`, `ProviderLatency`, `Latency` and `summary::latency(home, window) -> Latency` in `crates/nullrouter-engine/src/journal/summary.rs` per research R6 and data-model.md; never cached
+- [x] T025 [US2] Add the operator op `latency.summary {from, to}` in `crates/nullrouter-server/src/operator.rs` (blocking pool, ring merge) and its args line in `crates/nullrouter-server/src/views/mod.rs`
+- [x] T026 [US2] Implement the `latency` view in `crates/nullrouter-server/src/views/latency.rs` (`NEEDS = ["latency.summary"]`; arg `at`; cold path in process, settling open records with `views::records::settle_open` as `usage` does; names joined) and register it
+- [x] T027 [US2] Add the `latency` command to `crates/nullrouter-cli/src/main.rs` and its text renderer in `crates/nullrouter-cli/src/cmd/latency.rs` per contracts/cli.md
+- [x] T028 [US2] Add `ViewName::Latency` (needs and builder) in `crates/nullrouter-dashboard/src/page.rs`
 
 **Checkpoint**: US1 and US2 complete: both views on the CLI.
 

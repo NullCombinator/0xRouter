@@ -330,6 +330,170 @@ pub fn totals_with(
     out
 }
 
+/// Percentiles of one set of values, in milliseconds (R6). `n` is how many values there were.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Pct {
+    pub p50: f64,
+    pub p95: f64,
+    pub n: u64,
+}
+
+/// `None` when there are no values: a row says so, and never shows 0.
+fn pct(mut v: Vec<f64>) -> Option<Pct> {
+    v.sort_by(f64::total_cmp);
+    Some(Pct { p50: nearest_rank(&v, 0.5)?, p95: nearest_rank(&v, 0.95)?, n: v.len() as u64 })
+}
+
+/// How the newest response ended and when; `status` is the HTTP status of a failed provider
+/// attempt, when it had one.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Last {
+    pub result: &'static str,
+    pub at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct AgentLatency {
+    pub requests: u64,
+    pub overhead: Option<Pct>,
+    pub ttft: Option<Pct>,
+    pub last: Option<Last>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ProviderLatency {
+    pub requests: u64,
+    pub own_ttft: Option<Pct>,
+    pub agents: BTreeMap<String, u64>,
+    pub last: Option<Last>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct Latency {
+    pub agents: BTreeMap<String, AgentLatency>,
+    pub providers: BTreeMap<String, ProviderLatency>,
+}
+
+/// `arrived` plus `ms` milliseconds.
+fn after(arrived: &str, ms: f64) -> Option<SystemTime> {
+    Some(clock::parse_rfc3339(arrived)? + Duration::from_secs_f64(ms.max(0.0) / 1000.0))
+}
+
+/// Keeps the newer of two responses.
+fn newer(slot: &mut Option<(SystemTime, Last)>, at: SystemTime, result: &'static str, status: Option<u64>) {
+    if slot.as_ref().is_none_or(|(t, _)| at > *t) {
+        *slot = Some((at, Last { result, at: clock::rfc3339(at), status }));
+    }
+}
+
+#[derive(Default)]
+struct AgentAcc {
+    requests: u64,
+    overhead: Vec<f64>,
+    ttft: Vec<f64>,
+    last: Option<(SystemTime, Last)>,
+}
+
+#[derive(Default)]
+struct ProviderAcc {
+    requests: u64,
+    own: Vec<f64>,
+    agents: BTreeMap<String, u64>,
+    last: Option<(SystemTime, Last)>,
+}
+
+/// Latency per agent and per provider over the window's records that have an agent (FR-012),
+/// the journal's merged with the server's live ones (a live record replaces its disk copy).
+/// Never cached. `running` says whether a server runs, as for [`totals`].
+pub fn latency(home: &Path, w: &Window, live: &[Value], running: bool) -> Latency {
+    let skip: HashSet<&str> = live.iter().filter_map(|r| r["id"].as_str()).collect();
+    let mut records = records_in(home, w);
+    records.retain(|r| r["id"].as_str().is_none_or(|id| !skip.contains(id)));
+    records.extend(live.iter().filter(|r| r["arrived"].as_str().is_some_and(|a| w.holds(a))).cloned());
+
+    let mut agents: BTreeMap<String, AgentAcc> = BTreeMap::new();
+    let mut providers: BTreeMap<String, ProviderAcc> = BTreeMap::new();
+    for r in &records {
+        let Some(agent) = r["agent"]["key"].as_str() else { continue };
+        let arrived = r["arrived"].as_str().unwrap_or_default();
+        let a = agents.entry(agent.to_owned()).or_default();
+        a.requests += 1;
+        if let Some(started) = first_attempt(r).and_then(|x| x["started"].as_f64()) {
+            a.overhead.push(started);
+        }
+        if let Some(t) = r["ttft_ms"].as_f64() {
+            a.ttft.push(t);
+        }
+        // A request cut short without a server is interrupted; a job in progress isn't.
+        let outcome = match r["outcome"].as_str() {
+            Some("in_progress") if !running && r["job"].is_null() => Some("interrupted"),
+            o => o,
+        };
+        let result = match outcome {
+            Some("succeeded") => Some("resolved"),
+            Some("failed" | "refused" | "interrupted") => Some("failed"),
+            _ => None,
+        };
+        if let Some(result) = result
+            && let Some(at) = after(arrived, r["total_ms"].as_f64().unwrap_or(0.0))
+        {
+            newer(&mut a.last, at, result, None);
+        }
+
+        let mut seen: Vec<&str> = Vec::new();
+        for att in r["attempts"].as_array().into_iter().flatten().filter(|x| !is_skipped(x)) {
+            let Some(p) = att["provider"].as_str() else { continue };
+            let acc = providers.entry(p.to_owned()).or_default();
+            if !seen.contains(&p) {
+                seen.push(p);
+                acc.requests += 1;
+                *acc.agents.entry(agent.to_owned()).or_default() += 1;
+            }
+            let (result, status) = match att["outcome"]["state"].as_str() {
+                Some("ok") => ("resolved", None),
+                Some("failed") => ("failed", att["outcome"]["status"].as_u64()),
+                _ => continue,
+            };
+            if let Some(at) = att["ended"].as_f64().and_then(|e| after(arrived, e)) {
+                newer(&mut acc.last, at, result, status);
+            }
+        }
+        if let Some((att, own)) = own_ttft(r)
+            && let Some(p) = att["provider"].as_str()
+        {
+            providers.entry(p.to_owned()).or_default().own.push(own);
+        }
+    }
+    Latency {
+        agents: agents
+            .into_iter()
+            .map(|(k, a)| {
+                let row = AgentLatency {
+                    requests: a.requests,
+                    overhead: pct(a.overhead),
+                    ttft: pct(a.ttft),
+                    last: a.last.map(|(_, l)| l),
+                };
+                (k, row)
+            })
+            .collect(),
+        providers: providers
+            .into_iter()
+            .map(|(k, p)| {
+                let row = ProviderLatency {
+                    requests: p.requests,
+                    own_ttft: pct(p.own),
+                    agents: p.agents,
+                    last: p.last.map(|(_, l)| l),
+                };
+                (k, row)
+            })
+            .collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

@@ -25,6 +25,8 @@ pub enum ViewName {
     Check,
     Dashboard,
     Keys,
+    /// The last 24 hours per agent and provider (`latency`).
+    Latency,
     Model,
     Plugins,
     Providers,
@@ -49,6 +51,7 @@ impl ViewName {
             Self::Check => views::check::NEEDS,
             Self::Dashboard => views::dashboard::NEEDS,
             Self::Keys => views::keys::NEEDS,
+            Self::Latency => views::latency::NEEDS,
             Self::Model => views::model::NEEDS,
             Self::Plugins => views::plugins::NEEDS,
             Self::Providers => views::providers::NEEDS,
@@ -62,7 +65,7 @@ impl ViewName {
     /// Whether the view reads relative to a time, which a page sets to its own "as of" so the
     /// page and the CLI's `--json` at that time agree (spec 010 research R2).
     const fn takes_at(self) -> bool {
-        matches!(self, Self::Usage)
+        matches!(self, Self::Usage | Self::Latency)
     }
 
     fn builder(self) -> Build {
@@ -72,6 +75,7 @@ impl ViewName {
             Self::Check => views::check::build,
             Self::Dashboard => views::dashboard::build,
             Self::Keys => views::keys::build,
+            Self::Latency => views::latency::build,
             Self::Model => views::model::build,
             Self::Plugins => views::plugins::build,
             Self::Providers => views::providers::build,
@@ -171,12 +175,7 @@ pub async fn build_with(
             let value = views::run_in_process(engine, want.view.needs(), &args, move |live| build(&home, &own, live))
                 .await
                 .map_err(PageError::View)?;
-            views.push(Fetched {
-                view: want.view,
-                args,
-                value,
-                generation: engine.snapshot().generation,
-            });
+            views.push(Fetched { view: want.view, args, value, generation: engine.snapshot().generation });
             after_fetch(i);
         }
         if engine.snapshot().generation == generation && views.iter().all(|f| f.generation == generation) {

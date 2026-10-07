@@ -17,6 +17,7 @@ pub mod behaviour;
 pub mod check;
 pub mod dashboard;
 pub mod keys;
+pub mod latency;
 pub mod model;
 pub mod plugins;
 pub mod providers;
@@ -112,8 +113,10 @@ pub fn request(op: &str, args: &Value) -> Value {
         _ => &[],
     };
     let mut req = json!({ "op": op });
-    if op == "usage.totals" {
-        (req["from"], req["to"]) = usage::op_window(args);
+    match op {
+        "usage.totals" => (req["from"], req["to"]) = usage::op_window(args),
+        "latency.summary" => (req["from"], req["to"]) = latency::op_window(args),
+        _ => {}
     }
     for k in keys {
         req[*k] = args.get(*k).cloned().unwrap_or(Value::Null);

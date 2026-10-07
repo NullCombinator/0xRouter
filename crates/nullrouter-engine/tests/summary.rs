@@ -126,3 +126,106 @@ fn without_a_server_an_unfinished_request_was_cut_short() {
     let got = summary::totals(&fixture(), &window(all), &prices, false);
     assert_eq!((got.in_flight, got.not_reported), (0, 4), "fx15 is now not reported, not in flight");
 }
+
+fn pct_of(want: &Value) -> Option<(f64, f64, u64)> {
+    let f = |k: &str| rate(want, k).unwrap();
+    Some((f("p50"), f("p95"), want["n"].as_integer()? as u64))
+}
+
+fn got_pct(p: Option<summary::Pct>) -> Option<(f64, f64, u64)> {
+    p.map(|p| (p.p50, p.p95, p.n))
+}
+
+fn last_of(want: &Value) -> (String, String, Option<u64>) {
+    (
+        want["result"].as_str().unwrap().to_owned(),
+        want["at"].as_str().unwrap().to_owned(),
+        want.get("status").map(|s| s.as_integer().unwrap() as u64),
+    )
+}
+
+fn got_last(l: Option<&summary::Last>) -> (String, String, Option<u64>) {
+    let l = l.expect("a last response");
+    (l.result.to_owned(), l.at.clone(), l.status)
+}
+
+fn day_window() -> Window {
+    let at = parse_rfc3339(table("expected.toml")["latency"]["at"].as_str().unwrap()).unwrap();
+    Window { from: Some(at - std::time::Duration::from_secs(86_400)), to: at }
+}
+
+#[test]
+fn latency_matches_the_hand_figures_per_agent_and_provider() {
+    let expected = table("expected.toml");
+    let want = &expected["latency"];
+    let got = summary::latency(&fixture(), &day_window(), &[], true);
+
+    let agents = want["agents"].as_table().unwrap();
+    assert_eq!(got.agents.keys().collect::<Vec<_>>(), agents.keys().collect::<Vec<_>>(), "agents with a row");
+    for (id, w) in agents {
+        let g = &got.agents[id];
+        assert_eq!(g.requests, w["requests"].as_integer().unwrap() as u64, "{id}: requests");
+        assert_eq!(got_pct(g.overhead), pct_of(&w["overhead"]), "{id}: overhead");
+        assert_eq!(got_pct(g.ttft), pct_of(&w["ttft"]), "{id}: ttft");
+        assert_eq!(got_last(g.last.as_ref()), last_of(&w["last"]), "{id}: last");
+    }
+
+    let providers = want["providers"].as_table().unwrap();
+    assert_eq!(got.providers.keys().collect::<Vec<_>>(), {
+        let mut k: Vec<_> = providers.keys().collect();
+        k.sort();
+        k
+    });
+    for (id, w) in providers {
+        let g = &got.providers[id];
+        assert_eq!(g.requests, w["requests"].as_integer().unwrap() as u64, "{id}: requests");
+        assert_eq!(got_pct(g.own_ttft), pct_of(&w["own_ttft"]), "{id}: own ttft");
+        let mut per_agent: Vec<_> = g.agents.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        per_agent.sort();
+        let mut want_agents = counts(&w["agents"]);
+        want_agents.sort();
+        assert_eq!(per_agent, want_agents, "{id}: per agent");
+        assert_eq!(got_last(g.last.as_ref()), last_of(&w["last"]), "{id}: last");
+    }
+}
+
+#[test]
+fn a_request_refused_before_a_key_matched_is_in_no_row() {
+    let got = summary::latency(&fixture(), &day_window(), &[], true);
+    // fx12 has no agent and no attempts: the agents' requests add up to 11 of the window's 12.
+    assert_eq!(got.agents.values().map(|a| a.requests).sum::<u64>(), 11);
+}
+
+#[test]
+fn a_row_with_no_values_has_none_not_zero_and_old_records_are_left_out() {
+    let w = day_window();
+    let got = summary::latency(&fixture(), &w, &[], true);
+    // fx14 and fx15 have no first token, so alice's and bob's ttft counts are one short of their requests.
+    assert_eq!(got.agents["ak_alice"].ttft.unwrap().n, 4);
+    assert_eq!(got.agents["ak_bob"].ttft.unwrap().n, 4);
+    // A window with no records gives no rows at all.
+    let quiet = Window {
+        from: Some(parse_rfc3339("2026-09-01T00:00:00Z").unwrap()),
+        to: parse_rfc3339("2026-09-02T00:00:00Z").unwrap(),
+    };
+    let none = summary::latency(&fixture(), &quiet, &[], true);
+    assert!(none.agents.is_empty() && none.providers.is_empty());
+    // Only fx01..fx03, older than 24 h, fall before the window: a window ending at 10-06 12:00 sees them.
+    let older = Window { from: None, to: parse_rfc3339("2026-10-06T12:00:00Z").unwrap() };
+    let got = summary::latency(&fixture(), &older, &[], true);
+    assert_eq!(got.agents.values().map(|a| a.requests).sum::<u64>(), 3);
+    assert!(got.agents["ak_alice"].last.is_some());
+}
+
+#[test]
+fn without_a_server_an_unfinished_request_is_a_failed_last_response() {
+    let w = Window {
+        from: Some(parse_rfc3339("2026-10-07T11:00:00Z").unwrap()),
+        to: parse_rfc3339("2026-10-07T12:00:00Z").unwrap(),
+    };
+    let with = summary::latency(&fixture(), &w, &[], true);
+    let without = summary::latency(&fixture(), &w, &[], false);
+    // fx15 (bob, unfinished, 11:55) is in flight with a server and cut short without one.
+    assert!(with.agents["ak_bob"].last.is_none());
+    assert_eq!(without.agents["ak_bob"].last.as_ref().map(|l| l.result), Some("failed"));
+}

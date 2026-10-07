@@ -9,6 +9,7 @@
 //! | `{"op":"records.get","id":"rq_…"}` | `{"ok":true,"record":{…}}` |
 //! | `{"op":"keys.last_used"}` | `{"ok":true,"last_used":{"<key id>":"<RFC 3339>"\|null}}`: for every key in `keys.toml`, the arrival of its newest record, from the cached segment index and the requests still in flight; `null` for a key no record names |
 //! | `{"op":"usage.totals","from":"<RFC 3339>"\|null,"to":"<RFC 3339>"}` | `{"ok":true,"totals":{…}}`: requests, tokens, Est. Cost and per-agent and per-provider counts for arrivals in `[from, to)`, from the journal (finished days cached) and the requests still in memory |
+//! | `{"op":"latency.summary","from":"<RFC 3339>","to":"<RFC 3339>"}` | `{"ok":true,"latency":{agents,providers}}`: per agent key and per provider, router overhead and time to first token as p50/p95 (nearest rank), the provider's own wait, requests and the last response, for arrivals in `[from, to)`, from the journal and the requests still in memory; never cached |
 //! | `{"op":"records.forget","account"?:"P/N","agent"?:KEY}` | `{"ok":true,"fingerprints":N}`: the agent's fingerprints (or the account's fingerprints and ledger entries) leave memory and `routing/warm.jsonl`, and the live ring; the CLI then rewrites the record segments |
 //! | `{"op":"accounts.state"}` | `{"ok":true,"accounts":[…]}`: per account `kind`, `state`, `state_since`, `state_reason`, `expires_at`, cooldowns |
 //! | `{"op":"routing.view","target"?}` | `{"ok":true,"amortization":{start,length},"journal":{…},"targets":[…],"warnings":[…]}`: per target and account the pace, share, deficit, priority, cache lifetime, quota source and each window's remaining amount, unit, reset and reserve |
@@ -141,6 +142,7 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         }
         Some("keys.last_used") => keys_last_used(engine).await,
         Some("usage.totals") => usage_totals(engine, req).await,
+        Some("latency.summary") => latency_summary(engine, req).await,
         Some("records.forget") => {
             let st = engine.snapshot();
             let now = nullrouter_engine::clock::now();
@@ -273,14 +275,33 @@ async fn usage_totals(engine: &Arc<Engine>, req: &Value) -> Value {
     };
     let home = engine.home().path().to_owned();
     let st = engine.snapshot();
-    let live: Vec<Value> = engine.records.query(&Query::default()).iter().filter_map(|r| serde_json::to_value(r).ok()).collect();
+    let live: Vec<Value> =
+        engine.records.query(&Query::default()).iter().filter_map(|r| serde_json::to_value(r).ok()).collect();
     let read = tokio::task::spawn_blocking(move || {
         let prices = summary::prices_of(&st.registry, &st.accounts);
         summary::totals_with(&home, &w, &prices, Some(st.generation), &live, true)
     })
     .await;
     match read {
-        Ok(totals) => json!({"ok": true, "totals": totals, "window": {"from": w.from.map(nullrouter_engine::clock::rfc3339), "to": nullrouter_engine::clock::rfc3339(w.to)}}),
+        Ok(totals) => {
+            json!({"ok": true, "totals": totals, "window": {"from": w.from.map(nullrouter_engine::clock::rfc3339), "to": nullrouter_engine::clock::rfc3339(w.to)}})
+        }
+        Err(e) => json!({"ok": false, "error": format!("the read failed: {e}")}),
+    }
+}
+
+/// `latency.summary`: as `usage.totals`, on the blocking pool with the live ring merged over disk.
+async fn latency_summary(engine: &Arc<Engine>, req: &Value) -> Value {
+    let w = match window_of(req) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let home = engine.home().path().to_owned();
+    let live: Vec<Value> =
+        engine.records.query(&Query::default()).iter().filter_map(|r| serde_json::to_value(r).ok()).collect();
+    let read = tokio::task::spawn_blocking(move || summary::latency(&home, &w, &live, true)).await;
+    match read {
+        Ok(latency) => json!({"ok": true, "latency": latency}),
         Err(e) => json!({"ok": false, "error": format!("the read failed: {e}")}),
     }
 }
