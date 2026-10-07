@@ -86,6 +86,8 @@ async fn send(engine: &Arc<Engine>, client: &str, target: &str, body: Value) -> 
         cancel: CancellationToken::new(),
         media: None,
         count: false,
+        pin: None,
+        test: None,
     };
     let text = match engine.text(st.clone(), req).await {
         Ok(Answer::Whole { status, raw, answer, .. }) => {
@@ -196,6 +198,8 @@ async fn try_prefill(engine: &Arc<Engine>, target: &str) -> Result<String, Strin
         cancel: CancellationToken::new(),
         media: None,
         count: false,
+        pin: None,
+        test: None,
     };
     match engine.text(st, req).await {
         Ok(Answer::Events { rx, .. }) => {
@@ -288,6 +292,8 @@ async fn send_media(engine: &Arc<Engine>, ty: ModelType, target: &str, body: Val
         cancel: CancellationToken::new(),
         media: Some(Media { ty, codec, variant: None, input, voice: None, job }),
         count: false,
+        pin: None,
+        test: None,
     };
     let got = match engine.text(st, req).await {
         Ok(Answer::Media(MediaAnswer::Value(v))) => Got::Value(v),

@@ -260,6 +260,7 @@ async fn records_list(engine: &Arc<Engine>, req: &Value) -> Value {
         since: str_of("since").and_then(|s| nullrouter_engine::clock::parse_rfc3339(&s)),
         limit,
         before: str_of("before"),
+        test: req.get("test").and_then(Value::as_bool),
     };
     let home = engine.home().path().to_owned();
     if let Some(id) = &filter.before {

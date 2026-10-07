@@ -107,13 +107,18 @@ impl Rejection {
         })
     }
 
-    /// The words the CLI prints before the provider's message.
-    pub fn describe(&self) -> &str {
+    /// The words the CLI prints before the provider's message; a plugin rule reads as its reason.
+    pub fn describe(&self) -> &'static str {
         match self {
             Self::ModelNotFound => "model not found",
             Self::ModelNotAvailable => "model not available",
             Self::TypeNotSupported => "type not supported",
-            Self::Plugin(r) => r,
+            Self::Plugin(r) => match r.as_str() {
+                "model_not_found" => "model not found",
+                "model_not_available" => "model not available",
+                "type_not_supported" => "type not supported",
+                _ => "rejected",
+            },
         }
     }
 }

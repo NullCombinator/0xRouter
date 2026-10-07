@@ -82,6 +82,25 @@ pub struct TextRequest {
     pub media: Option<Media>,
     /// A token count rather than a generation (research R14).
     pub count: bool,
+    /// A model test's one account: no fallback to another account or member (spec 011, R1).
+    pub pin: Option<Pin>,
+    /// Set on a model test's request (spec 011, R1, R9).
+    pub test: Option<TestTag>,
+}
+
+/// The one account a test may use. `account` is `-` for a no-auth provider.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pin {
+    pub provider: String,
+    pub account: String,
+}
+
+/// What a test request is part of.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct TestTag {
+    /// The run's `tr_` id.
+    pub run: String,
+    pub source: crate::verdict::Source,
 }
 
 /// A non-text request, decoded by the client style's codec.
@@ -483,7 +502,7 @@ fn inband_fail(ib: inband::InBand, raw: &str, after_output: bool, st: &EngineSta
 }
 
 /// Text in a 403's message that reads as a rejected token rather than a refused model.
-const AUTH_REJECTION: [&str; 6] =
+pub(crate) const AUTH_REJECTION: [&str; 6] =
     ["token", "expired", "unauthenticated", "authentication", "invalid credentials", "invalid_api_key"];
 
 /// Whether `f` rejected a sign-in account's token (research R9): a 401, or a 403 whose
@@ -623,8 +642,14 @@ impl Run {
             }
             target = model;
         }
-        let plan = match plan::plan(&st.registry, &st.accounts, &st.tokens, &st.live_models, &target, ty, &client_style)
-        {
+        let verdicts = self.engine.verdicts.snapshot();
+        let live = plan::Live {
+            tokens: &st.tokens,
+            live: &st.live_models,
+            verdicts: &verdicts,
+            pin: self.req.pin.as_ref(),
+        };
+        let plan = match plan::plan(&st.registry, &st.accounts, live, &target, ty, &client_style) {
             Ok(p) => p,
             Err(e) => {
                 self.end_request(Outcome::Failed, None);
@@ -633,7 +658,17 @@ impl Run {
         };
         let unified = plan.unified.clone();
         self.engine.records.update(&self.req.id, |r| r.unified_model = unified);
-        let routed = crate::route::decide(&self.engine, st, &self.req, &plan, SystemTime::now());
+        let mut routed = crate::route::decide(&self.engine, st, &self.req, &plan, SystemTime::now());
+        // A test the operator asked for runs on its pinned account even at priority 0 or at the
+        // reserve floor (clarify Q4); a rate-limit rest still holds, as the cooldown check below.
+        if self.req.test.as_ref().is_some_and(|t| t.source == crate::verdict::Source::Test) {
+            for (i, step) in plan.steps.iter().enumerate() {
+                if matches!(step, Step::Try(_)) && !routed.order.iter().any(|s| s.step == i) {
+                    let rank = routed.order.len();
+                    routed.order.push(crate::route::Slot { step: i, reason: PlacementReason::LastResort, rank });
+                }
+            }
+        }
         let (order, decision) = (routed.order.clone(), routed.decision.clone());
         self.engine.records.update(&self.req.id, |r| r.decision = Some(decision));
         self.routed = Some(routed);
@@ -695,7 +730,13 @@ impl Run {
             self.skip(&provider, (!account.is_empty()).then_some(account), &model, &reason, None, &mut tried);
         }
         self.end_request(Outcome::Failed, None);
-        let summary = format!("0router: no provider could serve {}", self.req.target);
+        // Every pair BROKEN: nothing was sent, and the error says why (FR-011).
+        let all_broken = !plan.steps.is_empty()
+            && plan.steps.iter().all(|s| matches!(s, Step::Skip(k) if k.class == Some(ErrorClass::Broken)));
+        let summary = match all_broken {
+            true => format!("0router: {} is BROKEN on every account; a test can settle it again", self.req.target),
+            false => format!("0router: no provider could serve {}", self.req.target),
+        };
         let retry_after = self
             .engine
             .cooldowns
@@ -1786,7 +1827,8 @@ impl Run {
         }
         let (p, a, m) = cooldown_key(c);
         self.engine.cooldowns.succeed(p, a, m);
-        if let Some(routed) = &self.routed {
+        // A test teaches the warm state nothing: its prompt is no agent's prefix (FR-021).
+        if let Some(routed) = self.routed.as_ref().filter(|_| self.req.test.is_none()) {
             let at = CandidateKey::new(&c.provider.id, account.as_deref().unwrap_or(""), &c.upstream_id);
             let cache = crate::route::cache_of(c.provider, c.account);
             crate::route::learn(

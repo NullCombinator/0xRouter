@@ -127,6 +127,8 @@ pub struct Engine {
     pub live_models: Arc<LiveModels>,
     /// Model verdicts per account (spec 011). Kept across reloads.
     pub verdicts: crate::verdict::Board,
+    /// Model tests in flight, retests included (spec 011, R10).
+    pub test_gate: crate::tests::Gate,
     /// The listeners `serve` bound, for the operator socket's `server.status`.
     pub status: crate::status::ServerStatus,
     /// Wakes the maintenance task after a reload or a token change.
@@ -240,6 +242,7 @@ impl Engine {
             history,
             live_models,
             verdicts,
+            test_gate: Default::default(),
             changed: tokio::sync::Notify::new(),
             status: Default::default(),
             install_id: OnceLock::new(),

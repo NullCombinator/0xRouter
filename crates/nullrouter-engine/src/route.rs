@@ -229,11 +229,12 @@ pub fn view_all(engine: &Engine, st: &EngineState, only: Option<&str>, now: Syst
     let routing = &st.settings().routing;
     let mut out = Vec::new();
     for target in view_targets(engine, st, only) {
+        let verdicts = engine.verdicts.snapshot();
+        let live = plan::Live { tokens: &st.tokens, live: &st.live_models, verdicts: &verdicts, pin: None };
         let Ok(plan) = plan::plan(
             &st.registry,
             &st.accounts,
-            &st.tokens,
-            &st.live_models,
+            live,
             &target,
             nullrouter_registry::schema::ModelType::Text,
             "",

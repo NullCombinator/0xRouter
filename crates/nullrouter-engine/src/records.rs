@@ -119,6 +119,8 @@ pub enum ErrorClass {
     Refused,
     /// A sign-in account whose expired token is being refreshed.
     TokenRefreshing,
+    /// A pair a test or the operator found BROKEN: skipped without an attempt (spec 011).
+    Broken,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -225,6 +227,22 @@ pub struct RequestRecord {
     pub job: Option<JobRef>,
     /// The placement that chose the attempt order (slice 006).
     pub decision: Option<Decision>,
+    /// Set on a model test's call (spec 011, FR-021): the run and what started it. A test
+    /// record has no agent and keeps no prompt or output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub test: Option<TestMark>,
+    /// The combo the client named, when it named one (spec 011).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub combo: Option<String>,
+}
+
+/// What marks a record as a model test's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TestMark {
+    /// The run's `tr_` id.
+    pub run: String,
+    /// `test`, `retest` or `combo_test`.
+    pub source: crate::verdict::Source,
 }
 
 impl RequestRecord {
@@ -247,6 +265,8 @@ impl RequestRecord {
             usage: None,
             job: None,
             decision: None,
+            test: None,
+            combo: None,
         }
     }
 
