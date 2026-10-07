@@ -34,8 +34,8 @@
 - CLI command names (`nullrouter check`, the routing view) and "server log" are the operator's
   existing surfaces from slices 005/006, named as user-visible places, not as implementation.
 - The exact significance test is deliberately left to the plan (Assumptions); FR-010 fixes the
-  user-visible rule: 95% level, rounding noise, and many numbers tested at once.
-- Spec-chosen targets and behaviours not in the brief are listed in Assumptions for clarify to
-  confirm or change: SC-001/002/004/006 numbers, alert acknowledgement, record source field,
-  refusal on unpolled accounts.
+  user-visible rule: valid under re-checking at every poll, at most 0.1% lifetime false
+  correction per number, rounding noise, and many numbers tested at once (clarify Q2).
+- Spec-chosen targets and behaviours not in the brief (SC-001/002/004/006 numbers, alert
+  acknowledgement, record source field, refusal on unpolled accounts) were confirmed in clarify.
 - Every functional requirement traces to a confirmed brief row; no out-of-scope item is in scope.
