@@ -518,7 +518,9 @@ fn show(r: &Value, names: &std::collections::HashMap<String, String>) -> String 
         if !how.is_empty() {
             let _ = writeln!(o, "       {how}");
         }
-        phase_rows(a, &mut o);
+        if a["kind"] != "skipped" {
+            phase_rows(a, &mut o);
+        }
     }
     let sum: f64 = r["attempts"]
         .as_array()

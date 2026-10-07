@@ -1,4 +1,4 @@
 exit: 0
 --- stdout
-rq_01M3Y61NP00000000000000003  2026-10-02 11:30:00  succeeded  anthropic-messages   grok                     xai/work
+rq_01M3Y61NP00000000000000003  2026-10-02 11:30:00  succeeded  anthropic-messages   grok                     xai/work  not recorded
 --- stderr

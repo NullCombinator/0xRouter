@@ -86,6 +86,7 @@ pub fn client(allow_private: bool) -> reqwest::Client {
         .tcp_keepalive(TCP_KEEPALIVE)
         .connect_timeout(Duration::from_millis(env_ms("FETCH_CONNECT_TIMEOUT_MS", DEFAULT_TIMEOUT_MS)))
         .dns_resolver(Arc::new(CheckedResolver { allow_private }))
+        .connector_layer(crate::connection::clients::ConnectClock)
         .build()
         .expect("the TLS backend initialises")
 }
