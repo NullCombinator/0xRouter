@@ -1,0 +1,20 @@
+[package]
+name = "nullrouter-adapter-kit"
+version = "1.0.0"
+description = "Guest library for 0router harness adapters: edit model, context, ABI glue"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+# The kit does not use `lints.workspace = true`: the workspace sets `unsafe_code = "forbid"`,
+# which no inner `allow` can lift, and Cargo can't override one workspace lint. Only
+# `src/abi.rs` allows `unsafe` (plan § Complexity Tracking).
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

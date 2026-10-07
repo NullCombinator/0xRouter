@@ -66,7 +66,7 @@ and its `.specify/feature.json` points at this slice. If either differs, stop an
 
 **Purpose**: Prerequisites confirmed, and new crates and directories that compile.
 
-- [ ] T001 Confirm the hook points exist (spec Assumptions: slices 003 and 005–009 are
+- [X] T001 Confirm the hook points exist (spec Assumptions: slices 003 and 005–009 are
   complete).
   - These slice 003 tasks must be `[X]` in `specs/003-request-pipeline/tasks.md`:
     - T049–T054 (the four style files and their codecs);
@@ -81,14 +81,14 @@ and its `.specify/feature.json` points at this slice. If either differs, stop an
     [R2](research.md#r2-where-an-adapter-runs-and-what-it-sees) (Update 2026-10-06) depends on
     all three.
   - If a check fails, **stop** and report what moved.
-- [ ] T002 Check the toolchain for adapters ([R1](research.md#r1-toolchain-and-crates)).
+- [X] T002 Check the toolchain for adapters ([R1](research.md#r1-toolchain-and-crates)).
   - `rustc --version` must report 1.93.x.
   - `rustup target list --installed` must include `wasm32-unknown-unknown`. If it doesn't,
     this is *operator-run* outside the session: ask the user to run
     `rustup target add wasm32-unknown-unknown` in a terminal outside `claude-0router`. Only
     local fixture builds need it, so this doesn't block Phase 1. Never edit `identity/`.
   - CI resolves `wasmtime` 45 in T009. If it fails to resolve, **stop** and report.
-- [ ] T003 Update the workspace manifest `Cargo.toml`.
+- [X] T003 Update the workspace manifest `Cargo.toml`.
   - `rust-version = "1.93"`.
   - `exclude = ["adapters"]`.
   - Add to `[workspace.dependencies]`:
@@ -98,7 +98,7 @@ and its `.specify/feature.json` points at this slice. If either differs, stop an
     - `prettyplease` 0.2, `proc-macro2` (`span-locations`), `flate2`, `tar`, `semver`;
     - path dependencies for the four new crates.
   - Do not add `wasi` or `component-model` features.
-- [ ] T004 [P] Create `crates/nullrouter-adapter-kit/Cargo.toml` and `src/lib.rs`.
+- [X] T004 [P] Create `crates/nullrouter-adapter-kit/Cargo.toml` and `src/lib.rs`.
   - Dependencies: `serde` (`derive`) and `serde_json` only. `version = "1.0.0"`.
   - Modules `edit`, `context`, `input`, `abi`, each an empty file.
   - Lints: the kit does **not** use `lints.workspace = true`. The workspace sets
@@ -107,12 +107,12 @@ and its `.specify/feature.json` points at this slice. If either differs, stop an
     `[lints.clippy] all = { level = "warn", priority = -1 }`. Only `src/abi.rs` gets
     `#![allow(unsafe_code)]`. Record the reason in a comment that points to plan § Complexity
     Tracking.
-- [ ] T005 [P] Create `crates/nullrouter-sandbox/Cargo.toml` and `src/lib.rs`.
+- [X] T005 [P] Create `crates/nullrouter-sandbox/Cargo.toml` and `src/lib.rs`.
   - Dependencies: `wasmtime`, `tokio` (`time`, `rt`), `sha2`, `serde_json`, `thiserror`,
     `tracing`, `nullrouter-adapter-kit` (for the shared JSON types).
   - Modules `engine`, `module`, `call`, `abi`.
   - `[[bench]] name = "sandbox"`, `harness = false`. `lints.workspace = true`.
-- [ ] T006 [P] Create `crates/nullrouter-adapters/Cargo.toml` and `src/lib.rs`.
+- [X] T006 [P] Create `crates/nullrouter-adapters/Cargo.toml` and `src/lib.rs`.
   - Dependencies: `nullrouter-adapter-kit`, `nullrouter-sandbox`, `nullrouter-wire`,
     `nullrouter-registry`, `serde`, `serde_json`, `toml`, `syn`, `prettyplease`,
     `proc-macro2`, `sha2`, `flate2`, `tar`, `semver`, `reqwest`, `tokio`, `thiserror`,
@@ -122,11 +122,11 @@ and its `.specify/feature.json` points at this slice. If either differs, stop an
     `review`, `store`, `builder_client`, `catalogue`, `alerts`, `fingerprint`, and `testkit`
     (cfg feature).
   - `[[bench]] name = "adapters"`, `harness = false`.
-- [ ] T007 [P] Create `crates/nullrouter-builder/Cargo.toml` and `src/main.rs`.
+- [X] T007 [P] Create `crates/nullrouter-builder/Cargo.toml` and `src/main.rs`.
   - A binary named `nullrouter-builder`, depending on `serde`, `serde_json`, `sha2`, `clap`
     and `thiserror`. No other workspace crate may depend on it.
   - Subcommands `setup` and `build`. `build` reads a JSON job from stdin.
-- [ ] T008 [P] Create the directories and placeholders.
+- [X] T008 [P] Create the directories and placeholders.
   - `adapters/community/.cargo/config.toml` with
     `[patch.crates-io] nullrouter-adapter-kit = { path = "../../crates/nullrouter-adapter-kit" }`,
     so `cargo test` inside a community adapter resolves the unpublished kit
@@ -135,7 +135,7 @@ and its `.specify/feature.json` points at this slice. If either differs, stop an
     `CARGO_HOME`.
   - `catalogue/index.toml` holding only `schema = 1`.
   - `crates/nullrouter-adapters/tests/{gate/invalid,hostile,guard,fixtures}/.gitkeep`.
-- [ ] T009 CI for adapters, and the skeleton through it.
+- [X] T009 CI for adapters, and the skeleton through it.
   - In `.github/workflows/ci.yml`, add `targets: wasm32-unknown-unknown` to the
     `dtolnay/rust-toolchain` step, so the builder and install tests (T037, T053) run in CI
     instead of skipping.

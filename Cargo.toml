@@ -1,10 +1,11 @@
 [workspace]
 members = ["crates/*"]
+exclude = ["adapters"]
 resolver = "3"
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.93"
 license = "MIT"
 
 [workspace.dependencies]
@@ -38,6 +39,17 @@ httpdate = "1"
 maud = "0.27"
 jiff = "0.2"
 subtle = "2.6"
+wasmtime = { version = "45", default-features = false, features = ["cranelift", "async", "pooling-allocator", "runtime"] }
+syn = { version = "2", features = ["full", "visit", "visit-mut", "extra-traits"] }
+prettyplease = "0.2"
+proc-macro2 = { version = "1", features = ["span-locations"] }
+flate2 = "1"
+tar = "0.4"
+semver = "1"
+nullrouter-adapter-kit = { path = "crates/nullrouter-adapter-kit", version = "1.0.0" }
+nullrouter-sandbox = { path = "crates/nullrouter-sandbox" }
+nullrouter-adapters = { path = "crates/nullrouter-adapters" }
+nullrouter-builder = { path = "crates/nullrouter-builder" }
 nullrouter-registry = { path = "crates/nullrouter-registry" }
 nullrouter-wire = { path = "crates/nullrouter-wire" }
 nullrouter-engine = { path = "crates/nullrouter-engine" }

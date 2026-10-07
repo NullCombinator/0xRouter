@@ -26,3 +26,4 @@ __pycache__/
 
 # parallel-session worktrees (one per slice; see CLAUDE.md "Cloud sessions" for the cloud variant)
 .worktrees/
+!/adapters/community/.cargo/
