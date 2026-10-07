@@ -68,8 +68,9 @@ request-counted:  E[y] = N + b_{a,q}·t                   (N = requests in the i
 - `ρ_c = w_c / w_i`: the other weights relative to input. They are reported as weights:
   `w_c = ρ_c · w_i`.
 - `μ_g`: the multiplier of glob `g`. Models no glob matches have factor 1, fixed.
-- `b_{a,q} ≥ 0`: the account's steady unexplained rate in **part of the day** `q`, in report
-  units per hour (Story 2 scenario 2). There are six parts of 4 hours (00–04 … 20–24, operator
+- `b_{a,q}`: the account's steady unexplained rate in **part of the day** `q` (true rates are ≥ 0;
+  the fit leaves it unconstrained and every reader takes `max(0, b̂)`, because clamping inside the
+  search stalls it near 0), in report units per hour (Story 2 scenario 2). There are six parts of 4 hours (00–04 … 20–24, operator
   local time from the system clock). A row spanning two parts splits `t` between them. Idle rows
   pin each part's rate. This is the answer to outside use with a daily rhythm (spec Edge Cases,
   analysis C1). A flat rate is the case of six equal parts. The view reports the parts' rates

@@ -24,7 +24,7 @@ use std::time::SystemTime;
 
 use arc_swap::ArcSwap;
 use indexmap::IndexMap;
-use nullrouter_registry::schema::{MeterDecl, TokenWeights};
+use nullrouter_registry::schema::MeterDecl;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// One of the four token classes a `weighted_tokens` window charges differently.

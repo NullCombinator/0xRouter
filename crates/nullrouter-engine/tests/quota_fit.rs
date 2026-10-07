@@ -223,11 +223,11 @@ fn the_95_percent_range_covers_the_truth_under_whole_step_rounding() {
             }
         }
     }
-    for (i, (p, _)) in truth.iter().enumerate() {
-        let cover = f64::from(hits[i]) / f64::from(REPS);
-        println!("coverage {p:?}: {cover:.3}");
-        assert!(cover >= 0.93, "{p:?} covered {cover}");
+    let cover: Vec<f64> = hits.iter().map(|h| f64::from(*h) / f64::from(REPS)).collect();
+    for ((p, _), c) in truth.iter().zip(&cover) {
+        println!("coverage {p:?}: {c:.3}");
     }
+    assert!(cover.iter().all(|c| *c >= 0.93), "coverage per number: {cover:?}");
 }
 
 #[test]

@@ -7,7 +7,7 @@
 //! ```
 //!
 //! `k_a`, `ρ`, `w` and `μ` are positive and fitted in log space; the steady outside rates
-//! `b_{a,q}` are linear and held at or above 0. Group 0 is the models no glob matches (factor 1).
+//! `b_{a,q}` are linear and fitted unconstrained (read through `Theta::rate`, which clamps at 0). Group 0 is the models no glob matches (factor 1).
 //! The fit is a pure function of rows and a starting point.
 
 use std::collections::BTreeMap;
@@ -101,6 +101,11 @@ impl Theta {
         Self { k: vec![1.0; accounts], b: vec![[0.0; PARTS]; accounts], rho: [1.0; 3], w: [1.0; 4], mu: vec![1.0; globs] }
     }
 
+    /// The steady outside rate of account `a` in part `q`, never below 0.
+    pub fn rate(&self, a: usize, q: usize) -> f64 {
+        self.b[a][q].max(0.0)
+    }
+
     pub fn get(&self, p: P) -> f64 {
         match p {
             P::K(a) => self.k[a],
@@ -121,11 +126,13 @@ impl Theta {
         }
     }
 
-    /// Moves `p` by `delta`: multiplicatively (`exp`) for log parameters, additively and held
-    /// at or above 0 for the steady rates.
+    /// Moves `p` by `delta`: multiplicatively (`exp`) for log parameters, additively for the
+    /// steady rates. The rates are not clamped here: a rate near 0 is estimated below it about as
+    /// often as above, and clamping inside the search stalls it and biases the other numbers.
+    /// Readers clamp with [`Theta::rate`].
     fn step(&mut self, p: P, delta: f64) {
         let v = self.get(p);
-        self.set(p, if p.is_log() { v * delta.exp() } else { (v + delta).max(0.0) });
+        self.set(p, if p.is_log() { v * delta.exp() } else { v + delta });
     }
 }
 
@@ -204,7 +211,7 @@ pub fn prepare(spec: &Spec, rows: &[Row]) -> Vec<MRow> {
 
 /// The expected `y` of `row`, and, when `grad` is given, `∂E[y]/∂(log p)` (`∂E[y]/∂p` for a
 /// steady rate) for each parameter of `active`.
-fn eval(spec: &Spec, th: &Theta, row: &MRow, active: &[P], mut grad: Option<&mut [f64]>) -> f64 {
+fn eval(spec: &Spec, th: &Theta, row: &MRow, active: &[P], grad: Option<&mut [f64]>) -> f64 {
     let kind = spec.kind;
     let scale = if kind.has_k() { th.k[row.acct] } else { 1.0 };
     // Token weights per class, by kind.
@@ -217,7 +224,7 @@ fn eval(spec: &Spec, th: &Theta, row: &MRow, active: &[P], mut grad: Option<&mut
     let group_sum = |g: usize| (0..4).map(|c| wt[c] * row.x[g][c]).sum::<f64>();
     let core = if kind.tokens() { (0..row.x.len()).map(|g| mu(g) * group_sum(g)).sum::<f64>() } else { row.n };
     let outside: f64 = (0..PARTS).map(|q| th.b[row.acct][q] * row.t[q]).sum();
-    if let Some(g) = grad.as_deref_mut() {
+    if let Some(g) = grad {
         for (slot, p) in g.iter_mut().zip(active) {
             *slot = match *p {
                 P::K(a) if a == row.acct && kind.has_k() => scale * core,
@@ -280,14 +287,14 @@ impl Fit {
     }
 
     /// `(estimate, low, high)` of `p` in its natural units; the 95% range is
-    /// `exp(log p ± 1.96·se)` for log parameters and `p ± 1.96·se` (not below 0) for rates.
+    /// `exp(log p ± 1.96·se)` for log parameters and `p ± 1.96·se` for rates (unclamped; readers clamp the rate).
     pub fn range(&self, p: P) -> Option<(f64, f64, f64)> {
         let se = self.se(p)?;
         let v = self.theta.get(p);
         Some(if p.is_log() {
             (v, v * (-1.96 * se).exp(), v * (1.96 * se).exp())
         } else {
-            (v, (v - 1.96 * se).max(0.0), v + 1.96 * se)
+            (v, v - 1.96 * se, v + 1.96 * se)
         })
     }
 }
