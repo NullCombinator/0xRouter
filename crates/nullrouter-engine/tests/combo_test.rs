@@ -42,10 +42,9 @@ async fn fleet(combos: &str) -> Setup {
 }
 
 fn unified_models() -> String {
-    ["alpha", "beta", "gamma"]
+    [("ua", "alpha"), ("ub", "beta"), ("uc", "gamma")]
         .iter()
-        .map(|p| {
-            let name = format!("u{}", &p[..1]);
+        .map(|(name, p)| {
             format!("[[unified_model]]\nname = \"{name}\"\nmembers = [{{ provider = \"{p}\", model = \"m1\" }}]\n")
         })
         .collect()
