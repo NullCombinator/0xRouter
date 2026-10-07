@@ -244,3 +244,112 @@ fn parameters_no_row_informs_are_left_out() {
     // The rows were generated with cache writes; zeroing x leaves a misfit but must not panic.
     assert!(fit.is_none_or(|f| !f.active.contains(&P::Rho(2))));
 }
+
+// ---- the meter in effect (T008, FR-011, FR-012) ----
+
+use nullrouter_engine::quota::fit::{MeterNumber, NumberOverrides, Source, WindowFit, in_effect};
+
+/// Every `[[routing.window]]` of every bundled plugin.
+fn bundled_meters() -> Vec<MeterDecl> {
+    let mut out = Vec::new();
+    for (name, source) in nullrouter_registry::bundled_sources() {
+        let v: toml::Value = toml::from_str(source).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let windows = v.get("routing").and_then(|r| r.get("window")).and_then(|w| w.as_array());
+        for w in windows.into_iter().flatten() {
+            out.push(w.clone().try_into().unwrap_or_else(|e| panic!("{name}: {e}")));
+        }
+    }
+    out
+}
+
+fn weighted() -> MeterDecl {
+    meter("token_weights = { input = 1.0, output = 5.0, cache_read = 0.1, cache_write = 1.25 }\nmodel_multiplier = { \"big-*\" = 2.0, \"*\" = 1.5 }")
+}
+
+#[test]
+fn nothing_to_apply_leaves_the_declared_meter_unchanged() {
+    let meters = bundled_meters();
+    assert!(!meters.is_empty(), "no bundled plugin declares a meter");
+    for m in meters {
+        let (got, sources) = in_effect(&m, None, None, &WindowFit::default(), "acct");
+        assert_eq!(got, m, "{}", m.name);
+        assert!(sources.is_empty());
+        // Empty override sets change nothing either.
+        let empty = NumberOverrides::default();
+        let (got, sources) = in_effect(&m, Some(&empty), Some(&empty), &WindowFit::default(), "acct");
+        assert_eq!(got, m);
+        assert!(sources.is_empty());
+    }
+}
+
+#[test]
+fn an_account_override_changes_only_its_field() {
+    let m = weighted();
+    let mut o = NumberOverrides::default();
+    o.weights[1] = Some(15.0);
+    let (got, sources) = in_effect(&m, None, Some(&o), &WindowFit::default(), "acct");
+    let w = got.token_weights.expect("weights");
+    assert_eq!((w.input, w.output, w.cache_read, w.cache_write), (1.0, 15.0, 0.1, 1.25));
+    assert_eq!(got.capacity, m.capacity);
+    assert_eq!(got.model_multiplier, m.model_multiplier);
+    assert_eq!(sources.len(), 1);
+    assert_eq!(sources[&MeterNumber::Weight(TokenClass::Output)], Source::AccountOverride);
+}
+
+#[test]
+fn account_beats_plugin_beats_fit_beats_declaration() {
+    let m = weighted();
+    let mut fit = WindowFit::default();
+    fit.weights.insert(TokenClass::Output, 12.0);
+    fit.multipliers.insert("big-*".into(), 3.0);
+    fit.capacity.insert("acct".into(), 700_000.0);
+
+    let (got, src) = in_effect(&m, None, None, &fit, "acct");
+    assert_eq!(got.token_weights.unwrap().output, 12.0);
+    assert_eq!(got.model_multiplier["big-*"], 3.0);
+    assert_eq!(got.model_multiplier["*"], 1.5, "an unfitted glob stays declared");
+    assert_eq!(got.capacity, Some(700_000.0));
+    assert!(src.values().all(|s| *s == Source::Fit));
+
+    let mut plugin = NumberOverrides::default();
+    plugin.weights[1] = Some(9.0);
+    plugin.multipliers.insert("big-*".into(), 4.0);
+    plugin.capacity = Some(1.0); // a plugin level never sets capacity (clarify Q5)
+    let (got, src) = in_effect(&m, Some(&plugin), None, &fit, "acct");
+    assert_eq!(got.token_weights.unwrap().output, 9.0);
+    assert_eq!(got.model_multiplier["big-*"], 4.0);
+    assert_eq!(got.capacity, Some(700_000.0));
+    assert_eq!(src[&MeterNumber::Weight(TokenClass::Output)], Source::PluginOverride);
+    assert_eq!(src[&MeterNumber::Capacity], Source::Fit);
+
+    let mut account = NumberOverrides::default();
+    account.weights[1] = Some(15.0);
+    account.capacity = Some(2_000_000.0);
+    let (got, src) = in_effect(&m, Some(&plugin), Some(&account), &fit, "acct");
+    assert_eq!(got.token_weights.unwrap().output, 15.0);
+    assert_eq!(got.model_multiplier["big-*"], 4.0, "the account set no multiplier");
+    assert_eq!(got.capacity, Some(2_000_000.0));
+    assert_eq!(src[&MeterNumber::Weight(TokenClass::Output)], Source::AccountOverride);
+    assert_eq!(src[&MeterNumber::Capacity], Source::AccountOverride);
+    // The glob order the plugin declared is kept.
+    assert_eq!(got.model_multiplier.keys().collect::<Vec<_>>(), m.model_multiplier.keys().collect::<Vec<_>>());
+}
+
+#[test]
+fn fitted_ratios_follow_the_yardstick() {
+    let m = weighted();
+    let mut fit = WindowFit { relative_to_input: true, ..WindowFit::default() };
+    fit.weights.insert(TokenClass::Output, 15.0);
+    // Declared input weight 1: ratio 15 is weight 15.
+    assert_eq!(in_effect(&m, None, None, &fit, "a").0.token_weights.unwrap().output, 15.0);
+    // Overriding the yardstick rescales the fitted ratio with it.
+    let mut o = NumberOverrides::default();
+    o.weights[0] = Some(2.0);
+    let (got, src) = in_effect(&m, None, Some(&o), &fit, "a");
+    let w = got.token_weights.unwrap();
+    assert_eq!((w.input, w.output), (2.0, 30.0));
+    assert_eq!(src[&MeterNumber::Weight(TokenClass::Input)], Source::AccountOverride);
+    // The input weight is never taken from the fit.
+    fit.weights.insert(TokenClass::Input, 9.0);
+    assert_eq!(in_effect(&m, None, None, &fit, "a").0.token_weights.unwrap().input, 1.0);
+}
