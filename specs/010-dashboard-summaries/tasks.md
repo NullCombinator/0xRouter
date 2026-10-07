@@ -34,8 +34,8 @@ message when CI shows the expected diff.
 
 ## Phase 1: Setup
 
-- [ ] T001 Add `jiff.workspace = true` to `crates/nullrouter-server/Cargo.toml` (research R2), and declare the new benches `usage_totals_100k` and `latency_24h_100k` (`harness = false`) in `crates/nullrouter-engine/Cargo.toml`
-- [ ] T002 [P] Create the empty module `crates/nullrouter-engine/src/journal/summary.rs` with a module doc naming research R3 to R6, and add `pub mod summary;` to `crates/nullrouter-engine/src/journal/mod.rs`
+- [X] T001 Add `jiff.workspace = true` to `crates/nullrouter-server/Cargo.toml` (research R2) (the two bench declarations moved to T048: cargo refuses a `[[bench]]` whose file doesn't exist yet, which would fail CI for every commit in between)
+- [X] T002 [P] Create the empty module `crates/nullrouter-engine/src/journal/summary.rs` with a module doc naming research R3 to R6, and add `pub mod summary;` to `crates/nullrouter-engine/src/journal/mod.rs`
 
 ---
 
@@ -45,18 +45,18 @@ Prices and the shared record rules every view uses. No story starts before this 
 
 ### Price in effect at a time (research R5)
 
-- [ ] T003 [P] Unit tests in `crates/nullrouter-engine/src/routing/price.rs` (`#[cfg(test)]`): `entry_at` returns the override's rates when the account has one; otherwise the first schedule entry whose `when` holds at the given time (days, `from`/`to` wrapping past midnight, `offset`), else the default entry; `None` with no schedule and no override; `price_now(spec, t) == entry_at(spec, t).map(|r| r.input)` for every case
-- [ ] T004 Add `pub struct Rates { input: f64, output: Option<f64>, cache_read: Option<f64>, cache_write: Option<f64> }` and `pub fn entry_at(spec: &PriceSpec, at: SystemTime) -> Option<Rates>` to `crates/nullrouter-engine/src/routing/price.rs`, using the private `holds` unchanged; re-express `price_now` through `entry_at`; leave `rank_price` untouched
+- [X] T003 [P] Unit tests in `crates/nullrouter-engine/src/routing/price.rs` (`#[cfg(test)]`): `entry_at` returns the override's rates when the account has one; otherwise the first schedule entry whose `when` holds at the given time (days, `from`/`to` wrapping past midnight, `offset`), else the default entry; `None` with no schedule and no override; `price_now(spec, t) == entry_at(spec, t).map(|r| r.input)` for every case
+- [X] T004 Add `pub struct Rates { input: f64, output: Option<f64>, cache_read: Option<f64>, cache_write: Option<f64> }` and `pub fn entry_at(spec: &PriceSpec, at: SystemTime) -> Option<Rates>` to `crates/nullrouter-engine/src/routing/price.rs`, using the private `holds` unchanged; re-express `price_now` through `entry_at`; leave `rank_price` untouched
 
 ### Record rules (research R4, R6)
 
-- [ ] T005 [P] Unit tests in `crates/nullrouter-engine/src/journal/summary.rs`: `nearest_rank` (sorted ascending, p = `v[ceil(q·n) − 1]`, q = 0.5 and 0.95; one value gives itself; empty gives `None`); `tokens_of(usage)` gives uncached input with `IncludesCache` normalized (cache reads and writes taken out of input, cache writes added back to input), `cached = cache_read`, `output` as reported, reasoning not added; `first_attempt` skips `kind = skipped`; `first_token_attempt` is the last non-skipped attempt with `started <= ttft_ms`, checked on a fallback, a continuation and a restart record; `own_ttft = ttft_ms − first_token_attempt.started`
-- [ ] T006 Implement `nearest_rank`, `tokens_of`, `first_attempt`, `first_token_attempt` and `own_ttft` in `crates/nullrouter-engine/src/journal/summary.rs`
+- [X] T005 [P] Unit tests in `crates/nullrouter-engine/src/journal/summary.rs`: `nearest_rank` (sorted ascending, p = `v[ceil(q·n) − 1]`, q = 0.5 and 0.95; one value gives itself; empty gives `None`); `tokens_of(usage)` gives uncached input with `IncludesCache` normalized (cache reads and writes taken out of input, cache writes added back to input), `cached = cache_read`, `output` as reported, reasoning not added; `first_attempt` skips `kind = skipped`; `first_token_attempt` is the last non-skipped attempt with `started <= ttft_ms`, checked on a fallback, a continuation and a restart record; `own_ttft = ttft_ms − first_token_attempt.started`
+- [X] T006 Implement `nearest_rank`, `tokens_of`, `first_attempt`, `first_token_attempt` and `own_ttft` in `crates/nullrouter-engine/src/journal/summary.rs`
 
 ### Window selection (research R2, R3)
 
-- [ ] T007 [P] Unit tests in `crates/nullrouter-engine/src/journal/summary.rs`: `segments_for(home, from, to)` returns exactly the `records/YYYY-MM-DD.jsonl` files whose UTC day lies in `[day_of(from), day_of(to)]` (all when `from` is `None`); `records_in(home, from, to)` folds them and keeps records with `from <= arrived < to`, across a UTC midnight boundary
-- [ ] T008 Implement `Window { from: Option<SystemTime>, to: SystemTime }`, `segments_for` and `records_in` in `crates/nullrouter-engine/src/journal/summary.rs`, using `records::segments`, `day_of` and `fold`
+- [X] T007 [P] Unit tests in `crates/nullrouter-engine/src/journal/summary.rs`: `segments_for(home, from, to)` returns exactly the `records/YYYY-MM-DD.jsonl` files whose UTC day lies in `[day_of(from), day_of(to)]` (all when `from` is `None`); `records_in(home, from, to)` folds them and keeps records with `from <= arrived < to`, across a UTC midnight boundary
+- [X] T008 Implement `Window { from: Option<SystemTime>, to: SystemTime }`, `segments_for` and `records_in` in `crates/nullrouter-engine/src/journal/summary.rs`, using `records::segments`, `day_of` and `fold`
 
 ### Hand-figure fixture (SC-002)
 
@@ -193,7 +193,7 @@ untagged keys are handled the same.
 
 - [ ] T046 [P] Twin test `crates/nullrouter-dashboard/tests/twins.rs`: register the `Usage` and `Latency` views for Endpoint & Key, Providers and Usage; it fails if a page renders a value absent from those views' JSON (SC-001)
 - [ ] T047 [P] Secrets scan `crates/nullrouter-dashboard/tests/secrets.rs` and `crates/nullrouter-server/tests/secrets.rs`: cover the new pages, `usage`, `latency` and `keys list` output (SC-010)
-- [ ] T048 [P] Benches (written here; the user runs them locally): `crates/nullrouter-engine/benches/usage_totals_100k.rs` (`today`, `30d`, `all`, warm and cold; reuse `keys_last_used_100k`'s fixture builder) and `crates/nullrouter-engine/benches/latency_24h_100k.rs` (100,000 records over 30 days and in one day); add `/usage?period=all` and `/` to `crates/nullrouter-dashboard/benches/pages.rs`; leave `specs/010-dashboard-summaries/bench-baseline.md` with empty rows for the user's run, including the `engine` bench before/after `entry_at`
+- [ ] T048 [P] Benches (written here; the user runs them locally): declare `usage_totals_100k` and `latency_24h_100k` (`harness = false`) in `crates/nullrouter-engine/Cargo.toml` with their files; `crates/nullrouter-engine/benches/usage_totals_100k.rs` (`today`, `30d`, `all`, warm and cold; reuse `keys_last_used_100k`'s fixture builder) and `crates/nullrouter-engine/benches/latency_24h_100k.rs` (100,000 records over 30 days and in one day); add `/usage?period=all` and `/` to `crates/nullrouter-dashboard/benches/pages.rs`; leave `specs/010-dashboard-summaries/bench-baseline.md` with empty rows for the user's run, including the `engine` bench before/after `entry_at`
 - [ ] T049 [P] Docs: `docs/operator-config.md` gains `nullrouter usage`, `nullrouter latency`, `keys issue --harness`, `keys tag`, what Est. Cost includes and leaves out (the three unpriced reasons; cache tokens with no cache rate at the input rate), that the per-agent rows can sum to less than the total because requests refused before a key matched have no agent, and the downgrade note (a tagged `keys.toml` needs `keys tag <key> --clear` before an older binary reads it)
 - [ ] T050 Run the quickstart's CI-covered steps through GitHub Actions on the pushed branch (user's OK to push); record the run number in `specs/010-dashboard-summaries/tasks.md` beside this task
 - [ ] T051 The user's side-by-side review of the cards, filter, topology graph and landscape against 9router and the mockups (SC-008), with scripts off, and whether Endpoint & Key alone tells which agents sent traffic, to which providers, and which hop is slowest (SC-009); record the verdict in `specs/010-dashboard-summaries/look-review.md`
