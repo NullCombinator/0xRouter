@@ -104,14 +104,16 @@ don't need one client each (R5).
 
 The response's HTTP version comes from `Response::version()`.
 
-**Must verify first** (the first implementation task, a spike with a local test server):
-1. `connector_layer` wraps the proxy tunnel and TLS: a TLS-to-proxy test shows the handshake
-   inside the measured span.
-2. A completion in a background task doesn't see the task-local.
-3. Sequential requests to one host show new then reused; HTTP/2 multiplexed requests show one
-   new connection, and the others reused.
+**Verified** (spike `crates/nullrouter-engine/tests/connect_attribution.rs`, CI run 48 on
+2026-10-07, reqwest 0.13.5, hyper-util 0.1.21, hyper 1.11.1, rustls 0.23.45). All four tests
+passed against a local TLS server and an HTTP CONNECT proxy:
+1. A delayed proxy CONNECT and a delayed TLS handshake each show in the measured span.
+2. A connect that loses the checkout race completes on a background task with no task-local,
+   and is not attributed.
+3. Sequential requests read new then reused; three concurrent HTTP/2 requests read one new
+   connection and two reused.
 
-If (1) fails, the fallback measures only TCP connect, and reports TLS as part of response
+The fallback below was not needed. If a later reqwest bump breaks (1), the fallback measures only TCP connect, and reports TLS as part of response
 headers, with a note in the record. The spec's "waiting for provider" merge doesn't cover
 connect, so this would be recorded as a deviation and taken to the user.
 

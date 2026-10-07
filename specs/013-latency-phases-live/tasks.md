@@ -56,13 +56,13 @@ the record field and the test double. No story can start before these.
 
 ### Spike (gate)
 
-- [ ] T004 Spike the connector layer in `crates/nullrouter-engine/tests/connect_attribution.rs` against a local TLS test server (`rustls` with a self-signed certificate, trusted by the test client) and a local HTTP CONNECT proxy. A `connector_layer` whose future reads a `tokio::task_local!` at completion must show:
+- [X] T004 Spike the connector layer in `crates/nullrouter-engine/tests/connect_attribution.rs` against a local TLS test server (`rustls` with a self-signed certificate, trusted by the test client) and a local HTTP CONNECT proxy. A `connector_layer` whose future reads a `tokio::task_local!` at completion must show:
   - (1) the measured span includes the proxy CONNECT and the TLS handshake (delay each in the test servers and see the delay in the span);
   - (2) a connect that loses hyper-util's checkout race and finishes on a background task never sees the task-local;
   - (3) two sequential requests read new then reused, and on an HTTP/2 server, three concurrent requests read one new and two reused.
 
   **If any of these fails, stop and report to the user with research R3's fallback**; don't continue with US1's connect phase
-- [ ] T005 Record T004's result in `specs/013-latency-phases-live/research.md` R3: replace "Must verify first" with what was observed, and the reqwest/hyper-util versions
+- [X] T005 Record T004's result in `specs/013-latency-phases-live/research.md` R3: replace "Must verify first" with what was observed, and the reqwest/hyper-util versions
 
 ### Tests first
 

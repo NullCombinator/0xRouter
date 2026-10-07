@@ -190,8 +190,7 @@ async fn attempt(c: &reqwest::Client, url: &str) -> Option<Duration> {
     let clock = Arc::new(Clock::default());
     let resp = ATTEMPT.scope(clock.clone(), c.get(url).send()).await.unwrap();
     resp.bytes().await.unwrap();
-    let out = *clock.connected.lock().unwrap();
-    out
+    *clock.connected.lock().unwrap()
 }
 
 #[tokio::test]
