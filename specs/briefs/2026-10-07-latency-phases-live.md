@@ -75,6 +75,10 @@ say so. Trends, per-unified-model figures, the bottleneck verdict and the dashbo
 | 30 | K | Latency becomes something measured and visible, not something noticed | init.md "Why it exists" |
 | 31 | C✓ | Out: proxy pools (0router deploying or testing proxies) → later | "Yes, out → later" |
 | 32 | C✓ | An unreachable proxy: 0router tells the operator and pauses traffic through it until fixed; never sends direct; no account cooldown | "Announce user that proxy is not reachable, and pause for fix" (specify Q1) |
+| 33 | C✓ | Proxy also per account: account → provider → all; "no proxy" at each level (extends row 18; 9router sets proxies per connection) | clarify Q2 → B |
+| 34 | C✓ | All four timeouts also per model: operator model → operator provider → plugin model → plugin provider → built-in (extends row 10) | clarify Q3 → B |
+| 35 | C✓ | A deliberate same-account retry wait is its own seventh phase, "retry wait"; router overhead covers only 0router's own work (extends row 2) | clarify Q4 → B |
+| 36 | C✓ | `nullrouter records` list gains one column: longest phase, its time and side; detail and `--json` hold all phases (extends row 8) | clarify Q5 → B |
 
 ## P notes for research.md
 

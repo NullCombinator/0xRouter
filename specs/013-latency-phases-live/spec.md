@@ -27,6 +27,21 @@ confirmed claim by claim on 2026-10-07.
   A: Plugins keep declaring same-account retries, up to a maximum that validation enforces. The
   operator's per-provider setting wins, and the core default covers what neither sets (FR-030).
   This revises brief row 19.
+- Q: After 0router pauses an unreachable proxy, how does traffic through it resume? → A: Only
+  when the operator acts: they mark it fixed and 0router finds it reachable, or they change or
+  remove the proxy setting. No automatic resume; the pause survives a restart (FR-028).
+- Q: Can the operator set a proxy per account as well as per provider? → A: Yes. The account
+  setting wins over the provider setting, which wins over the all-providers setting; "no proxy"
+  is possible at each level (FR-025). This extends brief row 18.
+- Q: Can timeouts be set per model, not only per provider? → A: Yes, all four. Precedence:
+  operator per model, operator per provider, plugin per model, plugin per provider, built-in
+  default (FR-021). This extends brief row 10.
+- Q: Where does a deliberate wait before a same-account retry go? → A: In its own seventh phase,
+  "retry wait", between attempts. Router overhead before a retry covers only 0router's own work
+  (FR-001, FR-011). This extends brief row 2.
+- Q: Should the request list show where each request's time went? → A: Yes, one column: the
+  request's longest phase, its time and its side (FR-013). Full detail stays in a single record
+  and `--json`. This extends brief row 8.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -34,7 +49,8 @@ confirmed claim by claim on 2026-10-07.
 
 The operator opens a request's record and sees where its time went, for each attempt, failed
 attempts included. The six phases are router overhead, connect, response headers, first token,
-generation, and delivery to the client. A phase that didn't happen shows "not applicable" and
+generation, and delivery to the client, plus a "retry wait" when 0router waits on purpose before
+retrying the same account. A phase that didn't happen shows "not applicable" and
 never "0 ms", so the operator can tell what was slow and whose side it was on: 0router's, the
 network's, the provider's, or the client's.
 
@@ -74,6 +90,9 @@ the same requests.
    generation shows "not applicable".
 8. **Given** a record written before this slice, **When** the operator shows it, **Then** its
    phases show as "not recorded", which is different from "not applicable".
+9. **Given** a list of requests, **When** the operator runs `nullrouter records` without opening a
+   record, **Then** each row shows its longest phase, that phase's time and its side, for
+   example "first token 41.2 s (provider)", so slow requests and their cause stand out.
 
 ---
 
@@ -111,11 +130,13 @@ snapshot. No content appears.
 
 ---
 
-### User Story 3 - Timeouts per provider (Priority: P3)
+### User Story 3 - Timeouts per provider and per model (Priority: P3)
 
 The operator sees that a provider often hangs in one phase and sets that provider's connect,
-response-header, first-token or stall timeout. The plugin's declared value is the default. The
-operator's per-provider value wins over it. A built-in default covers anything neither sets.
+response-header, first-token or stall timeout, for the whole provider or for one of its models,
+so a fast model and a reasoning model of the same provider can have different limits. The
+plugin's declared values are the defaults. The operator's values win over them. A built-in
+default covers anything neither sets.
 
 **Why this priority**: Timeouts are the first action latency calls for. They act on one phase and
 never cut a stream that is still making progress.
@@ -132,19 +153,24 @@ while sending output, and check that the stream is never cut.
    command shows 10 s with "operator" as the source.
 2. **Given** the operator removes that override, **When** the next request goes to the provider,
    **Then** the plugin's 30 s applies again.
-3. **Given** an attempt exceeds a timeout, **When** it ends, **Then** it is a failed attempt that
+3. **Given** the operator sets a 5 s first-token timeout for provider A and 300 s for A's
+   reasoning model R, **When** requests go to R and to another model of A, **Then** R's attempts
+   use 300 s and the other model's use 5 s, and the effective-settings command shows both with
+   their level.
+4. **Given** an attempt exceeds a timeout, **When** it ends, **Then** it is a failed attempt that
    is classified, retried and failed over like other transport failures, and its record names the
    timeout that fired, its value and where that value came from.
-4. **Given** a reasoning model sends thinking output with gaps shorter than the stall timeout,
+5. **Given** a reasoning model sends thinking output with gaps shorter than the stall timeout,
    **When** the total time exceeds every configured timeout, **Then** the stream is not cut.
-5. **Given** a request is in flight when the operator changes a timeout, **When** it continues,
+6. **Given** a request is in flight when the operator changes a timeout, **When** it continues,
    **Then** it keeps the timeout it started with, and the next request uses the new one.
 
 ---
 
-### User Story 4 - Proxy per provider (Priority: P4)
+### User Story 4 - Proxy per account, provider or all (Priority: P4)
 
-The operator routes one provider's traffic, or every provider's, through a proxy they control.
+The operator routes one account's traffic, one provider's, or every provider's, through a proxy
+they control, so that, for example, several accounts of one provider don't share an IP address.
 Only the operator can set a proxy. A plugin that declares one fails validation. Proxy credentials
 are kept like account secrets and are never shown.
 
@@ -153,7 +179,8 @@ reach a provider at all. It comes after timeouts because fewer operators need it
 
 **Independent Test**: Set a proxy for one provider and check that its requests pass through the
 proxy while other providers' requests don't. Set a proxy for all providers and check that a
-provider-level "no proxy" exempts that provider. Scan every CLI output, record, live view and log
+provider-level "no proxy" exempts that provider. Give two accounts of one provider different
+proxies and check that each account's traffic leaves through its own. Scan every CLI output, record, live view and log
 for the proxy credentials and find none.
 
 **Acceptance Scenarios**:
@@ -163,17 +190,20 @@ for the proxy credentials and find none.
    name.
 2. **Given** a proxy for all providers and "no proxy" for provider B, **When** requests go to A
    and B, **Then** A's traffic uses the proxy and B's goes direct.
-3. **Given** a plugin file that declares a proxy, **When** it is validated or installed, **Then**
+3. **Given** provider A has proxy P1 and its account `a2` has proxy P2, **When** requests go to
+   accounts `a1` and `a2`, **Then** `a1`'s traffic goes through P1 and `a2`'s through P2, and an
+   account set to "no proxy" goes direct even when its provider has a proxy.
+4. **Given** a plugin file that declares a proxy, **When** it is validated or installed, **Then**
    validation fails and names the proxy field as the reason.
-4. **Given** a proxy with a username and password, **When** the operator lists settings, shows
+5. **Given** a proxy with a username and password, **When** the operator lists settings, shows
    records, opens the live view or the dashboard, or reads logs and error messages, **Then** the
    credentials appear nowhere.
-5. **Given** the proxy for provider A is unreachable, **When** a request goes to A, **Then**
-   0router tells the operator that the proxy isn't reachable and pauses every provider that uses
-   it. The request falls over to providers outside the pause or, if none remain, fails with an
+6. **Given** the proxy for provider A is unreachable, **When** a request goes to A, **Then**
+   0router tells the operator that the proxy isn't reachable and pauses every account that uses
+   it. The request falls over to accounts and providers outside the pause or, if none remain, fails with an
    error that names the unreachable proxy. Nothing is sent without the proxy, and A's accounts
    don't go into cooldown.
-6. **Given** a proxy is paused, **When** the operator fixes it and tells 0router so (or changes
+7. **Given** a proxy is paused, **When** the operator fixes it and tells 0router so (or changes
    the proxy setting), **Then** 0router checks that the proxy is reachable and resumes traffic
    through it from the next request.
 
@@ -224,8 +254,8 @@ about 500 ms apart, before falling over.
 1. **Given** the operator sets 0 same-account retries for a provider, **When** an attempt to it
    fails transiently, **Then** 0router moves straight to the next account or provider.
 2. **Given** the operator sets a retry count and wait for a provider, **When** an attempt fails
-   transiently, **Then** 0router retries that many times with that wait, and the record shows the
-   wait in the next attempt's router overhead and marks it as a retry wait.
+   transiently, **Then** 0router retries that many times with that wait, and the record shows each
+   wait as a "retry wait" phase before the retry, not as router overhead.
 3. **Given** a plugin declares same-account retries for a failure status, **When** neither the
    operator nor anything else overrides them, **Then** they apply; **When** the operator sets that
    provider's retries, **Then** the operator's values apply; **When** a plugin declares more
@@ -267,10 +297,15 @@ about 500 ms apart, before falling over.
 
 - **FR-001**: Every request record MUST hold, for each attempt (failed, cancelled and skipped
   attempts included), the time spent in each of six phases: router overhead, connect, response
-  headers, first token, generation and delivery.
+  headers, first token, generation and delivery, and a seventh, retry wait, before an attempt that
+  retries the same account after a deliberate wait.
 - **FR-002**: The phases MUST be defined as follows:
   - **Router overhead**: for the first attempt, from the request's arrival to the attempt's
-    start; for a later attempt, from the end of the previous attempt to this attempt's start.
+    start; for a later attempt, from the end of the previous attempt to this attempt's start,
+    minus any retry wait.
+  - **Retry wait**: the time 0router deliberately waits before retrying the same account (the
+    retry policy's wait, or the provider's own retry-after wait). "Not applicable" when there was
+    no such wait.
   - **Connect**: from the attempt's start until the connection to the provider is ready to send
     (name lookup, connection, encryption handshake and any proxy handshake).
   - **Response headers**: from the connection being ready (or from the attempt's start on a reused
@@ -302,13 +337,17 @@ about 500 ms apart, before falling over.
 - **FR-010**: A request's router overhead (its first attempt's router overhead) and its time to
   first token MUST equal the values slice 010's latency view uses for the same request (010's
   Definitions section), so `nullrouter records` and `nullrouter latency` never disagree.
-- **FR-011**: When a same-account retry waits deliberately before the next attempt, that wait MUST
-  be counted in the next attempt's router overhead, and the record MUST show how much of the router
-  overhead was retry wait.
+- **FR-011**: A deliberate wait before a same-account retry MUST be recorded as that attempt's
+  retry wait phase and MUST NOT be counted in router overhead or in any provider phase. It counts
+  toward the total (FR-009).
 - **FR-012**: Each attempt's record MUST say whether its connection was new or reused, which HTTP
   version it used, and which proxy it went through (by operator-given name), if any.
 - **FR-013**: `nullrouter records` MUST show the per-attempt phases in a record's detail view and
-  in its `--json` output.
+  in its `--json` output. Its request list MUST add one column: the request's single longest
+  phase across all its attempts, that phase's time, and its side: 0router (router overhead),
+  retry (retry wait), network (connect), provider (response headers, first token, waiting for
+  provider, generation) or client (delivery). A request still in flight shows its current phase
+  marked as in progress; a record from before this slice shows "not recorded".
 - **FR-014**: Phases MUST be measured from real client traffic only. This slice MUST NOT send any
   request of its own to measure latency.
 - **FR-015**: Phase times MUST be taken from a clock that never goes backwards.
@@ -331,10 +370,11 @@ about 500 ms apart, before falling over.
 
 **Connection settings (US3–US6)**
 
-- **FR-021**: The operator MUST be able to set, per provider, a connect timeout, a
-  response-header timeout, a first-token timeout and a stall timeout. For each timeout, the
-  operator's per-provider value MUST win over the plugin's declared value, which MUST win over the
-  built-in default.
+- **FR-021**: The operator MUST be able to set a connect timeout, a response-header timeout, a
+  first-token timeout and a stall timeout per provider and per model of a provider. A plugin MAY
+  declare each of them for the provider and for any of its models. For each timeout, the value in
+  effect MUST be the first set of: operator per model, operator per provider, plugin per model,
+  plugin per provider, built-in default.
 - **FR-022**: Built-in default timeouts MUST keep today's behavior, including today's environment
   overrides (constitution VI). A first-token timeout MUST be off unless a plugin or the operator
   sets one.
@@ -344,10 +384,11 @@ about 500 ms apart, before falling over.
   still sending model output.
 - **FR-024**: An attempt that exceeds a timeout MUST end as a failed attempt. It is classified,
   retried and failed over like other transport failures, and its record names the timeout, its
-  value and the value's source (operator, plugin or built-in).
-- **FR-025**: The operator MUST be able to set a proxy for a single provider, a proxy for all
-  providers, and "no proxy" for a single provider. The per-provider setting MUST win over the
-  all-providers setting. Every request 0router sends to that provider (client requests, token
+  value and the value's source (operator or plugin, per model or per provider, or built-in).
+- **FR-025**: The operator MUST be able to set a proxy, or "no proxy", for a single account, for
+  a single provider, and for all providers. The account setting MUST win over the provider
+  setting, which MUST win over the all-providers setting. Every request 0router sends for that
+  account (client requests, token
   refreshes, quota polls and model tests) MUST go through the proxy in effect.
 - **FR-026**: A plugin that declares a proxy MUST fail validation, with a message that names the
   proxy field.
@@ -358,11 +399,11 @@ about 500 ms apart, before falling over.
   (provider errors that come back through the proxy don't count), and an immediate second try
   fails too, 0router MUST:
   - pause that proxy, which pauses all traffic through it: client requests, token refreshes,
-    quota polls and model tests for every provider that uses it;
+    quota polls and model tests for every account that uses it;
   - tell the operator: a `nullrouter check` error, a line in the `serve` log, a mark in the live
     view and the effective-settings command, and the proxy's name (never its credentials) in the
     record and the client's error;
-  - route requests that would have used it as if those providers were unavailable. A request with
+  - route requests that would have used it as if those accounts were unavailable. A request with
     no other candidate fails with an error that names the paused proxy;
   - never send that traffic without the proxy, and never put the accounts behind the proxy into
     cooldown or count the failure against them.
@@ -388,8 +429,10 @@ about 500 ms apart, before falling over.
 - **FR-032**: An invalid setting MUST be refused with a message that names the field, and the
   settings in force MUST stay unchanged.
 - **FR-033**: A CLI command MUST show each provider's effective connection settings (every
-  timeout, the proxy, reuse, HTTP/2 and the retry policy) with the source of each value (operator,
-  plugin or built-in). Proxy credentials MUST be redacted there.
+  timeout, the proxy, reuse, HTTP/2 and the retry policy), every model whose timeouts differ from
+  its provider's, and each account's effective proxy. Each value MUST show its source: operator,
+  plugin or built-in, and its level (model, provider, account or all providers). Proxy
+  credentials MUST be redacted there.
 - **FR-034**: `nullrouter check` MUST report overrides that name an unknown provider as unused.
 
 **Routing and cost of measuring**
@@ -403,18 +446,20 @@ about 500 ms apart, before falling over.
 
 ### Key Entities
 
-- **Phase**: One of router overhead, connect, response headers, first token, generation, delivery,
-  or the merged "waiting for provider". Its value is a duration, "not applicable" or "not
+- **Phase**: One of router overhead, retry wait, connect, response headers, first token,
+  generation, delivery, or the merged "waiting for provider". Its value is a duration, "not applicable" or "not
   recorded".
 - **Attempt timing**: The phases of one attempt, the phase it ended in, whether its connection was
-  new or reused, its HTTP version, its proxy name, its retry wait and, if a timeout fired, which
+  new or reused, its HTTP version, its proxy name and, if a timeout fired, which
   one, with its value and source. Part of the request record.
 - **In-flight entry**: A request in flight as the live view shows it: agent, target, provider,
   account, attempt number, current phase and time in it, finished phase times, time since arrival.
   It holds no content. It exists only while the request is in flight.
-- **Provider connection settings**: Per provider, the four timeouts, proxy reference, reuse, HTTP/2
+- **Provider connection settings**: Per provider, the four timeouts (also per model), proxy reference, reuse, HTTP/2
   and retry policy, each with its source. The effective value follows operator, then plugin (where
   allowed), then built-in.
+- **Proxy assignment**: Which proxy, or "no proxy", applies at the account, provider or
+  all-providers level. The most specific level set wins.
 - **Proxy**: An operator-named proxy with an address, a scheme and optional credentials, and a
   state: in use, or paused because it was unreachable, with when and why. The credentials are
   stored like account secrets.
@@ -424,7 +469,8 @@ about 500 ms apart, before falling over.
 ### Measurable Outcomes
 
 - **SC-001**: In a test run that injects a known delay into each phase in turn (0router's side,
-  connect, headers, first output, generation and a slow-reading client), 100% of records show each
+  a same-account retry wait, connect, headers, first output, generation and a slow-reading
+  client), 100% of records show each
   delay in the right phase of the right attempt, within 5 ms or 5%, whichever is larger.
 - **SC-002**: For 100% of completed requests in the test suite, the phases add up to the total
   within 1 ms, and the phases up to the first output add up to the time to first token within 1 ms.
