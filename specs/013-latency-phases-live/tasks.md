@@ -43,9 +43,9 @@ stories alone are a working result.
 
 ## Phase 1: Setup
 
-- [ ] T001 Create the module skeletons with module docs that cite their research items: `crates/nullrouter-engine/src/timing.rs` (R1–R3), `phases.rs` (R1, R14, R17), `live.rs` (R9), and `connection/mod.rs` with submodules `clients.rs` (R3, R5) and `proxy.rs` (R7, R8). Declare them in `crates/nullrouter-engine/src/lib.rs`
-- [ ] T002 [P] Add `tower` (layer and service traits, as the dashboard crate already uses it) to `crates/nullrouter-engine/Cargo.toml`, and the `socks` feature to the workspace `reqwest` in `Cargo.toml` (plan, Complexity Tracking)
-- [ ] T003 [P] Add the test target stubs `crates/nullrouter-server/tests/phases.rs`, `live.rs`, `connection.rs`, `proxy.rs` and `crates/nullrouter-engine/tests/routing_latency_blind.rs`, each with a module doc naming the SCs it covers (research R16)
+- [X] T001 Create the module skeletons with module docs that cite their research items: `crates/nullrouter-engine/src/timing.rs` (R1–R3), `phases.rs` (R1, R14, R17), `live.rs` (R9), and `connection/mod.rs` with submodules `clients.rs` (R3, R5) and `proxy.rs` (R7, R8). Declare them in `crates/nullrouter-engine/src/lib.rs`
+- [X] T002 [P] Add `tower` (layer and service traits, as the dashboard crate already uses it) to `crates/nullrouter-engine/Cargo.toml`, and the `socks` feature to the workspace `reqwest` in `Cargo.toml` (plan, Complexity Tracking)
+- [X] T003 [P] Add the test target stubs `crates/nullrouter-server/tests/phases.rs`, `live.rs`, `connection.rs`, `proxy.rs` and `crates/nullrouter-engine/tests/routing_latency_blind.rs`, each with a module doc naming the SCs it covers (research R16)
 
 ---
 
