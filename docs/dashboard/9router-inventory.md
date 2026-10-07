@@ -2,7 +2,7 @@
 
 Source: `ref/9router/src/app/(dashboard)/dashboard/` and `src/shared/components/Sidebar.js`, read at the ref SHA the fixtures use. Screenshots of 9router running locally are noted per section when taken.
 
-Each section carries a **proposal** (keep, drop, change, add) for you to decide. Nothing here is decided yet. Where the constitution already settles it, the row says so.
+Each section carries the **proposal** (keep, drop, change, add) that was put to the operator. They are now decided by [spec 009](../../specs/009-dashboard/spec.md) (see "Decided" below); where the spec differs from a row, the spec wins. Where the constitution already settles it, the row says so.
 
 Status of 0router counterparts: **have** = a CLI command exists today; **007** = planned in slice 007; **later** = named in a brief row but not in 007; **none** = no plan.
 
@@ -46,11 +46,13 @@ Hidden in code: Basic Chat, PXPIPE, MITM page.
 | Plugin review state: installed, bundled, community, harness adapter review | `plugins list` (have) | 007 partial |
 | Model tests (testable combos) | none | later |
 
-## Decisions I need from you
+## Decided
 
-1. Rows 1 to 15: agree or change each proposal. The ones I am least sure about: 3 (vision adapter), 4 (cost estimate), 7 (a "Connect a client" page), 13 (web fetch and search).
-2. Do you want an Overview page as the landing page (adds a page to 007) or keep `/accounts` as the landing page?
-3. Is the sidebar grouped like 9router's (Main, Debug, System), or one flat list? With four pages plus two "not built yet" entries, flat is enough.
+[Spec 009](../../specs/009-dashboard/spec.md) settles the questions this section used to ask:
+
+1. **Rows 1 to 15.** The pages and their contents are FR-026 to FR-040 and the Out of Scope list. Row 3: Combo is an entry that says combos aren't built and names `[[unified_model]]` and `nullrouter unified` (FR-037); combos, round-robin, Fusion and the vision adapter come later in their own slices. Row 4: Usage shows the Requests table and the request window; the stat cards, Est. Cost, the topology graph and the period filter are slots that arrive with the next dashboard slice. Row 7: no "Connect a client" page; Endpoint & Key shows the endpoint URL and a Client adapters side panel (FR-027). Rows 8 and 10: Console Log and Proxy Pools stay in the sidebar as entries that say they aren't built yet and name what exists instead. Row 13: Token Saver, CLI Tools, Translator, Skills, Media pages and Basic Chat are not planned.
+2. **Landing page.** No Overview page: `/` opens Endpoint & Key, as in 9router. What needs attention is the housekeeping panel (User Story 6) and the notices above each page.
+3. **Sidebar.** 9router's names under the title "0Router Proxy": Endpoint & Key, Providers, Combo, Usage, Quota Tracker, then under "System" Proxy Pools, Console Log and Settings (FR-026). This replaces spec 007's four-page layout.
 
 ## Seen running (9router v0.5.86, local, light mode, empty data)
 
@@ -70,5 +72,5 @@ Two changes to my table from this: row 3 gains "Fusion" (drop it; it multiplies 
 
 ## Not yet done
 
-- The style guide extraction (T022 to T023) comes after your decisions.
+- The style guide is extracted: [style-guide.md](style-guide.md), with its tokens in `crates/nullrouter-dashboard/style/tokens.toml` (spec 009 FR-045 to FR-048).
 - 9router's dev server is stopped. To look again: `cd ref/9router && DATA_DIR=/tmp/claude-1000/9r-data npm run dev`, then open `http://localhost:20127/dashboard`. The throwaway data dir has login turned off. `ref/9router/node_modules` and `.env` are gitignored.
