@@ -78,7 +78,6 @@ Terms used throughout:
   and consistently with a fitted number.
 - An **exclusive-use account** is one the operator has declared used only through 0router. Only
   such an account can raise a **leak alert**. The operator sees it as a **usage alert**: its name
-  and text state what was used, never a cause (FR-025). The operator sees it as a **usage alert**: its name
   and text state what was used, never a cause (FR-025).
 - **Rounding noise** is what a provider's reporting resolution can produce with no real use: a
   reading can move by at most one resolution step (one percentage point on a percent window, one
@@ -333,17 +332,6 @@ rounding noise, and only on the declared account.
 - **A plugin removed**: its fits are dropped with it. Reinstalling it starts from nothing.
 - **An account removed or re-added**: its capacity fit and outside-use list go with it; the
   pooled weights keep the evidence its polls already gave. Its poll history is kept (slice 005),
-  but a re-added account's capacity fit starts from nothing and its old outside-use list is not
-  shown.
-- **Pruned history**: pruning poll history from inside a fit's evidence keeps what those
-  intervals proved, in summary form; no fitted number moves because of a prune.
-- **Outside use with a daily rhythm** (claude.ai during office hours, while 0router is also
-  busy): outside use is allowed its own rate per part of the day, learned from the intervals in
-  which 0router sent nothing. A part of the day in which 0router is never idle leaves that rate
-  and the meter numbers unseparable, so those numbers stay at the declared value (FR-005), and
-  the view names the part of the day as the reason. Outside use that rises and falls with
-  0router's own traffic within the same part of the day can't be told apart from a wrong number
-  by any poll; the split-off test (FR-003) keeps it out of the pooled weights. Its poll history is kept (slice 005),
   but a re-added account's capacity fit starts from nothing and its old outside-use list is not
   shown.
 - **Pruned history**: pruning poll history from inside a fit's evidence keeps what those
