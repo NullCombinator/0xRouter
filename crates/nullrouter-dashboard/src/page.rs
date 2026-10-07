@@ -146,6 +146,8 @@ pub async fn build_with(
     wanted: &[Want],
     mut after_fetch: impl FnMut(usize),
 ) -> Result<Page, PageError> {
+    #[cfg(feature = "fault")]
+    fault().await;
     for attempt in 1..=ATTEMPTS {
         let generation = engine.snapshot().generation;
         let as_of = Timestamp::try_from(nullrouter_engine::clock::now()).unwrap_or_else(|_| Timestamp::now());
@@ -169,6 +171,36 @@ pub async fn build_with(
         }
     }
     Err(PageError::Changed)
+}
+
+/// What every page build does first under the test-only `fault` feature (the isolation test,
+/// T071).
+#[cfg(feature = "fault")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fault {
+    None = 0,
+    /// Every build panics.
+    Panic = 1,
+    /// Every build waits 20 s.
+    Sleep = 2,
+}
+
+#[cfg(feature = "fault")]
+static FAULT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Sets the fault every build from now on meets.
+#[cfg(feature = "fault")]
+pub fn set_fault(fault: Fault) {
+    FAULT.store(fault as u8, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[cfg(feature = "fault")]
+async fn fault() {
+    match FAULT.load(std::sync::atomic::Ordering::SeqCst) {
+        1 => panic!("fault: every build panics"),
+        2 => tokio::time::sleep(std::time::Duration::from_secs(20)).await,
+        _ => {}
+    }
 }
 
 #[cfg(test)]

@@ -21,12 +21,20 @@ nullrouter-server.workspace = true
 nullrouter-engine.workspace = true
 nullrouter-registry.workspace = true
 
+[features]
+# Test-only: the isolation test (T071) makes every page build panic or sleep.
+fault = []
+
 [dev-dependencies]
 nullrouter-engine = { workspace = true, features = ["testkit"] }
 tempfile.workspace = true
 reqwest.workspace = true
 tower = { version = "0.5", features = ["util"] }
 toml.workspace = true
+
+[[test]]
+name = "isolation"
+required-features = ["fault"]
 
 [lints]
 workspace = true
