@@ -334,7 +334,8 @@ fn model_row(m: &Value) -> Markup {
     html! {
         div class="model-row" {
             div class="model-row__head" {
-                code class="code model-row__id" { (m["model"].as_str().unwrap_or_default()) }
+                @let id = m["model"].as_str().unwrap_or_default();
+                code class="code model-row__id" title=(id) { (id) }
                 @if let Some(k) = m["kind"].as_str() { (badge(Tone::Primary, k)) } @else { (badge(Tone::Default, "untyped")) }
             }
             div class="model-row__facts" {

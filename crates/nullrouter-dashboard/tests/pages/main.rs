@@ -4,7 +4,9 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod badges;
 mod endpoint;
+mod names;
 mod not_built;
 mod providers;
 mod quota;

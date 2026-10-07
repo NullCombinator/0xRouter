@@ -8,7 +8,7 @@ use nullrouter_dashboard::pages::providers::{ADD_HINT, INSTALL_HINT, SWITCH_HINT
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
-use crate::common::{Dash, text_of};
+use crate::common::{Dash, decode, text_of};
 
 fn rows(v: &Value) -> &[Value] {
     v.as_array().expect("a list view").as_slice()
@@ -34,7 +34,10 @@ fn filter(html: &str) -> Vec<(String, usize, String)> {
 
 /// The model ids a window lists.
 fn listed(html: &str) -> Vec<String> {
-    html.split("model-row__id\">").skip(1).map(|c| c.split("</code>").next().unwrap().to_owned()).collect()
+    html.split("model-row__id\" title=\"")
+        .skip(1)
+        .map(|c| decode(c.split_once("\">").unwrap().1.split("</code>").next().unwrap()))
+        .collect()
 }
 
 /// FR-031: the filter lists `All` and exactly the kinds the loaded plugins declare (their

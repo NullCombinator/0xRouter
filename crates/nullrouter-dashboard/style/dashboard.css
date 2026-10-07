@@ -665,6 +665,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .usage-table__older { margin-top: var(--space-4); font-size: var(--text-sm); line-height: var(--text-sm-leading); text-align: right; }
 .usage-table--decision th, .usage-table--decision td { padding: var(--space-1-5) var(--space-2); font-size: var(--text-xs); line-height: var(--text-xs-leading); }
 .usage-row__link { white-space: nowrap; }
+.usage-row__name { max-width: 0; overflow: hidden; white-space: nowrap; }
 .attempt {
   display: flex;
   flex-direction: column;

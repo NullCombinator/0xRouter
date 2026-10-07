@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
 use crate::access::encode_component;
-use crate::components::{Head, Tone, badge, card, empty, kv, modal, slot};
+use crate::components::{Head, Tone, badge, card, empty, kv, modal, name, slot};
 use crate::page::{ViewName, Want};
 
 pub const VIEWS: &[ViewName] = &[ViewName::Records, ViewName::Record, ViewName::Check];
@@ -271,8 +271,8 @@ fn row(ctx: &Ctx<'_>, r: &Value) -> Markup {
     html! {
         tr class="usage-row" {
             td { a class="usage-row__link" href=(record_href(ctx.req, id)) { (ctx.time(r["arrived"].as_str().unwrap_or_default())) } }
-            td { (text(&r["agent"]["key"])) }
-            td { b { (text(&r["target"])) } " → " (placed_on) }
+            td class="usage-row__name" { (name(&text(&r["agent"]["key"]))) }
+            td class="usage-row__name" { b { (name(&text(&r["target"]))) } " → " (name(&placed_on)) }
             td { (why(r)) }
             td class="usage-table__num" { (ms(&r["ttft_ms"])) }
             td class="usage-table__num" { (ms(&r["total_ms"])) }
