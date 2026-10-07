@@ -168,7 +168,7 @@ Every page needs the frame. The style suite and the full component set finish in
 
 ### Tests for User Story 6
 
-- [ ] T041 [P] [US6] Write `crates/nullrouter-dashboard/tests/notices.rs` on the `dashboard()` home: (its logo and dashboard-port cases pass once T022 and T062 have extended the fixture) `?notices` on any page lists every `check --json` `notices[].text` and every account needing sign-in or cooling down in `accounts list`'s words; each notice appears on the page its `subject` names; with no notices the panel says "No notices."; the chat box is disabled with "Not built yet."
+- [X] T041 [P] [US6] Write `crates/nullrouter-dashboard/tests/notices.rs` on the `dashboard()` home: (its logo and dashboard-port cases pass once T022 and T062 have extended the fixture) `?notices` on any page lists every `check --json` `notices[].text` and every account needing sign-in or cooling down in `accounts list`'s words; each notice appears on the page its `subject` names; with no notices the panel says "No notices."; the chat box is disabled with "Not built yet."
 - [X] T042 [P] [US6] Add not-built cases to `crates/nullrouter-dashboard/tests/pages.rs`: Combo's, Console Log's and Proxy Pools' texts per research R15; Combo lists its `combo` notices and no unified model list
 
 ### Implementation for User Story 6
