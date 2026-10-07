@@ -31,6 +31,7 @@ ulid.workspace = true
 httpdate.workspace = true
 indexmap.workspace = true
 url.workspace = true
+tower.workspace = true
 nullrouter-wire.workspace = true
 nullrouter-registry.workspace = true
 axum = { workspace = true, optional = true }
