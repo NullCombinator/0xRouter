@@ -21,7 +21,9 @@ fn oauth(extra: &str) -> ProviderEntity {
     validate_with(&src, PluginSource::Bundled, "p.toml", &ctx).unwrap_or_else(|e| panic!("{e:#?}")).entity
 }
 
-fn judged(p: &ProviderEntity, status: Option<u16>, class: ErrorClass, message: &str) -> (State, Option<Rejection>) {
+type Want = (State, Option<Rejection>);
+
+fn judged(p: &ProviderEntity, status: Option<u16>, class: ErrorClass, message: &str) -> Want {
     let j = judge(&Failed { status, class, message }, p);
     (j.state, j.rejection)
 }
@@ -31,7 +33,7 @@ fn core_list() {
     let p = provider("");
     let broken = |r| (State::Broken, Some(r));
     let unknown = (State::Unknown, None);
-    let cases: &[(Option<u16>, &str, (State, Option<Rejection>))] = &[
+    let cases: &[(Option<u16>, &str, Want)] = &[
         (Some(404), "not_found_error: model: claude-opus-9", broken(Rejection::ModelNotFound)),
         (Some(404), "The model 'gpt-9' does not exist", broken(Rejection::ModelNotFound)),
         (Some(400), "x-ai/grok-9 is not a valid model ID", broken(Rejection::ModelNotFound)),

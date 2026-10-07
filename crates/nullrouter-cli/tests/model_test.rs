@@ -70,8 +70,11 @@ fn home_with(mock: &MockUpstream, ids: &[&str], config: &str) -> tempfile::TempD
     )
     .unwrap();
     std::fs::create_dir(home.join("plugins")).unwrap();
+    // Every plugin before the first account: the config names them all.
     for id in ids {
         std::fs::write(home.join(format!("plugins/{id}.toml")), plugin(mock, id)).unwrap();
+    }
+    for id in ids {
         let o = nr(home, &["accounts", "add", id, "main"], &format!("{SECRET}-{id}\n"));
         assert!(o.status.success(), "{}", text(&o));
     }
