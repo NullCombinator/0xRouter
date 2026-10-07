@@ -39,6 +39,10 @@ confirmed claim by claim on 2026-10-07.
 - Q: Where does a deliberate wait before a same-account retry go? → A: In its own seventh phase,
   "retry wait", between attempts. Router overhead before a retry covers only 0router's own work
   (FR-001, FR-011). This extends brief row 2.
+- Plan note (2026-10-07, not a clarify answer): FR-029 corrected. Today 0router already uses
+  HTTP/2 wherever a provider offers it, so the default stays that way and a plugin declares only
+  that its provider doesn't support HTTP/2. The earlier text would have quietly moved every
+  undeclared provider to HTTP/1.1.
 - Q: Should the request list show where each request's time went? → A: Yes, one column: the
   request's longest phase, its time and its side (FR-013). Full detail stays in a single record
   and `--json`. This extends brief row 8.
@@ -211,7 +215,7 @@ for the proxy credentials and find none.
 
 ### User Story 5 - Connection reuse and HTTP/2 per provider (Priority: P5)
 
-The plugin declares whether its provider supports HTTP/2. The operator can turn connection reuse
+A plugin can declare that its provider doesn't support HTTP/2. The operator can turn connection reuse
 and HTTP/2 on or off per provider, and the operator's setting wins over the plugin's declaration.
 
 **Why this priority**: Reuse removes the connect phase from most requests. Being able to turn it
@@ -229,8 +233,8 @@ records show HTTP/2.
    **Then** the second record shows a reused connection.
 2. **Given** the operator turns reuse off for a provider, **When** requests go to it, **Then**
    each opens a new connection and records its connect time.
-3. **Given** a plugin declares HTTP/2 support, **When** requests go to that provider, **Then**
-   records show the protocol used, and **When** the operator turns HTTP/2 off for that provider,
+3. **Given** a provider that offers HTTP/2 and a plugin that doesn't rule it out, **When**
+   requests go to that provider, **Then** records show HTTP/2, and **When** the operator turns HTTP/2 off for that provider,
    **Then** later requests use HTTP/1.1.
 
 ---
@@ -411,10 +415,10 @@ about 500 ms apart, before falling over.
   The pause MUST last until the operator acts: either they tell 0router the proxy is fixed and
   0router finds it reachable, or they change or remove that proxy setting. A pause MUST survive a
   `serve` restart.
-- **FR-029**: A plugin MAY declare that its provider supports HTTP/2. The operator MUST be able to
-  turn connection reuse and HTTP/2 on or off per provider, and the operator's setting MUST win.
-  When nothing is set, connections are reused (003 FR-021), and HTTP/2 is used only where the
-  plugin declares support and the provider agrees to it.
+- **FR-029**: A plugin MAY declare that its provider doesn't support HTTP/2. The operator MUST be
+  able to turn connection reuse and HTTP/2 on or off per provider, and the operator's setting MUST
+  win. When nothing is set, connections are reused (003 FR-021), and HTTP/2 is used wherever the
+  provider offers it, as today; a plugin that declares no HTTP/2 support gets HTTP/1.1 only.
 - **FR-030**: The operator MUST be able to set, per provider, the same-account retry count and the
   wait between same-account retries, in total or per failure status. A plugin MAY declare
   same-account retries per failure status, up to a maximum that validation enforces; a plugin
