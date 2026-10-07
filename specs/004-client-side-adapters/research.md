@@ -115,8 +115,10 @@ after them (spec Assumptions).
   selectors. hermes and the Claude Code adapter declare none.
 - **Response event paths** (`event[N]`) count the events sent to the client across attempts,
   so a resumed stream continues the numbering.
-- **Journal.** Slice 006 stores `serde_json::to_value(&RequestRecord)`, so the new optional
-  fields are kept, pruned and forgotten with their record, with no journal change.
+- **Journal.** Slice 006 writes each attempt whole, so `Attempt.adapter` is kept, pruned and
+  forgotten with its record. The close line names its fields, so it gains
+  `response_adapter`, written only when present; older lines read unchanged. (CI found this
+  on 2026-10-07; the first draft of this note said no journal change was needed.)
 
 **Rationale**:
 - Adapter authors know their own harness's format, which is the client style. Working

@@ -54,7 +54,8 @@ pub fn lines_for(before: &RequestRecord, after: &RequestRecord, force_open: bool
         || before.ttft_ms != after.ttft_ms
         || before.total_ms != after.total_ms
         || before.break_handling != after.break_handling
-        || before.job != after.job;
+        || before.job != after.job
+        || before.response_adapter != after.response_adapter;
     // A job that was submitted is in progress until it is done, but its reference must survive.
     if closed && (after.outcome != Outcome::InProgress || after.job.is_some()) {
         out.push(("close", close_line(after)));
@@ -82,7 +83,7 @@ fn open_line(r: &RequestRecord) -> Value {
 }
 
 fn close_line(r: &RequestRecord) -> Value {
-    json!({
+    let mut line = json!({
         "id": r.id,
         "outcome": r.outcome,
         "served_by": r.served_by,
@@ -91,7 +92,12 @@ fn close_line(r: &RequestRecord) -> Value {
         "usage": r.usage,
         "break_handling": r.break_handling,
         "job": r.job,
-    })
+    });
+    // Only when there is one, so lines for requests without an adapter keep their old shape.
+    if let Some(a) = &r.response_adapter {
+        line["response_adapter"] = json!(a);
+    }
+    line
 }
 
 /// The segment day (`YYYY-MM-DD`) of a record that arrived at `arrived` (RFC 3339).
@@ -166,7 +172,17 @@ impl Folding {
             }
             "close" => {
                 for key in
-                    ["outcome", "served_by", "ttft_ms", "total_ms", "usage", "break_handling", "job", "recovered_at"]
+                    [
+                    "outcome",
+                    "served_by",
+                    "ttft_ms",
+                    "total_ms",
+                    "usage",
+                    "break_handling",
+                    "job",
+                    "recovered_at",
+                    "response_adapter",
+                ]
                 {
                     if let Some(v) = line.get(key) {
                         self.record.insert(key.into(), v.clone());
