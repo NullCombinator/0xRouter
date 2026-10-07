@@ -487,3 +487,114 @@ async fn records_not_kept_is_the_check_notice_above_the_page() {
     }
     d.engine.journal.faults().fail_writes.store(false, Ordering::Relaxed);
 }
+
+// ---------------------------------------------------------------------------------------------
+// The period filter and the five cards against `usage` (spec 010, T014, SC-001)
+
+const PERIODS: [&str; 6] = ["today", "24h", "7d", "30d", "60d", "all"];
+
+fn comma(n: u64) -> String {
+    grouped(n).replace(' ', ",")
+}
+
+/// The stat cards' text, which is where the totals appear (the Requests table and Recent Requests
+/// show records, which carry their own numbers).
+fn stat_cards(html: &str) -> String {
+    let at = html.find("class=\"usage-stats\"").expect("the stat cards are on the page");
+    let rest = &html[at..];
+    text_of(&rest[..rest.find("class=\"usage-overview__pair\"").unwrap_or(rest.len())])
+}
+
+fn assert_cards_equal_usage(html: &str, u: &Value, what: &str) {
+    let text = stat_cards(html);
+    let n = |v: &Value| v.as_u64().unwrap_or(0);
+    for (label, value) in [
+        ("Total Requests", comma(n(&u["requests"]))),
+        ("Total Input Tokens", comma(n(&u["tokens"]["input"]))),
+        ("Cached Tokens", comma(n(&u["tokens"]["cached"]))),
+        ("Output Tokens", comma(n(&u["tokens"]["output"]))),
+        ("Est. Cost", format!("~${:.2}", u["cost"]["usd"].as_f64().unwrap())),
+    ] {
+        assert!(text.contains(&format!("{label} {value}")), "{what}: {label} {value}\n{text}");
+    }
+    assert!(text.contains(u["cost"]["label"].as_str().unwrap()), "{what}: the label\n{text}");
+    assert!(text.contains(u["cost"]["note"].as_str().unwrap()), "{what}: the note\n{text}");
+    if n(&u["requests"]) == 0 {
+        assert!(text.contains("No requests in this period"), "{what}\n{text}");
+    } else if n(&u["in_flight"]) > 0 || n(&u["not_reported"]) > 0 {
+        let small = format!("{} in flight · {} not reported", comma(n(&u["in_flight"])), comma(n(&u["not_reported"])));
+        assert!(text.contains(&small), "{what}: {small}\n{text}");
+    }
+    let un = &u["cost"]["unpriced"];
+    if n(&un["requests"]) > 0 {
+        assert!(text.contains(&format!("{} not priced", comma(n(&un["requests"])))), "{what}: not priced\n{text}");
+        for (k, label) in [("no_price", "no price"), ("account_gone", "account gone"), ("no_output_price", "no output price")] {
+            if n(&un[k]) > 0 {
+                assert!(text.contains(&format!("{} {label}", n(&un[k]))), "{what}: {label}\n{text}");
+            }
+        }
+    } else {
+        assert!(!text.contains("not priced"), "{what}: nothing is unpriced\n{text}");
+    }
+}
+
+/// The value of the one filter button marked pressed.
+fn pressed(html: &str) -> Vec<String> {
+    html.split("<button ")
+        .skip(1)
+        .map(|b| b.split('>').next().unwrap_or_default())
+        .filter(|b| b.contains("aria-pressed=\"true\""))
+        .filter_map(|b| b.split("value=\"").nth(1).and_then(|v| v.split('"').next()).map(str::to_owned))
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn each_period_shows_what_usage_prints() {
+    let d = Dash::dashboard().await;
+    for period in PERIODS {
+        let html = d.ok(&format!("/usage?period={period}")).await;
+        let u = d.view(ViewName::Usage, json!({"period": period})).await;
+        assert_cards_equal_usage(&html, &u, period);
+        assert_eq!(pressed(&html), [period], "{period}: the chosen one is marked");
+        assert!(!text_of(&html).contains("Unknown period"), "{period}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn no_period_is_today_and_an_unknown_one_says_so() {
+    let d = Dash::dashboard().await;
+    let today = d.view(ViewName::Usage, json!({"period": "today"})).await;
+    let plain = d.ok("/usage").await;
+    assert_cards_equal_usage(&plain, &today, "no period");
+    assert_eq!(pressed(&plain), ["today"]);
+    assert!(!text_of(&plain).contains("Unknown period"));
+
+    let bogus = d.ok("/usage?period=bogus").await;
+    assert_cards_equal_usage(&bogus, &today, "period=bogus");
+    assert_eq!(pressed(&bogus), ["today"]);
+    assert!(text_of(&bogus).contains("Unknown period; showing Today"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_empty_period_shows_zeros_and_says_so() {
+    let d = Dash::empty().await;
+    let html = d.ok("/usage?period=7d").await;
+    let u = d.view(ViewName::Usage, json!({"period": "7d"})).await;
+    assert_eq!(u["requests"], 0);
+    assert_cards_equal_usage(&html, &u, "empty");
+    let text = stat_cards(&html);
+    assert!(text.contains("Total Requests 0"), "{text}");
+    assert!(text.contains("No requests in this period"), "{text}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_filter_is_a_get_form_with_the_six_periods_and_no_script() {
+    let d = Dash::dashboard().await;
+    let html = d.ok("/usage").await;
+    assert!(html.contains("method=\"get\""), "a GET form");
+    for (value, label) in [("today", "Today"), ("24h", "24h"), ("7d", "7D"), ("30d", "30D"), ("60d", "60D"), ("all", "All")] {
+        assert!(html.contains(&format!("name=\"period\" value=\"{value}\"")), "{value}");
+        assert!(text_of(&html).contains(label), "{label}");
+    }
+    assert!(!html.contains("<script"), "no script");
+}
