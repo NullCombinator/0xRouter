@@ -7,6 +7,7 @@
 //! was reached on.
 
 pub mod bodies;
+pub mod retest;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
@@ -289,6 +290,18 @@ pub async fn run_pair(
     run: &str,
     stop: &CancellationToken,
 ) -> Option<TestResult> {
+    run_pair_at(engine, p, source, run, stop, None).await
+}
+
+/// [`run_pair`], with the verdict dated `at` instead of when the call ends: a simulated clock.
+pub async fn run_pair_at(
+    engine: &Arc<Engine>,
+    p: &Planned,
+    source: Source,
+    run: &str,
+    stop: &CancellationToken,
+    at: Option<SystemTime>,
+) -> Option<TestResult> {
     if let Some(why) = &p.skip {
         return Some(TestResult::skipped(&p.pair, why));
     }
@@ -346,7 +359,8 @@ pub async fn run_pair(
             judge::judge(&f, provider)
         }
     };
-    let next = store(engine, &st, &p.pair, source, &judged, &id);
+    let now = at.unwrap_or_else(SystemTime::now);
+    let next = store(engine, &st, &p.pair, source, &judged, &id, now);
     let mut r = result(p, judged.state, judged.reason, judged.rejection, ms, ttft_ms, &id);
     r.next = next.map(crate::clock::rfc3339);
     Some(r)
@@ -501,8 +515,9 @@ async fn follow(engine: &Arc<Engine>, st: &EngineState, id: &str, mut status: Jo
     }
 }
 
-/// Stores `j` for `pair` with its retest schedule, returning when the retest is due (research R6): an UNKNOWN's step advances
-/// only on a retest; a test's BROKEN is retested only when `broken_retest` is on.
+/// Stores `j` for `pair` at `now` with its retest step, returning when the retest is due
+/// (research R6, R8): an UNKNOWN's step advances only on a retest of an UNKNOWN; any other
+/// UNKNOWN starts at step 0.
 fn store(
     engine: &Engine,
     st: &EngineState,
@@ -510,22 +525,13 @@ fn store(
     source: Source,
     j: &judge::Judged,
     record: &str,
+    now: SystemTime,
 ) -> Option<SystemTime> {
-    let tests = &st.registry.runtime().tests;
-    let now = SystemTime::now();
-    let (step, next) = match j.state {
-        State::Unknown => {
-            let step = match engine.verdicts.get(pair) {
-                Some(v) if v.state == State::Unknown && source == Source::Retest => v.step.map_or(0, |s| s + 1),
-                _ => 0,
-            };
-            let wait = tests.retest.get(step as usize).or(tests.retest.last());
-            (Some(step), wait.map(|w| now + *w))
-        }
-        State::Broken => (None, tests.broken_retest.map(|w| now + w)),
-        State::Pass => (None, None),
-    };
-    let v = Verdict {
+    let step = (j.state == State::Unknown).then(|| match engine.verdicts.get(pair) {
+        Some(v) if v.state == State::Unknown && source == Source::Retest => v.step.map_or(0, |s| s + 1),
+        _ => 0,
+    });
+    let mut v = Verdict {
         state: j.state,
         reason: j.reason.clone(),
         rejection: j.rejection.clone(),
@@ -533,10 +539,12 @@ fn store(
         at: now,
         record: Some(record.to_owned()),
         step,
-        next,
+        next: None,
         basis: basis(engine, st, pair),
         note: None,
     };
+    v.next = retest::due(&v, &st.registry.runtime().tests);
+    let next = v.next;
     engine.verdicts.set(pair.clone(), v);
     next
 }

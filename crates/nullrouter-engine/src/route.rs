@@ -83,6 +83,78 @@ fn spent_of(model: &str, t: &crate::quota::tally::ModelTally) -> Spent {
     }
 }
 
+/// `a`'s quota as routing reads it at `now`: its windows, each against its reserve floor.
+pub(crate) fn account_quota(
+    engine: &Engine,
+    provider: &nullrouter_registry::schema::ProviderEntity,
+    a: &crate::accounts::Account,
+    now: SystemTime,
+) -> AccountQuota {
+    let routing = provider.routing();
+    let board = engine.quota.get(&a.provider, &a.name);
+    let polled = board.latest.as_ref().map(|p| (p.windows.as_slice(), p.at));
+    let failed_after = match (&board.last_failure, &board.latest) {
+        (Some(f), Some(l)) => f.at > l.at,
+        (Some(_), None) => true,
+        _ => false,
+    };
+    let reported = crate::quota::poll::reported(provider, a).is_some();
+    let tally = &engine.history.tally;
+    let since_poll: Vec<Spent> =
+        tally.since_good_poll(&a.provider, &a.name).iter().map(|(m, t)| spent_of(m, t)).collect();
+    // The hourly counters are read only where a window counts from them: one nobody
+    // reports, or one whose reset passed since its poll.
+    let reset_passed =
+        board.latest.as_ref().is_some_and(|p| p.windows.iter().any(|w| w.resets_at.is_some_and(|r| r <= now)));
+    let reach = routing.windows.iter().map(|m| m.length).max().unwrap_or_default().min(crate::quota::tally::HORIZON);
+    let history: Vec<Bucket> = if !reported || reset_passed {
+        let from = now.checked_sub(reach).unwrap_or(SystemTime::UNIX_EPOCH);
+        tally
+            .hours_since(&a.provider, &a.name, from)
+            .into_iter()
+            .map(|(h, t)| Bucket {
+                start: SystemTime::UNIX_EPOCH + Duration::from_secs(h * 3600),
+                spent: t.iter().map(|(m, t)| spent_of(m, t)).collect(),
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let recent: Vec<Traffic> = if routing.windows.iter().any(|m| m.is_admission()) {
+        tally
+            .recent_since(
+                &a.provider,
+                &a.name,
+                now.checked_sub(Duration::from_secs(3600)).unwrap_or(SystemTime::UNIX_EPOCH),
+            )
+            .into_iter()
+            .map(|c| Traffic {
+                at: c.at,
+                model: c.model,
+                input: c.tally.input,
+                output: c.tally.output,
+                cache_read: c.tally.cache_read,
+                cache_write: c.tally.cache_write,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    meter::quota_for(
+        &MeterInput {
+            declared: routing.windows,
+            overrides: &a.routing,
+            report_declared: reported,
+            polled,
+            last_poll_failed: failed_after,
+            recent: &recent,
+            since_poll: &since_poll,
+            history: &history,
+        },
+        now,
+    )
+}
+
 fn candidate_of(engine: &Engine, c: &plan::Candidate<'_>, order: i64, now: SystemTime) -> Candidate {
     let account = c.account;
     let name = account.map_or("", |a| a.name.as_str());
@@ -91,74 +163,7 @@ fn candidate_of(engine: &Engine, c: &plan::Candidate<'_>, order: i64, now: Syste
         .cooldowns
         .cooling(&c.provider.id, name, &c.upstream_id)
         .map(|until| until.saturating_duration_since(tokio::time::Instant::now()));
-    let quota = match account {
-        None => AccountQuota::payg(),
-        Some(a) => {
-            let board = engine.quota.get(&a.provider, &a.name);
-            let polled = board.latest.as_ref().map(|p| (p.windows.as_slice(), p.at));
-            let failed_after = match (&board.last_failure, &board.latest) {
-                (Some(f), Some(l)) => f.at > l.at,
-                (Some(_), None) => true,
-                _ => false,
-            };
-            let reported = crate::quota::poll::reported(c.provider, a).is_some();
-            let tally = &engine.history.tally;
-            let since_poll: Vec<Spent> =
-                tally.since_good_poll(&a.provider, &a.name).iter().map(|(m, t)| spent_of(m, t)).collect();
-            // The hourly counters are read only where a window counts from them: one nobody
-            // reports, or one whose reset passed since its poll.
-            let reset_passed =
-                board.latest.as_ref().is_some_and(|p| p.windows.iter().any(|w| w.resets_at.is_some_and(|r| r <= now)));
-            let reach =
-                routing.windows.iter().map(|m| m.length).max().unwrap_or_default().min(crate::quota::tally::HORIZON);
-            let history: Vec<Bucket> = if !reported || reset_passed {
-                let from = now.checked_sub(reach).unwrap_or(SystemTime::UNIX_EPOCH);
-                tally
-                    .hours_since(&a.provider, &a.name, from)
-                    .into_iter()
-                    .map(|(h, t)| Bucket {
-                        start: SystemTime::UNIX_EPOCH + Duration::from_secs(h * 3600),
-                        spent: t.iter().map(|(m, t)| spent_of(m, t)).collect(),
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            let recent: Vec<Traffic> = if routing.windows.iter().any(|m| m.is_admission()) {
-                tally
-                    .recent_since(
-                        &a.provider,
-                        &a.name,
-                        now.checked_sub(Duration::from_secs(3600)).unwrap_or(SystemTime::UNIX_EPOCH),
-                    )
-                    .into_iter()
-                    .map(|c| Traffic {
-                        at: c.at,
-                        model: c.model,
-                        input: c.tally.input,
-                        output: c.tally.output,
-                        cache_read: c.tally.cache_read,
-                        cache_write: c.tally.cache_write,
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            meter::quota_for(
-                &MeterInput {
-                    declared: routing.windows,
-                    overrides: &a.routing,
-                    report_declared: reported,
-                    polled,
-                    last_poll_failed: failed_after,
-                    recent: &recent,
-                    since_poll: &since_poll,
-                    history: &history,
-                },
-                now,
-            )
-        }
-    };
+    let quota = account.map_or_else(AccountQuota::payg, |a| account_quota(engine, c.provider, a, now));
     Candidate {
         key: CandidateKey::new(&c.provider.id, name, &c.upstream_id),
         order,
