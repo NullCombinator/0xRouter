@@ -2,14 +2,20 @@
 //! per provider (spec 010, research R3 to R6). Reads only the day segments a window needs and
 //! writes nothing.
 
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::sync::Mutex;
+use std::time::{Duration, SystemTime};
 
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::clock;
 use crate::journal::records::{day_of, fold, segments};
+use crate::routing::price::{PriceSpec, entry_at};
+use crate::state::EngineState;
 
 /// Nearest-rank percentile of `sorted` (ascending): `v[ceil(q·n) − 1]`. One value gives itself
 /// for every `q`; no values give `None` (R6).
@@ -31,21 +37,35 @@ pub struct Tokens {
     pub output: u64,
 }
 
-/// The tokens of a record's `usage` (`None` when it reported none). `includes_cache` input has
-/// the cache reads and writes taken out and the writes added back, so writes stay in input;
-/// `excludes_cache` input gets the writes added. Reasoning tokens are part of `output` already.
-pub fn tokens_of(usage: &Value) -> Option<Tokens> {
+/// A record's usage split the way pricing needs it: input with neither cache count in it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct Split {
+    plain: u64,
+    read: u64,
+    write: u64,
+    output: u64,
+}
+
+fn split_of(usage: &Value) -> Option<Split> {
     if usage.is_null() {
         return None;
     }
     let n = |k: &str| usage[k].as_u64().unwrap_or(0);
     let (read, write) = (n("cache_read"), n("cache_write"));
-    let input = if usage["input_semantics"] == "includes_cache" {
-        n("input").saturating_sub(read + write) + write
+    let plain = if usage["input_semantics"] == "includes_cache" {
+        n("input").saturating_sub(read + write)
     } else {
-        n("input") + write
+        n("input")
     };
-    Some(Tokens { input, cached: read, output: n("output") })
+    Some(Split { plain, read, write, output: n("output") })
+}
+
+/// The tokens of a record's `usage` (`None` when it reported none). `includes_cache` input has
+/// the cache reads and writes taken out and the writes added back, so writes stay in input;
+/// `excludes_cache` input gets the writes added. Reasoning tokens are part of `output` already.
+pub fn tokens_of(usage: &Value) -> Option<Tokens> {
+    let s = split_of(usage)?;
+    Some(Tokens { input: s.plain + s.write, cached: s.read, output: s.output })
 }
 
 fn is_skipped(attempt: &Value) -> bool {
@@ -104,6 +124,182 @@ pub fn records_in(home: &Path, w: &Window) -> Vec<Value> {
     for (_, path) in segments_for(home, w) {
         let Ok(text) = fs::read_to_string(&path) else { continue };
         out.extend(fold(&text).into_iter().filter(|r| r["arrived"].as_str().is_some_and(|a| w.holds(a))));
+    }
+    out
+}
+
+/// Why a finished record's tokens are left out of Est. Cost (R5).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub struct Unpriced {
+    pub no_price: u64,
+    pub account_gone: u64,
+    pub no_output_price: u64,
+}
+
+/// Request and token totals for a window. They add up across segments, which is what lets the
+/// finished days be cached.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct Totals {
+    pub requests: u64,
+    pub in_flight: u64,
+    pub not_reported: u64,
+    pub input: u64,
+    pub cached: u64,
+    pub output: u64,
+    pub cost_usd: f64,
+    pub unpriced: Unpriced,
+    pub agents: BTreeMap<String, u64>,
+    pub providers: BTreeMap<String, u64>,
+}
+
+impl Totals {
+    pub fn add(&mut self, o: &Totals) {
+        self.requests += o.requests;
+        self.in_flight += o.in_flight;
+        self.not_reported += o.not_reported;
+        self.input += o.input;
+        self.cached += o.cached;
+        self.output += o.output;
+        self.cost_usd += o.cost_usd;
+        self.unpriced.no_price += o.unpriced.no_price;
+        self.unpriced.account_gone += o.unpriced.account_gone;
+        self.unpriced.no_output_price += o.unpriced.no_output_price;
+        for (k, v) in &o.agents {
+            *self.agents.entry(k.clone()).or_default() += v;
+        }
+        for (k, v) in &o.providers {
+            *self.providers.entry(k.clone()).or_default() += v;
+        }
+    }
+}
+
+/// What an account is priced by: `None` when the account no longer exists, an empty spec when
+/// it exists with no price. The second argument is the account name (`None` for a provider that
+/// has none).
+pub type Prices<'a> = &'a dyn Fn(&str, Option<&str>) -> Option<PriceSpec>;
+
+/// The price lookup of one engine snapshot, built as `route.rs` builds a `PriceSpec`: the
+/// provider's declared schedule, replaced by the account's flat override.
+pub fn prices_of(st: &EngineState) -> impl Fn(&str, Option<&str>) -> Option<PriceSpec> + '_ {
+    move |provider, account| {
+        let entity = st.registry.provider(provider).ok()?;
+        let schedule = entity.routing().prices.to_vec();
+        match account {
+            None => Some(PriceSpec { schedule, flat: None }),
+            Some(name) => {
+                let a = st.accounts.get(provider, name)?;
+                Some(PriceSpec { schedule, flat: a.routing.price })
+            }
+        }
+    }
+}
+
+fn add_record(t: &mut Totals, r: &Value, prices: Prices<'_>) {
+    t.requests += 1;
+    if let Some(a) = r["agent"]["key"].as_str() {
+        *t.agents.entry(a.to_owned()).or_default() += 1;
+    }
+    let mut seen: Vec<&str> = Vec::new();
+    for a in r["attempts"].as_array().into_iter().flatten().filter(|a| !is_skipped(a)) {
+        if let Some(p) = a["provider"].as_str()
+            && !seen.contains(&p)
+        {
+            seen.push(p);
+            *t.providers.entry(p.to_owned()).or_default() += 1;
+        }
+    }
+    if r["outcome"] == "in_progress" {
+        t.in_flight += 1;
+        return;
+    }
+    let Some(s) = split_of(&r["usage"]) else {
+        t.not_reported += 1;
+        return;
+    };
+    t.input += s.plain + s.write;
+    t.cached += s.read;
+    t.output += s.output;
+    let served = &r["served_by"];
+    let Some(provider) = served["provider"].as_str() else {
+        t.unpriced.account_gone += 1;
+        return;
+    };
+    let Some(spec) = prices(provider, served["account"].as_str()) else {
+        t.unpriced.account_gone += 1;
+        return;
+    };
+    let at = r["arrived"].as_str().and_then(clock::parse_rfc3339).unwrap_or(SystemTime::UNIX_EPOCH);
+    let Some(rates) = entry_at(&spec, at) else {
+        t.unpriced.no_price += 1;
+        return;
+    };
+    if s.output > 0 && rates.output.is_none() {
+        t.unpriced.no_output_price += 1;
+        return;
+    }
+    // Cache tokens with no rate of their own cost the input rate, as 9router does.
+    let usd = s.plain as f64 * rates.input
+        + s.read as f64 * rates.cache_read.unwrap_or(rates.input)
+        + s.write as f64 * rates.cache_write.unwrap_or(rates.input)
+        + s.output as f64 * rates.output.unwrap_or(0.0);
+    t.cost_usd += usd / 1e6;
+}
+
+fn segment_totals(path: &Path, w: &Window, prices: Prices<'_>) -> Totals {
+    let mut t = Totals::default();
+    let Ok(text) = fs::read_to_string(path) else { return t };
+    for r in fold(&text).iter().filter(|r| r["arrived"].as_str().is_some_and(|a| w.holds(a))) {
+        add_record(&mut t, r, prices);
+    }
+    t
+}
+
+/// What a cached day was computed from: any change recomputes it (R3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Stamp {
+    inode: u64,
+    len: u64,
+    generation: u64,
+}
+
+/// Finished days' totals, one entry per segment file. Process-wide, like the segment index.
+static CACHE: Mutex<Option<HashMap<PathBuf, (Stamp, Totals)>>> = Mutex::new(None);
+
+/// Totals over the window, computed from the journal alone and from no cache.
+pub fn totals(home: &Path, w: &Window, prices: Prices<'_>) -> Totals {
+    totals_cached(home, w, prices, None)
+}
+
+/// As [`totals`], serving each day that lies wholly inside the window from the cache, keyed by the
+/// file's inode and length and by `generation` (the engine's reload generation, since a reload
+/// can change prices or accounts). The edge days, and any day in `to`'s own day, are read.
+pub fn totals_cached(home: &Path, w: &Window, prices: Prices<'_>, generation: Option<u64>) -> Totals {
+    let mut out = Totals::default();
+    for (day, path) in segments_for(home, w) {
+        let start = clock::parse_rfc3339(&format!("{day}T00:00:00Z"));
+        let whole = start.is_some_and(|s| {
+            w.from.is_none_or(|f| f <= s) && s + Duration::from_secs(86_400) <= w.to
+        });
+        let stamp = generation.filter(|_| whole).and_then(|generation| {
+            let m = fs::metadata(&path).ok()?;
+            Some(Stamp { inode: m.ino(), len: m.len(), generation })
+        });
+        let Some(stamp) = stamp else {
+            out.add(&segment_totals(&path, w, prices));
+            continue;
+        };
+        let hit = CACHE
+            .lock()
+            .ok()
+            .and_then(|c| c.as_ref()?.get(&path).filter(|(s, _)| *s == stamp).map(|(_, t)| t.clone()));
+        let day_totals = hit.unwrap_or_else(|| {
+            let t = segment_totals(&path, w, prices);
+            if let Ok(mut c) = CACHE.lock() {
+                c.get_or_insert_with(HashMap::new).insert(path.clone(), (stamp, t.clone()));
+            }
+            t
+        });
+        out.add(&day_totals);
     }
     out
 }
