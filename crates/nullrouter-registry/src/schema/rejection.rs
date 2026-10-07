@@ -27,7 +27,7 @@ impl RejectionRule {
 mod tests {
     use super::*;
 
-    #[derive(Deserialize)]
+    #[derive(Debug, Deserialize)]
     struct File {
         rejections: Vec<RejectionRule>,
     }
