@@ -61,7 +61,7 @@ say so. Trends, per-unified-model figures, the bottleneck verdict and the dashbo
 | 16 | U | Connection reuse/HTTP2 and proxy per provider are in | "No, include them" |
 | 17 | U | Retry policy settings (retry count, backoff) are in | "No, include it" |
 | 18 | C✓ | Proxy is operator-only, per provider or for all; a plugin that declares one fails validation; proxy credentials are kept like account secrets | "You only, never a plugin" |
-| 19 | C✓ | Reuse/HTTP2: plugin declares, operator overrides. Retry: core default, operator overrides per provider; plugins can't set retry (retries spend quota) | "Split by who knows" |
+| 19 | C✓ | Reuse/HTTP2: plugin declares, operator overrides. Retry: plugins may declare same-account retries up to a validated maximum, operator overrides per provider, core default otherwise. ~~Plugins can't set retry~~, revised 2026-10-07 in specify Q2: four plugins already declare retries from 9router (VI parity) | "Split by who knows"; specify Q2 → A |
 | 20 | C✓ | Constitution VIII amended before specify: measurements inform the operator; they don't change routing | "No; amend VIII first" |
 | 21 | C✓ | Fails if measuring slows requests | failure pick |
 | 22 | C✓ | Fails if phases don't add up to the total or are misattributed | failure pick |
@@ -74,6 +74,7 @@ say so. Trends, per-unified-model figures, the bottleneck verdict and the dashbo
 | 29 | C✓ | One slice; stories ordered phases → live → timeouts → proxy → reuse/HTTP2 → retry; the first two are a working MVP | "One slice, ordered stories" |
 | 30 | K | Latency becomes something measured and visible, not something noticed | init.md "Why it exists" |
 | 31 | C✓ | Out: proxy pools (0router deploying or testing proxies) → later | "Yes, out → later" |
+| 32 | C✓ | An unreachable proxy: 0router tells the operator and pauses traffic through it until fixed; never sends direct; no account cooldown | "Announce user that proxy is not reachable, and pause for fix" (specify Q1) |
 
 ## P notes for research.md
 
