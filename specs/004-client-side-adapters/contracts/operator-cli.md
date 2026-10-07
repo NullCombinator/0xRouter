@@ -41,7 +41,7 @@ for `keys.toml`.
 | `nullrouter adapters clear <H> <version>` | `suspect` → `approved`. It asks for confirmation and shows the guardrail events first |
 | `nullrouter adapters remove <H> [<version>] [--force]` | Removes a version, or the whole harness. The active version needs `--force` |
 | `nullrouter adapters rebuild [<H>]` | Rebuilds approved versions against the current kit (R9). Run it before upgrading to avoid the plain-client window |
-| `nullrouter adapters review-settings --model M --budget N [--reserve-output N]` | Sets `[review]` (FR-022). `--clear` removes it |
+| `nullrouter adapters review-settings --model M --budget N [--reserve-output N]` | Sets `[review]` (FR-022). `M` is a unified model id or `provider/model`, so it names the provider too. `--clear` removes it |
 
 **Updating** (FR-029): there is no separate `update` command. Installing a newer version of an
 installed harness, with `adapters install` or `catalogue install`, is the update. It goes through

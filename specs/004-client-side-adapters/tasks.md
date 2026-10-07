@@ -48,14 +48,17 @@ One addition to the plan's tree:
   `nullrouter-adapters` behind a `testkit` feature (`src/testkit.rs`). It lets US3, US4 and US6
   tests run without the builder.
 
-Build commands need `export CARGO_HOME=$PWD/.cargo-home`.
+**Where things run**:
+- **CI** runs every `cargo test` and `clippy` (`.github/workflows/ci.yml`). Never run `cargo`
+  in the session, not even `check`. Commit, push a group with the user's OK, and read the run.
+- ***operator-run*** tasks need the operator's own accounts, a review model, a local build, or a
+  write to `~/.rustup`. Ask the user to run the given command with `! …` in the session. Never
+  ask for keys.
+- Commands that write `~/.rustup` fail under Landlock even with `! …`. Ask the user to run
+  those in a terminal outside the session.
 
-**Live checks** (tasks marked *operator-run*) need the operator's own provider keys, a review
-model, or a write to `~/.rustup`, which Landlock denies. Ask the user to run the given command
-with `! …` in the session. Never ask for keys.
-
-**Before any task**: switch `.specify/feature.json` to this slice only while implementing it.
-Slice 003 work needs it pointed back at `specs/003-request-pipeline`.
+**Before any task**: this worktree (`.worktrees/004`) is on branch `004-client-side-adapters`,
+and its `.specify/feature.json` points at this slice. If either differs, stop and ask.
 
 ---
 
@@ -63,26 +66,28 @@ Slice 003 work needs it pointed back at `specs/003-request-pipeline`.
 
 **Purpose**: Prerequisites confirmed, and new crates and directories that compile.
 
-- [ ] T001 Confirm slice 003 is complete (spec Assumptions: "Slice 003 … is complete before
-  this slice is implemented").
-  - Every task in `specs/003-request-pipeline/tasks.md` must be `[X]`. The ones this slice hooks
-    into most directly:
+- [ ] T001 Confirm the hook points exist (spec Assumptions: slices 003 and 005–009 are
+  complete).
+  - These slice 003 tasks must be `[X]` in `specs/003-request-pipeline/tasks.md`:
     - T049–T054 (the four style files and their codecs);
     - T055 (happy-path attempt) and T071 (full attempt loop with fallback) in
       `crates/nullrouter-engine/src/attempt.rs`;
     - T056 (text generation wired through `router.rs` and `relay.rs`);
     - T105 (record filling).
-  - `crates/nullrouter-engine/src/attempt.rs` must hold the attempt loop, not a stub.
-  - If either check fails, **stop** and tell the user that slice 004 waits on slice 003.
-  - Point `.specify/feature.json` at `specs/004-client-side-adapters` only after this passes.
+  - Slice 003's open live checks (T060, T087, T096) don't block this slice.
+  - `attempt.rs` must still have `body_for` and `count_body`, `route.rs` must still have
+    `decide`, and `journal/records.rs` must still read records as
+    `serde_json::to_value(&RequestRecord)`. The seam in
+    [R2](research.md#r2-where-an-adapter-runs-and-what-it-sees) (Update 2026-10-06) depends on
+    all three.
+  - If a check fails, **stop** and report what moved.
 - [ ] T002 Check the toolchain for adapters ([R1](research.md#r1-toolchain-and-crates)).
   - `rustc --version` must report 1.93.x.
   - `rustup target list --installed` must include `wasm32-unknown-unknown`. If it doesn't,
-    this is *operator-run*: ask the user to run
-    `! rustup target add wasm32-unknown-unknown --toolchain 1.93.1`. `~/.rustup` is read-only
-    under Landlock.
-  - `cargo info wasmtime@45` must resolve. If crates.io is unreachable, **stop** and report.
-    Never edit `identity/`.
+    this is *operator-run* outside the session: ask the user to run
+    `rustup target add wasm32-unknown-unknown` in a terminal outside `claude-0router`. Only
+    local fixture builds need it, so this doesn't block Phase 1. Never edit `identity/`.
+  - CI resolves `wasmtime` 45 in T009. If it fails to resolve, **stop** and report.
 - [ ] T003 Update the workspace manifest `Cargo.toml`.
   - `rust-version = "1.93"`.
   - `exclude = ["adapters"]`.
@@ -130,8 +135,13 @@ Slice 003 work needs it pointed back at `specs/003-request-pipeline`.
     `CARGO_HOME`.
   - `catalogue/index.toml` holding only `schema = 1`.
   - `crates/nullrouter-adapters/tests/{gate/invalid,hostile,guard,fixtures}/.gitkeep`.
-- [ ] T009 Run `cargo build --workspace && cargo clippy --workspace -- -D warnings` on the
-  skeleton, and confirm that `cargo tree -i nullrouter-builder` shows no dependent.
+- [ ] T009 CI for adapters, and the skeleton through it.
+  - In `.github/workflows/ci.yml`, add `targets: wasm32-unknown-unknown` to the
+    `dtolnay/rust-toolchain` step, so the builder and install tests (T037, T053) run in CI
+    instead of skipping.
+  - Confirm with `grep -l 'nullrouter-builder' crates/*/Cargo.toml` that only the builder's
+    own manifest names it.
+  - Commit the skeleton and push it with the user's OK. CI's build and clippy must be green.
 
 ---
 
@@ -174,6 +184,8 @@ share: edits, selectors, key binding, records.
     fields.
   - A record built from a run that removed a string containing a sentinel secret and a
     sentinel prompt holds neither (FR-025).
+  - A record with an `AdapterRun` survives slice 006's journal write and read unchanged.
+    Journal lines written before this slice still read.
 - [ ] T014 [P] Engine seam tests in `crates/nullrouter-engine/tests/adapter_seam.rs`, using a
   test adapter that removes a field.
   - (a) The request reaching the mock upstream lacks the field, and the attempt's record lists
@@ -186,6 +198,12 @@ share: edits, selectors, key binding, records.
   - (e) A response-side adapter runs per stream event, and the first event reaches the client
     before the upstream sends the second (FR-005).
   - (f) A client disconnect during the adapter call cancels the upstream request.
+  - (g) Cross-style: the edited body is decoded again, and the upstream body is encoded from
+    that IR. An adapter with no edits causes no second decode.
+  - (h) A token-count request runs the request side. A media request from a bound key runs no
+    adapter and records `not_run{media_request}`.
+  - (i) The routing prefix chain is the same with and without the adapter, so the warm lookup
+    still finds the account.
 
 ### Implementation
 
@@ -247,16 +265,23 @@ share: edits, selectors, key binding, records.
   - `EngineState` gains the adapter view: the runner per harness.
   - For each attempt, when the key has a harness, build the `AttemptContext` from the
     attempt's provider, endpoint wire style, same_style flag, upstream model, model type and
-    model capabilities. Run the request side on the **client-style body** before `forward` or
-    `decode`/`encode`. Put the `AdapterRun` on the `Attempt`.
-  - Fallback re-runs the adapter against the original client body.
+    model capabilities. Run the request side on the **client-style body** before `body_for`
+    and `count_body`. Put the `AdapterRun` on the `Attempt`.
+  - Cross-style with edits: decode the edited body with the client's codec, and pass that IR
+    to `encode`. Otherwise pass the request's own IR, as today.
+  - Media requests skip the runner and record `not_run{media_request}`.
+  - `route.rs` keeps building its chain from the request as received.
+  - Fallback and stream-break resumes re-run the adapter against the original client body.
+    The resume's continuation is added after the adapter.
   - Adapter work runs inside the attempt's `CancellationToken` scope.
 - [ ] T024 Response seam in `crates/nullrouter-server/src/relay.rs` (streamed) and in the
   engine's non-stream path.
   - After the event is re-encoded for the client (`for_client`), run `run_event` per event
     without buffering. Run `run_response` once on a non-stream body.
+  - Pass-through frames are parsed for this only when the active adapter declares response
+    selectors.
   - Aggregate the changes into `RequestRecord.response_adapter`, prefixing paths with
-    `event[N].`.
+    `event[N].`, where `N` counts client events across attempts.
   - Make T014 pass.
 - [ ] T025 `keys` CLI in `crates/nullrouter-cli/src/cmd/keys.rs`, per
   [contracts/operator-cli.md](contracts/operator-cli.md#commands).
@@ -273,8 +298,8 @@ event, and records carry `AdapterRun`.
 ## Phase 3: User Story 1 — hermes works fully through 0router (Priority: P1) 🎯 MVP
 
 **Goal**: A hermes key needs only a base URL. Tools, reasoning across turns, images and
-attachments work on anthropic, openrouter, opencode-zen and opencode-go, streamed and not
-streamed.
+attachments work on anthropic, openrouter, opencode-zen, opencode-go, xai and grok-cli,
+streamed and not streamed.
 
 **Independent Test**: [quickstart § 2](quickstart.md#2-hermes-us1-fr-006fr-009-sc-001). With
 mocks, then live, every turn completes and every change is recorded.
@@ -333,7 +358,8 @@ mocks, then live, every turn completes and every change is recorded.
 - [ ] T031 [US1] *operator-run* live check that fills the reject table.
   - Ask the user to run
     `! NR_LIVE=1 cargo test -p nullrouter-server --test harness_hermes -- --ignored --nocapture`,
-    once with the table empty for the four chosen providers.
+    once with the table empty for the six chosen text providers. xai and grok-cli need
+    signed-in accounts (slice 005).
   - Add only the providers that returned a 400 naming an echoed reasoning field to
     `REJECTS_ECHOED_REASONING`, and cite the run date in a comment.
   - Re-run until every turn passes (SC-001). Record the results in
@@ -402,6 +428,7 @@ foundation here, not a later story.
   message when the wasm32 target is missing.
   - The fixture `crates/nullrouter-adapters/tests/fixtures/noop/` builds offline after
     `setup`, resolving the kit from the local registry with no crates.io access.
+  - It runs in CI, where T009 installs the target, and skips locally.
   - Two builds give an identical `wasm_hash`.
   - A fixture with a `compile` error returns `{"ok":false,"error":"compile"}` with at most
     40 lines of detail.
@@ -484,6 +511,10 @@ foundation here, not a later story.
     - fetch `serde` and `serde_json` at the locked versions into the same directory. This is
       the builder's only network use, run once on the operator's command;
     - write `builder/config.toml` with `source.crates-io.replace-with = "vendored"`.
+  - `tools/build-adapter-fixtures.sh`: *operator-run*, outside the session. It runs the
+    builder over every hostile source (T065) and `adapters/community/claude-code` (T080), and
+    writes each `.wasm` and `build.json` to its fixture directory. Ask the user to run it
+    whenever one of those sources changes. CI's T080 companion check catches a stale fixture.
   - `build`:
     - copy the source to a fresh temp dir, adding `crate-type = ["cdylib"]` through a
       generated `[lib]` (the author may not set it), and copy in the builder's pinned
@@ -600,6 +631,7 @@ serves before approval, and an operator with no adapters needs none of it.
   - Unpack refuses symlinks, hard links, `..` and absolute paths, more than 64 entries and
     more than 256 KiB.
   - Redirect to another host is refused. HTTP is refused. The size caps hold.
+  - A local `.tar.gz` that the operator supplies goes through the same unpack rules (FR-031).
   - Catalogue and local installs of the same source produce identical store entries apart
     from `origin` (SC-012).
 - [ ] T053 [P] [US2] Install pipeline test in
@@ -616,6 +648,8 @@ serves before approval, and an operator with no adapters needs none of it.
   - With `[adapters] builder` pointing at a missing path, and no `[review]`, `serve` starts
     and logs no adapter warning.
   - Slice 003's end-to-end smoke passes, and the process never spawns a child.
+  - The rest of SC-011 is CI's full workspace run: no test outside this slice configures a
+    builder or a review model.
 - [ ] T055 [P] [US2] Zero-contact test in `crates/nullrouter-server/tests/catalogue_quiet.rs`.
   - With `catalogue_url` pointing at a counting mock, run `serve` through a full request mix,
     a reload and a restart.
@@ -683,9 +717,10 @@ serves before approval, and an operator with no adapters needs none of it.
     - a 30 s timeout.
   - Check `sha256`, unpack safely into `adapters/.staging/`, and check `source_fp`. Then
     call `install()` with `origin = {catalogue = url}`.
-  - Nothing in `serve` or reload references this module. A `cargo test` asserts it with a
-    grep-style check on the call graph via `cfg(test)`, or with a module visibility
-    restriction.
+  - Nothing in `serve` or reload references this module. A test in
+    `crates/nullrouter-server/tests/catalogue_quiet.rs` scans `crates/nullrouter-server/src`
+    and `crates/nullrouter-engine/src` and fails on any `catalogue::` path. (Module visibility
+    can't do this: the CLI and the server use the same crate.) T055 is the runtime check.
   - Make T052 and T055 pass.
 - [ ] T062 [US2] `adapters` CLI in `crates/nullrouter-cli/src/cmd/adapters.rs`: `install`,
   `show`, `review [--retry]`, `build --retry`, `approve [--note]`, `reject [--note]` and
@@ -718,8 +753,8 @@ until cleared, and every request completes.
 
 - [ ] T065 [P] [US3] Hostile corpus in `crates/nullrouter-adapters/tests/hostile/`.
   - Each case is a Rust source against the kit (where the attack is expressible), plus a
-    checked-in `.wasm`, built once by the builder or hand-written in WAT where the kit can't
-    express the attack.
+    checked-in `.wasm`, built by T045's `tools/build-adapter-fixtures.sh` (*operator-run*) or
+    hand-written in WAT where the kit can't express the attack.
   - Cases:
     - `net`: imports `wasi_snapshot_preview1.sock_open`;
     - `file`: imports `path_open`;
@@ -876,7 +911,8 @@ provider.
   - Regenerate, and commit the fixtures alone, naming the `ref/9router` SHA.
 - [ ] T080 [P] [US5] Parity test in `crates/nullrouter-adapters/tests/claude_code_parity.rs`.
   - Run the adapter as production does: build `adapters/community/claude-code` with the
-    builder, and check in the resulting `.wasm` and its `build.json` as
+    builder through T045's `tools/build-adapter-fixtures.sh` (*operator-run*), and check in
+    the resulting `.wasm` and its `build.json` as
     `crates/nullrouter-adapters/tests/fixtures/claude-code/`. The test loads them with the T047
     testkit and calls them through the sandbox. No native linking into any workspace crate.
   - A companion check fails if the checked-in module's `source_fp` no longer matches
@@ -917,6 +953,7 @@ provider.
   - Add a test in `crates/nullrouter-adapters/tests/catalogue.rs` that parses the real
     `catalogue/index.toml`, and checks that packaging `adapters/community/claude-code` gives
     the listed `sha256` and `source_fp`.
+  - The packaging script is plain `tar` and `gzip`, so it may run in the session.
   - Publishing the release asset is outward-facing: ask the user before running
     `gh release create`.
 - [ ] T084 [US5] *operator-run* full pipeline, per
@@ -983,8 +1020,9 @@ each change by path, kind and reason, and each guardrail event, and never any co
   - `crates/nullrouter-sandbox/benches/sandbox.rs`: `call_noop`, and `call_claude_code` with
     a 100 KB body.
   - Include a no-harness baseline on slice 003's `engine` bench, to show zero cost.
-- [ ] T092 Run `cargo bench -- --save-baseline slice-004`.
-  - First run slice 003's `engine` bench with `--baseline slice-003`. The no-harness path must
+- [ ] T092 *operator-run*: benches stay local, and only the user runs them. Ask the user to run
+  `! cargo bench -- --save-baseline slice-004`.
+  - First, slice 003's `engine` bench with `--baseline slice-003`. The no-harness path must
     stay within Criterion's noise threshold. A regression blocks merge (FR-030, constitution
     Performance gate).
   - Write `specs/004-client-side-adapters/bench-baseline.md` in slice 003's format, with the
@@ -1014,12 +1052,14 @@ each change by path, kind and reason, and each guardrail event, and never any co
   - Add rows to the layout table for the four crates, `adapters/community/` and
     `catalogue/`.
   - Update the "Plugin safety invariant" paragraph to point to the kit and builder paths.
-- [ ] T097 [P] Run every non-live section of `specs/004-client-side-adapters/quickstart.md`.
-  Record any gap in the commit message.
-- [ ] T098 Run `cargo clippy --workspace --all-targets -- -D warnings` and
-  `cargo test --workspace`. Confirm that `unsafe` appears only in
-  `crates/nullrouter-adapter-kit/src/abi.rs`: `grep -rn "unsafe" crates/ --include='*.rs'`
-  must list only that file.
+- [ ] T097 [P] *operator-run*: ask the user to run every non-live section of
+  `specs/004-client-side-adapters/quickstart.md`. Record any gap they report in the commit
+  message.
+- [ ] T098 Final gate.
+  - Push with the user's OK. CI's `cargo test --workspace` and
+    `cargo clippy --workspace --all-targets -- -D warnings` must be green.
+  - Confirm that `unsafe` appears only in `crates/nullrouter-adapter-kit/src/abi.rs`:
+    `grep -rn "unsafe" crates/ --include='*.rs'` must list only that file.
 
 ---
 
@@ -1095,7 +1135,7 @@ US2: T056–T064        US3: T065–T069
 1. Phase 1, including T001 (slice 003 ready) and T002 (toolchain; wasm32 is not needed for
    the MVP).
 2. Phase 2.
-3. Phase 3. **Stop and validate**: hermes on mocks for all four chosen providers, then the
+3. Phase 3. **Stop and validate**: hermes on mocks for all six chosen text providers, then the
    T031 live check on the operator's accounts.
 
 ### Incremental Delivery
@@ -1133,3 +1173,5 @@ US2: T056–T064        US3: T065–T069
   startup touches `catalogue.rs`.
 - Never edit `ref/9router/` or `tests/fixtures/9router/` by hand. Regenerate them.
 - `unsafe` is allowed only in `crates/nullrouter-adapter-kit/src/abi.rs`.
+- No dashboard page changes in this slice (spec Assumptions). Records and keys gain optional
+  fields with `serde(default)`, so the slice 009 pages keep reading them.

@@ -47,7 +47,7 @@ over several turns, streamed and not streamed. Nothing else sits between hermes 
 needs extra setup, or loses a feature on some provider, is a named failure of the slice.
 
 **Independent Test**: Issue a hermes key. Run hermes against each chosen text provider (anthropic,
-openrouter, opencode-zen, opencode-go) through a multi-turn session that calls tools, carries
+openrouter, opencode-zen, opencode-go, xai, grok-cli) through a multi-turn session that calls tools, carries
 reasoning from one turn to the next, and sends an image and an attachment. Every turn completes
 with no client or provider error.
 
@@ -361,11 +361,13 @@ adapter list and alerts match what happened.
 
 **Content changes and records**
 
-- **FR-024**: An adapter MAY change request content only where its harness's coupling requires
-  it, by removing or converting parts the target provider can't accept. It MUST NOT compress,
+- **FR-024**: An adapter MAY change request or response content only where its harness's
+  coupling requires it, by removing or converting parts the target provider, or the client,
+  can't accept. It MUST NOT compress,
   truncate, summarize or otherwise optimize content (Constitution IV).
-- **FR-025**: Every content change an adapter makes MUST be noted in the request record, on the
-  attempt it applies to, with its location, kind (removed or converted) and reason. The record
+- **FR-025**: Every content change an adapter makes, in the request or the response, MUST be
+  noted in the request record, on the attempt it applies to (response changes on the request),
+  with its location, kind (removed or converted) and reason. The record
   MUST NOT hold the removed or converted content.
 - **FR-026**: Every request from a key with a harness MUST record which adapter and version ran, or
   why none ran.
@@ -422,7 +424,7 @@ adapter list and alerts match what happened.
 ### Measurable Outcomes
 
 - **SC-001**: hermes, with only a base URL and an agent key, completes multi-turn sessions that use
-  tools, reasoning across turns, and images, against each of the four chosen text providers,
+  tools, reasoning across turns, and images, against each of the six chosen text providers,
   streamed and not streamed, with zero client or provider errors.
 - **SC-002**: A hostile-adapter suite (network, files, environment, secrets, runaway time, runaway
   memory) is contained in 100% of runs: zero connections or file accesses leave the sandbox, zero
@@ -466,8 +468,18 @@ revised in planning without asking the user, as long as nothing the user sees ch
 
 - Slice 003 (request pipeline, including its optimizer pass-through amendment) is complete before
   this slice is implemented. Adapters run on slice 003's attempt path and records.
-- "Every chosen provider" means slice 003's chosen text providers: anthropic, openrouter,
-  opencode-zen and opencode-go. elevenlabs is outside hermes's feature set.
+- "Every chosen provider" means the chosen text providers: anthropic, openrouter,
+  opencode-zen and opencode-go from slice 003, and xai and grok-cli from slice 005, which
+  shipped after this spec was written. elevenlabs is outside hermes's feature set. The live
+  checks on xai and grok-cli need signed-in accounts (grok-cli has no API keys).
+- Slices 005 to 009 are complete. Adapters run on slice 006's routing and record journal:
+  adapter runs are stored with the record and kept, pruned and forgotten with it.
+- Adapters run on text generation and token-count requests. Media requests (images, speech,
+  video and the other non-text types) from a key with a harness run no adapter, and the
+  record says so (FR-026). *(technical decision)*
+- Cache-aware routing (slice 006) fingerprints the client's request as received, before any
+  adapter runs. An adapter's edits are fixed for a given body, target and version, so the same
+  client prefix still maps to the same cached prefix upstream. *(technical decision)*
 - hermes talks to 0router in the OpenAI Chat Completions style. Its echoed reasoning fields and its
   image and attachment formats follow 9router's handling (`paramSupport.js`, `combo.js`). Which
   chosen providers reject the echoed reasoning is checked by a live test during implementation,
@@ -479,7 +491,9 @@ revised in planning without asking the user, as long as nothing the user sees ch
   holds for the chosen provider. The budget is a token limit per review, checked before the review
   starts and enforced while it runs. *(technical decision)*
 - Alerts are shown in the CLI adapter listing and written to 0router's log. They stay until the
-  operator acknowledges them. The dashboard is a later slice. *(technical decision)*
+  operator acknowledges them. The read-only dashboard (slice 009) shipped after this spec was
+  written; showing adapter runs, adapter states and alerts there is left to a later dashboard
+  slice, and this slice changes no dashboard page. *(technical decision)*
 - The code size limit, the opaque-blob threshold, and the sandbox's time and memory limits are set
   in planning. *(technical decision)*
 - The 5 ms and 1 ms figures in SC-010 are starting targets. *(technical decision)*

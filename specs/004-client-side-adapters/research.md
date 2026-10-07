@@ -28,7 +28,7 @@ after them (spec Assumptions).
   `pooling-allocator`, and without `wasi`, `component-model`, `cache`, `threads` or `gc`.
   wasmtime 45 needs rustc 1.93, and 1.93.1 is installed. wasmtime 46 and later need 1.94 or
   newer, and 49 needs 1.96.
-- **Workspace MSRV rises from 1.85 to 1.93.** Only the crates that link the sandbox need it, but
+- **Workspace MSRV rises from 1.89 to 1.93.** Only the crates that link the sandbox need it, but
   the `nullrouter` binary links them all.
 - **Guest target: `wasm32-unknown-unknown`**, not WASI. The guest has no imports beyond the kit's
   host ABI (R2), so it has no system interface to misuse.
@@ -91,6 +91,32 @@ after them (spec Assumptions).
   record (FR-025).
 - **Header edits** are not in this slice. No confirmed harness needs them, and the forwarding
   floor (003 R18) stays the only header policy.
+
+**Update 2026-10-06** (the engine after slices 005–009):
+- **Where in the code.** The request side runs in `attempt.rs` per candidate, before
+  `body_for` and `count_body`.
+  - Same style: `forward` takes the edited body.
+  - Cross style: the edited body is decoded again with the client's codec, and `encode` reads
+    that IR.
+  - No edits: the request's own body and IR are used, so a key without a harness, or an
+    adapter that changes nothing, costs no extra decode.
+- **Token counts** run the request side too: a harness's count call carries the same blocks
+  its generation call does. There is no response side for counts.
+- **Media requests** run no adapter. The record shows `not_run{media_request}` (FR-026).
+- **Routing.** `route.rs` builds its prefix chain from the request as received, before any
+  adapter. An adapter's edits are fixed for a given body, target and version, so equal client
+  prefixes still map to equal upstream prefixes, and the warm lookup holds. A new adapter
+  version can change that mapping once, which costs at most one cache miss.
+- **Stream-break resume** (`breaks.rs`) is a new attempt. The adapter runs on the client body,
+  then the core appends its continuation. That continuation is the core's own, not the
+  adapter's, so the guardrail doesn't see it.
+- **Pass-through frames.** When the provider's frames go out unchanged (same style, streamed),
+  they are parsed for the response side only if the active adapter declares response
+  selectors. hermes and the Claude Code adapter declare none.
+- **Response event paths** (`event[N]`) count the events sent to the client across attempts,
+  so a resumed stream continues the numbering.
+- **Journal.** Slice 006 stores `serde_json::to_value(&RequestRecord)`, so the new optional
+  fields are kept, pruned and forgotten with their record, with no journal change.
 
 **Rationale**:
 - Adapter authors know their own harness's format, which is the client style. Working
@@ -161,7 +187,8 @@ calls, definitions or results. hermes talks openai-chat.
     encoder already drops unplaced keys and records them (003 R27), so the adapter leaves those
     attempts alone.
 - **Reject table (user-visible).** It is filled by a live check (task) against anthropic,
-  openrouter, opencode-zen and opencode-go. For a provider not in the table, the default is
+  openrouter, opencode-zen, opencode-go, xai and grok-cli. grok-cli speaks openai-responses,
+  so hermes's attempts there are cross-style. For a provider not in the table, the default is
   **keep**: forward as received (IV). openrouter uses `reasoning_details` to continue reasoning
   across tool calls, so a blanket removal would degrade it. 9router's rule
   (`paramSupport.js`: groq, mistral, cerebras) seeds the table for community providers.

@@ -55,7 +55,7 @@ cargo test -p nullrouter-adapters --test hermes        # images, attachments, ec
 
 Live (opt-in, needs operator accounts): run
 `NR_LIVE=1 cargo test -p nullrouter-server --test harness_hermes -- --ignored`. It runs
-hermes against anthropic, openrouter, opencode-zen and opencode-go, with tools, reasoning
+hermes against anthropic, openrouter, opencode-zen, opencode-go, xai and grok-cli (signed in), with tools, reasoning
 and images, streamed and not streamed. It also fills in or confirms the reject table.
 
 ## 3. Install, review, decide (US2, FR-019–FR-022)

@@ -44,7 +44,7 @@ The approach:
 
 ## Technical Context
 
-**Language/Version**: Rust 1.93.1, edition 2024. **MSRV rises from 1.85 to 1.93** for
+**Language/Version**: Rust 1.93.1, edition 2024. **MSRV rises from 1.89 to 1.93** for
 wasmtime 45. Adapters are built with the builder's pinned 1.93.1 toolchain, for
 `wasm32-unknown-unknown`. ([R1](research.md#r1-toolchain-and-crates))
 
@@ -73,12 +73,37 @@ slice 003's set. The kit has only `serde` and `serde_json`. Dev: `criterion`.
 - tamper tests;
 - update lifecycle under load;
 - hermes engine tests on scripted mocks;
-- opt-in live checks: hermes on the four providers, and Claude Code through the full pipeline.
+- opt-in live checks: hermes on the six chosen text providers, and Claude Code through the full
+  pipeline.
+
+Where tests run:
+- **CI** (`.github/workflows/ci.yml`) runs `cargo test` and `clippy` for the workspace. Its
+  toolchain step gains the `wasm32-unknown-unknown` target, so the builder and install tests
+  run there instead of skipping.
+- **No local cargo.** Nothing in this slice runs `cargo` in the session.
+- **Operator-run, outside the session**:
+  - adding the wasm32 target (`~/.rustup` is read-only under Landlock, also for `!` commands);
+  - building the checked-in adapter fixtures (`tools/build-adapter-fixtures.sh`);
+  - Criterion benches, which stay local;
+  - live checks and the quickstart.
 
 ([R16](research.md#r16-test-strategy))
 
 **Target Platform**: Linux. The builder needs a Rust toolchain on the same host. The core
 does not.
+
+**Engine since this plan was first written** (slices 005–009 shipped; [R2](research.md#r2-where-an-adapter-runs-and-what-it-sees), Update 2026-10-06):
+- The request side runs in `attempt.rs`, per candidate, before `body_for` and `count_body`.
+  For a cross-style candidate, the edited body is decoded again into the IR that `encode` reads.
+  Without edits, the request's own IR is used, as today.
+- Routing (`route.rs`) builds its prefix chain from the request as received, before any adapter.
+- A stream-break resume (`breaks.rs`) is a new attempt: the adapter runs on the client body,
+  then the core adds its continuation.
+- When frames pass through unchanged (same style, streamed), they are parsed for the response
+  side only if the active adapter declares response selectors.
+- Records reach slice 006's journal as `serde_json::to_value(&RequestRecord)`, so the new
+  optional fields need no journal change.
+- Media requests run no adapter.
 
 **Project Type**: The Cargo workspace gains four crates:
 - `adapter-kit`: the guest library;
@@ -120,7 +145,7 @@ catalogue index, `catalogue/index.toml`.
 | Principle | Status | How this plan complies |
 |---|---|---|
 | **I. Plugin Safety** | ✅ Pass | See the notes below the table |
-| **II. Routing Fidelity** | ✅ N/A | Adapters don't route. They run per attempt on the target the engine picked, and fallback re-runs them for the new target. No cross-agent state: a fresh instance per call |
+| **II. Routing Fidelity** | ✅ Pass | Adapters don't route. They run per attempt on the target the engine picked, and fallback re-runs them for the new target. No cross-agent state: a fresh instance per call. Cache-aware routing fingerprints the client's request before any adapter; edits are fixed per body, target and version, so the mapping to the cached upstream prefix holds |
 | **III. Unified Models & Provider Entities** | ✅ Pass | Adapters get the attempt's provider, wire style, model and capabilities. Provider plugins stay data only (schema unchanged) |
 | **IV. Scope Discipline** | ✅ Pass | Edits are `remove` or `replace` of a path, with a closed set of reason codes. There is no insert operation. 9router's thinking-placeholder insertion is not ported. Every edit is recorded. hermes converts images instead of deleting them ([R4](research.md#r4-hermes-built-in), [R15](research.md#r15-claude-code-adapter)) |
 | **V. Streaming-Native SSE** | ✅ Pass | The response adapter and guardrail run per event inside the relay stream, with no buffering. Epoch deadlines use async yield, and client cancellation drops the call |
@@ -254,7 +279,7 @@ tests/
 | Choice | Why | Simpler alternative rejected because |
 |---|---|---|
 | `nullrouter-adapter-kit` allows `unsafe` (overrides the workspace `forbid`) | The WASM ABI needs `#[no_mangle]` exports and raw pointer reads for input and output | No safe way exists to export a core-module function. The code runs only inside the sandbox, and adapters themselves still build with `-F unsafe_code` (the lint doesn't fire on expansions of an external `macro_rules!`; a builder test asserts it) |
-| MSRV 1.85 → 1.93 | wasmtime 45 is the newest release the installed toolchain builds | wasmi is 5–20× slower and risks SC-010. Older wasmtime versions lose security fixes |
+| MSRV 1.89 → 1.93 | wasmtime 45 is the newest release the installed toolchain builds | wasmi is 5–20× slower and risks SC-010. Older wasmtime versions lose security fixes |
 | Four new crates | The builder must be separate. The kit is a guest library. The sandbox keeps wasmtime out of the logic crate | Folding them in would link a compiler path or wasmtime into crates that don't need it |
 | The previous kit ABI stays supported | Most upgrades then need no rebuild, so no plain-client window | Current ABI only would force a rebuild, and a plain-client window, on every kit change |
 | Thinking placeholder not inserted (VI deviation) | IV: adapters remove or convert, never add | Inserting would need an "insert" edit, which the guardrail's shrink-only rule can't police |

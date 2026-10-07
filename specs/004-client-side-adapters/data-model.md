@@ -215,7 +215,7 @@ Adding a code is a minor kit version. Removing one is a major ABI version.
 | `duration_us` | integer |
 
 Values of `not_run.reason`: `no_approved_version`, `suspect`, `source_mismatch`, `rebuilding`,
-`rebuild_failed`, `removed`, `no_selector_match`.
+`rebuild_failed`, `removed`, `no_selector_match`, `media_request`.
 
 Values of `failed.reason`: `trap`, `deadline`, `memory`, or `invalid_output{rule}`.
 
