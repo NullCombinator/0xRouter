@@ -423,3 +423,20 @@ pub fn fit(spec: &Spec, rows: &[MRow], start: &Theta) -> Option<Fit> {
 pub fn values(fit: &Fit) -> BTreeMap<P, f64> {
     fit.active.iter().map(|p| (*p, fit.theta.get(*p))).collect()
 }
+
+impl Fit {
+    /// The expected `y` of `row` under the fit, and the variance of that expected value (the
+    /// parameters' uncertainty only: the row's own noise is added by the caller).
+    pub fn predict(&self, spec: &Spec, row: &MRow) -> (f64, f64) {
+        let mut g = vec![0.0; self.active.len()];
+        let mean = eval(spec, &self.theta, row, &self.active, Some(&mut g));
+        let cg = self.cov.mul_vec(&g);
+        let var: f64 = g.iter().zip(&cg).map(|(a, b)| a * b).sum();
+        (mean, var.max(0.0))
+    }
+
+    /// The variance of one new row's reading beyond the mean: rounding plus the extra variance.
+    pub fn row_noise(&self) -> f64 {
+        ROW_VAR + self.sigma_e2
+    }
+}
