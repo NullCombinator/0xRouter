@@ -323,7 +323,7 @@ mocks, then live, every turn completes and every change is recorded.
     `image_url`, PDFs to `file` with `file_data` and `filename`.
   - (f) A MIME type no model can read is left unconverted.
   - (g) No edit ever touches `tool_calls`, `tools` or a `role:"tool"` message.
-- [ ] T027 [P] [US1] hermes engine tests in `crates/nullrouter-engine/tests/hermes_e2e.rs`,
+- [X] T027 [P] [US1] hermes engine tests in `crates/nullrouter-engine/tests/hermes_e2e.rs`,
   with the scripted mock for each chosen provider's wire style, streamed and not.
   - A three-turn session with a tool call and result, echoed reasoning, and an image turn.
   - Assert what each mock received, that every turn succeeds, and the record's changes.
