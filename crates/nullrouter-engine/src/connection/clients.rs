@@ -118,6 +118,37 @@ mod tests {
         }
     }
 
+    /// A connector that takes `0` to connect.
+    #[derive(Clone)]
+    struct Slow(Duration);
+
+    impl Service<()> for Slow {
+        type Response = ();
+        type Error = BoxError;
+        type Future = Pin<Box<dyn Future<Output = Result<(), BoxError>> + Send>>;
+
+        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), BoxError>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, _: ()) -> Self::Future {
+            let d = self.0;
+            Box::pin(async move {
+                tokio::time::sleep(d).await;
+                Ok(())
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_slow_connect_is_the_span_between_the_two_marks() {
+        let clock = Arc::new(AttemptClock::new(Instant::now(), Duration::from_secs(5)));
+        let mut svc = ConnectClock.layer(Slow(Duration::from_millis(80)));
+        ATTEMPT.scope(clock.clone(), svc.call(())).await.unwrap();
+        let span = clock.connected().unwrap() - clock.connecting().unwrap();
+        assert!((75.0..250.0).contains(&span), "connect took {span:.1} ms");
+    }
+
     #[tokio::test(start_paused = true)]
     async fn a_connect_past_the_attempts_timeout_fails_as_a_connect_timeout() {
         let clock = Arc::new(AttemptClock::new(Instant::now(), Duration::from_millis(50)));

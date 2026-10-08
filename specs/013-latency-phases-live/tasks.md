@@ -113,7 +113,7 @@ match slice 010's definitions (spec US1).
 
 ### Tests for User Story 1
 
-- [ ] T014 [P] [US1] Write `crates/nullrouter-server/tests/phases.rs` (SC-001, SC-002). For each injected delay (0router side via a slow `outgoing` hook in testkit, retry wait, connect via `accept_delay`, headers, first frame, frame gaps, slow client), check:  ⟵ **Partly done** (CI run 65 green): connect-less phases, headers, first token, generation, delivery and the sums. **Not yet:** the 0router-side delay (needs a slow `outgoing` hook in testkit), retry wait is checked only through a 503 retry, and connect is not injected (see T013 note)
+- [ ] T014 [P] [US1] Write `crates/nullrouter-server/tests/phases.rs` (SC-001, SC-002). For each injected delay (0router side via a slow `outgoing` hook in testkit, retry wait, connect via `accept_delay`, headers, first frame, frame gaps, slow client), check:  ⟵ **Partly done** (CI run 65 green): connect-less phases, headers, first token, generation, delivery and the sums. The 0router-side delay is tested in the engine (`tests/phases_router_side.rs`, arrival backdated 300 ms: the test needs no hook). A slow connect is tested at the layer (`clients.rs::a_slow_connect_is_the_span_between_the_two_marks`), not end to end: the engine's own client can't take a test connector. Retry wait is checked through a 503 retry
   - the record's phases show it in the right phase of the right attempt, within `max(5 ms, 5%)`;
   - for every completed request, the phases sum to `total_ms` within 1 ms;
   - the phases up to the first output sum to `ttft_ms` within 1 ms
