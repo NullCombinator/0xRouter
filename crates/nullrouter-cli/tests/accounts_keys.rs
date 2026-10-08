@@ -473,3 +473,45 @@ fn last_used_is_the_newest_arrival_of_the_keys_records_and_never_without_one() {
     assert_eq!(last_used(h, busy), serde_json::Value::Null, "and without a server");
     assert!(String::from_utf8(nr(h, &["keys", "list"], "").stdout).unwrap().lines().all(|l| l.ends_with("never")));
 }
+
+#[test]
+fn keys_bind_to_a_harness_and_the_list_shows_it_only_when_one_is() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    assert!(nr(h, &["keys", "issue", "plain"], "").status.success());
+    let before = String::from_utf8(nr(h, &["keys", "list"], "").stdout).unwrap();
+    assert!(!before.contains("hermes"), "{before}");
+
+    assert!(nr(h, &["keys", "issue", "desk", "--harness", "hermes"], "").status.success());
+    let file = Keys::load(&h.join(keys::FILE)).unwrap();
+    let harness = |name: &str| file.iter().find(|k| k.name == name).unwrap().harness.clone();
+    assert_eq!(harness("desk").map(|n| n.to_string()), Some("hermes".into()));
+    assert!(harness("plain").is_none());
+    let listed = String::from_utf8(nr(h, &["keys", "list"], "").stdout).unwrap();
+    assert!(listed.contains("hermes"), "{listed}");
+    let json: serde_json::Value = serde_json::from_slice(&nr(h, &["--json", "keys", "list"], "").stdout).unwrap();
+    let row = |name: &str| json.as_array().unwrap().iter().find(|r| r["name"] == name).unwrap().clone();
+    assert_eq!(row("desk")["harness"], "hermes");
+    assert!(row("plain").get("harness").is_none());
+
+    // Rebind, then clear.
+    assert!(nr(h, &["keys", "set-harness", "plain", "claude-code"], "").status.success());
+    assert_eq!(
+        Keys::load(&h.join(keys::FILE)).unwrap().iter().find(|k| k.name == "plain").unwrap().harness.as_ref().map(|n| n.to_string()),
+        Some("claude-code".into())
+    );
+    assert!(nr(h, &["keys", "set-harness", "plain", "--clear"], "").status.success());
+    assert!(Keys::load(&h.join(keys::FILE)).unwrap().iter().find(|k| k.name == "plain").unwrap().harness.is_none());
+
+    // Reserved and malformed names, unknown keys, and a missing harness are refused.
+    for args in [
+        vec!["keys", "set-harness", "plain", "opencode"],
+        vec!["keys", "set-harness", "plain", "Bad Name"],
+        vec!["keys", "set-harness", "nobody", "hermes"],
+        vec!["keys", "issue", "other", "--harness", "zcode"],
+    ] {
+        assert_eq!(nr(h, &args, "").status.code(), Some(1), "{args:?}");
+    }
+    assert!(!nr(h, &["keys", "set-harness", "plain"], "").status.success());
+    assert!(Keys::load(&h.join(keys::FILE)).unwrap().iter().all(|k| k.name != "other"), "a refused issue leaves no key");
+}

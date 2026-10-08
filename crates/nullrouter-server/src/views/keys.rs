@@ -25,7 +25,7 @@ pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, Vi
     let rows: Vec<Value> = list
         .iter()
         .map(|k| {
-            json!({
+            let mut row = json!({
                 "id": k.id,
                 "name": k.name,
                 "key": format!("…{}", k.last4),
@@ -33,7 +33,12 @@ pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, Vi
                 "revoked": k.revoked,
                 "break": k.break_behaviour.map(BreakBehaviour::as_str),
                 "last_used": last_used(&k.id),
-            })
+            });
+            // Only when bound, so a list with no harness keys reads as it did before slice 004.
+            if let Some(h) = &k.harness {
+                row["harness"] = json!(h.as_str());
+            }
+            row
         })
         .collect();
     Ok(View::new(json!(rows)))
