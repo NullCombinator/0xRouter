@@ -76,6 +76,8 @@ pub enum StateError {
     Journal(String),
     #[error("reload task failed: {0}")]
     Join(String),
+    #[error("the adapter store can't open: {0}")]
+    Adapters(String),
 }
 
 impl From<StartupError> for StateError {
@@ -129,6 +131,9 @@ pub struct Engine {
     /// Adapter runners installed at run time (third-party modules, test fixtures), by harness
     /// name. Built-in adapters are not here: they resolve from a static table.
     runners: ArcSwap<BTreeMap<String, AdapterRunner>>,
+    /// Where third-party adapters are loaded from. Set by `serve` through
+    /// [`open_adapters`](Self::open_adapters); without it no third-party adapter runs.
+    adapters: OnceLock<nullrouter_adapters::loader::Loader>,
     /// The listeners `serve` bound, for the operator socket's `server.status`.
     pub status: crate::status::ServerStatus,
     /// Wakes the maintenance task after a reload or a token change.
@@ -184,6 +189,35 @@ impl Engine {
         let mut next = (**self.runners.load()).clone();
         next.insert(harness.to_owned(), runner);
         self.runners.store(Arc::new(next));
+    }
+
+    /// Opens the adapter store under the home and loads every harness's serving version. Fails
+    /// when `adapters/` can be entered by other users. Blocking.
+    pub fn open_adapters(&self) -> Result<(), StateError> {
+        let shared = self.shared_redactor.clone();
+        let redact: nullrouter_adapters::loader::Redactor = Arc::new(move |s: &str| shared.redact(s).into_owned());
+        let loader = nullrouter_adapters::loader::Loader::open(self.home().path(), redact)
+            .map_err(|e| StateError::Adapters(e.to_string()))?;
+        if self.adapters.set(loader).is_ok() {
+            self.refresh_adapters();
+        }
+        Ok(())
+    }
+
+    /// Loads the serving version of every harness in the adapter store again, and drops the
+    /// runners of harnesses it no longer names. Blocking: it hashes files.
+    pub fn refresh_adapters(&self) {
+        let Some(loader) = self.adapters.get() else { return };
+        let names = loader.harnesses();
+        let mut next = (**self.runners.load()).clone();
+        next.retain(|name, r| !matches!(r, AdapterRunner::Wasm(_)) || names.iter().any(|n| n.as_str() == name));
+        for name in &names {
+            if AdapterRunner::builtin(name).is_none() {
+                next.insert(name.as_str().to_owned(), AdapterRunner::Wasm(loader.handle(name)));
+            }
+        }
+        self.runners.store(Arc::new(next));
+        loader.forget_unused();
     }
 
     /// The runner for the harness agent key `key_id` is bound to. `None` for a key with no
@@ -260,6 +294,7 @@ impl Engine {
             install_id: OnceLock::new(),
             generation: AtomicU64::new(1),
             runners: ArcSwap::from_pointee(BTreeMap::new()),
+            adapters: OnceLock::new(),
             reload: Mutex::new(()),
         };
         let st = engine.snapshot();
@@ -366,6 +401,7 @@ impl Engine {
             crate::route::drop_account(self, &state, provider, name, SystemTime::now());
         }
         self.state.store(Arc::new(state));
+        self.refresh_adapters();
         self.changed.notify_one();
         Ok(report)
     }

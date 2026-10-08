@@ -564,8 +564,12 @@ foundation here, not a later story.
     source and module (`not_run{source_mismatch}` plus a `source_mismatch` alert on a
     difference), refuses a module the load gate refuses (`module_refused` alert), and keeps
     compiled modules by `wasm_hash`. `WasmHandle` now carries the `not_run` reason, so a suspect
-    version records `suspect`. Tests: `tests/loader.rs`. The engine does not call the loader yet.
-  - Still to do: the engine calling the loader at reload, the response and event sides (the arm keeps `reads_responses() == false`, so
+    version records `suspect`. Tests: `tests/loader.rs`.
+  - Engine wiring done, not yet run in CI: `Engine::open_adapters` (called by `serve`, which
+    refuses a group-readable `adapters/`) and `refresh_adapters` (called at every reload) put
+    one runner per harness in the store into the engine. Tests: `engine/tests/adapter_store.rs`;
+    T047's `install_fixture` is in `testkit.rs`, `wat_adapter` is not.
+  - Still to do: the response and event sides (the arm keeps `reads_responses() == false`, so
     third-party adapters see no responses yet), the guardrail's event check, alerts and
     the suspect mark on a `Blocked` run, and `builder_client.rs`.
 - [ ] T047 [P] `nullrouter-adapters` testkit in `src/testkit.rs` (feature `testkit`).

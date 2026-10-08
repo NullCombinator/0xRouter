@@ -28,6 +28,11 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
     for a in &report.unused_accounts {
         tracing::warn!("account {a} names a provider that isn't loaded");
     }
+    // An `adapters/` other users can enter is refused here, before anything listens.
+    engine.open_adapters().map_err(|e| {
+        eprintln!("startup failed: {e}");
+        ExitCode::from(1)
+    })?;
     let listen = listen.unwrap_or_else(|| engine.snapshot().settings().server.listen.clone());
     let home = engine.home().clone();
     let engine = Arc::new(engine);

@@ -6,11 +6,13 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use jiff::Timestamp;
-use nullrouter_sandbox::{LoadedModule, ModuleFlags, Redactor, SandboxEngine, load};
+pub use nullrouter_sandbox::Redactor;
+use nullrouter_sandbox::{LoadedModule, ModuleFlags, SandboxEngine, load};
 use serde::Deserialize;
 
 use crate::HarnessName;
@@ -82,7 +84,39 @@ pub struct Loader {
     cache: Mutex<HashMap<String, Arc<LoadedModule>>>,
 }
 
+/// Why the loader could not be set up.
+#[derive(Debug, thiserror::Error)]
+pub enum OpenError {
+    #[error(transparent)]
+    Store(#[from] StoreError),
+    #[error("the adapter sandbox did not start: {0}")]
+    Sandbox(String),
+}
+
+/// How many module instances may run at once.
+const MAX_INSTANCES: u32 = 16;
+
 impl Loader {
+    /// Opens `$home/adapters` (creating it, or refusing one other users can enter) and starts the
+    /// sandbox.
+    pub fn open(home: &Path, redact: Redactor) -> Result<Loader, OpenError> {
+        let store = Store::open(home)?;
+        let alerts = Arc::new(AlertLog::open(&store));
+        let sandbox = SandboxEngine::new(MAX_INSTANCES).map_err(|e| OpenError::Sandbox(e.to_string()))?;
+        Ok(Self::new(store, alerts, Arc::new(sandbox), redact))
+    }
+
+    /// The harnesses the index names.
+    pub fn harnesses(&self) -> Vec<HarnessName> {
+        match self.store.load_index() {
+            Ok(i) => i.harnesses.into_iter().map(|h| h.name).collect(),
+            Err(e) => {
+                tracing::error!("adapter index not read: {e}");
+                Vec::new()
+            }
+        }
+    }
+
     pub fn new(store: Store, alerts: Arc<AlertLog>, sandbox: Arc<SandboxEngine>, redact: Redactor) -> Self {
         Self { store, alerts, sandbox, redact, cache: Mutex::new(HashMap::new()) }
     }
