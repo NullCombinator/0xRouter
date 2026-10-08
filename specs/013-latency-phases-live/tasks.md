@@ -260,7 +260,7 @@ resumes. A secret scan finds no credentials (spec US4, SC-008, SC-011).
   - changing the assignment clears the pause;
   - a provider error coming back through a healthy proxy doesn't pause it (the probe succeeds)
 - [X] T044 [P] [US4] Write the plugin refusal test in `crates/nullrouter-registry/tests/`: `proxy`, `proxy_url`, `https_proxy` and `no_proxy` at any depth fail validation with `plugins can't declare a proxy; proxies are operator-only` and the key's path (FR-026, research R10)
-- [ ] T045 [P] [US4] Extend the 009 secret scan (the test that scans CLI output, records, dashboard pages and logs for account secrets) with a proxy password, a username and a password from `{ env = … }`, over records, `live`, `connection show`, `proxy list`, `accounts list`, `check`, dashboard pages and the `serve` log (SC-008)
+- [X] T045 [P] [US4] (new tests: `proxy_credentials_appear_nowhere` in the server secrets.rs, a literal password and a username through a served request, a failed connect and the pause; and a CLI test for an env password across the read commands. The dashboard pages are not scanned with a proxy yet) Extend the 009 secret scan (the test that scans CLI output, records, dashboard pages and logs for account secrets) with a proxy password, a username and a password from `{ env = … }`, over records, `live`, `connection show`, `proxy list`, `accounts list`, `check`, dashboard pages and the `serve` log (SC-008)
 
 ### Implementation for User Story 4
 

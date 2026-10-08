@@ -153,3 +153,43 @@ fn accounts_list_and_check_show_the_proxy_a_pause_and_a_name_nobody_defined() {
     let said = text(&nr(h, &["check"], ""));
     assert!(said.contains("note: account anthropic/main is assigned proxy \"gone\", which isn't defined"), "{said}");
 }
+
+#[test]
+fn a_password_from_the_environment_is_not_printed_by_any_command() {
+    const ENV_PASSWORD: &str = "env-pw-SENTINEL-0023";
+    const USER: &str = "env-user-SENTINEL-0024";
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    ok(h, &["accounts", "add", "anthropic", "main"], "sk-cli-SENTINEL-0012\n");
+    let run = |args: &[&str]| {
+        let o = Command::new(env!("CARGO_BIN_EXE_nullrouter"))
+            .arg("--home")
+            .arg(h)
+            .args(args)
+            .env("NR_PROXY_PW", ENV_PASSWORD)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        text(&o)
+    };
+    let mut said = vec![run(&["proxy", "add", "eu", "http://127.0.0.1:3128", "--username", USER, "--password-env", "NR_PROXY_PW"])];
+    assert!(std::fs::read_to_string(h.join("proxies.toml")).unwrap().contains("NR_PROXY_PW"));
+    assert!(!std::fs::read_to_string(h.join("proxies.toml")).unwrap().contains(ENV_PASSWORD), "only the variable's name is kept");
+    said.push(run(&["proxy", "use", "eu", "--all"]));
+    for args in [
+        &["proxy", "list"][..],
+        &["--json", "proxy", "list"],
+        &["accounts", "list"],
+        &["--json", "accounts", "list"],
+        &["check"],
+        &["--json", "check"],
+        &["connection", "show"],
+        &["proxy", "fixed", "eu"],
+    ] {
+        said.push(run(args));
+    }
+    for (i, out) in said.iter().enumerate() {
+        assert!(!out.contains(ENV_PASSWORD), "command {i} printed the environment password: {out}");
+        assert!(!out.contains(USER), "command {i} printed the username: {out}");
+    }
+}
