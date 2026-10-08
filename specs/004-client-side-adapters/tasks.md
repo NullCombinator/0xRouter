@@ -306,7 +306,7 @@ mocks, then live, every turn completes and every change is recorded.
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T026 [P] [US1] hermes unit tests in `crates/nullrouter-adapters/tests/hermes.rs`.
+- [X] T026 [P] [US1] hermes unit tests in `crates/nullrouter-adapters/tests/hermes.rs`.
   - (a) `reasoning_content`, `reasoning` and `reasoning_details` on assistant messages are
     removed with `target_rejects_field` only when the provider is in the reject table and
     `same_style` is true.
@@ -340,7 +340,7 @@ mocks, then live, every turn completes and every change is recorded.
 
 ### Implementation for User Story 1
 
-- [ ] T029 [US1] The hermes adapter in `crates/nullrouter-adapters/src/builtin/hermes.rs`.
+- [X] T029 [US1] The hermes adapter in `crates/nullrouter-adapters/src/builtin/hermes.rs`.
   - Request selectors: `messages[*].reasoning_content`, `messages[*].reasoning`,
     `messages[*].reasoning_details`, `messages[*].images`, `messages[*].attachments`,
     `messages[*].experimental_attachments`, `messages[*].content`, `messages[*].role`.
@@ -351,7 +351,7 @@ mocks, then live, every turn completes and every change is recorded.
   - Image and attachment conversion per [R4](research.md#r4-hermes-built-in). Leave a MIME
     type the model can't read unconverted, so slice 003 skips the target as `cannot_carry`.
   - Make T026 and T027 pass.
-- [ ] T030 [US1] Register hermes in the built-in table (`runner.rs`), and add these entries to
+- [X] T030 [US1] Register hermes in the built-in table (`runner.rs`), and add these entries to
   `tests/parity/deviations.toml`:
   - `hermes images: converted, 9router deletes (modality.js)`;
   - `echoed reasoning: removed by adapter per table, not in core (paramSupport.js)`.
