@@ -140,10 +140,13 @@ fn semantic_errors(p: &PluginFile) -> Found {
     }
     for (i, r) in p.rejections.iter().enumerate() {
         let at = FieldPath::of("rejections").index(i).key("status");
-        if r.status.iter().any(|s| matches!(s, 408 | 429)) {
-            err(at, "408 and 429 are never a rejection".into());
+        if r.status.iter().any(|s| matches!(s, 402 | 408 | 429)) {
+            err(at, "402, 408 and 429 are never a rejection".into());
         } else if r.status.is_empty() || r.status.iter().any(|s| !(400..=499).contains(s)) {
             err(at, "only 400–499 can be a rejection".into());
+        } else if r.body_contains.is_none() && r.status.iter().any(|s| matches!(s, 400 | 422)) {
+            // A bare 400 or 422 is as often the request's own fault as the model's.
+            err(at, "a 400 or 422 rejection needs body_contains".into());
         }
     }
     if p.schema_version() < 2 {

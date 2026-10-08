@@ -3,5 +3,5 @@ id = "x"
 category = "apikey"
 
 [[rejections]]
-status = [400, 429]
-reason = "model_not_found"
+status = [402, 404]
+reason = "model_not_available"

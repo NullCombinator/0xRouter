@@ -85,12 +85,12 @@ pub fn account_fault(f: &Failed<'_>, provider: &ProviderEntity) -> bool {
     account_class(f.class) || f.status.is_some_and(|s| auth_rejection(provider, s, f.message))
 }
 
-/// What `f` says about the model. Order (R3): not definitive first (no status, 408, 429, 5xx, an
-/// account rejection), then the plugin's `[[rejections]]`, then the core list, else UNKNOWN.
+/// What `f` says about the model. Order (R3): not definitive first (no status, 402, 408, 429, 5xx,
+/// an account rejection), then the plugin's `[[rejections]]`, then the core list, else UNKNOWN.
 pub fn judge(f: &Failed<'_>, provider: &ProviderEntity) -> Judged {
     let unknown = || Judged { state: State::Unknown, rejection: None, reason: reason(f) };
     let Some(status) = f.status else { return unknown() };
-    if matches!(status, 408 | 429) || !(400..=499).contains(&status) || account_class(f.class) {
+    if matches!(status, 402 | 408 | 429) || !(400..=499).contains(&status) || account_class(f.class) {
         return unknown();
     }
     if auth_rejection(provider, status, f.message) {

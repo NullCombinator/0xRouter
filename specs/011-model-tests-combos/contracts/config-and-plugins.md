@@ -49,8 +49,8 @@ prints `dropped combo coder: needs unified model sonnet (dropped)`.
 
 ```toml
 [[rejections]]
-status = [400, 404]                # required; each 400–499, never 408 or 429
-body_contains = "model_retired"    # optional, case-sensitive
+status = [400, 404]                # required; each 400–499, never 402, 408 or 429
+body_contains = "model_retired"    # case-sensitive; required when status lists 400 or 422
 reason = "model_not_found"         # model_not_found | model_not_available | type_not_supported
 ```
 
@@ -58,7 +58,7 @@ Validation errors (the plugin is refused, as for other gate failures):
 
 | Path | Rule |
 |---|---|
-| `rejections[i].status` | `408 and 429 are never a rejection` / `only 400–499 can be a rejection` |
+| `rejections[i].status` | `402, 408 and 429 are never a rejection` / `only 400–499 can be a rejection` / `a 400 or 422 rejection needs body_contains` |
 | `rejections[i].reason` | `unknown reason "x"` |
 
 A plugin has no `combo` table; the existing unknown-key check refuses one with

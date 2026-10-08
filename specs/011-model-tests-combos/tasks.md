@@ -197,7 +197,7 @@ one push with the user's OK, and read CI results with the github MCP (read-only)
 - [X] T052 [P] Docs: `docs/operator-config.md` gains "Model tests", "Verdicts", "Combos" and the `[tests]` reference, and `routing/verdicts.jsonl` in the file list and modes; `docs/plugins.md` gains `[[rejections]]`; `check` warns `verdicts not being kept` when the journal can't write (`crates/nullrouter-server/src/views/check.rs`)
 - [X] T053 [P] Opt-in live check in `crates/nullrouter-engine/tests/live.rs` (`NR_LIVE=1`, `.nr-live/` home): one real model of each type the operator holds an account for; every result PASS or a recognisable UNKNOWN (SC-010). Bills real calls; the user runs it
 - [ ] T054 Bench baseline: the user runs `cargo bench -p nullrouter-engine --bench engine` and `-p nullrouter-registry --bench resolve` locally before and after; record in `specs/011-model-tests-combos/bench-baseline.md` (SC-009, target within 5 %). CI doesn't compare benches, so the branch is not merged until this file holds both runs (constitution, Performance gate)
-- [ ] T055 Security review with the security-auditor agent over the verdict basis, `[[rejections]]` gate and test records (ask the user first)
+- [X] T055 Security review with the security-auditor agent over the verdict basis, `[[rejections]]` gate and test records (ask the user first); done in the main session (no Agent tool): the gate now also refuses 402 and a 400 or 422 rule without `body_contains`, and the judge reads 402 as UNKNOWN
 - [ ] T056 Walk `specs/011-model-tests-combos/quickstart.md` § Manual scenario (user)
 
 ---

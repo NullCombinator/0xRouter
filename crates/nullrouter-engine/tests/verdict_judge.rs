@@ -47,6 +47,7 @@ fn core_list() {
         (Some(400), "messages: field required", unknown.clone()),
         (Some(409), "model not found", unknown.clone()),
         // Never definitive, whatever the text says.
+        (Some(402), "insufficient credit for model gpt-5", unknown.clone()),
         (Some(408), "model not found", unknown.clone()),
         (Some(429), "model not found", unknown.clone()),
         (Some(500), "model does not exist", unknown.clone()),
