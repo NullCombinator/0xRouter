@@ -203,14 +203,25 @@ and CLI add surface following the existing op and command patterns. The dashboar
 ## Coordination
 
 - **Slice 010** (`.worktrees/010`, unmerged) defines router overhead as the first non-skipped
-  attempt's `started` and TTFT as `ttft_ms` (its research). 013 keeps `ttft_ms` unchanged. When
-  013 rebases onto 010, `journal/summary.rs`'s router overhead calls `phases::of` (it differs
-  only when a sign-in refresh preceded the first attempt, R6). SC-003's test runs against 010's
-  functions once both are on one branch; until then it runs against a copy of 010's definitions
-  in the test.
-- **Slice 011** (model tests): its upstream calls take `clients.for_account()`, and a paused
-  proxy makes a test skip with the reason (VII: never BROKEN). Whichever slice lands second makes
-  the one-line change.
+  attempt's `started` and TTFT as `ttft_ms` (its research). 013 keeps `ttft_ms` unchanged. Edits
+  on rebase, checked against 010's tree:
+  - `crates/nullrouter-engine/src/journal/summary.rs` takes `a.overhead.push(started)` from
+    `first_attempt(r)["started"]`. It becomes the first non-skipped attempt's router-overhead
+    phase from `phases::of` (they differ only when a sign-in refresh preceded the first attempt,
+    R6, where `started` includes the refresh and the phase does not).
+  - SC-003's test (`crates/nullrouter-server/tests/phases.rs`) runs against a copy of 010's
+    definitions. After the rebase it calls 010's functions instead.
+- **Slice 011** (model tests, `.worktrees/011`): its tests send through `attempt::{Pin, TestTag,
+  collect, …}` (`crates/nullrouter-engine/src/tests/mod.rs`), not through `st.http`. So they take
+  013's `client_for` with the attempt loop and need no call-site change. What the second slice to
+  land must check:
+  - an attempt skipped as `proxy NAME paused` becomes a test result of *skipped with the reason*
+    in 011's verdict code, never BROKEN (constitution VII);
+  - its three direct `st.http` uses (`attempt.rs` send, `signin/refresh.rs`, `quota/poll.rs`,
+    `jobs.rs`) are the ones 013 already moved to `client_for`, so the merge will conflict there:
+    take 013's side.
+  - FR-025's model-test leg is verified by whichever slice merges second, with a test that a
+    model test goes through the account's proxy (a `MockProxy` carried count of 1).
 - **Slice 012** edits `route.rs` `candidate_of`. 013 doesn't touch `route.rs`.
 - **Slices 004/012** don't touch `attempt.rs`'s send path. 011 might; re-read before editing.
 

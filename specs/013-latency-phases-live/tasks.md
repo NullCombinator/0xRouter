@@ -344,7 +344,8 @@ same-account retry with a 500 ms `retry wait` before falling over (spec US6).
   - Done: the sections are in the order of the file: phases, live view, connection settings, proxies, placed before "Per-provider settings"
 - [X] T068 [P] Document the plugin fields `connect_timeout_ms`, `first_token_timeout_ms`, `[[models]] timeouts`, `[transport] http2 = false` and the retry cap, plus the proxy refusal, in `docs/plugins.md`
   - Done: `http2 = false` is documented on the schema-2 endpoint as well as `[transport]`
-- [ ] T069 Coordination note in `specs/013-latency-phases-live/plan.md` § Coordination: list the exact edits slice 010 needs on rebase (`journal/summary.rs` router overhead → `phases::of`; SC-003's test switches from the copied definitions to 010's functions) and slice 011's (`clients.for_account` in model tests; a paused proxy makes the test skip). FR-025's model-test leg is verified by whichever slice merges second, with a test that a model test goes through the account's proxy. Save the note to agentmemory (both instances)
+- [X] T069 Coordination note in `specs/013-latency-phases-live/plan.md` § Coordination: list the exact edits slice 010 needs on rebase (`journal/summary.rs` router overhead → `phases::of`; SC-003's test switches from the copied definitions to 010's functions) and slice 011's (`clients.for_account` in model tests; a paused proxy makes the test skip). FR-025's model-test leg is verified by whichever slice merges second, with a test that a model test goes through the account's proxy. Save the note to agentmemory (both instances)
+  - Done: the note is in plan.md § Coordination; the agentmemory save follows in this session.
 - [ ] T070 Run quickstart.md §1–5 against a real provider with the user (only with their OK; `serve` needs a local build, which the no-local-cargo rule forbids unless the user allows it for this run), and record the outcome in `specs/013-latency-phases-live/quickstart.md`
 
 ---
