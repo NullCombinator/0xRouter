@@ -422,12 +422,16 @@ foundation here, not a later story.
   - `index.toml` round-trips, and writes are atomic.
   - Files are mode 0600 and directories 0700.
   - `serve` refuses a group-readable `adapters/`.
+  - Done at the store level (CI #121): `Store::open` refuses it. The `serve` call waits for the
+    engine loader.
 - [ ] T036 [P] Fingerprint and tamper tests in `crates/nullrouter-adapters/tests/tamper.rs`.
   - `source_fp` is stable across file order and mtime, and changes on any byte, rename or
     added file.
   - Loading after editing `source/src/lib.rs` or `module.wasm` is refused with
     `source_mismatch`. An alert is raised, and a request from a bound key completes as a
     plain client (SC-005, US2-6).
+  - Fingerprint and `Store::verify` done (CI #121). The alert and the plain-client request wait
+    for alerts (T044) and the engine loader.
 - [ ] T037 [P] Builder tests in `crates/nullrouter-builder/tests/build.rs`, which skip with a
   message when the wasm32 target is missing.
   - The fixture `crates/nullrouter-adapters/tests/fixtures/noop/` builds offline after
@@ -476,10 +480,10 @@ foundation here, not a later story.
   - `nr.log` is rate-limited to 8 calls per invocation, redacted, and written at `debug`.
   - The previous-ABI shim goes in `abi.rs`.
   - Make T033 pass.
-- [ ] T042 [P] Fingerprint in `crates/nullrouter-adapters/src/fingerprint.rs`.
+- [X] T042 [P] Fingerprint in `crates/nullrouter-adapters/src/fingerprint.rs`.
   - The canonical tree hash, over sorted relative paths, each `path\0len\0bytes`.
   - Output `sha256:<hex>`.
-- [ ] T043 Store in `crates/nullrouter-adapters/src/store.rs`, per
+- [X] T043 Store in `crates/nullrouter-adapters/src/store.rs`, per
   [data-model.md](data-model.md#adapterindex-adaptersindextoml).
   - The layout `adapters/<harness>/<version-id>/{source/, module.wasm, build.json,
     review.json, decision.json}`.
