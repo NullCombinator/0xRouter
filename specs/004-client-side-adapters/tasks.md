@@ -398,7 +398,7 @@ foundation here, not a later story.
   - A `memory.grow` past 64 MiB returns `memory`.
   - `unreachable` returns `trap`.
   - A valid module's output round-trips.
-- [ ] T034 [P] Guardrail tests in `crates/nullrouter-adapters/tests/guard.rs`, with one
+- [X] T034 [P] Guardrail tests in `crates/nullrouter-adapters/tests/guard.rs`, with one
   module per client style under `tests/guard/` (`openai_chat.rs`, `anthropic_messages.rs`,
   `openai_responses.rs`, `gemini.rs`), per [R6](research.md#r6-the-guardrail).
   - Request cases, each giving its named rule:
@@ -414,7 +414,7 @@ foundation here, not a later story.
   - Undecodable cases: an edit that leaves the body or event undecodable in the client style
     gives `failed{invalid_output: undecodable}`, sends the original, raises `adapter_failed`,
     and does **not** mark the adapter suspect ([R6](research.md#r6-the-guardrail) step 4).
-  - Written (not yet green in CI): `tests/guard.rs` with one line per style in `tests/guard/`,
+  - Done (green in CI #127): `tests/guard.rs` with one line per style in `tests/guard/`,
     expanding a shared suite of 18 cases, and the stream-event cases in `guard.rs`. The event
     IR has no opaque block, so "add an opaque block" is covered for requests only.
 - [ ] T035 [P] Store and state-machine tests in `crates/nullrouter-adapters/tests/store.rs`.
@@ -559,7 +559,7 @@ foundation here, not a later story.
     directly, with the correct hashes.
   - `wat_adapter(behaviour)` builds small WAT modules for hostile and guard cases, so tests
     don't need the builder.
-- [ ] T048 The guardrail in `crates/nullrouter-adapters/src/guard.rs`, per
+- [X] T048 The guardrail in `crates/nullrouter-adapters/src/guard.rs`, per
   [R6](research.md#r6-the-guardrail).
   - `check_request(style, &before_ir, &after_body)`, `check_response(...)` and
     `check_event(style, &before_event, &after_event)`.
