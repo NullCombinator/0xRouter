@@ -59,6 +59,9 @@ enum Command {
     /// Agent keys (`keys.toml`).
     #[command(subcommand)]
     Keys(cmd::keys::Command),
+    /// Harness adapters: the built-in ones, and (later) installed third-party ones.
+    #[command(subcommand)]
+    Adapters(cmd::adapters::Command),
     /// The read-only web dashboard: its token and its state.
     #[command(subcommand)]
     Dashboard(cmd::dashboard::Command),
@@ -98,6 +101,7 @@ fn main() -> ExitCode {
         Command::Serve { listen } => cmd::serve::run(cli.home, listen),
         Command::Accounts(c) => cmd::accounts::run(cli.home, c, cli.json),
         Command::Keys(c) => cmd::keys::run(cli.home, c, cli.json),
+        Command::Adapters(c) => cmd::adapters::run(c, cli.json),
         Command::Dashboard(c) => cmd::dashboard::run(cli.home, c, cli.json),
         Command::Behaviour(c) => cmd::behaviour::run(cli.home, c, cli.json),
         Command::Records(c) => cmd::records::run(cli.home, c, cli.json),

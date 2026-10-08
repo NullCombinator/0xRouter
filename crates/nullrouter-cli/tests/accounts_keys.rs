@@ -515,3 +515,21 @@ fn keys_bind_to_a_harness_and_the_list_shows_it_only_when_one_is() {
     assert!(!nr(h, &["keys", "set-harness", "plain"], "").status.success());
     assert!(Keys::load(&h.join(keys::FILE)).unwrap().iter().all(|k| k.name != "other"), "a refused issue leaves no key");
 }
+
+#[test]
+fn adapters_list_shows_hermes_as_built_in_and_the_rest_are_not_available_yet() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    let out = nr(h, &["adapters", "list"], "");
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hermes  built-in");
+
+    let out = nr(h, &["--json", "adapters", "list"], "");
+    let rows: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(rows[0]["harness"], "hermes");
+    assert_eq!(rows[0]["built_in"], true);
+
+    let out = nr(h, &["adapters", "install", "./somewhere"], "");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("not available yet"));
+}

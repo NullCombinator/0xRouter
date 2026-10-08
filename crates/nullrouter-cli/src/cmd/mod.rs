@@ -1,3 +1,4 @@
+pub(crate) mod adapters;
 pub(crate) mod accounts;
 pub(crate) mod behaviour;
 pub(crate) mod check;
