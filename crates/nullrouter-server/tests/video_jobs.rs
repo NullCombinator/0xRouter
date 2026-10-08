@@ -238,5 +238,5 @@ async fn polling_a_job_adds_nothing_to_the_submits_phases() {
 
     let after = s.engine.records.get(&rec).unwrap();
     assert_eq!(after.attempts.len(), 1, "polls are not attempts");
-    assert_eq!(serde_json::to_value(&after.attempts[0].timing).unwrap(), serde_json::to_value(&Some(timing)).unwrap());
+    assert_eq!(serde_json::to_value(&after.attempts[0].timing).unwrap(), serde_json::to_value(Some(timing)).unwrap());
 }
