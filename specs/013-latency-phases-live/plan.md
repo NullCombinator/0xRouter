@@ -217,9 +217,9 @@ and CLI add surface following the existing op and command patterns. The dashboar
   land must check:
   - an attempt skipped as `proxy NAME paused` becomes a test result of *skipped with the reason*
     in 011's verdict code, never BROKEN (constitution VII);
-  - its three direct `st.http` uses (`attempt.rs` send, `signin/refresh.rs`, `quota/poll.rs`,
-    `jobs.rs`) are the ones 013 already moved to `client_for`, so the merge will conflict there:
-    take 013's side.
+  - 011's tree still has four direct `st.http` uses (`attempt.rs` send, `signin/refresh.rs`,
+    `quota/poll.rs`, `jobs.rs`). 013 moved all four to `client_for`, so the merge conflicts
+    there: take 013's side.
   - FR-025's model-test leg is verified by whichever slice merges second, with a test that a
     model test goes through the account's proxy (a `MockProxy` carried count of 1).
 - **Slice 012** edits `route.rs` `candidate_of`. 013 doesn't touch `route.rs`.
