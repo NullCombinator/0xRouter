@@ -18,13 +18,12 @@ async fn the_slots_hold_a_title_and_no_digits() {
     let slots = slots(&html);
     let cards = html.matches("<article class=\"key-card").count();
     assert!(cards > 0, "the fixture has keys");
-    assert_eq!(slots.len(), 1 + cards, "Agent traffic, and Requests today on each card");
-    assert!(slots[0].contains("Agent traffic"), "{slots:?}");
+    assert_eq!(slots.len(), cards, "Requests today on each card; the landscape is drawn now");
     for s in &slots {
         assert!(!s.chars().any(|c| c.is_ascii_digit()), "a slot shows no number: {s:?}");
         assert!(s.contains("Arrives with the next dashboard slice."), "{s:?}");
     }
-    assert!(slots[1..].iter().all(|s| s.contains("Requests today")), "{slots:?}");
+    assert!(slots.iter().all(|s| s.contains("Requests today")), "{slots:?}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

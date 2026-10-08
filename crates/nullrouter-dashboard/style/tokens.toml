@@ -897,5 +897,5 @@ uses = ["size-full", "color-surface", "color-border", "color-primary", "node-bor
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:35"
 
 [component.landscape]
-uses = ["size-full", "color-surface", "color-border", "border-width", "color-text-main", "color-text-muted", "color-red-500", "text-xs", "text-10", "weight-medium", "weight-semibold", "opacity-disabled", "space-2", "text-sm", "text-sm-leading"]
+uses = ["size-full", "color-surface", "color-border", "color-primary", "border-width", "color-text-main", "color-text-muted", "text-xs", "text-10", "weight-medium", "weight-semibold", "opacity-disabled", "space-2", "text-sm", "text-sm-leading", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:35"

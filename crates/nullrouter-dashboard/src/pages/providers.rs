@@ -12,10 +12,13 @@ use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
 use crate::access::encode_component;
-use crate::components::{self, Tone, badge, disabled, disabled_switch, empty, icon, kv, modal, name, prose, slot, status};
+use crate::components::{
+    self, Tone, badge, disabled, disabled_switch, empty, icon, kv, modal, name, prose, slot, status,
+};
 use crate::page::{ViewName, Want};
 
-pub const VIEWS: &[ViewName] = &[ViewName::Providers, ViewName::Accounts, ViewName::Plugins, ViewName::Model, ViewName::Check];
+pub const VIEWS: &[ViewName] =
+    &[ViewName::Providers, ViewName::Accounts, ViewName::Plugins, ViewName::Model, ViewName::Check];
 
 /// The hints of research R15.
 pub const ADD_HINT: &str = "Not built yet. Add a provider with a plugin file; see docs/plugins.md.";
@@ -156,7 +159,8 @@ fn card(ctx: &Ctx<'_>, p: &Value, accounts: &[&Value]) -> Markup {
     let id = p["id"].as_str().unwrap_or_default();
     let alias = p["alias"].as_str().unwrap_or(id);
     let href = ctx.req.href(&format!("/providers/{}", encode_component(id)), &["kind"], &[]);
-    let class = if ctx.req.window.as_deref() == Some(id) { "provider-card provider-card--open" } else { "provider-card" };
+    let class =
+        if ctx.req.window.as_deref() == Some(id) { "provider-card provider-card--open" } else { "provider-card" };
     html! {
         a class=(class) href=(href) {
             span class="provider-card__logo" { (components::logo(ctx.logos.href(id), alias)) }

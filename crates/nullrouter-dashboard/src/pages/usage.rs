@@ -237,7 +237,11 @@ fn number(n: u64) -> String {
 }
 
 fn stat(label: &str, value: &str, tone: &str, small: Markup) -> Markup {
-    let class = if tone.is_empty() { "usage-stat__value".to_owned() } else { format!("usage-stat__value usage-stat__value--{tone}") };
+    let class = if tone.is_empty() {
+        "usage-stat__value".to_owned()
+    } else {
+        format!("usage-stat__value usage-stat__value--{tone}")
+    };
     html! {
         div class="card usage-stat" {
             span class="usage-stat__label" { (label) }
@@ -254,11 +258,12 @@ fn stats(u: &Value) -> Markup {
     let (in_flight, not_reported) = (n(&u["in_flight"]), n(&u["not_reported"]));
     let cost = &u["cost"];
     let un = &cost["unpriced"];
-    let reasons: Vec<String> = [("no_price", "no price"), ("account_gone", "account gone"), ("no_output_price", "no output price")]
-        .iter()
-        .filter(|(k, _)| n(&un[*k]) > 0)
-        .map(|(k, label)| format!("{} {label}", n(&un[*k])))
-        .collect();
+    let reasons: Vec<String> =
+        [("no_price", "no price"), ("account_gone", "account gone"), ("no_output_price", "no output price")]
+            .iter()
+            .filter(|(k, _)| n(&un[*k]) > 0)
+            .map(|(k, label)| format!("{} {label}", n(&un[*k])))
+            .collect();
     html! {
         div class="usage-stats" {
             (stat("Total Requests", &number(requests), "", html! {

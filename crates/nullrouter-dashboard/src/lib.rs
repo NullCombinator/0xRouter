@@ -28,6 +28,7 @@ pub mod components;
 pub mod frame;
 pub mod guard;
 pub mod headers;
+pub mod landscape;
 pub mod logos;
 pub mod page;
 pub mod pages;
@@ -168,10 +169,17 @@ async fn page(shared: Arc<Shared>, req: pages::Req) -> Response {
                     let base = pages::Req { window: None, ..r.clone() };
                     match page::build(&engine, &pages::wants(&base)).await {
                         Ok(p) => frame::render_missing_window(&r, &p, &version, &tz, &logos, &e.message),
-                        Err(e) => frame::render_error(Some(&r), &version, StatusCode::INTERNAL_SERVER_ERROR, &frame::build_failed(&e)),
+                        Err(e) => frame::render_error(
+                            Some(&r),
+                            &version,
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            &frame::build_failed(&e),
+                        ),
                     }
                 }
-                Err(e) => frame::render_error(Some(&r), &version, StatusCode::INTERNAL_SERVER_ERROR, &frame::build_failed(&e)),
+                Err(e) => {
+                    frame::render_error(Some(&r), &version, StatusCode::INTERNAL_SERVER_ERROR, &frame::build_failed(&e))
+                }
             }
         })
         .await;

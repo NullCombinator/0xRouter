@@ -10,9 +10,10 @@ use super::{Body, Ctx, Failure, Req};
 use crate::components::{
     Head, Tone, badge, card, disabled, empty, kv, name, section_bar, side_panel, side_section, slot,
 };
+use crate::landscape;
 use crate::page::{ViewName, Want};
 
-pub const VIEWS: &[ViewName] = &[ViewName::Check, ViewName::Keys];
+pub const VIEWS: &[ViewName] = &[ViewName::Check, ViewName::Keys, ViewName::Accounts, ViewName::Latency];
 
 /// The hint beside the disabled "Add Agent" (research R15).
 pub const ADD_HINT: &str = "In the CLI: `nullrouter keys issue <name>`";
@@ -23,14 +24,26 @@ pub const ADAPTERS: &str = "Client-side adapters are not built yet.";
 pub const CONFIGURED: &str = "(configured; no server running)";
 
 pub fn wants(_req: &Req) -> Vec<Want> {
-    vec![Want::new(ViewName::Check, json!({})), Want::new(ViewName::Keys, json!({}))]
+    vec![
+        Want::new(ViewName::Check, json!({})),
+        Want::new(ViewName::Keys, json!({})),
+        Want::new(ViewName::Accounts, json!({})),
+        Want::new(ViewName::Latency, json!({})),
+    ]
 }
 
 pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
     let keys = ctx.json(ViewName::Keys).as_array().map_or(&[][..], Vec::as_slice);
     let content = html! {
         (endpoint(ctx.json(ViewName::Check)))
-        (slot("Agent traffic"))
+        (section_bar(&landscape::heading(ctx.page.as_of, ctx.tz), html! {}))
+        (landscape::landscape(&landscape::Inputs {
+            keys: ctx.json(ViewName::Keys),
+            accounts: ctx.json(ViewName::Accounts),
+            latency: ctx.json(ViewName::Latency),
+            tz: ctx.tz,
+            as_of: ctx.page.as_of,
+        }))
         (section_bar("Agents", disabled("Add Agent", Some("add"), ADD_HINT)))
         @if keys.is_empty() {
             (empty("key", NO_AGENTS, NO_AGENTS_HINT))

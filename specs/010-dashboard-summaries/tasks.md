@@ -156,13 +156,13 @@ untagged keys are handled the same.
 
 ### Tests for User Story 3
 
-- [ ] T037 [P] [US3] Unit tests in `crates/nullrouter-dashboard/src/landscape.rs` (`#[cfg(test)]`): node set per FR-020 (every unrevoked key, every provider with an account, plus revoked keys and other providers with a latency row, marked); needle at p50 on a 40 ms (overhead) or 3 s (TTFT) full scale, pinned beyond it; p50, p95 and request counts printed as text beside every gauge; one stroke per agent on a provider pipe in that agent's colour; the empty state "No requests in the last 24 hours"; a long key name or harness tag is shown as spec 009 shows long names (in full, or shortened with the full text in the node's hover card); no `<script>`, no animation, no external reference
-- [ ] T038 [P] [US3] Dashboard agreement test `crates/nullrouter-dashboard/tests/agreement/endpoint.rs`: every number in the landscape equals `latency --json` at the page's `as_of`; the heading says "last 24 h"; each agent's colour is the same on two loads and after a key is appended
+- [x] T037 [P] [US3] Unit tests in `crates/nullrouter-dashboard/src/landscape.rs` (`#[cfg(test)]`): node set per FR-020 (every unrevoked key, every provider with an account, plus revoked keys and other providers with a latency row, marked); needle at p50 on a 40 ms (overhead) or 3 s (TTFT) full scale, pinned beyond it; p50, p95 and request counts printed as text beside every gauge; one stroke per agent on a provider pipe in that agent's colour; the empty state "No requests in the last 24 hours"; a long key name or harness tag is shown as spec 009 shows long names (in full, or shortened with the full text in the node's hover card); no `<script>`, no animation, no external reference
+- [x] T038 [P] [US3] Dashboard agreement test `crates/nullrouter-dashboard/tests/agreement/endpoint.rs`: every number in the landscape equals `latency --json` at the page's `as_of`; the heading says "last 24 h"; each agent's colour is the same on two loads and after a key is appended
 
 ### Implementation for User Story 3
 
-- [ ] T039 [US3] Implement `crates/nullrouter-dashboard/src/landscape.rs`: layout from row counts (agents in a left column, router centre, providers right, cubic Bézier pipes, after `docs/dashboard/mockups/topo.py` gauges mode), half-dial gauges (green to 50%, amber to 80%, red above, from the style guide), labels, a CSS-only `:hover`/`:focus-within` card repeating the printed numbers and the full name of a shortened node, rendered with maud as inline SVG
-- [ ] T040 [US3] On Endpoint & Key (`crates/nullrouter-dashboard/src/pages/endpoint.rs`) read `Latency` and `Accounts` (with `at` = `as_of`) and replace the "Agent traffic" slot with the landscape, headed "Agent traffic · last 24 h · as of HH:MM:SS"
+- [x] T039 [US3] Implement `crates/nullrouter-dashboard/src/landscape.rs`: layout from row counts (agents in a left column, router centre, providers right, cubic Bézier pipes, after `docs/dashboard/mockups/topo.py` gauges mode), half-dial gauges (green to 50%, amber to 80%, red above, from the style guide), labels, a CSS-only `:hover`/`:focus-within` card repeating the printed numbers and the full name of a shortened node, rendered with maud as inline SVG
+- [x] T040 [US3] On Endpoint & Key (`crates/nullrouter-dashboard/src/pages/endpoint.rs`) read `Latency` and `Accounts` (with `at` = `as_of`) and replace the "Agent traffic" slot with the landscape, headed "Agent traffic · last 24 h · as of HH:MM:SS"
 
 **Checkpoint**: US3 complete.
 
