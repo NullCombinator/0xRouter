@@ -80,6 +80,12 @@ pub fn check_ip_host(url: &Url, allow_private: bool) -> Result<(), BuildError> {
 
 /// The process-wide client. Build once; clone freely (the pool is shared).
 pub fn client(allow_private: bool) -> reqwest::Client {
+    builder(allow_private).build().expect("the TLS backend initialises")
+}
+
+/// The settings every upstream client shares: no redirects, the pool and keepalive times, the
+/// connect limit, the checked resolver and the connect-timing layer (spec 013).
+pub fn builder(allow_private: bool) -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .pool_idle_timeout(POOL_IDLE)
@@ -87,8 +93,6 @@ pub fn client(allow_private: bool) -> reqwest::Client {
         .connect_timeout(Duration::from_millis(env_ms("FETCH_CONNECT_TIMEOUT_MS", DEFAULT_TIMEOUT_MS)))
         .dns_resolver(Arc::new(CheckedResolver { allow_private }))
         .connector_layer(crate::connection::clients::ConnectClock)
-        .build()
-        .expect("the TLS backend initialises")
 }
 
 /// A request ready to send. `header_timeout` bounds the wait for response headers.

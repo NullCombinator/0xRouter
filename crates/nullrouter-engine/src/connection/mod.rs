@@ -167,6 +167,28 @@ pub fn proxy_for(registry: &Registry, provider: &str, account: Option<&crate::ac
         .unwrap_or(ChosenProxy { name: None, level: None })
 }
 
+/// The client for `account`'s requests to `provider`, and the proxy it goes through: the key is
+/// the resolved proxy, whether the operator turned HTTP/2 or connection reuse off, and nothing
+/// else (research R5).
+pub fn client_for(
+    st: &crate::state::EngineState,
+    provider: &str,
+    account: Option<&crate::accounts::Account>,
+) -> Result<(reqwest::Client, ChosenProxy), clients::ClientError> {
+    let chosen = proxy_for(&st.registry, provider, account);
+    let settings = st.registry.settings(provider);
+    let key = clients::ClientKey {
+        proxy: chosen.name.clone(),
+        http: if settings.connection.http2 == Some(false) {
+            clients::HttpMode::Http1Only
+        } else {
+            clients::HttpMode::Negotiate
+        },
+        reuse: settings.connection.reuse.unwrap_or(true),
+    };
+    st.clients.get(&key).map(|c| (c, chosen))
+}
+
 fn timeout_json(t: Option<Timeout>) -> serde_json::Value {
     match t {
         Some(t) => serde_json::json!({"ms": t.ms, "source": t.source}),

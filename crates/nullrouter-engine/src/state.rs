@@ -42,6 +42,8 @@ pub struct EngineState {
     pub styles: BTreeMap<String, Arc<Style>>,
     /// The upstream client for this snapshot's `allow_private_endpoints`.
     pub http: reqwest::Client,
+    /// The clients per proxy, HTTP mode and reuse, built when first asked for (spec 013).
+    pub clients: crate::connection::clients::Clients,
     pub generation: u64,
 }
 
@@ -170,8 +172,24 @@ fn assemble(
         })
         .collect();
     let http = upstream::client(registry.runtime().allow_private_endpoints);
+    let clients = crate::connection::clients::Clients::new(
+        registry.runtime().allow_private_endpoints,
+        crate::connection::proxy::Proxies::default(),
+    );
     (
-        EngineState { registry, accounts, keys, dashboard, redactor, tokens, live_models, styles, http, generation },
+        EngineState {
+            registry,
+            accounts,
+            keys,
+            dashboard,
+            redactor,
+            tokens,
+            live_models,
+            styles,
+            http,
+            clients,
+            generation,
+        },
         report,
     )
 }
