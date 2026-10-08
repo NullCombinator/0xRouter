@@ -220,6 +220,16 @@ impl Engine {
         loader.forget_unused();
     }
 
+    /// Acts on a finished run of a third-party adapter (alerts; a blocked run marks its version
+    /// suspect and loads the store again, so it stops serving). Runs of built-in adapters and
+    /// engines without an adapter store do nothing. Blocking: it writes files.
+    pub fn note_adapter_run(&self, run: &nullrouter_adapters::record::AdapterRun, record: &str) {
+        let Some(loader) = self.adapters.get() else { return };
+        if loader.note_run(run, record) {
+            self.refresh_adapters();
+        }
+    }
+
     /// The runner for the harness agent key `key_id` is bound to. `None` for a key with no
     /// harness. A harness with no built-in and nothing installed gets a runner that records
     /// `not_run` (`no_approved_version`) and changes nothing.

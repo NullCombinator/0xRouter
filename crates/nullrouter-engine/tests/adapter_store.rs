@@ -5,6 +5,9 @@ mod common;
 use std::os::unix::fs::PermissionsExt;
 
 use common::*;
+use nullrouter_adapters::HarnessName;
+use nullrouter_adapters::alerts::{AlertKind, AlertLog};
+use nullrouter_adapters::store::{Store, VersionState};
 use nullrouter_adapters::testkit::install_fixture;
 use nullrouter_engine::keys::Keys;
 use nullrouter_engine::records::{AdapterOutcome, NotRunReason, RequestRecord};
@@ -24,9 +27,13 @@ const OUT_AT: i64 = 32768;
 
 /// A module that removes `messages[1].reasoning_content`.
 fn remover() -> Vec<u8> {
-    let out = json!({"edits": [{"op": "remove", "path": "messages[1].reasoning_content",
-                                "kind": "removed", "reason": "target_rejects_field"}]})
-    .to_string();
+    answering(&json!({"edits": [{"op": "remove", "path": "messages[1].reasoning_content",
+                                "kind": "removed", "reason": "target_rejects_field"}]}))
+}
+
+/// A module that answers `answer` on every request.
+fn answering(answer: &Value) -> Vec<u8> {
+    let out = answer.to_string();
     wat::parse_str(format!(
         r#"(module
             (memory (export "memory") 1)
@@ -114,4 +121,62 @@ async fn a_group_readable_adapters_directory_is_refused() {
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o750)).unwrap();
     let err = s.engine.open_adapters().unwrap_err().to_string();
     assert!(err.contains("chmod 700"), "{err}");
+}
+
+const TOOL_MANIFEST: &str = r#"
+harness = "acme"
+style = "openai-chat"
+kit = "1"
+
+[request]
+selectors = ["messages[*].tool_calls"]
+"#;
+
+fn body_with_tool_call() -> Value {
+    json!({"model": "alpha/m1", "stream": false, "messages": [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "checking", "tool_calls": [
+            {"id": "c1", "type": "function",
+             "function": {"name": "get_weather", "arguments": "{\"city\":\"Oslo\"}"}}]}
+    ]})
+}
+
+#[tokio::test]
+async fn a_blocked_run_marks_the_version_suspect_raises_an_alert_and_stops_it_serving() {
+    let s = alpha().await;
+    s.mock.push([ok()]);
+    let changed = json!({"edits": [{"op": "replace", "path": "messages[1].tool_calls", "kind": "converted",
+        "reason": "format_conversion", "value": [{"id": "c1", "type": "function",
+        "function": {"name": "get_weather", "arguments": "{\"city\":\"Paris\"}"}}]}]});
+    install_fixture(s._dir.path(), "acme", TOOL_MANIFEST, &answering(&changed));
+    s.engine.open_adapters().unwrap();
+    let id = key(&s, "acme");
+
+    let send_tool = |agent: String| {
+        let req = request(&s, "openai-chat", "alpha/m1", body_with_tool_call(), &agent, CancellationToken::new());
+        async {
+            let rid = req.id.clone();
+            s.engine.text(s.engine.snapshot(), req).await.unwrap();
+            settled(&s, &rid).await
+        }
+    };
+    let first = send_tool(id.clone()).await;
+    let run = first.attempts[0].adapter.as_ref().unwrap();
+    assert_eq!(run.outcome, AdapterOutcome::Blocked, "{run:?}");
+    assert!(String::from_utf8_lossy(&s.mock.received()[0].body).contains("Oslo"), "the original went on");
+
+    let store = Store::open(s._dir.path()).unwrap();
+    let alerts = AlertLog::open(&store).list().unwrap();
+    assert_eq!(alerts.len(), 1, "{alerts:?}");
+    assert_eq!(alerts[0].kind, AlertKind::Guardrail);
+    assert_eq!(alerts[0].record.as_deref(), Some(first.id.as_str()));
+    assert!(!alerts[0].detail.contains("Paris"), "{}", alerts[0].detail);
+    let index = store.load_index().unwrap();
+    let h = index.harness(&HarnessName::new("acme").unwrap()).unwrap();
+    assert_eq!(h.versions[0].state, VersionState::Suspect);
+
+    // The next request finds the version suspect and runs as a plain client.
+    let second = send_tool(id).await;
+    let run = second.attempts[0].adapter.as_ref().unwrap();
+    assert_eq!(run.outcome, AdapterOutcome::NotRun { reason: NotRunReason::Suspect }, "{run:?}");
 }

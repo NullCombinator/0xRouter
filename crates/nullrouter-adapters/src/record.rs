@@ -50,8 +50,12 @@ impl AdapterRun {
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum AdapterOutcome {
     Ran,
-    NotRun { reason: NotRunReason },
-    Failed { reason: FailReason },
+    NotRun {
+        reason: NotRunReason,
+    },
+    Failed {
+        reason: FailReason,
+    },
     /// The guardrail discarded the adapter's edits.
     Blocked,
 }
@@ -97,6 +101,47 @@ pub enum GuardrailRule {
     ToolResultChanged,
     OpaqueAdded,
     UnplacedAdded,
+}
+
+impl GuardrailRule {
+    /// The rule's name as an alert shows it.
+    pub fn codes(self) -> &'static [&'static str] {
+        match self {
+            GuardrailRule::ToolCallAdded => &["tool_call_added"],
+            GuardrailRule::ToolCallChanged => &["tool_call_changed"],
+            GuardrailRule::ToolDefAdded => &["tool_def_added"],
+            GuardrailRule::ToolDefChanged => &["tool_def_changed"],
+            GuardrailRule::ToolResultAdded => &["tool_result_added"],
+            GuardrailRule::ToolResultChanged => &["tool_result_changed"],
+            GuardrailRule::OpaqueAdded => &["opaque_added"],
+            GuardrailRule::UnplacedAdded => &["unplaced_added"],
+        }
+    }
+}
+
+impl FailReason {
+    /// The reason as an alert shows it: its name, and the rule for an invalid output.
+    pub fn codes(self) -> &'static [&'static str] {
+        use InvalidOutputRule as R;
+        match self {
+            FailReason::Trap => &["trap"],
+            FailReason::Deadline => &["deadline"],
+            FailReason::Memory => &["memory"],
+            FailReason::InvalidOutput { rule } => match rule {
+                R::NotJson => &["invalid_output", "not_json"],
+                R::OutsideSelector => &["invalid_output", "outside_selector"],
+                R::PathMissing => &["invalid_output", "path_missing"],
+                R::Overlap => &["invalid_output", "overlap"],
+                R::TooManyEdits => &["invalid_output", "too_many_edits"],
+                R::ValueTooLarge => &["invalid_output", "value_too_large"],
+                R::KindMismatch => &["invalid_output", "kind_mismatch"],
+                R::UnknownReason => &["invalid_output", "unknown_reason"],
+                R::InputTooLarge => &["invalid_output", "input_too_large"],
+                R::OutputTooLarge => &["invalid_output", "output_too_large"],
+                R::Undecodable => &["invalid_output", "undecodable"],
+            },
+        }
+    }
 }
 
 /// A violation the guardrail caught, written with the run that caused it.

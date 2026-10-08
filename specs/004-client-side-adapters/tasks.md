@@ -569,9 +569,15 @@ foundation here, not a later story.
     refuses a group-readable `adapters/`) and `refresh_adapters` (called at every reload) put
     one runner per harness in the store into the engine. Tests: `engine/tests/adapter_store.rs`;
     T047's `install_fixture` is in `testkit.rs`, `wat_adapter` is not.
+  - Run outcomes done, not yet run in CI: the attempt loop hands every `failed` or `blocked`
+    third-party run to `Engine::note_adapter_run`, which raises an `adapter_failed` alert (folded)
+    or a `guardrail` alert, and for a block marks the version `suspect` and loads the store
+    again, so the next request records `not_run{suspect}`. Test: `adapter_store.rs`. The index is
+    read, changed and written whole, so an operator command running at the same moment can lose
+    the mark; the next block marks it again.
   - Still to do: the response and event sides (the arm keeps `reads_responses() == false`, so
-    third-party adapters see no responses yet), the guardrail's event check, alerts and
-    the suspect mark on a `Blocked` run, and `builder_client.rs`.
+    third-party adapters see no responses yet), the guardrail's event check, and
+    `builder_client.rs`.
 - [ ] T047 [P] `nullrouter-adapters` testkit in `src/testkit.rs` (feature `testkit`).
   - `install_fixture(home, harness, wasm_bytes, source_dir, state)` writes a store entry
     directly, with the correct hashes.

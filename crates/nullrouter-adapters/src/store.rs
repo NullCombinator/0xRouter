@@ -29,6 +29,11 @@ impl VersionId {
         Self(format!("v{version}-{}", fp.short()))
     }
 
+    /// The id a run record names, which is the index's id for a third-party adapter.
+    pub fn from_run(version: &str) -> Self {
+        Self(version.to_owned())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }

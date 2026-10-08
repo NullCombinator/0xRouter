@@ -17,10 +17,10 @@ use serde::Deserialize;
 
 use crate::HarnessName;
 use crate::alerts::{AlertKind, AlertLog, NewAlert};
-use crate::record::NotRunReason;
+use crate::record::{AdapterOutcome, AdapterRun, NotRunReason};
 use crate::runner::{WasmHandle, WasmModule};
 use crate::selector::Selector;
-use crate::store::{Store, StoreError, VersionEntry};
+use crate::store::{Store, StoreError, VersionEntry, VersionId, VersionState};
 
 /// How long a module has on a request (research R5).
 pub const REQUEST_DEADLINE: Duration = Duration::from_millis(20);
@@ -211,6 +211,55 @@ impl Loader {
         let live: Vec<&str> =
             index.harnesses.iter().flat_map(|h| &h.versions).filter_map(|v| v.wasm_hash.as_deref()).collect();
         self.cache.lock().unwrap_or_else(|e| e.into_inner()).retain(|hash, _| live.contains(&hash.as_str()));
+    }
+
+    /// Acts on a finished run of a third-party adapter: a `failed` one raises an `adapter_failed`
+    /// alert (repeats fold), a `blocked` one marks the version `suspect`, so it stops serving at
+    /// the next load, and raises a `guardrail` alert. Other outcomes, and runs of built-in
+    /// adapters, do nothing. `true`: the index changed and the caller should load again.
+    pub fn note_run(&self, run: &AdapterRun, record: &str) -> bool {
+        let (kind, message, codes) = match &run.outcome {
+            AdapterOutcome::Failed { reason } => (AlertKind::AdapterFailed, "the adapter's run failed", reason.codes()),
+            AdapterOutcome::Blocked => match &run.guardrail {
+                Some(g) => (AlertKind::Guardrail, "the guardrail discarded the adapter's edits", g.rule.codes()),
+                None => return false,
+            },
+            _ => return false,
+        };
+        // Built-in adapters and test fixtures have no version in the store.
+        if matches!(run.version.as_str(), "builtin" | "fixture") {
+            return false;
+        }
+        let Ok(name) = HarnessName::new(&run.harness) else { return false };
+        let id = VersionId::from_run(&run.version);
+        let new = NewAlert {
+            kind,
+            harness: name.clone(),
+            version: id.clone(),
+            record: Some(record.to_owned()),
+            message,
+            codes,
+        };
+        if let Err(e) = self.alerts.raise(new, Timestamp::now()) {
+            tracing::error!("alert for {name} not saved: {e}");
+        }
+        kind == AlertKind::Guardrail && self.mark_suspect(&name, &id)
+    }
+
+    /// Moves a serving version to `suspect`. It stays the active one but no longer serves.
+    fn mark_suspect(&self, name: &HarnessName, id: &VersionId) -> bool {
+        let moved = self.store.load_index().and_then(|mut index| {
+            index.transition(name, id, VersionState::Suspect, "the guardrail discarded its edits")?;
+            self.store.save_index(&index)
+        });
+        match moved {
+            Ok(()) => true,
+            // Already suspect, superseded or gone: another request got there first.
+            Err(e) => {
+                tracing::warn!("adapter {name} {id} not marked suspect: {e}");
+                false
+            }
+        }
     }
 
     fn raise(

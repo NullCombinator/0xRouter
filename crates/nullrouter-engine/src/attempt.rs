@@ -1820,6 +1820,11 @@ impl Run {
             run
         };
         run.clean_with(|s| st.redactor.redact(&crate::records::plain(s)).into_owned());
+        if matches!(run.outcome, AdapterOutcome::Failed { .. } | AdapterOutcome::Blocked) {
+            let (engine, run, id) = (self.engine.clone(), run.clone(), self.req.id.clone());
+            // The engine skips built-in runs; the rest write alerts and files.
+            let _ = tokio::task::spawn_blocking(move || engine.note_adapter_run(&run, &id)).await;
+        }
         self.adapter_run = Some(run);
     }
 
