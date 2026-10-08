@@ -28,15 +28,12 @@ impl SandboxEngine {
     /// runtime. `max_instances` sizes the pooling allocator.
     ///
     /// Async execution needs no setting: in wasmtime 45 `Config::async_support` is a deprecated
-    /// no-op, and the `async` cargo feature is what enables it.
+    /// no-op, and the `async` cargo feature is what enables it. Threads need none either: the
+    /// workspace builds wasmtime without its `threads` feature, so the proposal isn't compiled in
+    /// and `Config::wasm_threads` doesn't exist.
     pub fn new(max_instances: u32) -> Result<Self, EngineError> {
         let mut config = Config::new();
-        config
-            .epoch_interruption(true)
-            .consume_fuel(false)
-            .wasm_threads(false)
-            .wasm_relaxed_simd(false)
-            .wasm_multi_memory(false);
+        config.epoch_interruption(true).consume_fuel(false).wasm_relaxed_simd(false).wasm_multi_memory(false);
         let mut pool = PoolingAllocationConfig::default();
         pool.total_core_instances(max_instances)
             .total_memories(max_instances)
