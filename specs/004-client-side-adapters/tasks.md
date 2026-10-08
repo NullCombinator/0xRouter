@@ -386,6 +386,7 @@ foundation here, not a later story.
 
 - [ ] T033 [P] Sandbox tests in `crates/nullrouter-sandbox/tests/sandbox.rs`, using WAT
   fixtures compiled with `wasmtime::Module::new` in-test.
+  - Load cases done (CI #117); the deadline, memory, trap and round-trip cases wait for T041.
   - A module importing anything other than `nr.abi_version` or `nr.log` (for example
     `wasi_snapshot_preview1.fd_write` or `env.socket`) is refused at load, with the import
     named.
@@ -453,12 +454,12 @@ foundation here, not a later story.
     for a type implementing `Adapter`.
   - A `log!` macro calling the `nr.log` import, capped at 512 bytes.
   - Document that `#[no_mangle]` appears only inside `export!`.
-- [ ] T039 [P] Sandbox engine in `crates/nullrouter-sandbox/src/engine.rs`.
+- [X] T039 [P] Sandbox engine in `crates/nullrouter-sandbox/src/engine.rs`.
   - One process-wide `Engine`, with `epoch_interruption(true)`, `async_support(true)`,
     `consume_fuel(false)`, and threads, relaxed SIMD and multi-memory off.
   - Pooling allocator sized by `max_instances`.
   - A Tokio ticker task that increments the epoch every 1 ms and stops on shutdown.
-- [ ] T040 Sandbox module load in `crates/nullrouter-sandbox/src/module.rs`.
+- [X] T040 Sandbox module load in `crates/nullrouter-sandbox/src/module.rs`.
   - Inputs: `wasm` bytes, the expected `wasm_hash` and the manifest flags.
   - Checks: SHA-256 matches; `Module::new` (never `deserialize`); imports ⊆ {`nr.abi_version`,
     `nr.log`}; required exports present; `nr.abi` supported (current and previous major).
