@@ -56,6 +56,7 @@ use crate::records::{
     AdapterOutcome, AdapterRun, FailReason, InvalidOutputRule, NotRunReason,
     Attempt, AttemptKind, AttemptOutcome, AttemptPlacement, BreakHandling, ErrorClass, JobRef, Outcome, ServedBy, Usage,
 };
+use crate::response_side::{Clean, ResponseSide};
 use crate::routing::{CandidateKey, PlacementReason, WhyNot};
 use crate::signin::refresh::Refreshed;
 use crate::state::{Engine, EngineState};
@@ -138,6 +139,9 @@ pub enum Answer {
 pub struct Reply {
     pub answer: Answer,
     pub headers: Vec<(HeaderName, HeaderValue)>,
+    /// The key's harness adapter, when it reads responses: the client's writer runs it on each
+    /// stream event (or a collected answer). A whole answer has already been through it.
+    pub response: Option<ResponseSide>,
 }
 
 /// One piece of a streamed answer.
@@ -484,6 +488,8 @@ struct Run {
     adapted: Option<Adapted>,
     /// What the adapter did for the candidate being tried; every attempt it starts records it.
     adapter_run: Option<AdapterRun>,
+    /// The response side of the adapter for the candidate being tried, if it reads responses.
+    response: Option<ResponseSide>,
 }
 
 fn cooldown_key<'c>(c: &'c Candidate<'_>) -> (&'c str, &'c str, &'c str) {
@@ -569,6 +575,7 @@ impl Engine {
             held: None,
             adapted: None,
             adapter_run: None,
+            response: None,
         };
         tokio::spawn(run.run(st));
         answer.await.unwrap_or_else(|_| Err(Failure::new(500, "0router: the request ended without an answer")))
@@ -1184,6 +1191,7 @@ impl Run {
             };
             let usage = read.and_then(|r| r.usage).map(|u| Usage::reported(&u, semantics));
             self.ttft();
+            let (raw, answer) = self.adapt_whole(raw, answer, &value);
             self.answer(Answer::Whole { status, content_type, raw, answer: Box::new(answer) });
             return Ended::Ok(usage);
         }
@@ -1558,7 +1566,7 @@ impl Run {
         if self.first.is_none() {
             return;
         }
-        let reply = Reply { answer, headers: std::mem::take(&mut self.forward) };
+        let reply = Reply { answer, headers: std::mem::take(&mut self.forward), response: self.response.clone() };
         // A stream starts at once. A whole answer waits for the `close` line (see `run`).
         let whole = !matches!(reply.answer, Answer::Events { .. } | Answer::Media(MediaAnswer::Bytes { .. }));
         if whole {
@@ -1769,24 +1777,27 @@ impl Run {
     fn adapt(&mut self, st: &EngineState, c: &Candidate<'_>) {
         self.adapted = None;
         self.adapter_run = None;
+        self.response = None;
         let Some(runner) = self.engine.runner_for(st, &self.req.agent.key) else { return };
+        let ctx = nullrouter_adapter_kit::Context {
+            direction: nullrouter_adapter_kit::Direction::Request,
+            provider: c.provider.id.clone(),
+            target_style: c.endpoint.wire.clone().unwrap_or_else(|| "custom".into()),
+            same_style: c.same_style(&self.req.client.id),
+            model: c.upstream_id.clone(),
+            model_type: "text".into(),
+            capabilities: nullrouter_adapter_kit::Capabilities { vision: Some(c.endpoint.vision), ..Default::default() },
+            stream: self.req.stream,
+            attempt: self.n + 1,
+        };
+        if self.req.media.is_none() && !self.req.count && runner.reads_responses() {
+            let redactor = st.redactor.clone();
+            let clean: Clean = Arc::new(move |s: &str| redactor.redact(&crate::records::plain(s)).into_owned());
+            self.response = Some(ResponseSide::new(runner.clone(), ctx.clone(), clean));
+        }
         let mut run = if self.req.media.is_some() {
             runner.not_run(&self.req.body, NotRunReason::MediaRequest).run
         } else {
-            let ctx = nullrouter_adapter_kit::Context {
-                direction: nullrouter_adapter_kit::Direction::Request,
-                provider: c.provider.id.clone(),
-                target_style: c.endpoint.wire.clone().unwrap_or_else(|| "custom".into()),
-                same_style: c.same_style(&self.req.client.id),
-                model: c.upstream_id.clone(),
-                model_type: "text".into(),
-                capabilities: nullrouter_adapter_kit::Capabilities {
-                    vision: Some(c.endpoint.vision),
-                    ..Default::default()
-                },
-                stream: self.req.stream,
-                attempt: self.n + 1,
-            };
             let out = runner.run_request(&ctx, &self.req.body);
             let mut run = out.run;
             if let std::borrow::Cow::Owned(body) = out.body {
@@ -1809,6 +1820,23 @@ impl Run {
         };
         run.clean_with(|s| st.redactor.redact(&crate::records::plain(s)).into_owned());
         self.adapter_run = Some(run);
+    }
+
+    /// Runs the adapter's response side on a whole client-style answer and records it. An
+    /// edited answer goes out as the adapter left it; otherwise the provider's bytes stand.
+    fn adapt_whole(&self, raw: Bytes, answer: ForClient, value: &Value) -> (Bytes, ForClient) {
+        let Some(side) = &self.response else { return (raw, answer) };
+        let client = match &answer {
+            ForClient::AsReceived { .. } => value,
+            ForClient::Rebuilt { body, .. } => body,
+        };
+        let (edited, run) = side.whole(client);
+        self.engine.records.update(&self.req.id, |r| r.response_adapter = Some(run));
+        match (edited, answer) {
+            (Some(body), ForClient::AsReceived { read }) => (Bytes::from(body.to_string()), ForClient::AsReceived { read }),
+            (Some(body), ForClient::Rebuilt { read, .. }) => (raw, ForClient::Rebuilt { read, body }),
+            (None, answer) => (raw, answer),
+        }
     }
 
     /// A plan entry that can't be tried: a `skipped` attempt and an attempt line.

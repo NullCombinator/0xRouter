@@ -127,7 +127,7 @@ pub async fn generate(
     };
     let guard = cancel.clone().drop_guard();
     let (answer, forwarded) = match engine.reply(st, req).await {
-        Ok(Reply { answer: Answer::Media(a), headers }) => (a, headers),
+        Ok(Reply { answer: Answer::Media(a), headers, .. }) => (a, headers),
         Ok(_) => return fail(500, "0router: a non-text request got a text answer"),
         Err(f) => return style_failure(m, &f, &id),
     };

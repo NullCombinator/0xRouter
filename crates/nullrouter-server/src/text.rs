@@ -15,6 +15,7 @@ use axum::http::HeaderMap;
 use axum::response::Response;
 use nullrouter_engine::attempt::{self, Answer, Piece, TextRequest};
 use nullrouter_engine::keys::AgentId;
+use nullrouter_engine::response_side::{ResponseSide, Tap};
 use nullrouter_engine::state::{Engine, EngineState};
 use nullrouter_registry::schema::Framing;
 use nullrouter_registry::template::FieldPath;
@@ -110,8 +111,8 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
     };
     // Until the body is handed to the client, dropping this handler cancels the request.
     let guard = cancel.clone().drop_guard();
-    let (answer, forwarded) = match engine.reply(st, req).await {
-        Ok(r) => (r.answer, r.headers),
+    let (answer, forwarded, response) = match engine.reply(st, req).await {
+        Ok(r) => (r.answer, r.headers, r.response),
         Err(f) => return crate::serve::style_failure(m, &f, &id),
     };
     let resp = match answer {
@@ -121,7 +122,7 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
         },
         Answer::Events { rx, forced: true } => match attempt::collect(&client, &inc.body, rx).await {
             Ok(r) => match response::encode(&client, &r, unix_now()) {
-                Ok(body) => relay::json(200, &body, &id),
+                Ok(body) => relay::json(200, &through_adapter(&engine, &id, response.as_ref(), body), &id),
                 Err(e) => fail(502, &format!("0router: {e}")),
             },
             Err(e) => fail(e.status.unwrap_or(502), &e.message),
@@ -130,7 +131,8 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
             let framing = client.text().map_or(Framing::SseData, |t| t.framing);
             let (tx, out) = mpsc::channel::<Result<Bytes, Infallible>>(attempt::CHANNEL);
             let written = Written { engine: engine.clone(), id: id.clone(), arrived: inc.arrived };
-            tokio::spawn(write_stream(client, framing, inc.body, written, rx, tx));
+            let tap = response.and_then(|side| side.tap(framing));
+            tokio::spawn(write_stream(client, framing, inc.body, written, tap, rx, tx));
             let mut out = out;
             let body = futures_util::stream::poll_fn(move |cx| out.poll_recv(cx));
             // The streamed body now owns the cancellation.
@@ -140,6 +142,14 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
         Answer::Media(_) | Answer::Count { .. } => fail(500, "0router: a text request got a non-text answer"),
     };
     relay::forward(resp, forwarded)
+}
+
+/// A collected answer through the key's adapter, if it reads responses; the run is recorded.
+fn through_adapter(engine: &Engine, id: &str, side: Option<&ResponseSide>, body: Value) -> Value {
+    let Some(side) = side else { return body };
+    let (edited, run) = side.whole(&body);
+    engine.records.update(id, |r| r.response_adapter = Some(run));
+    edited.unwrap_or(body)
 }
 
 /// Whether `events` finish the answer: from here on the client's bytes are the answer's ending.
@@ -169,6 +179,7 @@ async fn write_stream(
     framing: Framing,
     body: Value,
     written: Written,
+    mut tap: Option<Tap>,
     mut rx: mpsc::Receiver<Piece>,
     tx: mpsc::Sender<Result<Bytes, Infallible>>,
 ) {
@@ -196,6 +207,11 @@ async fn write_stream(
             }
         };
         finishing |= ends;
+        // Each event passes through the adapter as it is written; nothing waits for the next.
+        let out = match &mut tap {
+            Some(t) if !out.is_empty() => t.push(out),
+            _ => out,
+        };
         if !out.is_empty() {
             if finishing {
                 held.push(Bytes::from(out));
@@ -215,6 +231,13 @@ async fn write_stream(
         }
     }
     let out = if relayed { String::new() } else { w.end() };
+    let out = match &mut tap {
+        Some(t) if !out.is_empty() => t.push(out),
+        _ => out,
+    };
+    if let Some(run) = tap.and_then(Tap::finish) {
+        written.engine.records.update(&written.id, |r| r.response_adapter = Some(run));
+    }
     if !out.is_empty() && tx.send(Ok(Bytes::from(out))).await.is_err() {
         return;
     }

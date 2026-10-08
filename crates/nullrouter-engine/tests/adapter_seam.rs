@@ -1,18 +1,19 @@
 //! The adapter seam in the attempt loop (spec 004, T014), with a test adapter that removes every
-//! part its selector matches. (e) and (f), the response side and a client disconnect during an
-//! adapter call, belong with the response seam and are not here yet.
+//! part its selector matches. (e) and (f) drive the client's stream writer the way the server
+//! does: the writer's bytes pass through the adapter's tap, one chunk at a time.
 
 mod common;
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use common::*;
 use nullrouter_adapter_kit::{Context, Edits, Reason};
-use nullrouter_adapters::runner::{AdapterRunner, Fixture};
+use nullrouter_adapters::runner::{AdapterRunner, Fixture, RequestFn};
 use nullrouter_adapters::selector::{Selector, extract};
 use nullrouter_engine::keys::Keys;
 use nullrouter_engine::attempt::{Answer, Media};
-use nullrouter_engine::records::{AdapterOutcome, NotRunReason, RequestRecord};
+use nullrouter_engine::records::{AdapterOutcome, NotRunReason, Outcome, RequestRecord};
 use nullrouter_engine::routing::PlacementReason;
 use nullrouter_engine::testkit::{MockUpstream, Step};
 use nullrouter_registry::schema::ModelType;
@@ -37,6 +38,7 @@ fn remover(name: &str, selector: &str, seen: &Seen) -> AdapterRunner {
             }
             out
         }),
+        ..Default::default()
     })
 }
 
@@ -293,6 +295,7 @@ async fn routing_fingerprints_the_request_as_received_so_a_changed_adapter_still
             e.convert(&nullrouter_adapter_kit::Path::parse("messages[1].content").unwrap(), json!("REWRITTEN"), Reason::FormatConversion);
             e
         }),
+        ..Default::default()
     });
     s.engine.install_runner("fixture", rewrite);
     let id = key(s, Some("fixture"));
@@ -316,4 +319,138 @@ async fn routing_fingerprints_the_request_as_received_so_a_changed_adapter_still
     let account = |r: &RequestRecord| r.served_by.as_ref().and_then(|x| x.account.clone());
     assert_eq!(account(&first), account(&second), "the follow-up stays on the warm account");
     assert_eq!(second.attempts.last().and_then(|a| a.placement).unwrap().reason, PlacementReason::Warm);
+}
+
+/// A response-side test adapter: upper-cases the text of every chat delta it sees.
+fn shouter(name: &str) -> AdapterRunner {
+    let response_selectors = vec![Selector::parse("choices[*].delta.content").unwrap()];
+    let for_run = response_selectors.clone();
+    let event: RequestFn = Arc::new(move |_: &Context, ev: &Value| {
+        let mut out = Edits::default();
+        for part in extract(ev, &for_run) {
+            if let Some(t) = part.value.as_str() {
+                out.convert(&part.path, json!(t.to_uppercase()), Reason::FormatConversion);
+            }
+        }
+        out
+    });
+    AdapterRunner::Fixture(Fixture { name: name.into(), response_selectors, event: Some(event), ..Default::default() })
+}
+
+/// One content frame, then the upstream goes quiet for 30 s: nothing else is sent unless the
+/// client's chunk got out before it.
+fn one_frame_then_silence() -> Step {
+    let frame = format!("data: {}\n\n", json!({"id": "c1", "choices": [{"index": 0, "delta": {"content": "hel"}}]}));
+    Step::StallAfter { frames: vec![frame.into()], hold: Duration::from_secs(30) }
+}
+
+/// Starts a streamed request from a key bound to the shouter, and writes the first piece the
+/// way the server does. Returns the open receiver, the client bytes of that piece, the
+/// record id and the cancel token.
+async fn first_chunk(
+    s: &Setup,
+) -> (tokio::sync::mpsc::Receiver<nullrouter_engine::attempt::Piece>, nullrouter_engine::response_side::Tap, String, String, CancellationToken)
+{
+    use nullrouter_engine::attempt::Piece;
+    use nullrouter_wire::stream::StreamWriter;
+
+    s.mock.push([one_frame_then_silence()]);
+    s.engine.install_runner("shouter", shouter("shouter"));
+    let id = key(s, Some("shouter"));
+    let body = json!({"model": "alpha/m1", "stream": true, "messages": [{"role": "user", "content": "hi"}]});
+    let cancel = CancellationToken::new();
+    let req = request(s, "openai-chat", "alpha/m1", body.clone(), &id, cancel.clone());
+    let (rid, client) = (req.id.clone(), req.client.clone());
+    let reply = s.engine.reply(s.engine.snapshot(), req).await.unwrap();
+    let side = reply.response.expect("an adapter that reads responses gives the writer a side");
+    let Answer::Events { mut rx, .. } = reply.answer else { panic!("events") };
+    let mut tap = side.tap(nullrouter_registry::schema::Framing::SseData).expect("a tap for SSE");
+    let mut w = StreamWriter::new(&client, &body, &rid, "", 0).unwrap();
+    // Pieces up to the first content: the writer's bytes, each through the tap.
+    let mut text = String::new();
+    while !text.contains("data:") || !text.to_lowercase().contains("hel") {
+        let out = match rx.recv().await.expect("the stream is open") {
+            Piece::Event(ev) => w.write(&ev),
+            Piece::Frame(f, events) => {
+                w.observe(&events);
+                f.to_bytes(nullrouter_registry::schema::Framing::SseData).unwrap_or_default()
+            }
+            Piece::Restart => w.restart(),
+        };
+        if !out.is_empty() {
+            text += &tap.push(out);
+        }
+    }
+    (rx, tap, text, rid, cancel)
+}
+
+#[tokio::test]
+async fn a_response_adapter_edits_each_event_before_the_next_one_is_read() {
+    let s = setup(|m| vec![("alpha", chat_plugin(m, "alpha", ""))], &[("alpha", "a1")], "").await;
+    let started = std::time::Instant::now();
+    let (_rx, tap, text, _rid, cancel) = first_chunk(&s).await;
+    // The upstream is silent for 30 s, so this chunk got to the client without waiting for it.
+    assert!(started.elapsed() < Duration::from_secs(10), "the first event waited for the next: {:?}", started.elapsed());
+    assert!(text.contains("HEL") && !text.contains("hel"), "the client has the adapter's edit: {text}");
+
+    let run = tap.finish().expect("the adapter ran on the events");
+    assert_eq!(run.outcome, AdapterOutcome::Ran);
+    assert!(run.changes.iter().all(|c| c.path.starts_with("event[") && c.path.ends_with("choices[0].delta.content")), "{run:?}");
+    assert!(!format!("{run:?}").contains("HEL"), "a record holds paths, never content");
+    cancel.cancel();
+}
+
+#[tokio::test]
+async fn a_client_that_goes_while_the_adapter_is_working_cancels_the_upstream() {
+    let s = setup(|m| vec![("alpha", chat_plugin(m, "alpha", ""))], &[("alpha", "a1")], "").await;
+    let (rx, _tap, text, rid, cancel) = first_chunk(&s).await;
+    assert!(text.contains("HEL"));
+    // The server's body guard cancels the request when the client goes; the receiver goes too.
+    drop(rx);
+    cancel.cancel();
+    let r = settled(&s, &rid).await;
+    assert_eq!(r.outcome, Outcome::Cancelled);
+    for _ in 0..200 {
+        if !s.mock.disconnects().is_empty() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("the upstream never saw the connection close");
+}
+
+#[tokio::test]
+async fn a_whole_answer_goes_through_the_response_side_once() {
+    let s = setup(|m| vec![("alpha", chat_plugin(m, "alpha", ""))], &[("alpha", "a1")], "").await;
+    s.mock.push([Step::json(
+        200,
+        json!({"id": "c1", "object": "chat.completion", "model": "m1",
+               "choices": [{"index": 0, "message": {"role": "assistant", "content": "hello"}, "finish_reason": "stop"}],
+               "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}),
+    )]);
+    let whole: RequestFn = Arc::new(|_: &Context, body: &Value| {
+        let mut out = Edits::default();
+        out.convert(&nullrouter_adapter_kit::Path::parse("choices[0].message.content").unwrap(), body["choices"][0]["message"]["content"].as_str().map(|t| json!(t.to_uppercase())).unwrap(), Reason::FormatConversion);
+        out
+    });
+    s.engine.install_runner(
+        "shouter",
+        AdapterRunner::Fixture(Fixture {
+            name: "shouter".into(),
+            response_selectors: vec![Selector::parse("choices[*].message.content").unwrap()],
+            response: Some(whole),
+            ..Default::default()
+        }),
+    );
+    let id = key(&s, Some("shouter"));
+    let req = request(&s, "openai-chat", "alpha/m1", chat_body("alpha/m1", false), &id, CancellationToken::new());
+    let rid = req.id.clone();
+    let Answer::Whole { raw, .. } = s.engine.text(s.engine.snapshot(), req).await.unwrap() else { panic!("whole") };
+    let sent: Value = serde_json::from_slice(&raw).unwrap();
+    assert_eq!(sent["choices"][0]["message"]["content"], "HELLO");
+    let rec = settled(&s, &rid).await;
+    let run = rec.response_adapter.expect("the response side is recorded");
+    assert_eq!(run.outcome, AdapterOutcome::Ran);
+    assert_eq!(run.changes.len(), 1);
+    assert_eq!(run.changes[0].path, "choices[0].message.content");
 }

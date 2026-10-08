@@ -60,13 +60,31 @@ pub struct WasmHandle {
 pub type RequestFn = Arc<dyn Fn(&Context, &Value) -> Edits + Send + Sync>;
 
 /// A test adapter: a closure over the context and body, declared selectors included. Only
-/// built with the `testkit` feature, so no production path can reach it.
+/// built with the `testkit` feature, so no production path can reach it. `response` runs on a
+/// whole client-style answer, `event` on each stream event; both read `response_selectors`.
 #[cfg(feature = "testkit")]
 #[derive(Clone)]
 pub struct Fixture {
     pub name: String,
     pub selectors: Vec<Selector>,
     pub request: RequestFn,
+    pub response_selectors: Vec<Selector>,
+    pub response: Option<RequestFn>,
+    pub event: Option<RequestFn>,
+}
+
+#[cfg(feature = "testkit")]
+impl Default for Fixture {
+    fn default() -> Self {
+        Fixture {
+            name: String::new(),
+            selectors: Vec::new(),
+            request: Arc::new(|_, _| Edits::default()),
+            response_selectors: Vec::new(),
+            response: None,
+            event: None,
+        }
+    }
 }
 
 #[cfg(feature = "testkit")]
@@ -133,9 +151,14 @@ impl AdapterRunner {
                 (f.selectors.clone(), (f.request)(ctx, body))
             }
         };
+        self.finish(body, &selectors, edits, started)
+    }
+
+    /// Checks `edits` against `selectors`, applies them to a copy, and reports the run.
+    fn finish<'a>(&self, body: &'a Value, selectors: &[Selector], edits: Edits, started: Instant) -> RunOutcome<'a> {
         let (h, v) = self.identity();
         let mut run = AdapterRun::new(h, v, AdapterOutcome::Ran);
-        let out = match apply::check(body, &selectors, &edits.edits) {
+        let out = match apply::check(body, selectors, &edits.edits) {
             Err(e) => {
                 run.outcome = AdapterOutcome::Failed { reason: FailReason::InvalidOutput { rule: e.rule } };
                 Cow::Borrowed(body)
@@ -150,13 +173,43 @@ impl AdapterRunner {
         RunOutcome { body: out, run }
     }
 
-    /// hermes has no response side, so the response runs report that no selector matched.
-    pub fn run_response<'a>(&self, _ctx: &Context, body: &'a Value) -> RunOutcome<'a> {
-        self.not_run(body, NotRunReason::NoSelectorMatch)
+    /// Whether the adapter reads responses at all. Until it does, a pass-through frame is never
+    /// parsed for it (research R2).
+    pub fn reads_responses(&self) -> bool {
+        match self {
+            AdapterRunner::Builtin(_) | AdapterRunner::Wasm(_) => false,
+            #[cfg(feature = "testkit")]
+            AdapterRunner::Fixture(f) => !f.response_selectors.is_empty() && (f.response.is_some() || f.event.is_some()),
+        }
     }
 
-    pub fn run_event<'a>(&self, _ctx: &Context, event: &'a Value) -> RunOutcome<'a> {
-        self.not_run(event, NotRunReason::NoSelectorMatch)
+    /// Runs the response side on a whole client-style answer.
+    pub fn run_response<'a>(&self, ctx: &Context, body: &'a Value) -> RunOutcome<'a> {
+        self.run_answer(ctx, body, false)
+    }
+
+    /// Runs the response side on one client-style stream event.
+    pub fn run_event<'a>(&self, ctx: &Context, event: &'a Value) -> RunOutcome<'a> {
+        self.run_answer(ctx, event, true)
+    }
+
+    fn run_answer<'a>(&self, ctx: &Context, body: &'a Value, event: bool) -> RunOutcome<'a> {
+        let started = Instant::now();
+        match self {
+            #[cfg(feature = "testkit")]
+            AdapterRunner::Fixture(f) => {
+                let Some(call) = if event { &f.event } else { &f.response } else {
+                    return self.not_run(body, NotRunReason::NoSelectorMatch);
+                };
+                if selector::extract(body, &f.response_selectors).is_empty() {
+                    return self.not_run(body, NotRunReason::NoSelectorMatch);
+                }
+                let edits = call(ctx, body);
+                self.finish(body, &f.response_selectors, edits, started)
+            }
+            // hermes has no response side.
+            _ => self.not_run(body, NotRunReason::NoSelectorMatch),
+        }
     }
 }
 
