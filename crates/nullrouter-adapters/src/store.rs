@@ -372,7 +372,7 @@ fn private_dirs(path: &Path) -> Result<(), StoreError> {
 
 /// Writes `bytes` to `path` whole or not at all: to a sibling file with mode 0600, synced, then
 /// renamed over `path`.
-fn write_private(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
     let io = |source| StoreError::Io { path: path.to_owned(), source };
     let dir = path.parent().ok_or_else(|| StoreError::BadPath(path.display().to_string()))?;
     private_dirs(dir)?;
