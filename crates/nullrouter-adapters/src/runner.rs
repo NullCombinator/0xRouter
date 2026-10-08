@@ -198,7 +198,7 @@ impl AdapterRunner {
         match self {
             #[cfg(feature = "testkit")]
             AdapterRunner::Fixture(f) => {
-                let Some(call) = if event { &f.event } else { &f.response } else {
+                let Some(call) = (if event { &f.event } else { &f.response }) else {
                     return self.not_run(body, NotRunReason::NoSelectorMatch);
                 };
                 if selector::extract(body, &f.response_selectors).is_empty() {
