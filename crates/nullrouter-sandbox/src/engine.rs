@@ -24,8 +24,11 @@ pub struct SandboxEngine {
 }
 
 impl SandboxEngine {
-    /// Builds the engine and starts the 1 ms epoch ticker, so it must be called inside a Tokio
-    /// runtime. `max_instances` sizes the pooling allocator.
+    /// Builds the engine and starts the 1 ms epoch ticker. `max_instances` sizes the pooling
+    /// allocator.
+    ///
+    /// The ticker is an OS thread, not a Tokio task: a guest runs on the thread that polls it, so
+    /// a ticker sharing that thread could never advance the epoch while the guest loops.
     ///
     /// Async execution needs no setting: in wasmtime 45 `Config::async_support` is a deprecated
     /// no-op, and the `async` cargo feature is what enables it. Threads need none either: the
@@ -45,15 +48,15 @@ impl SandboxEngine {
 
         let stop = Arc::new(AtomicBool::new(false));
         let (ticking, halt) = (engine.clone(), stop.clone());
-        tokio::spawn(async move {
-            let mut every = tokio::time::interval(TICK);
-            // A late tick is skipped, not replayed: a burst of epochs would trap a healthy call.
-            every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            while !halt.load(Ordering::Relaxed) {
-                every.tick().await;
-                ticking.increment_epoch();
-            }
-        });
+        std::thread::Builder::new()
+            .name("nr-epoch".into())
+            .spawn(move || {
+                while !halt.load(Ordering::Relaxed) {
+                    std::thread::sleep(TICK);
+                    ticking.increment_epoch();
+                }
+            })
+            .map_err(|e| EngineError(e.to_string()))?;
         Ok(Self { engine, stop })
     }
 

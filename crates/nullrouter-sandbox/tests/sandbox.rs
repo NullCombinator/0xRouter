@@ -1,6 +1,12 @@
 //! The sandbox against WAT fixtures: what the gate refuses and what it lets through.
 
-use nullrouter_sandbox::{LoadError, ModuleFlags, SandboxEngine, load, wasm_hash};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::{Duration, Instant};
+
+use nullrouter_sandbox::{
+    CallError, Entry, LoadError, LoadedModule, ModuleFlags, Redactor, SandboxEngine, call, load, wasm_hash,
+};
 
 const ABI_1: &str = r#"(@custom "nr.abi" "\01\00\00\00")"#;
 const MEMORY: &str = r#"(memory (export "memory") 1)"#;
@@ -128,4 +134,133 @@ async fn a_module_without_the_abi_section_or_with_an_unsupported_one_is_refused(
     }
     let short = module(&[MEMORY, ALLOC, ON_REQUEST, r#"(@custom "nr.abi" "\01")"#]);
     assert!(matches!(refused(&short), LoadError::AbiMalformed));
+}
+
+// ---- calls -------------------------------------------------------------------------------
+
+const DEADLINE: Duration = Duration::from_millis(20);
+
+fn plain() -> Redactor {
+    Arc::new(|s: &str| s.to_owned())
+}
+
+/// A module whose `zr_on_request` has the given body, with the common exports and a 1-page memory.
+fn with_request(body: &str) -> Vec<u8> {
+    let on_request = format!(r#"(func (export "zr_on_request") (param $p i32) (param $l i32) (result i64) {body})"#);
+    module(&[r#"(import "nr" "log" (func $log (param i32 i32)))"#, MEMORY, ALLOC, &on_request, ABI_1])
+}
+
+fn loaded(engine: &SandboxEngine, wasm: &[u8]) -> LoadedModule {
+    load(engine, wasm, &wasm_hash(wasm), ModuleFlags::default()).expect("loads")
+}
+
+async fn run(wasm: &[u8], input: &[u8]) -> Result<Option<Vec<u8>>, CallError> {
+    let engine = SandboxEngine::new(4).unwrap();
+    let m = loaded(&engine, wasm);
+    call(&engine, &m, Entry::Request, input, DEADLINE, plain()).await
+}
+
+#[tokio::test]
+async fn a_valid_modules_output_round_trips() {
+    // Returns the input pointer and length as the output.
+    let echo = with_request("local.get $p i64.extend_i32_u i64.const 32 i64.shl local.get $l i64.extend_i32_u i64.or");
+    let input = br#"{"ctx":{},"parts":[]}"#;
+    assert_eq!(run(&echo, input).await.unwrap().as_deref(), Some(&input[..]));
+}
+
+#[tokio::test]
+async fn a_zero_result_means_no_edits() {
+    let none = with_request("i64.const 0");
+    assert_eq!(run(&none, b"{}").await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn an_infinite_loop_returns_deadline_without_blocking_other_tasks() {
+    let spin = with_request("(loop $l (br $l)) i64.const 0");
+    let ticks = Arc::new(AtomicU32::new(0));
+    let counter = ticks.clone();
+    // On this single-threaded runtime the timer can only run if the guest yields.
+    let timer = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            counter.fetch_add(1, Ordering::Relaxed);
+        }
+    });
+    let started = Instant::now();
+    let out = run(&spin, b"{}").await;
+    let took = started.elapsed();
+    timer.abort();
+
+    assert_eq!(out, Err(CallError::Deadline));
+    assert!(took >= DEADLINE, "stopped early: {took:?}");
+    // The contract is the deadline plus 5 ms. A shared CI runner can be slower than that for one
+    // scheduling hiccup, so the test allows more and the bench holds the tight figure.
+    assert!(took < DEADLINE + Duration::from_millis(100), "stopped late: {took:?}");
+    assert!(ticks.load(Ordering::Relaxed) >= 5, "the timer task starved: {} ticks", ticks.load(Ordering::Relaxed));
+}
+
+#[tokio::test]
+async fn memory_grown_past_the_ceiling_returns_memory() {
+    // 2000 pages is about 125 MB, over the 64 MiB ceiling.
+    let big = with_request("i32.const 2000 memory.grow drop i64.const 0");
+    assert_eq!(run(&big, b"{}").await, Err(CallError::Memory));
+    // Growth within it is fine.
+    let small = with_request("i32.const 100 memory.grow drop i64.const 0");
+    assert_eq!(run(&small, b"{}").await, Ok(None));
+}
+
+#[tokio::test]
+async fn a_trap_returns_trap() {
+    let trap = with_request("unreachable");
+    let err = run(&trap, b"{}").await.unwrap_err();
+    assert!(matches!(err, CallError::Trap(_)), "{err}");
+    assert_eq!(err.code(), "trap");
+}
+
+#[tokio::test]
+async fn an_output_outside_the_modules_memory_is_invalid() {
+    let outside = with_request("i64.const 0xFFFFFFF000000064");
+    assert!(matches!(run(&outside, b"{}").await, Err(CallError::InvalidOutput(_))));
+    // A length over the 16 MiB limit is refused before it is read.
+    let huge = with_request("i64.const 0x0000040000000000 i64.const 0x02000000 i64.or");
+    assert!(matches!(run(&huge, b"{}").await, Err(CallError::InvalidOutput(_))));
+}
+
+#[tokio::test]
+async fn a_module_that_logs_too_much_or_out_of_bounds_still_completes() {
+    // Twenty lines of 1000 bytes, then one pointing past the end of memory.
+    let calls = "i32.const 0 i32.const 1000 call $log ".repeat(20);
+    let chatty = with_request(&format!("{calls} i32.const -1 i32.const 10 call $log i64.const 0"));
+    assert_eq!(run(&chatty, b"{}").await, Ok(None));
+}
+
+#[tokio::test]
+async fn no_state_survives_from_one_call_to_the_next() {
+    // Adds one to a global and returns it as a single digit. A reused instance would say 2.
+    let counter = module(&[
+        MEMORY,
+        ALLOC,
+        "(global $n (mut i32) (i32.const 0))",
+        r#"(func (export "zr_on_request") (param i32 i32) (result i64)
+            global.get $n i32.const 1 i32.add global.set $n
+            i32.const 3000 global.get $n i32.const 48 i32.add i32.store8
+            i64.const 3000 i64.const 32 i64.shl i64.const 1 i64.or)"#,
+        ABI_1,
+    ]);
+    let engine = SandboxEngine::new(4).unwrap();
+    let m = loaded(&engine, &counter);
+    for _ in 0..3 {
+        let out = call(&engine, &m, Entry::Request, b"{}", DEADLINE, plain()).await.unwrap();
+        assert_eq!(out.as_deref(), Some(&b"1"[..]));
+    }
+}
+
+#[tokio::test]
+async fn an_input_over_the_limit_is_refused_before_it_is_written() {
+    let none = with_request("i64.const 0");
+    let engine = SandboxEngine::new(4).unwrap();
+    let m = loaded(&engine, &none);
+    let input = vec![b' '; (16 << 20) + 1];
+    let out = call(&engine, &m, Entry::Request, &input, DEADLINE, plain()).await;
+    assert_eq!(out, Err(CallError::InputTooLarge));
 }

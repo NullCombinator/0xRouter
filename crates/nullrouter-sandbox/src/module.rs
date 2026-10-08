@@ -6,8 +6,10 @@
 //! Everything else is refused with the reason named.
 
 use nullrouter_adapter_kit::KIT_ABI;
+use std::sync::Arc;
+
 use sha2::{Digest, Sha256};
-use wasmtime::{ExternType, InstancePre, Linker, Module, ValType};
+use wasmtime::{Caller, Extern, ExternType, InstancePre, Linker, Module, ValType};
 
 use crate::engine::SandboxEngine;
 
@@ -26,9 +28,25 @@ pub struct ModuleFlags {
     pub events: bool,
 }
 
-/// What a call runs against. T041 gives it the limiter and the log counter.
-#[derive(Debug, Default)]
-pub struct State;
+/// Removes secrets from a line before it is logged. The core passes its own redactor.
+pub type Redactor = Arc<dyn Fn(&str) -> String + Send + Sync>;
+
+/// Longest log line an adapter may write, and how many lines one call may write.
+pub const MAX_LOG_BYTES: usize = 512;
+pub const MAX_LOG_CALLS: u32 = 8;
+
+/// What one call runs against: the limiter's verdict and the log budget.
+pub struct State {
+    pub(crate) memory_exceeded: bool,
+    logs: u32,
+    redact: Redactor,
+}
+
+impl State {
+    pub(crate) fn new(redact: Redactor) -> Self {
+        Self { memory_exceeded: false, logs: 0, redact }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
@@ -128,11 +146,26 @@ pub fn load(
     Ok(LoadedModule { pre, abi, flags })
 }
 
-/// The two host functions. `log` is a placeholder here: T041 gives it its cap, rate limit and
-/// redaction, and until then a module's log calls go nowhere.
+/// The two host functions. `log` writes at `debug`, at most [`MAX_LOG_BYTES`] bytes per line and
+/// [`MAX_LOG_CALLS`] lines per call, redacted. A line past the budget, or one that points outside
+/// the module's memory, is dropped without a trap: logging must not decide the call.
 fn link_host(linker: &mut Linker<State>) -> wasmtime::Result<()> {
     linker.func_wrap(HOST_MODULE, "abi_version", || KIT_ABI as i32)?;
-    linker.func_wrap(HOST_MODULE, "log", |_ptr: i32, _len: i32| {})?;
+    linker.func_wrap(HOST_MODULE, "log", |mut caller: Caller<'_, State>, ptr: i32, len: i32| {
+        let state = caller.data_mut();
+        state.logs = state.logs.saturating_add(1);
+        if state.logs > MAX_LOG_CALLS {
+            return;
+        }
+        let Some(Extern::Memory(memory)) = caller.get_export("memory") else { return };
+        let (start, len) = (ptr as u32 as usize, (len as u32 as usize).min(MAX_LOG_BYTES));
+        let Some(bytes) = start.checked_add(len).and_then(|end| memory.data(&caller).get(start..end)) else {
+            return;
+        };
+        let line = String::from_utf8_lossy(bytes).into_owned();
+        let line = (caller.data().redact)(&line);
+        tracing::debug!(target: "nullrouter_sandbox::adapter", "{line}");
+    })?;
     Ok(())
 }
 
