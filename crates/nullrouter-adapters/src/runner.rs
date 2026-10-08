@@ -55,6 +55,10 @@ pub struct WasmHandle {
     pub version: String,
 }
 
+/// A test adapter's request-side function.
+#[cfg(feature = "testkit")]
+pub type RequestFn = Arc<dyn Fn(&Context, &Value) -> Edits + Send + Sync>;
+
 /// A test adapter: a closure over the context and body, declared selectors included. Only
 /// built with the `testkit` feature, so no production path can reach it.
 #[cfg(feature = "testkit")]
@@ -62,7 +66,7 @@ pub struct WasmHandle {
 pub struct Fixture {
     pub name: String,
     pub selectors: Vec<Selector>,
-    pub request: Arc<dyn Fn(&Context, &Value) -> Edits + Send + Sync>,
+    pub request: RequestFn,
 }
 
 #[cfg(feature = "testkit")]
