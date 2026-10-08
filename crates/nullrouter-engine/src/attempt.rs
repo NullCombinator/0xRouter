@@ -1984,6 +1984,18 @@ pub async fn collect(client: &Style, body: &Value, mut rx: mpsc::Receiver<Piece>
     Ok(w.response())
 }
 
+/// The connect limit a send error ran into, when that is what ended it.
+fn connect_timed_out(e: &(dyn std::error::Error + 'static)) -> Option<Duration> {
+    let mut cur = Some(e);
+    while let Some(err) = cur {
+        if let Some(t) = err.downcast_ref::<crate::connection::clients::ConnectTimedOut>() {
+            return Some(t.0);
+        }
+        cur = err.source();
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2027,16 +2039,4 @@ mod tests {
         assert_eq!(session_input(&AgentId::new("ak_1", None)), "ak_1");
         assert_eq!(session_input(&AgentId::new("ak_1", Some("sess-9"))), "ak_1:sess-9");
     }
-}
-
-/// The connect limit a send error ran into, when that is what ended it.
-fn connect_timed_out(e: &(dyn std::error::Error + 'static)) -> Option<Duration> {
-    let mut cur = Some(e);
-    while let Some(err) = cur {
-        if let Some(t) = err.downcast_ref::<crate::connection::clients::ConnectTimedOut>() {
-            return Some(t.0);
-        }
-        cur = err.source();
-    }
-    None
 }
