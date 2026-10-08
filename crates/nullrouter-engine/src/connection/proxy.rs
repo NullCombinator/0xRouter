@@ -24,7 +24,6 @@ pub enum PasswordSource {
     Env(String),
 }
 
-#[derive(Clone)]
 pub struct Proxy {
     pub name: String,
     /// `scheme://host:port`, without credentials.
@@ -33,6 +32,18 @@ pub struct Proxy {
     pub password: Option<PasswordSource>,
     /// The password as read: the literal, or the variable's value (`None` when it isn't set).
     pub secret: Option<SecretString>,
+}
+
+impl Clone for Proxy {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            url: self.url.clone(),
+            username: self.username.clone(),
+            password: self.password.clone(),
+            secret: self.secret.as_ref().map(|s| s.with_exposed(|v| SecretString::new(v.to_owned()))),
+        }
+    }
 }
 
 impl std::fmt::Debug for Proxy {
