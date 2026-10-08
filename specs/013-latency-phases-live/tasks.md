@@ -117,7 +117,7 @@ match slice 010's definitions (spec US1).
   - the record's phases show it in the right phase of the right attempt, within `max(5 ms, 5%)`;
   - for every completed request, the phases sum to `total_ms` within 1 ms;
   - the phases up to the first output sum to `ttft_ms` within 1 ms
-- [ ] T015 [P] [US1] Write the US1 acceptance scenarios in `crates/nullrouter-server/tests/phases.rs`:  ⟵ **Partly done**: scenarios 2, 3, 4, 5, 6, 7, 8 and the client leaving mid-generation. **Not yet:** a stream broken and resumed by attempt 2, and an async media job. The live entry being gone is tested (`a_finished_request_leaves_no_live_entry`)
+- [ ] T015 [P] [US1] Write the US1 acceptance scenarios in `crates/nullrouter-server/tests/phases.rs`:  ⟵ **Partly done**: scenarios 2, 3, 4, 5, 6, 7, 8 and the client leaving mid-generation. A stream broken and resumed by attempt 2 is tested in the engine (`breaks.rs::a_cut_and_continued_answer_keeps_its_phases_consistent`), where the break helpers are, and the async media job in `video_jobs.rs::polling_a_job_adds_nothing_to_the_submits_phases`. The live entry being gone is tested (`a_finished_request_leaves_no_live_entry`)
   - (2) two requests in a row: the second `reused`, connect "not applicable";
   - (3) a 503 then success: attempt 1 `ended_in` and later phases "not applicable";
   - (4) a thinking-first stream, with keepalive pings before the first thinking delta: first token ends at the thinking delta;
