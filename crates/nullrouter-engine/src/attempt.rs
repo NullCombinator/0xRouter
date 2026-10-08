@@ -779,7 +779,7 @@ impl Run {
                 &counted
             }
         };
-        self.adapt(st, c);
+        self.adapt(st, c).await;
         let outbound = match (&self.req.media, &wire) {
             (Some(m), wire) => match media_body(&self.req, m, c, wire.as_deref()) {
                 Ok(o) => o,
@@ -1191,7 +1191,7 @@ impl Run {
             };
             let usage = read.and_then(|r| r.usage).map(|u| Usage::reported(&u, semantics));
             self.ttft();
-            let (raw, answer) = self.adapt_whole(raw, answer, &value);
+            let (raw, answer) = self.adapt_whole(raw, answer, &value).await;
             self.answer(Answer::Whole { status, content_type, raw, answer: Box::new(answer) });
             return Ended::Ok(usage);
         }
@@ -1774,11 +1774,12 @@ impl Run {
     /// Runs the key's harness adapter on the client-style request for candidate `c`, before the
     /// upstream body is built (research R2). A fallback or resume runs it again against the
     /// original body. Edits that no longer decode are dropped, and the run says so.
-    fn adapt(&mut self, st: &EngineState, c: &Candidate<'_>) {
+    async fn adapt(&mut self, st: &EngineState, c: &Candidate<'_>) {
         self.adapted = None;
         self.adapter_run = None;
         self.response = None;
         let Some(runner) = self.engine.runner_for(st, &self.req.agent.key) else { return };
+        let runner = runner.with_client(self.req.client.clone());
         let ctx = nullrouter_adapter_kit::Context {
             direction: nullrouter_adapter_kit::Direction::Request,
             provider: c.provider.id.clone(),
@@ -1798,7 +1799,7 @@ impl Run {
         let mut run = if self.req.media.is_some() {
             runner.not_run(&self.req.body, NotRunReason::MediaRequest).run
         } else {
-            let out = runner.run_request(&ctx, &self.req.body);
+            let out = runner.run_request(&ctx, &self.req.body).await;
             let mut run = out.run;
             if let std::borrow::Cow::Owned(body) = out.body {
                 let ir = if ctx.same_style {
@@ -1824,13 +1825,13 @@ impl Run {
 
     /// Runs the adapter's response side on a whole client-style answer and records it. An
     /// edited answer goes out as the adapter left it; otherwise the provider's bytes stand.
-    fn adapt_whole(&self, raw: Bytes, answer: ForClient, value: &Value) -> (Bytes, ForClient) {
+    async fn adapt_whole(&self, raw: Bytes, answer: ForClient, value: &Value) -> (Bytes, ForClient) {
         let Some(side) = &self.response else { return (raw, answer) };
         let client = match &answer {
             ForClient::AsReceived { .. } => value,
             ForClient::Rebuilt { body, .. } => body,
         };
-        let (edited, run) = side.whole(client);
+        let (edited, run) = side.whole(client).await;
         self.engine.records.update(&self.req.id, |r| r.response_adapter = Some(run));
         match (edited, answer) {
             (Some(body), ForClient::AsReceived { read }) => (Bytes::from(body.to_string()), ForClient::AsReceived { read }),

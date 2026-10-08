@@ -27,9 +27,9 @@ fn ctx(provider: &str, same_style: bool) -> Context {
 }
 
 /// The body after hermes, and the changes it recorded.
-fn run(provider: &str, same_style: bool, body: &Value) -> (Value, Vec<ContentChange>) {
+async fn run(provider: &str, same_style: bool, body: &Value) -> (Value, Vec<ContentChange>) {
     let r = AdapterRunner::builtin(&HarnessName::new("hermes").unwrap()).unwrap();
-    let out = r.run_request(&ctx(provider, same_style), body);
+    let out = r.run_request(&ctx(provider, same_style), body).await;
     assert_eq!(out.run.outcome, AdapterOutcome::Ran, "{:?}", out.run);
     (out.body.into_owned(), out.run.changes)
 }
@@ -59,10 +59,10 @@ fn echoed() -> Value {
 }
 
 // (a)
-#[test]
-fn echoed_reasoning_is_removed_for_a_provider_that_rejects_it_on_a_same_style_attempt() {
+#[tokio::test]
+async fn echoed_reasoning_is_removed_for_a_provider_that_rejects_it_on_a_same_style_attempt() {
     for provider in ["groq", "mistral", "cerebras"] {
-        let (out, changes) = run(provider, true, &echoed());
+        let (out, changes) = run(provider, true, &echoed()).await;
         let m = &out["messages"][1];
         assert!(m.get("reasoning_content").is_none() && m.get("reasoning").is_none() && m.get("reasoning_details").is_none());
         assert_eq!(m["content"], "hello", "the rest of the message stays");
@@ -75,36 +75,36 @@ fn echoed_reasoning_is_removed_for_a_provider_that_rejects_it_on_a_same_style_at
 }
 
 // (b)
-#[test]
-fn echoed_reasoning_stays_for_a_provider_not_in_the_table() {
+#[tokio::test]
+async fn echoed_reasoning_stays_for_a_provider_not_in_the_table() {
     let body = echoed();
     let r = AdapterRunner::builtin(&HarnessName::new("hermes").unwrap()).unwrap();
-    let out = r.run_request(&ctx("openrouter", true), &body);
+    let out = r.run_request(&ctx("openrouter", true), &body).await;
     assert!(matches!(out.body, Cow::Borrowed(_)), "no edit, no copy");
     assert!(out.run.changes.is_empty());
 }
 
 // (c)
-#[test]
-fn echoed_reasoning_is_left_to_the_encoder_on_a_cross_style_attempt() {
+#[tokio::test]
+async fn echoed_reasoning_is_left_to_the_encoder_on_a_cross_style_attempt() {
     let body = echoed();
     let r = AdapterRunner::builtin(&HarnessName::new("hermes").unwrap()).unwrap();
-    let out = r.run_request(&ctx("groq", false), &body);
+    let out = r.run_request(&ctx("groq", false), &body).await;
     assert!(matches!(out.body, Cow::Borrowed(_)));
     assert!(out.run.changes.is_empty());
 }
 
-#[test]
-fn only_assistant_messages_lose_echoed_reasoning() {
+#[tokio::test]
+async fn only_assistant_messages_lose_echoed_reasoning() {
     let body = json!({"messages": [{"role": "user", "content": "hi", "reasoning": "keep"}]});
-    let (out, changes) = run("groq", true, &body);
+    let (out, changes) = run("groq", true, &body).await;
     assert_eq!(out, body);
     assert!(changes.is_empty());
 }
 
 // (d)
-#[test]
-fn images_become_content_parts_whatever_form_they_come_in() {
+#[tokio::test]
+async fn images_become_content_parts_whatever_form_they_come_in() {
     let body = json!({"messages": [{
         "role": "user",
         "content": "what are these",
@@ -115,7 +115,7 @@ fn images_become_content_parts_whatever_form_they_come_in() {
             b64(WEBP)
         ]
     }]});
-    let (out, changes) = run("openrouter", true, &body);
+    let (out, changes) = run("openrouter", true, &body).await;
     let m = &out["messages"][0];
     assert!(m.get("images").is_none());
     let parts = m["content"].as_array().expect("content is now parts");
@@ -131,40 +131,40 @@ fn images_become_content_parts_whatever_form_they_come_in() {
     assert!(changes.iter().all(|c| format!("{:?}", c.reason) == "FormatConversion"));
 }
 
-#[test]
-fn images_join_parts_that_are_already_there() {
+#[tokio::test]
+async fn images_join_parts_that_are_already_there() {
     let body = json!({"messages": [{
         "role": "user",
         "content": [{"type": "text", "text": "look"}],
         "images": [b64(PNG)]
     }]});
-    let (out, _) = run("openrouter", true, &body);
+    let (out, _) = run("openrouter", true, &body).await;
     let parts = out["messages"][0]["content"].as_array().unwrap();
     assert_eq!(parts.len(), 2);
     assert_eq!(parts[0]["text"], "look");
 }
 
-#[test]
-fn an_image_whose_type_cannot_be_told_stays_where_it_was() {
+#[tokio::test]
+async fn an_image_whose_type_cannot_be_told_stays_where_it_was() {
     let body = json!({"messages": [{"role": "user", "content": "x", "images": [b64(b"not an image at all")]}]});
     let r = AdapterRunner::builtin(&HarnessName::new("hermes").unwrap()).unwrap();
-    let out = r.run_request(&ctx("openrouter", true), &body);
+    let out = r.run_request(&ctx("openrouter", true), &body).await;
     assert!(matches!(out.body, Cow::Borrowed(_)), "nothing was converted, nothing deleted");
 }
 
-#[test]
-fn an_image_that_converts_beside_one_that_does_not_leaves_only_the_second() {
+#[tokio::test]
+async fn an_image_that_converts_beside_one_that_does_not_leaves_only_the_second() {
     let odd = b64(b"not an image at all");
     let body = json!({"messages": [{"role": "user", "content": "x", "images": [b64(PNG), odd.clone()]}]});
-    let (out, changes) = run("openrouter", true, &body);
+    let (out, changes) = run("openrouter", true, &body).await;
     assert_eq!(out["messages"][0]["images"], json!([odd]));
     assert_eq!(out["messages"][0]["content"].as_array().unwrap().len(), 2);
     assert_eq!(paths(&changes), ["messages[0].content", "messages[0].images"]);
 }
 
 // (e)
-#[test]
-fn attachments_map_by_mime_type() {
+#[tokio::test]
+async fn attachments_map_by_mime_type() {
     let pdf = b64(b"%PDF-1.7 test");
     let body = json!({"messages": [{
         "role": "user",
@@ -174,7 +174,7 @@ fn attachments_map_by_mime_type() {
             {"data": pdf.clone(), "mediaType": "application/pdf", "name": "doc.pdf"}
         ]
     }]});
-    let (out, changes) = run("openrouter", true, &body);
+    let (out, changes) = run("openrouter", true, &body).await;
     let m = &out["messages"][0];
     assert!(m.get("experimental_attachments").is_none());
     let parts = m["content"].as_array().unwrap();
@@ -185,32 +185,32 @@ fn attachments_map_by_mime_type() {
 }
 
 // (f)
-#[test]
-fn a_type_no_model_reads_is_left_unconverted() {
+#[tokio::test]
+async fn a_type_no_model_reads_is_left_unconverted() {
     let zip = json!({"data": b64(b"PK\x03\x04"), "contentType": "application/zip", "name": "a.zip"});
     let body = json!({"messages": [{"role": "user", "content": "x", "attachments": [zip]}]});
     let r = AdapterRunner::builtin(&HarnessName::new("hermes").unwrap()).unwrap();
-    let out = r.run_request(&ctx("openrouter", true), &body);
+    let out = r.run_request(&ctx("openrouter", true), &body).await;
     assert!(matches!(out.body, Cow::Borrowed(_)));
 
     // Beside a readable one, it stays in the field.
     let png = json!({"data": b64(PNG), "contentType": "image/png", "name": "a.png"});
     let body = json!({"messages": [{"role": "user", "content": "x", "attachments": [png, zip]}]});
-    let (out, _) = run("openrouter", true, &body);
+    let (out, _) = run("openrouter", true, &body).await;
     assert_eq!(out["messages"][0]["attachments"], json!([zip]));
 }
 
-#[test]
-fn a_message_with_no_content_key_is_left_alone() {
+#[tokio::test]
+async fn a_message_with_no_content_key_is_left_alone() {
     let body = json!({"messages": [{"role": "user", "images": [b64(PNG)]}]});
     let r = AdapterRunner::builtin(&HarnessName::new("hermes").unwrap()).unwrap();
-    let out = r.run_request(&ctx("openrouter", true), &body);
+    let out = r.run_request(&ctx("openrouter", true), &body).await;
     assert!(matches!(out.body, Cow::Borrowed(_)));
 }
 
 // (g)
-#[test]
-fn tool_calls_tools_and_tool_results_are_never_touched() {
+#[tokio::test]
+async fn tool_calls_tools_and_tool_results_are_never_touched() {
     let tools = json!([{"type": "function", "function": {"name": "f", "parameters": {"type": "object"}}}]);
     let calls = json!([{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}]);
     let body = json!({
@@ -221,32 +221,32 @@ fn tool_calls_tools_and_tool_results_are_never_touched() {
             {"role": "tool", "tool_call_id": "c1", "content": "result", "images": [b64(PNG)], "reasoning": "keep"}
         ]
     });
-    let (out, _) = run("groq", true, &body);
+    let (out, _) = run("groq", true, &body).await;
     assert_eq!(out["tools"], tools);
     assert_eq!(out["messages"][1]["tool_calls"], calls);
     assert!(out["messages"][1].get("reasoning_content").is_none(), "the echoed field goes, the calls stay");
     assert_eq!(out["messages"][2], body["messages"][2], "a tool message is untouched");
 }
 
-#[test]
-fn records_hold_paths_and_reasons_never_content() {
-    let (_, changes) = run("groq", true, &echoed());
+#[tokio::test]
+async fn records_hold_paths_and_reasons_never_content() {
+    let (_, changes) = run("groq", true, &echoed()).await;
     assert!(!format!("{changes:?}").contains("R1"));
 }
 
 // ---- parity deviations (T030), tests/parity/deviations.toml ----
 
-#[test]
-fn deviation_hermes_images_are_converted_where_9router_deletes_them() {
+#[tokio::test]
+async fn deviation_hermes_images_are_converted_where_9router_deletes_them() {
     // modality.js removes an image the model can't read. hermes keeps every image: converted,
     // or left in its field when it can't be.
     let readable = json!({"messages": [{"role": "user", "content": "x", "images": [b64(PNG)]}]});
-    let (out, _) = run("openrouter", true, &readable);
+    let (out, _) = run("openrouter", true, &readable).await;
     assert!(out.to_string().contains(&b64(PNG)), "the image data is still in the request");
 
     let unreadable = json!({"messages": [{"role": "user", "content": "x", "images": [b64(b"opaque")]}]});
     let r = AdapterRunner::builtin(&HarnessName::new("hermes").unwrap()).unwrap();
-    assert!(matches!(r.run_request(&ctx("openrouter", true), &unreadable).body, Cow::Borrowed(_)));
+    assert!(matches!(r.run_request(&ctx("openrouter", true), &unreadable).await.body, Cow::Borrowed(_)));
 }
 
 #[test]

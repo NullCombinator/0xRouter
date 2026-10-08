@@ -378,7 +378,7 @@ async fn first_chunk(
             Piece::Restart => w.restart(),
         };
         if !out.is_empty() {
-            text += &tap.push(out);
+            text += &tap.push(out).await;
         }
     }
     (rx, tap, text, rid, cancel)

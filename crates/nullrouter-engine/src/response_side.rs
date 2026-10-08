@@ -34,9 +34,9 @@ impl ResponseSide {
     }
 
     /// Runs the adapter on a whole client-style answer. `Some` body when it edited.
-    pub fn whole(&self, body: &Value) -> (Option<Value>, AdapterRun) {
+    pub async fn whole(&self, body: &Value) -> (Option<Value>, AdapterRun) {
         let ctx = Context { direction: Direction::Response, ..self.ctx.clone() };
-        let out = self.runner.run_response(&ctx, body);
+        let out = self.runner.run_response(&ctx, body).await;
         let mut run = out.run;
         run.clean_with(|s| (self.clean)(s));
         (
@@ -74,7 +74,7 @@ pub struct Tap {
 impl Tap {
     /// The bytes to send for `chunk`, which holds whole frames. A chunk no event of which the
     /// adapter edited goes out as it came.
-    pub fn push(&mut self, chunk: String) -> String {
+    pub async fn push(&mut self, chunk: String) -> String {
         let frames = self.framer.feed(chunk.as_bytes());
         if frames.is_empty() {
             return chunk;
@@ -87,7 +87,7 @@ impl Tap {
             if !frame.is_done()
                 && let Ok(event) = serde_json::from_str::<Value>(&frame.data)
             {
-                let ran = self.side.runner.run_event(&ctx, &event);
+                let ran = self.side.runner.run_event(&ctx, &event).await;
                 if let Cow::Owned(body) = ran.body {
                     frame.data = body.to_string();
                     edited = true;

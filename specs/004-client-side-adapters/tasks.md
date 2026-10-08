@@ -554,6 +554,15 @@ foundation here, not a later story.
   - `builder_client.rs` spawns the configured builder binary with a JSON job and a timeout.
     A missing binary gives `builder_not_installed`.
   - Make T036 pass.
+  - Request side written (not yet green in CI): the runner's `run_request`, `run_response` and
+    `run_event` are now `async`, because the sandbox call yields to Tokio; the engine's and
+    server's callers `.await` them. `WasmHandle` holds the loaded module and, per request, the
+    client style (`with_client`) that the guardrail decodes with. Without a client style an
+    edit is never applied. Tests: `tests/wasm_runner.rs`, on WAT modules.
+  - Still to do: the response and event sides (the arm keeps `reads_responses() == false`, so
+    third-party adapters see no responses yet), the guardrail's event check, loading from the
+    store at reload, the hash re-check with `source_mismatch`, the module cache, alerts and
+    the suspect mark on a `Blocked` run, and `builder_client.rs`.
 - [ ] T047 [P] `nullrouter-adapters` testkit in `src/testkit.rs` (feature `testkit`).
   - `install_fixture(home, harness, wasm_bytes, source_dir, state)` writes a store entry
     directly, with the correct hashes.

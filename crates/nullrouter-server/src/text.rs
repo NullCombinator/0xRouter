@@ -122,7 +122,7 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
         },
         Answer::Events { rx, forced: true } => match attempt::collect(&client, &inc.body, rx).await {
             Ok(r) => match response::encode(&client, &r, unix_now()) {
-                Ok(body) => relay::json(200, &through_adapter(engine, &id, response.as_ref(), body), &id),
+                Ok(body) => relay::json(200, &through_adapter(engine, &id, response.as_ref(), body).await, &id),
                 Err(e) => fail(502, &format!("0router: {e}")),
             },
             Err(e) => fail(e.status.unwrap_or(502), &e.message),
@@ -145,9 +145,9 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
 }
 
 /// A collected answer through the key's adapter, if it reads responses; the run is recorded.
-fn through_adapter(engine: &Engine, id: &str, side: Option<&ResponseSide>, body: Value) -> Value {
+async fn through_adapter(engine: &Engine, id: &str, side: Option<&ResponseSide>, body: Value) -> Value {
     let Some(side) = side else { return body };
-    let (edited, run) = side.whole(&body);
+    let (edited, run) = side.whole(&body).await;
     engine.records.update(id, |r| r.response_adapter = Some(run));
     edited.unwrap_or(body)
 }
@@ -209,7 +209,7 @@ async fn write_stream(
         finishing |= ends;
         // Each event passes through the adapter as it is written; nothing waits for the next.
         let out = match &mut tap {
-            Some(t) if !out.is_empty() => t.push(out),
+            Some(t) if !out.is_empty() => t.push(out).await,
             _ => out,
         };
         if !out.is_empty() {
@@ -232,7 +232,7 @@ async fn write_stream(
     }
     let out = if relayed { String::new() } else { w.end() };
     let out = match &mut tap {
-        Some(t) if !out.is_empty() => t.push(out),
+        Some(t) if !out.is_empty() => t.push(out).await,
         _ => out,
     };
     if let Some(run) = tap.and_then(Tap::finish) {

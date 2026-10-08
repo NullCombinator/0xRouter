@@ -194,9 +194,7 @@ impl Engine {
         if let Some(r) = self.runners.load().get(name.as_str()) {
             return Some(r.clone());
         }
-        Some(AdapterRunner::builtin(name).unwrap_or_else(|| {
-            AdapterRunner::Wasm(WasmHandle { harness: name.to_string(), version: "none".into() })
-        }))
+        Some(AdapterRunner::builtin(name).unwrap_or_else(|| AdapterRunner::Wasm(WasmHandle::absent(name.as_str()))))
     }
 
     /// Loads everything under `home`. Refuses shared `accounts.toml` / `keys.toml` /
