@@ -261,7 +261,7 @@ share: edits, selectors, key binding, records.
   - `run_request(&self, ctx, &Value) -> RunOutcome { body: Cow<Value>, run: AdapterRun }`,
     and `run_response` and `run_event` likewise.
   - Built-ins are resolved from a static table by `HarnessName`. No `Box<dyn>`.
-- [ ] T023 Engine seam in `crates/nullrouter-engine/src/attempt.rs` and `src/state.rs`.
+- [X] T023 Engine seam in `crates/nullrouter-engine/src/attempt.rs` and `src/state.rs`.
   - `EngineState` gains the adapter view: the runner per harness.
   - For each attempt, when the key has a harness, build the `AttemptContext` from the
     attempt's provider, endpoint wire style, same_style flag, upstream model, model type and
