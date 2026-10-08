@@ -192,6 +192,10 @@ fn notices(
             j["unkept_requests"]
         );
         out.push(Notice::new("warning", "usage", text));
+        // One writer keeps records and verdicts (spec 011): a verdict change made meanwhile is held
+        // and retried, and lost if the server stops first.
+        let text = format!("warning: verdicts not being kept since {}", j["since"].as_str().unwrap_or("?"));
+        out.push(Notice::new("warning", "usage", text));
     }
     for (provider, window) in unmetered {
         let text = format!(
@@ -489,6 +493,7 @@ mod tests {
             ("error", "combo", "dropped unified model lost: member provider broken was skipped"),
             ("note", "combo", "note: unified model mixed: members differ in context_length: a 1, b undeclared"),
             ("warning", "usage", "warning: records not kept since 2026-10-03T14:00:00Z (disk full): 3 requests"),
+            ("warning", "usage", "warning: verdicts not being kept since 2026-10-03T14:00:00Z"),
             ("note", "quota", "note: grok-cli reports window prepaid, which no [[routing.window]] meter names;"),
             ("warning", "quota", "warning: anthropic/main is pay-as-you-go"),
             ("error", "quota", "error: accounts.toml: bad"),
