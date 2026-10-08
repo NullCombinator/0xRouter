@@ -414,6 +414,9 @@ foundation here, not a later story.
   - Undecodable cases: an edit that leaves the body or event undecodable in the client style
     gives `failed{invalid_output: undecodable}`, sends the original, raises `adapter_failed`,
     and does **not** mark the adapter suspect ([R6](research.md#r6-the-guardrail) step 4).
+  - Written (not yet green in CI): `tests/guard.rs` with one line per style in `tests/guard/`,
+    expanding a shared suite of 18 cases, and the stream-event cases in `guard.rs`. The event
+    IR has no opaque block, so "add an opaque block" is covered for requests only.
 - [ ] T035 [P] Store and state-machine tests in `crates/nullrouter-adapters/tests/store.rs`.
   - Every transition in the
     [data-model.md state machine](data-model.md#adapterversion-state-machine), and every
