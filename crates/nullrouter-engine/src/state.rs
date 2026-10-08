@@ -21,6 +21,8 @@ use crate::keys::{self, BreakBehaviour, Keys};
 use crate::models_live::LiveModels;
 use crate::records::RecordStore;
 use crate::redact::{Redactor, SharedRedactor};
+use crate::connection::pause::ProxyBoard;
+use crate::connection::proxy::{self, Proxies};
 use crate::tokens::TokenCells;
 use crate::upstream;
 
@@ -113,6 +115,8 @@ pub struct Engine {
     pub cooldowns: Cooldowns,
     /// Requests in flight, for `live.snapshot` (spec 013). In memory only.
     pub live: crate::live::Live,
+    /// The proxies that are paused, and why (spec 013, research R8). Kept across reloads.
+    pub proxy_board: ProxyBoard,
     /// Video jobs by their `vj_` id.
     pub jobs: crate::jobs::JobMap,
     /// Sign-in account tokens (spec 005, research R6). Kept across reloads; re-read only
@@ -138,16 +142,24 @@ pub struct Engine {
     reload: Mutex<()>,
 }
 
-fn operator_files(home: &OperatorHome) -> Result<(Accounts, Keys, DashboardToken), FileError> {
+type OperatorFiles = (Accounts, Keys, DashboardToken, Proxies);
+
+fn operator_files(home: &OperatorHome) -> Result<OperatorFiles, FileError> {
     let accounts = Accounts::load(&home.path().join(accounts::FILE))?;
     let keys = Keys::load(&home.path().join(keys::FILE))?;
     let dashboard = DashboardToken::load(home.path())?;
-    Ok((accounts, keys, dashboard))
+    let proxies = Proxies::load(&home.path().join(proxy::FILE))?;
+    Ok((accounts, keys, dashboard, proxies))
+}
+
+/// Every proxy's password and username, for the redactor (SC-008).
+fn proxy_secrets(proxies: &Proxies) -> Vec<SecretString> {
+    proxies.iter().flat_map(proxy::Proxy::secrets).collect()
 }
 
 fn assemble(
     registry: Arc<Registry>,
-    (mut accounts, keys, dashboard): (Accounts, Keys, DashboardToken),
+    (mut accounts, keys, dashboard, proxies): OperatorFiles,
     redactor: Arc<SharedRedactor>,
     tokens: Arc<TokenCells>,
     live_models: Arc<LiveModels>,
@@ -174,7 +186,7 @@ fn assemble(
     let http = upstream::client(registry.runtime().allow_private_endpoints);
     let clients = crate::connection::clients::Clients::new(
         registry.runtime().allow_private_endpoints,
-        crate::connection::proxy::Proxies::default(),
+        proxies,
     );
     (
         EngineState {
@@ -213,7 +225,7 @@ impl Engine {
         home: OperatorHome,
         open: impl FnOnce(OperatorHome) -> Result<RegistryHandle, StartupError>,
     ) -> Result<(Self, StateReport), StateError> {
-        let (accounts, keys, dashboard) = operator_files(&home)?;
+        let (accounts, keys, dashboard, proxies) = operator_files(&home)?;
         let tokens = Arc::new(TokenCells::load(home.path())?);
         let history = Arc::new(crate::quota::history::History::open(home.path()));
         let quota = crate::quota::poll::QuotaBoard::default();
@@ -226,15 +238,18 @@ impl Engine {
                 .map_err(|e| StateError::Journal(e.to_string()))?,
         );
         let live_models = Arc::new(LiveModels::default());
-        let shared_redactor = Arc::new(SharedRedactor::new(Redactor::for_state(&accounts, &tokens)));
+        let shared_redactor =
+            Arc::new(SharedRedactor::new(Redactor::for_state_with(&accounts, &tokens, &proxy_secrets(&proxies))));
         let (state, report) = assemble(
             registry.snapshot(),
-            (accounts, keys, dashboard),
+            (accounts, keys, dashboard, proxies),
             shared_redactor.clone(),
             tokens.clone(),
             live_models.clone(),
             1,
         );
+        let proxy_board = ProxyBoard::open(registry.home().path());
+        proxy_board.reconcile(&crate::connection::fingerprints(&state));
         let redactor = Arc::new(ArcSwap::new(shared_redactor.current()));
         let engine = Self {
             registry,
@@ -247,6 +262,7 @@ impl Engine {
             router,
             cooldowns: Cooldowns::default(),
             live: Default::default(),
+            proxy_board,
             jobs: crate::jobs::JobMap::default(),
             tokens,
             sessions: AgentSessions::default(),
@@ -295,7 +311,7 @@ impl Engine {
     /// registry is touched, so any failure leaves everything as it was. Blocking.
     pub fn reload_blocking(&self) -> Result<StateReport, StateError> {
         let _guard = self.reload.lock().unwrap_or_else(|e| e.into_inner());
-        let (accounts, keys, dashboard) = operator_files(self.registry.home())?;
+        let (accounts, keys, dashboard, proxies) = operator_files(self.registry.home())?;
         let tokens = self.tokens.changed(self.registry.home().path())?;
         self.registry.reload().map_err(|e| StateError::Registry(e.to_string()))?;
         accounts.check_routing(&self.registry.snapshot())?;
@@ -318,9 +334,9 @@ impl Engine {
             Some((store, _)) => {
                 let incoming =
                     store.entries.iter().flat_map(|e| std::iter::once(&e.access_token).chain(&e.refresh_token));
-                self.swap_redactor(self.build_redactor(&accounts, incoming));
+                self.swap_redactor(self.build_redactor(&accounts, &proxies, incoming));
             }
-            None => self.swap_redactor(self.build_redactor(&accounts, std::iter::empty())),
+            None => self.swap_redactor(self.build_redactor(&accounts, &proxies, std::iter::empty())),
         }
         if let Some((store, at)) = tokens {
             self.tokens.apply(store, at);
@@ -328,13 +344,14 @@ impl Engine {
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let (state, report) = assemble(
             self.registry.snapshot(),
-            (accounts, keys, dashboard),
+            (accounts, keys, dashboard, proxies),
             self.shared_redactor.clone(),
             self.tokens.clone(),
             self.live_models.clone(),
             generation,
         );
-        self.swap_redactor(self.build_redactor(&state.accounts, std::iter::empty()));
+        self.swap_redactor(self.build_redactor(&state.accounts, state.clients.proxies(), std::iter::empty()));
+        self.proxy_board.reconcile(&crate::connection::fingerprints(&state));
         // An account that was added, enabled again or given a new priority starts its deficit at 0
         // (spec 006).
         let fresh: Vec<String> = state
@@ -374,7 +391,7 @@ impl Engine {
     pub fn rebuild_redactor(&self) {
         let _guard = self.reload.lock().unwrap_or_else(|e| e.into_inner());
         let st = self.snapshot();
-        self.swap_redactor(self.build_redactor(&st.accounts, std::iter::empty()));
+        self.swap_redactor(self.build_redactor(&st.accounts, st.clients.proxies(), std::iter::empty()));
         self.changed.notify_one();
     }
 
@@ -384,12 +401,18 @@ impl Engine {
     pub fn admit_secrets<'a>(&self, secrets: impl IntoIterator<Item = &'a SecretString>) {
         let _guard = self.reload.lock().unwrap_or_else(|e| e.into_inner());
         let st = self.snapshot();
-        self.swap_redactor(self.build_redactor(&st.accounts, secrets));
+        self.swap_redactor(self.build_redactor(&st.accounts, st.clients.proxies(), secrets));
     }
 
     /// Every key-account secret in `accounts`, every token-cell generation, the retired
     /// secrets, and `extra`.
-    fn build_redactor<'a>(&self, accounts: &Accounts, extra: impl IntoIterator<Item = &'a SecretString>) -> Redactor {
+    fn build_redactor<'a>(
+        &self,
+        accounts: &Accounts,
+        proxies: &Proxies,
+        extra: impl IntoIterator<Item = &'a SecretString>,
+    ) -> Redactor {
+        let proxy_secrets = proxy_secrets(proxies);
         let views = self.tokens.views();
         let retired = self.retired.lock().unwrap_or_else(|e| e.into_inner());
         let mut all: Vec<&SecretString> = accounts
@@ -397,6 +420,7 @@ impl Engine {
             .filter_map(|a| a.secret.as_ref())
             .chain(views.iter().flat_map(|v| v.secrets()))
             .chain(retired.iter())
+            .chain(proxy_secrets.iter())
             .collect();
         for s in extra {
             all.push(s);

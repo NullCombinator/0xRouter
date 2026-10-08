@@ -276,14 +276,14 @@ resumes. A secret scan finds no credentials (spec US4, SC-008, SC-011).
   - held in `ArcSwap` on `EngineState`, and rebuilt on reload when proxies change;
   - `fn for_account(&self, provider, account) -> (Client, Option<ProxyName>)`
 - [X] T049 [US4] (`media_once` and `count_once` take the answer `once` already sent, so they have no client of their own; the CLI's interactive `signin.rs` stays direct, as an account being added has no proxy yet; `EngineState.http` stays for tests and goes in Polish) Replace every `st.http` use with `clients.for_account(…)`: `crates/nullrouter-engine/src/attempt.rs` (`once`, `media_once`, `count_once`), `jobs.rs`, `quota/poll.rs`, `signin/refresh.rs`, `signin/mod.rs`, and the CLI's `crates/nullrouter-cli/src/signin.rs` (FR-025). Set the clock's `proxy` name in `attempt.rs`
-- [ ] T050 [US4] Implement the probe and pause in `crates/nullrouter-engine/src/connection/proxy.rs`:
+- [X] T050 [US4] Implement the probe and pause in `crates/nullrouter-engine/src/connection/proxy.rs`:
   - after a connect-class error or a 407 through a proxy, probe the proxy directly (TCP, plus TLS for `https`, plus the SOCKS5 greeting) within the connect timeout;
   - on failure, pause: `routing/proxies.json` (mode 0600, names, times and reasons only), plus one `tracing::warn!`;
   - `fn paused(&self, name) -> Option<Pause>`;
   - `fn fixed(&self, name) -> Result<bool>`, which probes and clears;
   - clear any pause whose definition or assignment changed on reload (research R8, data-model § ProxyState)
-- [ ] T051 [US4] Skip candidates behind a paused proxy in `outgoing()` (`crates/nullrouter-engine/src/attempt.rs`) as a `skipped` attempt with reason `proxy <name> paused`, no cooldown and the existing skip path. Quota polls, refreshes and job polls for those accounts skip with the same reason. When no candidate remains, the client error names the proxy (FR-028)
-- [ ] T052 [US4] Add the `proxy.fixed` op, and paused proxies in `live.snapshot` and `connection.view`, in `crates/nullrouter-server/src/operator.rs`. Make `reload` load `proxies.toml`
+- [X] T051 [US4] Skip candidates behind a paused proxy in `outgoing()` (`crates/nullrouter-engine/src/attempt.rs`) as a `skipped` attempt with reason `proxy <name> paused`, no cooldown and the existing skip path. Quota polls, refreshes and job polls for those accounts skip with the same reason. When no candidate remains, the client error names the proxy (FR-028)
+- [X] T052 [US4] Add the `proxy.fixed` op, and paused proxies in `live.snapshot` and `connection.view`, in `crates/nullrouter-server/src/operator.rs`. Make `reload` load `proxies.toml` (done: `proxy_board` lives on the engine; the redactor learns proxy passwords and usernames from `proxies.toml`; `connection.view` gains `proxy` and `accounts`; the probe uses reqwest for an `https` proxy; quota polls, refreshes and job polls do not yet skip a paused proxy, only attempts do)
 - [ ] T053 [US4] Implement `nullrouter proxy add|list|remove|use|clear|fixed` in `crates/nullrouter-cli/src/cmd/proxy.rs`:
   - the password comes from stdin or `--password-env`, never argv;
   - `list` shows `user ✓` or `—`;

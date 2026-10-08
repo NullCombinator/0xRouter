@@ -1,6 +1,7 @@
 //! Effective connection settings, the client cache and proxies (spec 013).
 
 pub mod clients;
+pub mod pause;
 pub mod proxy;
 
 use std::time::Duration;
@@ -167,6 +168,38 @@ pub fn proxy_for(registry: &Registry, provider: &str, account: Option<&crate::ac
         .unwrap_or(ChosenProxy { name: None, level: None })
 }
 
+/// What each proxy is and where it is used: its definition and every account, provider or
+/// "all" setting that names it. A pause lasts while this stays the same (research R8).
+pub fn fingerprints(st: &crate::state::EngineState) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    for p in st.clients.proxies().iter() {
+        let password = match &p.password {
+            None => "-".to_owned(),
+            Some(proxy::PasswordSource::Literal) => p.secret.as_ref().map_or_else(String::new, |s| s.with_exposed(str::to_owned)),
+            Some(proxy::PasswordSource::Env(var)) => format!("env:{var}"),
+        };
+        let mut uses: Vec<String> = st
+            .accounts
+            .iter()
+            .filter(|a| a.proxy.as_deref() == Some(p.name.as_str()))
+            .map(|a| format!("account:{}/{}", a.provider, a.name))
+            .collect();
+        uses.extend(
+            st.registry
+                .providers()
+                .filter(|e| st.registry.settings(&e.id).connection.proxy.as_deref() == Some(p.name.as_str()))
+                .map(|e| format!("provider:{}", e.id)),
+        );
+        if st.registry.runtime().connection_proxy.as_deref() == Some(p.name.as_str()) {
+            uses.push("all".to_owned());
+        }
+        uses.sort();
+        // Never shown or stored: the print only lives in memory and is compared.
+        out.insert(p.name.clone(), format!("{}|{}|{password}|{}", p.url, p.username.as_deref().unwrap_or(""), uses.join(",")));
+    }
+    out
+}
+
 /// The client for `account`'s requests to `provider`, and the proxy it goes through: the key is
 /// the resolved proxy, whether the operator turned HTTP/2 or connection reuse off, and nothing
 /// else (research R5).
@@ -245,6 +278,29 @@ pub fn view(registry: &Registry, only: Option<&str>) -> Result<serde_json::Value
         out.push(serde_json::json!({"id": p.id, "timeouts": timeouts_json(&base), "models": models}));
     }
     Ok(serde_json::json!({"ok": true, "providers": out}))
+}
+
+/// Adds each provider's proxy, and the accounts' own, to a [`view`] answer: the name (or null),
+/// the level that chose it, and whether it is paused.
+pub fn add_proxies(answer: &mut serde_json::Value, st: &crate::state::EngineState, board: &pause::ProxyBoard) {
+    let level = |l: Option<ProxyLevel>| l.map(|l| format!("{l:?}").to_lowercase());
+    let Some(providers) = answer.get_mut("providers").and_then(|p| p.as_array_mut()) else { return };
+    for p in providers {
+        let Some(id) = p.get("id").and_then(|i| i.as_str()).map(str::to_owned) else { continue };
+        let chosen = proxy_for(&st.registry, &id, None);
+        let paused = chosen.name.as_deref().is_some_and(|n| board.paused(n).is_some());
+        p["proxy"] = serde_json::json!({"name": chosen.name, "level": level(chosen.level), "paused": paused});
+        p["accounts"] = st
+            .accounts
+            .iter()
+            .filter(|a| a.provider == id)
+            .map(|a| {
+                let c = proxy_for(&st.registry, &id, Some(a));
+                let paused = c.name.as_deref().is_some_and(|n| board.paused(n).is_some());
+                serde_json::json!({"name": a.name, "proxy": c.name, "level": level(c.level), "paused": paused})
+            })
+            .collect();
+    }
 }
 
 #[cfg(test)]

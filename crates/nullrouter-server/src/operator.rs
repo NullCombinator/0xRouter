@@ -14,6 +14,7 @@
 //! | `{"op":"routing.health"}` | `{"ok":true,"journal":{kept,since,unkept_requests,held_lines,last_sync,last_sync_age_s}}` |
 //! | `{"op":"server.status"}` | `{"ok":true,"client_listen":"…"\|null,"dashboard":{enabled,listen,serving,error}}`: the address `serve` bound for clients, and the dashboard listener's state |
 //! | `{"op":"live.snapshot"}` | `{"ok":true,"as_of":…,"paused_proxies":[…],"in_flight":[…]}`: what is in flight now, each request in its current phase |
+//! | `{"op":"proxy.fixed","name"}` | `{"ok":true,"reachable":true}` and the pause cleared, or `{"ok":true,"reachable":false,"reason"}`; an unknown name is `{"ok":false,"error"}` listing the known ones |
 //! | `{"op":"connection.view","provider"?}` | `{"ok":true,"providers":[{id,timeouts:{connect,headers,first_token,stall}:{ms\|null,source},models:[{id,timeouts}]}]}`: the effective timeouts and where each came from, and the models whose timeouts differ; an unknown provider is `{"ok":false,"error"}` listing the known ones |
 //! | `{"op":"quota.list"}`, `{"op":"quota.poll"}`, `{"op":"quota.checkpoint"}` | see [`crate::quota`] |
 
@@ -130,11 +131,16 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         Some("records.list") => records_list(engine, req).await,
         Some("live.snapshot") => live_snapshot(engine),
         Some("connection.view") => {
-            match nullrouter_engine::connection::view(&engine.snapshot().registry, str_of("provider").as_deref()) {
-                Ok(v) => v,
+            let st = engine.snapshot();
+            match nullrouter_engine::connection::view(&st.registry, str_of("provider").as_deref()) {
+                Ok(mut v) => {
+                    nullrouter_engine::connection::add_proxies(&mut v, &st, &engine.proxy_board);
+                    v
+                }
                 Err(error) => json!({"ok": false, "error": error}),
             }
         }
+        Some("proxy.fixed") => proxy_fixed(engine, str_of("name")).await,
         Some("records.get") => {
             let Some(id) = str_of("id") else { return json!({"ok": false, "error": "the request names no id"}) };
             if let Some(r) = engine.records.get(&id) {
@@ -245,9 +251,28 @@ fn live_snapshot(engine: &Arc<Engine>) -> Value {
     json!({
         "ok": true,
         "as_of": nullrouter_engine::clock::now_rfc3339(),
-        "paused_proxies": [],
+        "paused_proxies": engine
+            .proxy_board
+            .list()
+            .into_iter()
+            .map(|(name, p)| json!({"name": name, "since": p.since, "reason": p.reason}))
+            .collect::<Vec<_>>(),
         "in_flight": in_flight,
     })
+}
+
+/// `proxy.fixed`: probes the proxy, and resumes it if it answers (clarify Q1).
+async fn proxy_fixed(engine: &Arc<Engine>, name: Option<String>) -> Value {
+    let Some(name) = name else { return json!({"ok": false, "error": "the request names no proxy"}) };
+    let st = engine.snapshot();
+    let Some(proxy) = st.clients.proxies().get(&name) else {
+        let known: Vec<&str> = st.clients.proxies().iter().map(|p| p.name.as_str()).collect();
+        return json!({"ok": false, "error": format!("no proxy {name:?}; known proxies: {}", known.join(", "))});
+    };
+    match engine.proxy_board.fixed(proxy, std::time::Duration::from_secs(10)).await {
+        Ok(()) => json!({"ok": true, "reachable": true}),
+        Err(reason) => json!({"ok": true, "reachable": false, "reason": reason}),
+    }
 }
 
 async fn keys_last_used(engine: &Arc<Engine>) -> Value {

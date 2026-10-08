@@ -1050,6 +1050,11 @@ impl Run {
         ob: &Outbound,
     ) -> Result<upstream::Outgoing, (String, Option<ErrorClass>)> {
         let plain = |e: String| (e, None);
+        if let Some(name) = connection::proxy_for(&st.registry, &c.provider.id, c.account).name
+            && self.engine.proxy_board.paused(&name).is_some()
+        {
+            return Err((format!("proxy {name} paused"), None));
+        }
         let released = c
             .account
             .map(|a| accounts::release(a, c.provider, &st.tokens))
@@ -1111,6 +1116,16 @@ impl Run {
         Ok(out)
     }
 
+    /// After a connect-class failure through a proxy: probes the proxy and pauses it if it is
+    /// the one that is down (research R8). A direct call has nothing to probe.
+    async fn proxy_failed(&self, st: &EngineState, chosen: &connection::ChosenProxy) {
+        let Some(name) = &chosen.name else { return };
+        let Some(proxy) = st.clients.proxies().get(name) else { return };
+        let print = connection::fingerprints(st).remove(name).unwrap_or_default();
+        let timeout = self.eff.map_or(Duration::from_secs(10), |e| e.connect.duration());
+        self.engine.proxy_board.failed(proxy, &print, timeout).await;
+    }
+
     /// One upstream request and its answer.
     async fn once(
         &mut self,
@@ -1137,12 +1152,16 @@ impl Run {
                 return Ended::Failed(Fail::transport(ErrorClass::Timeout, reason, false));
             }
             Some(Ok(Err(e))) if connect_timed_out(&e).is_some() => {
+                self.proxy_failed(st, &chosen).await;
                 self.timed_out(TimeoutKind::Connect);
                 let ms = connect_timed_out(&e).map_or(0, |d| d.as_millis());
                 let reason = format!("no connection within {ms} ms");
                 return Ended::Failed(Fail::transport(ErrorClass::Timeout, reason, false));
             }
             Some(Ok(Err(e))) => {
+                if e.is_connect() {
+                    self.proxy_failed(st, &chosen).await;
+                }
                 let reason = format!("network error: {}", st.redactor.redact(&e.to_string()));
                 return Ended::Failed(Fail::transport(ErrorClass::Network, reason, false));
             }
