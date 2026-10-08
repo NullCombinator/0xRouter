@@ -57,6 +57,14 @@ pub fn validate_with(
     file: &str,
     ctx: &GateCtx,
 ) -> Result<Gated, Vec<ValidationError>> {
+    // Before the typed parse, so the refusal reads as this rule and not as an unknown field.
+    let proxies = proxy_keys(src);
+    if !proxies.is_empty() {
+        return Err(proxies
+            .into_iter()
+            .map(|path| positioned(src, file, path, PROXY_REFUSED.to_owned()))
+            .collect());
+    }
     let mut plugin = parse::<PluginFile>(src, file)?;
     let mut errors = semantic_errors(&plugin);
     let mut diags = Found::new();
@@ -71,6 +79,40 @@ pub fn validate_with(
     } else {
         Err(at(errors))
     }
+}
+
+/// Keys a plugin may not carry at any depth (FR-026, research R10).
+const PROXY_KEYS: [&str; 4] = ["proxy", "proxy_url", "https_proxy", "no_proxy"];
+
+const PROXY_REFUSED: &str = "plugins can't declare a proxy; proxies are operator-only";
+
+/// The path of every proxy key in `src`, in document order. A document that doesn't parse has
+/// none here: the typed parse reports it.
+fn proxy_keys(src: &str) -> Vec<FieldPath> {
+    fn walk(v: &toml::Value, at: &FieldPath, out: &mut Vec<FieldPath>) {
+        match v {
+            toml::Value::Table(t) => {
+                for (k, v) in t {
+                    let here = at.key(k.as_str());
+                    if PROXY_KEYS.contains(&k.as_str()) {
+                        out.push(here.clone());
+                    }
+                    walk(v, &here, out);
+                }
+            }
+            toml::Value::Array(a) => {
+                for (i, v) in a.iter().enumerate() {
+                    walk(v, &at.index(i), out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    if let Ok(doc) = src.parse::<toml::Table>() {
+        walk(&toml::Value::Table(doc), &FieldPath::root(), &mut out);
+    }
+    out
 }
 
 /// Deserialises `src` with path-and-span error reporting. Shared with the config loader.
@@ -1091,6 +1133,24 @@ kind = "llm"
         let no_count = GateCtx { style_ops: BTreeMap::new(), ..ctx() };
         let got = v2(V2, &no_count).unwrap_err();
         assert!(got.iter().any(|r| r.contains("count_tokens route")), "{got:?}");
+    }
+
+    #[test]
+    fn a_plugin_may_not_declare_a_proxy_at_any_depth() {
+        for (extra, path) in [
+            ("proxy = \"x\"\n", "proxy"),
+            ("https_proxy = \"http://p:1\"\n", "https_proxy"),
+            ("[transport]\nno_proxy = \"a\"\n", "transport.no_proxy"),
+        ] {
+            let src = V2.replace("schema = 2\n", &format!("schema = 2\n{}", if extra.starts_with('[') { "" } else { extra }));
+            let src = if extra.starts_with('[') { format!("{src}\n{extra}") } else { src };
+            let got = v2(&src, &ctx()).unwrap_err();
+            let want = format!("{path}: plugins can't declare a proxy; proxies are operator-only");
+            assert!(got.iter().any(|r| r.contains(&want)), "want {want:?} in {got:#?}");
+        }
+        let deep = V2.replace("wire = \"anthropic-messages\"\n\n[endpoints.text.token_count]", "wire = \"anthropic-messages\"\nproxy_url = \"socks5://p:1\"\n\n[endpoints.text.token_count]");
+        let got = v2(&deep, &ctx()).unwrap_err();
+        assert!(got.iter().any(|r| r.contains("endpoints.text.proxy_url: plugins can't declare a proxy")), "{got:#?}");
     }
 
     #[test]

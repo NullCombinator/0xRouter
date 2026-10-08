@@ -259,12 +259,12 @@ resumes. A secret scan finds no credentials (spec US4, SC-008, SC-011).
   - `proxy.fixed` with the proxy down reports `reachable: false`; after `start()`, it resumes and the next request succeeds;
   - changing the assignment clears the pause;
   - a provider error coming back through a healthy proxy doesn't pause it (the probe succeeds)
-- [ ] T044 [P] [US4] Write the plugin refusal test in `crates/nullrouter-registry/tests/`: `proxy`, `proxy_url`, `https_proxy` and `no_proxy` at any depth fail validation with `plugins can't declare a proxy; proxies are operator-only` and the key's path (FR-026, research R10)
+- [X] T044 [P] [US4] Write the plugin refusal test in `crates/nullrouter-registry/tests/`: `proxy`, `proxy_url`, `https_proxy` and `no_proxy` at any depth fail validation with `plugins can't declare a proxy; proxies are operator-only` and the key's path (FR-026, research R10)
 - [ ] T045 [P] [US4] Extend the 009 secret scan (the test that scans CLI output, records, dashboard pages and logs for account secrets) with a proxy password, a username and a password from `{ env = … }`, over records, `live`, `connection show`, `proxy list`, `accounts list`, `check`, dashboard pages and the `serve` log (SC-008)
 
 ### Implementation for User Story 4
 
-- [ ] T046 [US4] Implement the `proxies.toml` load and save in `crates/nullrouter-engine/src/connection/proxy.rs`:
+- [ ] T046 [US4] (load, save and validation done; adding the passwords to the `Redactor` waits for the engine wiring in T048) Implement the `proxies.toml` load and save in `crates/nullrouter-engine/src/connection/proxy.rs`:
   - schema 1, `[[proxy]] { name, url, username?, password? }`, with the password a string or `{ env = "VAR" }`;
   - mode 0600, written atomically through `crate::files`;
   - validation: "`name` matches `[a-z0-9][a-z0-9_-]{0,31}` and is unique; `none` is reserved; `url` scheme is `http`, `https` or `socks5`, with a host and port; the URL itself has no credentials" (data-model § Proxy).
