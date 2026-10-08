@@ -312,3 +312,83 @@ async fn reuse_and_http2_resolve_operator_over_plugin_over_default() {
     assert_eq!(status, 200);
     assert_eq!(rec.attempts[0].timing.as_ref().and_then(|t| t.http.as_deref()), Some("1.1"));
 }
+
+fn boom() -> Step {
+    Step::json(503, json!({"error": {"message": "boom", "type": "server_error"}}))
+}
+
+fn kinds(rec: &RequestRecord) -> Vec<nullrouter_engine::records::AttemptKind> {
+    rec.attempts.iter().map(|a| a.kind).collect()
+}
+
+/// `duo`, whose plugin declares two 503 retries 10 ms apart.
+fn retrying(mock: &nullrouter_engine::testkit::MockUpstream) -> Vec<(&'static str, String)> {
+    let (id, body) = duo(mock).remove(0);
+    vec![(id, body.replace("wire = \"openai-chat\"\n", "wire = \"openai-chat\"\nretry = { \"503\" = { retries = 2, delay_ms = 10 } }\n"))]
+}
+
+/// US6 scenario 1: no same-account retries moves straight on.
+#[tokio::test]
+async fn zero_operator_retries_means_one_try() {
+    let s = server_with(duo).await;
+    configure(&s, "[provider.duo.retry]\nall = { retries = 0 }\n").await.unwrap();
+    s.mock.respond(|_| boom());
+    let (status, rec) = run(&s, ask(&s, "duo/fast")).await;
+    assert_ne!(status, 200);
+    assert_eq!(s.mock.received().len(), 1);
+    assert_eq!(kinds(&rec), vec![nullrouter_engine::records::AttemptKind::Initial]);
+}
+
+/// US6 scenario 2: the operator's count and wait, with the wait recorded as its own phase.
+#[tokio::test]
+async fn the_operators_count_and_wait_apply_and_the_wait_is_recorded() {
+    let s = server_with(duo).await;
+    configure(&s, "[provider.duo.retry]\n\"503\" = { retries = 1, delay_ms = 400 }\n").await.unwrap();
+    s.mock.respond(|_| boom());
+    let (_, rec) = run(&s, ask(&s, "duo/fast")).await;
+    use nullrouter_engine::records::AttemptKind::{Initial, SameAccountRetry};
+    assert_eq!(kinds(&rec), vec![Initial, SameAccountRetry]);
+    let wait = rec.attempts[1].timing.as_ref().and_then(|t| t.retry_wait_ms).expect("the wait is recorded");
+    assert!((400.0..=420.0).contains(&wait), "within 5% of the configured wait: {wait}");
+    assert!(rec.attempts[0].timing.as_ref().is_none_or(|t| t.retry_wait_ms.is_none()));
+}
+
+/// US6 scenario 3: the plugin's declaration applies until the operator sets the provider's own.
+#[tokio::test]
+async fn a_plugins_retries_apply_until_the_operator_sets_the_providers_own() {
+    let s = server_with(retrying).await;
+    configure(&s, "").await.unwrap();
+    s.mock.respond(|_| boom());
+    let (_, rec) = run(&s, ask(&s, "duo/fast")).await;
+    assert_eq!(rec.attempts.len(), 3, "the plugin's two retries: {:?}", kinds(&rec));
+
+    configure(&s, "[provider.duo.retry]\nall = { retries = 1, delay_ms = 5 }\n").await.unwrap();
+    let (_, rec) = run(&s, ask(&s, "duo/slow")).await;
+    assert_eq!(rec.attempts.len(), 2, "the operator's one: {:?}", kinds(&rec));
+
+    // The view names who set what.
+    let v = nullrouter_server::operator::handle(&s.engine, &json!({"op": "connection.view", "provider": "duo"})).await;
+    assert_eq!(
+        v["providers"][0]["retry"],
+        json!([{"status": "all", "retries": 1, "delay_ms": 5, "source": {"by": "operator", "level": "provider"}}]),
+        "{v}"
+    );
+    configure(&s, "").await.unwrap();
+    let v = nullrouter_server::operator::handle(&s.engine, &json!({"op": "connection.view", "provider": "duo"})).await;
+    assert_eq!(
+        v["providers"][0]["retry"],
+        json!([{"status": "503", "retries": 2, "delay_ms": 10, "source": {"by": "plugin", "level": "endpoint"}}]),
+        "{v}"
+    );
+}
+
+/// A value above the cap is refused on reload, with the field named, and the old settings stay.
+#[tokio::test]
+async fn retries_above_the_cap_are_refused_on_reload() {
+    let s = server_with(duo).await;
+    configure(&s, "[provider.duo.retry]\nall = { retries = 1 }\n").await.unwrap();
+    let e = configure(&s, "[provider.duo.retry]\nall = { retries = 6 }\n").await.unwrap_err();
+    assert!(e.contains("retries") && e.contains("0-5"), "{e}");
+    let v = nullrouter_server::operator::handle(&s.engine, &json!({"op": "connection.view", "provider": "duo"})).await;
+    assert_eq!(v["providers"][0]["retry"][0]["retries"], 1);
+}

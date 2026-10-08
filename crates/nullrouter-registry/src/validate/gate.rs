@@ -846,6 +846,11 @@ fn check_endpoint(
     for status in e.retry.keys().filter(|s| !is_status(s)) {
         err(base.key("retry").key(status.as_str()), "keys are HTTP statuses 100-599".into());
     }
+    for (status, o) in &e.retry {
+        if let Err(rule) = o.check() {
+            err(base.key("retry").key(status.as_str()), rule);
+        }
+    }
     for (kind, rules) in [("body", &e.errors.body), ("stream", &e.errors.stream)] {
         for (i, r) in rules.iter().enumerate() {
             let rb = base.key("errors").key(kind).index(i);

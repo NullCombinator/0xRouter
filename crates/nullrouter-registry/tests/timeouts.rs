@@ -84,3 +84,18 @@ fn reuse_and_http2_are_read_per_provider() {
     let c = reg.settings("anthropic").connection;
     assert_eq!((c.reuse, c.http2), (None, None));
 }
+
+#[test]
+fn retry_settings_are_read_and_capped() {
+    let reg = ok("[provider.openrouter.retry]\nall = { retries = 2, delay_ms = 1000 }\n\"503\" = { retries = 3, delay_ms = 2000 }\n");
+    let r = reg.settings("openrouter").retry;
+    assert_eq!(r.all.map(|o| (o.retries, o.delay_ms)), Some((2, 1000)));
+    assert_eq!(r.by_status["503"].retries, 3);
+
+    let e = errors("[provider.openrouter.retry]\nall = { retries = 6 }\n");
+    assert!(e.contains("retries") && e.contains("0-5"), "{e}");
+    let e = errors("[provider.openrouter.retry]\n\"503\" = { retries = 1, delay_ms = 30001 }\n");
+    assert!(e.contains("0-30000"), "{e}");
+    let e = errors("[provider.openrouter.retry]\n\"50\" = { retries = 1 }\n");
+    assert!(e.contains("3-digit"), "{e}");
+}

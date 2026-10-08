@@ -25,12 +25,12 @@ pub use capability::{CapabilitySection, ModelRoute, SectionEndpoint, SectionLimi
 pub use config::{
     ConnectionSettings, GlobalConnection, MAX_TIMEOUT_MS, ModelConnection, ModelSettings, check_timeout_ms,
     DashboardSettings, Decision, MemberDecl, OperatorConfig, PipelineSettings, ProviderSettings, RoutingSettings,
-    ServerSettings, UnifiedModelDecl,
+    RetrySettings, ServerSettings, UnifiedModelDecl,
 };
 pub use duration::parse_duration;
 pub use endpoint::{
     Continuation, Endpoint, EndpointAuth, Endpoints, ErrorRule, ErrorRules, ForceMap, ForcedParam, JobMapping,
-    JobState, RetryOverride, TokenCount,
+    JobState, MAX_RETRIES, MAX_RETRY_DELAY_MS, RetryOverride, TokenCount,
 };
 pub use enums::{AuthHook, AuthKind, AuthScheme, CapabilityKind, Category, ContentKind, ModelKind, Quirk, WireFormat};
 pub use forwarding::{ForwardHeader, Forwarding, ToClient, ToUpstream};

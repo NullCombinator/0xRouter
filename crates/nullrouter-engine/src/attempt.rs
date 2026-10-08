@@ -24,7 +24,8 @@ use bytes::Bytes;
 use indexmap::IndexMap;
 use nullrouter_registry::Resolution;
 use nullrouter_registry::schema::{
-    BodyEncoding, BreakBehaviour, Endpoint, ErrorRule, ForcedParam, Framing, InputSemantics, ModelType, RouteOp,
+    BodyEncoding, BreakBehaviour, Endpoint, ErrorRule, ForcedParam, Framing, InputSemantics, ModelType, RetrySettings,
+    RouteOp,
 };
 use nullrouter_registry::template::{FieldPath, Template};
 use nullrouter_wire::codec::request::{self, Edits};
@@ -482,6 +483,8 @@ struct Run {
     clock: Option<Arc<AttemptClock>>,
     /// The timeouts the running candidate is held to, resolved from the request's snapshot (FR-031).
     eff: Option<Effective>,
+    /// The operator's retry policy for the running candidate's provider, from the same snapshot.
+    retry: RetrySettings,
     /// Deliberate retry waiting since the last attempt began, handed to the next attempt's clock.
     pending_retry: Duration,
     /// Sign-in token refresh time since the last attempt began, handed on the same way.
@@ -574,6 +577,7 @@ impl Engine {
             held: None,
             clock: None,
             eff: None,
+            retry: RetrySettings::default(),
             pending_retry: Duration::ZERO,
             pending_refresh: Duration::ZERO,
         };
@@ -766,6 +770,7 @@ impl Run {
     ) -> Result<bool, Failure> {
         let account = c.account.map(|a| a.name.clone());
         self.eff = Some(connection::effective(&st.registry, c.provider, &c.requested, &c.upstream_id, c.endpoint));
+        self.retry = st.registry.settings(&c.provider.id).retry;
         let skip = |run: &mut Self, reason: String, tried: &mut Vec<Tried>| {
             run.skip(&c.provider.id, account.clone(), &c.upstream_id, &reason, None, tried);
             Ok(false)
@@ -1010,8 +1015,9 @@ impl Run {
                     tried: tried.clone(),
                 });
             }
-            let b =
-                *budget.get_or_insert_with(|| classify::budget(f.status, &f.verdict, f.indicated, &c.endpoint.retry));
+            let b = *budget.get_or_insert_with(|| {
+                classify::budget(f.status, &f.verdict, f.indicated, &self.retry, &c.endpoint.retry)
+            });
             if retries < b.retries {
                 retries += 1;
                 kind = AttemptKind::SameAccountRetry;

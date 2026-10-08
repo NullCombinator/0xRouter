@@ -327,10 +327,40 @@ pub fn view(registry: &Registry, only: Option<&str>) -> Result<serde_json::Value
             "timeouts": timeouts_json(&base),
             "reuse": {"value": reuse, "source": reuse_source},
             "http2": {"value": http, "source": http_source},
+            "retry": retry_json(&settings.retry, &endpoint.retry),
             "models": models,
         }));
     }
     Ok(serde_json::json!({"ok": true, "providers": out}))
+}
+
+/// The retry rules in force, in the order `classify::budget` tries them. A status with no rule
+/// here follows the built-in table. A plugin status is hidden when the operator's `all` covers it.
+fn retry_json(
+    operator: &nullrouter_registry::schema::RetrySettings,
+    plugin: &std::collections::BTreeMap<String, nullrouter_registry::schema::RetryOverride>,
+) -> serde_json::Value {
+    let rule = |status: &str, o: &nullrouter_registry::schema::RetryOverride, by| {
+        serde_json::json!({
+            "status": status,
+            "retries": o.retries,
+            "delay_ms": o.delay_ms,
+            "source": source(by, SourceLevel::Provider),
+        })
+    };
+    let mut rules: Vec<serde_json::Value> =
+        operator.by_status.iter().map(|(k, o)| rule(k, o, SourceBy::Operator)).collect();
+    if let Some(o) = &operator.all {
+        rules.push(rule("all", o, SourceBy::Operator));
+    } else {
+        let plugin_rules = plugin.iter().filter(|(k, _)| !operator.by_status.contains_key(*k));
+        rules.extend(plugin_rules.map(|(k, o)| {
+            let mut r = rule(k, o, SourceBy::Plugin);
+            r["source"] = serde_json::json!(source(SourceBy::Plugin, SourceLevel::Endpoint));
+            r
+        }));
+    }
+    serde_json::Value::Array(rules)
 }
 
 /// Adds each provider's proxy, and the accounts' own, to a [`view`] answer: the name (or null),

@@ -213,6 +213,24 @@ pub struct RetryOverride {
     pub delay_ms: u64,
 }
 
+/// The most same-account retries a plugin or an operator may set for one status.
+pub const MAX_RETRIES: u32 = 5;
+/// The longest wait between same-account retries: 30 seconds.
+pub const MAX_RETRY_DELAY_MS: u64 = 30_000;
+
+impl RetryOverride {
+    /// The rule for a retry policy: `retries` 0-5, `delay_ms` 0-30 000.
+    pub fn check(&self) -> Result<(), String> {
+        if self.retries > MAX_RETRIES {
+            return Err(format!("{} retries is out of range; use 0-{MAX_RETRIES}", self.retries));
+        }
+        if self.delay_ms > MAX_RETRY_DELAY_MS {
+            return Err(format!("{} ms is out of range; use 0-{MAX_RETRY_DELAY_MS}", self.delay_ms));
+        }
+        Ok(())
+    }
+}
+
 /// In-band error rules: a 200 body or a stream event that is really an error.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
 #[serde(deny_unknown_fields)]

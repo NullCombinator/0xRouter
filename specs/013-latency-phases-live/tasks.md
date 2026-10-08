@@ -320,16 +320,16 @@ status. Plugins keep their declarations within the cap.
 **Independent Test**: with 1 retry and a 500 ms wait for 503, a 503 shows exactly one
 same-account retry with a 500 ms `retry wait` before falling over (spec US6).
 
-- [ ] T059 [P] [US6] Write `classify::budget` precedence tests in `crates/nullrouter-engine/tests/retry.rs`:
+- [X] T059 [P] [US6] Write `classify::budget` precedence tests in `crates/nullrouter-engine/tests/retry.rs`: — done; the shipped declarations are covered by every registry start and `community.rs`, which load them through the gate
   - operator status → operator `all` → plugin status → default;
   - `retry-after` ≤ 5 s still wins on 429 (research R11);
   - the cap is enforced for operator and plugin values ("`retries` is 0–5 and `delay_ms` is 0–30 000");
   - every shipped plugin declaration (`grok-cli`, `antigravity`, `kiro`, `vercel-ai-gateway`) passes validation
-- [ ] T060 [P] [US6] Write US6 scenarios 1–3 in `crates/nullrouter-server/tests/connection.rs`, including the record's `retry_wait_ms` matching the configured wait within 5%
-- [ ] T061 [US6] Check whether the community plugins' legacy retry forms (`{ attempts = 3 }`, `429 = 2`, `429 = 0`) parse today. If not, map them in `tools/gen-bundled/generate.mjs` (`attempts` n → `retries` n−1) and regenerate only those plugin files, with the ref SHA in the commit (research R11)
-- [ ] T062 [US6] Add the cap to `RetryOverride` validation in `crates/nullrouter-registry/src/schema/endpoint.rs`, and `RetrySettings { all: Option<RetryOverride>, by_status: BTreeMap<String, RetryOverride> }` to `ProviderSettings` in `crates/nullrouter-registry/src/schema/config.rs`, with the same cap and "A status key is a 3-digit HTTP status"
-- [ ] T063 [US6] Pass the operator's `RetrySettings` into `classify::budget` in `crates/nullrouter-engine/src/classify.rs` with research R11's precedence, and update its caller in `attempt.rs` `walk`
-- [ ] T064 [US6] Add the `retries`, `retries.<status>`, `retry-wait` and `retry-wait.<status>` keys to `crates/nullrouter-cli/src/cmd/connection.rs`, and the retry policy with sources to `connection show` and the `connection.view` op
+- [X] T060 [P] [US6] Write US6 scenarios 1–3 in `crates/nullrouter-server/tests/connection.rs`, including the record's `retry_wait_ms` matching the configured wait within 5% — done in the order of the spec scenarios
+- [X] T061 [US6] Check whether the community plugins' legacy retry forms (`{ attempts = 3 }`, `429 = 2`, `429 = 0`) parse today. If not, map them in `tools/gen-bundled/generate.mjs` (`attempts` n → `retries` n−1) and regenerate only those plugin files, with the ref SHA in the commit (research R11) — done: all three legacy forms parse today (schema 1 `RetryPolicy`), so no generator change; `convert.rs` maps `attempts` n to `retries` n unchanged
+- [X] T062 [US6] Add the cap to `RetryOverride` validation in `crates/nullrouter-registry/src/schema/endpoint.rs`, and `RetrySettings { all: Option<RetryOverride>, by_status: BTreeMap<String, RetryOverride> }` to `ProviderSettings` in `crates/nullrouter-registry/src/schema/config.rs`, with the same cap and "A status key is a 3-digit HTTP status"
+- [X] T063 [US6] Pass the operator's `RetrySettings` into `classify::budget` in `crates/nullrouter-engine/src/classify.rs` with research R11's precedence, and update its caller in `attempt.rs` `walk` — done; a `retry-after` ≤ 5 s on a 429 replaces a configured wait (it did not before for plugin overrides), the configured count stays
+- [X] T064 [US6] Add the `retries`, `retries.<status>`, `retry-wait` and `retry-wait.<status>` keys to `crates/nullrouter-cli/src/cmd/connection.rs`, and the retry policy with sources to `connection show` and the `connection.view` op — done; a status holds one rule, so `retry-wait` needs `retries` set first and unsetting either removes the rule
 
 ---
 

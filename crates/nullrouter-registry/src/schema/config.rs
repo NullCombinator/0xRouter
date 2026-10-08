@@ -7,6 +7,7 @@ use serde::Deserialize;
 use serde::de::{Deserializer, Error as _};
 
 use super::duration::{de_duration, parse_duration};
+use super::endpoint::RetryOverride;
 use super::enums::ModelKind;
 use super::primitives::BreakBehaviour;
 
@@ -251,6 +252,9 @@ pub struct ProviderSettings {
     pub allow_uncatalogued_models: bool,
     #[serde(default)]
     pub connection: ConnectionSettings,
+    /// `[provider.P.retry]`: same-account retries (spec 013, US6).
+    #[serde(default)]
+    pub retry: RetrySettings,
     /// Model id → that model's settings.
     #[serde(default)]
     pub model: BTreeMap<String, ModelSettings>,
@@ -258,7 +262,33 @@ pub struct ProviderSettings {
 
 impl Default for ProviderSettings {
     fn default() -> Self {
-        Self { allow_uncatalogued_models: true, connection: ConnectionSettings::default(), model: BTreeMap::new() }
+        Self {
+            allow_uncatalogued_models: true,
+            connection: ConnectionSettings::default(),
+            retry: RetrySettings::default(),
+            model: BTreeMap::new(),
+        }
+    }
+}
+
+/// `[provider.P.retry]`: `all` for every status, and a 3-digit status key for one.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RetrySettings {
+    pub all: Option<RetryOverride>,
+    pub by_status: BTreeMap<String, RetryOverride>,
+}
+
+impl<'de> Deserialize<'de> for RetrySettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mut table = BTreeMap::<String, RetryOverride>::deserialize(d)?;
+        for (key, o) in &table {
+            if key != "all" && !(key.len() == 3 && key.bytes().all(|b| b.is_ascii_digit())) {
+                return Err(D::Error::custom(format!("{key:?}: a status key is a 3-digit HTTP status, or `all`")));
+            }
+            o.check().map_err(|e| D::Error::custom(format!("{key}: {e}")))?;
+        }
+        let all = table.remove("all");
+        Ok(Self { all, by_status: table })
     }
 }
 
