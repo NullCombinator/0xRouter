@@ -554,7 +554,8 @@ foundation here, not a later story.
   - `builder_client.rs` spawns the configured builder binary with a JSON job and a timeout.
     A missing binary gives `builder_not_installed`.
   - Make T036 pass.
-  - Request side written (not yet green in CI): the runner's `run_request`, `run_response` and
+  - Request side done (green in CI #132, whose one failure was an unrelated startup race, fixed
+    separately): the runner's `run_request`, `run_response` and
     `run_event` are now `async`, because the sandbox call yields to Tokio; the engine's and
     server's callers `.await` them. `WasmHandle` holds the loaded module and, per request, the
     client style (`with_client`) that the guardrail decodes with. Without a client style an
