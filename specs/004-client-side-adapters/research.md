@@ -201,8 +201,11 @@ calls, definitions or results. hermes talks openai-chat.
     `{type:"image_url", image_url:{url:"data:<mime>;base64,<data>"}}`. The MIME type is
     sniffed from magic bytes when absent.
   - A string `content` becomes `[{type:"text",text}] + parts`.
-  - Recorded as `converted` with `format_conversion`, on `messages[i].images` and
-    `messages[i].content`.
+  - Recorded as `converted` / `format_conversion` on `messages[i].content`, and as `removed` /
+    `format_conversion` on the `messages[i].images` key it came from (R5 ties `converted` to
+    `replace`). A key that still holds entries the adapter couldn't convert is `converted` to
+    those entries.
+  - A message with no `content` key is left alone: an edit can only replace a key that exists.
   - Slice 003's codec then carries the parts to any target style.
 - **Attachments**:
   - `attachments` / `experimental_attachments` entries have the shape

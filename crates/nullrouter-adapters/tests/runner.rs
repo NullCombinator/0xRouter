@@ -29,7 +29,7 @@ fn builtins_resolve_by_name_and_unknown_names_do_not() {
 #[test]
 fn a_run_with_no_edits_borrows_the_body() {
     let r = AdapterRunner::builtin(&HarnessName::new("hermes").unwrap()).unwrap();
-    let body = json!({"messages": []});
+    let body = json!({"messages": [{"role": "user", "content": "hi"}]});
     let out = r.run_request(&ctx(), &body);
     assert!(matches!(out.body, Cow::Borrowed(_)));
     assert_eq!(out.run.outcome, AdapterOutcome::Ran);

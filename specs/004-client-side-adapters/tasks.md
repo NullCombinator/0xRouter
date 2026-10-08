@@ -316,7 +316,9 @@ mocks, then live, every turn completes and every change is recorded.
     - covers raw base64 strings, `{data, mime}` objects and `{url}` data URLs;
     - a string `content` becomes `[{type:"text"}] + parts`;
     - the MIME type is sniffed from magic bytes for PNG, JPEG, GIF and WebP;
-    - both paths are recorded `converted` / `format_conversion`.
+    - `content` is recorded `converted` / `format_conversion`, and the emptied `images` field
+      `removed` / `format_conversion` (R5 ties `converted` to `replace`, and a key can only be
+      dropped by `remove`).
   - (e) `attachments` and `experimental_attachments` entries map by MIME type: images to
     `image_url`, PDFs to `file` with `file_data` and `filename`.
   - (f) A MIME type no model can read is left unconverted.

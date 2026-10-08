@@ -522,3 +522,11 @@ reason = "client identity headers apply to signed-in accounts only, as [identity
 #   (`getProviderCredentials`, src/sse/services/auth.js). The error lists them as "not tried: …";
 # - with equal shares and deficits the order equals 9router's fill-first by priority
 #   (`getProviderCredentials`, src/sse/services/auth.js), mapped to the account `order`.
+
+# Harness-adapter deviations (spec 004, T030) have no oracle field either. They are asserted on
+# hermes's edits instead, crates/nullrouter-adapters/tests/hermes.rs:
+# - hermes images: converted, 9router deletes them (modality.js). 0router turns `images` and
+#   attachments into content parts and never deletes what it cannot convert;
+# - echoed reasoning: removed by the adapter per its reject table, not in core
+#   (paramSupport.js `dropMessageFields`). The table is seeded with 9router's groq, mistral and
+#   cerebras; any other provider keeps the field.
