@@ -102,8 +102,7 @@ impl MockProxy {
 
     /// Listens again on the same port.
     pub async fn start_again(&self) {
-        let mut task = self.task.lock().unwrap_or_else(|e| e.into_inner());
-        if task.is_some() {
+        if self.task.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
             return;
         }
         let mut listener = None;
@@ -117,7 +116,8 @@ impl MockProxy {
             }
         }
         let listener = listener.expect("rebind the proxy's port");
-        *task = Some(spawn(listener, self.credentials.clone(), self.counts.clone()));
+        let task = spawn(listener, self.credentials.clone(), self.counts.clone());
+        *self.task.lock().unwrap_or_else(|e| e.into_inner()) = Some(task);
     }
 }
 
