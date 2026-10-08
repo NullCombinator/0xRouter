@@ -26,7 +26,9 @@ async fn fleet() -> Setup {
             ]
         },
         &[("groq", "a1"), ("openrouter", "a1"), ("anthropic", "a1")],
-        "",
+        // The ids are the real providers' (the reject table is keyed by them), so the test
+        // plugins must replace the embedded ones or the requests would leave the machine.
+        "[plugin_decisions]\ngroq = \"replace\"\nopenrouter = \"replace\"\nanthropic = \"replace\"\n",
     )
     .await
 }
