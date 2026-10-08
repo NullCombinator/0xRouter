@@ -65,7 +65,7 @@ pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, Vi
         "routing_warnings": routing,
         "paused_proxies": proxies.paused.iter().map(|(n, since, _)| json!({ "name": n, "since": since })).collect::<Vec<_>>(),
         "undefined_proxies": proxies.undefined.iter().map(|(who, n)| json!({ "assigned_to": who, "proxy": n })).collect::<Vec<_>>(),
-        "notices": notices(handle.home().path(), r, journal.as_ref(), &unmetered, &routing, &proxies, &s, status),
+        "notices": notices(handle.home().path(), r, journal.as_ref(), &Findings { unmetered: &unmetered, routing: &routing, proxies: &proxies }, &s, status),
         "signin": {
             "errors": s.errors,
             "tokens_without_account": s.orphan_tokens.iter().map(pair).collect::<Vec<_>>(),
@@ -144,12 +144,11 @@ fn notices(
     home: &Path,
     r: &LoadReport,
     journal: Option<&Value>,
-    unmetered: &[(String, String)],
-    routing: &[String],
-    proxies: &ProxyFindings,
+    found: &Findings,
     s: &SigninReport,
     status: Option<&Value>,
 ) -> Vec<Value> {
+    let Findings { unmetered, routing, proxies } = *found;
     let mut out = Vec::new();
     for c in &r.pending_conflicts {
         let (id, path) = (&c.id, c.path.display());
@@ -296,6 +295,13 @@ fn routing_warnings(reg: &nullrouter_registry::Registry, home: &Path) -> Vec<Str
         }
     }
     out
+}
+
+/// The routing and proxy findings `notices` prints, bundled to keep its arguments few.
+struct Findings<'a> {
+    unmetered: &'a [(String, String)],
+    routing: &'a [String],
+    proxies: &'a ProxyFindings,
 }
 
 /// What `check` says about proxies (spec 013, US4): the paused ones, and assignments naming a
@@ -516,8 +522,11 @@ mod tests {
             home,
             &report,
             Some(&journal),
-            &[("grok-cli".into(), "prepaid".into())],
-            &["anthropic/main is pay-as-you-go".into()],
+            &Findings {
+                unmetered: &[("grok-cli".into(), "prepaid".into())],
+                routing: &["anthropic/main is pay-as-you-go".into()],
+                proxies: &ProxyFindings::default(),
+            },
             &signin,
             None,
         );
