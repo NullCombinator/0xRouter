@@ -138,6 +138,64 @@ pub fn resolve(
     Effective { connect, headers, first_token, stall }
 }
 
+fn timeout_json(t: Option<Timeout>) -> serde_json::Value {
+    match t {
+        Some(t) => serde_json::json!({"ms": t.ms, "source": t.source}),
+        None => serde_json::json!({"ms": null, "source": null}),
+    }
+}
+
+fn timeouts_json(e: &Effective) -> serde_json::Value {
+    serde_json::json!({
+        "connect": timeout_json(Some(e.connect)),
+        "headers": timeout_json(Some(e.headers)),
+        "first_token": timeout_json(e.first_token),
+        "stall": timeout_json(Some(e.stall)),
+    })
+}
+
+/// The `connection.view` answer (contracts/operator-socket.md): per provider, each timeout with
+/// where it came from, and the models whose timeouts differ from the provider's. `only` names
+/// one provider; an unknown one is an error listing the known ones.
+pub fn view(st: &EngineState, only: Option<&str>) -> Result<serde_json::Value, String> {
+    use nullrouter_registry::schema::ModelType;
+
+    let known: Vec<&ProviderEntity> = st.registry.providers().collect();
+    if let Some(name) = only
+        && !known.iter().any(|p| p.id == name)
+    {
+        let ids: Vec<&str> = known.iter().map(|p| p.id.as_str()).collect();
+        return Err(format!("no provider {name:?}; known providers: {}", ids.join(", ")));
+    }
+    let mut out = Vec::new();
+    for p in known.iter().filter(|p| only.is_none_or(|n| p.id == n)) {
+        // The timeouts of a provider are those of its text endpoint, else its first endpoint.
+        let Some(endpoint) = p
+            .endpoints
+            .get(&ModelType::Text)
+            .or_else(|| p.endpoints.values().next())
+            .and_then(|e| e.0.first())
+        else {
+            continue;
+        };
+        let settings = st.registry.settings(&p.id);
+        let base = effective(st, p, "", "", endpoint);
+        let mut ids: Vec<&str> = p.models.iter().flatten().map(|m| m.id.as_str()).collect();
+        ids.extend(settings.model.keys().map(String::as_str));
+        ids.sort_unstable();
+        ids.dedup();
+        let models: Vec<serde_json::Value> = ids
+            .into_iter()
+            .filter_map(|id| {
+                let e = effective(st, p, id, id, endpoint);
+                (e != base).then(|| serde_json::json!({"id": id, "timeouts": timeouts_json(&e)}))
+            })
+            .collect();
+        out.push(serde_json::json!({"id": p.id, "timeouts": timeouts_json(&base), "models": models}));
+    }
+    Ok(serde_json::json!({"ok": true, "providers": out}))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

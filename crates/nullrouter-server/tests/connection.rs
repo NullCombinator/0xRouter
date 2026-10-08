@@ -233,3 +233,41 @@ async fn an_invalid_timeout_is_refused_on_reload_and_the_previous_settings_stay(
     let (_, rec) = run(&s, ask(&s, "mockco/m1")).await;
     assert_eq!(timeout_of(&rec).map(|t| t.ms), Some(250));
 }
+
+/// `connection.view`: every timeout with its source, and the models that differ.
+#[tokio::test]
+async fn the_connection_view_shows_each_timeout_with_its_source_and_the_models_that_differ() {
+    let s = server_with(duo).await;
+    configure(
+        &s,
+        "[provider.duo.connection]\nheader_timeout_ms = 10000\nfirst_token_timeout_ms = 5000\n\n[provider.duo.model.slow.connection]\nfirst_token_timeout_ms = 300000\n",
+    )
+    .await
+    .unwrap();
+    let v = nullrouter_server::operator::handle(&s.engine, &json!({"op": "connection.view", "provider": "duo"})).await;
+    assert_eq!(v["ok"], true, "{v}");
+    let p = &v["providers"][0];
+    assert_eq!(p["id"], "duo");
+    assert_eq!(p["timeouts"]["headers"], json!({"ms": 10000, "source": {"by": "operator", "level": "provider"}}));
+    assert_eq!(p["timeouts"]["first_token"]["ms"], 5000);
+    assert_eq!(p["timeouts"]["stall"], json!({"ms": 360000, "source": {"by": "built_in", "level": "default"}}));
+    let models = p["models"].as_array().unwrap();
+    assert_eq!(models.len(), 1, "only `slow` differs: {models:?}");
+    assert_eq!(models[0]["id"], "slow");
+    assert_eq!(
+        models[0]["timeouts"]["first_token"],
+        json!({"ms": 300000, "source": {"by": "operator", "level": "model"}})
+    );
+
+    // Removing the override shows the default again, with its source.
+    configure(&s, "").await.unwrap();
+    let v = nullrouter_server::operator::handle(&s.engine, &json!({"op": "connection.view", "provider": "duo"})).await;
+    assert_eq!(v["providers"][0]["timeouts"]["first_token"], json!({"ms": null, "source": null}));
+    assert_eq!(v["providers"][0]["models"], json!([]));
+
+    let v = nullrouter_server::operator::handle(&s.engine, &json!({"op": "connection.view", "provider": "nope"})).await;
+    assert_eq!(v["ok"], false);
+    assert!(v["error"].as_str().unwrap().contains("duo"), "{v}");
+    let all = nullrouter_server::operator::handle(&s.engine, &json!({"op": "connection.view"})).await;
+    assert!(all["providers"].as_array().unwrap().len() >= 2, "{all}");
+}

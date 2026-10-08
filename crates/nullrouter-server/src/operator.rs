@@ -13,6 +13,8 @@
 //! | `{"op":"routing.view","target"?}` | `{"ok":true,"amortization":{start,length},"journal":{…},"targets":[…],"warnings":[…]}`: per target and account the pace, share, deficit, priority, cache lifetime, quota source and each window's remaining amount, unit, reset and reserve |
 //! | `{"op":"routing.health"}` | `{"ok":true,"journal":{kept,since,unkept_requests,held_lines,last_sync,last_sync_age_s}}` |
 //! | `{"op":"server.status"}` | `{"ok":true,"client_listen":"…"\|null,"dashboard":{enabled,listen,serving,error}}`: the address `serve` bound for clients, and the dashboard listener's state |
+//! | `{"op":"live.snapshot"}` | `{"ok":true,"as_of":…,"paused_proxies":[…],"in_flight":[…]}`: what is in flight now, each request in its current phase |
+//! | `{"op":"connection.view","provider"?}` | `{"ok":true,"providers":[{id,timeouts:{connect,headers,first_token,stall}:{ms\|null,source},models:[{id,timeouts}]}]}`: the effective timeouts and where each came from, and the models whose timeouts differ; an unknown provider is `{"ok":false,"error"}` listing the known ones |
 //! | `{"op":"quota.list"}`, `{"op":"quota.poll"}`, `{"op":"quota.checkpoint"}` | see [`crate::quota`] |
 
 use std::future::Future;
@@ -127,6 +129,12 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         },
         Some("records.list") => records_list(engine, req).await,
         Some("live.snapshot") => live_snapshot(engine),
+        Some("connection.view") => {
+            match nullrouter_engine::connection::view(&engine.snapshot(), str_of("provider").as_deref()) {
+                Ok(v) => v,
+                Err(error) => json!({"ok": false, "error": error}),
+            }
+        }
         Some("records.get") => {
             let Some(id) = str_of("id") else { return json!({"ok": false, "error": "the request names no id"}) };
             if let Some(r) = engine.records.get(&id) {
