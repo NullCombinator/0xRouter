@@ -196,7 +196,11 @@ async fn an_infinite_loop_returns_deadline_without_blocking_other_tasks() {
     // The contract is the deadline plus 5 ms. A shared CI runner can be slower than that for one
     // scheduling hiccup, so the test allows more and the bench holds the tight figure.
     assert!(took < DEADLINE + Duration::from_millis(100), "stopped late: {took:?}");
-    assert!(ticks.load(Ordering::Relaxed) >= 5, "the timer task starved: {} ticks", ticks.load(Ordering::Relaxed));
+    // A guest that never yielded would leave the timer with none: it is not polled while the
+    // guest holds this thread. How many ticks fit in 20 ms depends on how fast the runner wakes
+    // the 1 ms epoch thread, so the test asks only for more than one.
+    let seen = ticks.load(Ordering::Relaxed);
+    assert!(seen >= 2, "the timer task starved: {seen} ticks");
 }
 
 #[tokio::test]
