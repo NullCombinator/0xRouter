@@ -52,12 +52,21 @@ pub enum ClientError {
 pub struct Clients {
     allow_private: bool,
     proxies: Proxies,
+    /// Tests only: accept any server certificate, so a local TLS server can stand in for a provider.
+    trust_any_certificate: bool,
     cache: Mutex<HashMap<ClientKey, reqwest::Client>>,
 }
 
 impl Clients {
     pub fn new(allow_private: bool, proxies: Proxies) -> Self {
-        Self { allow_private, proxies, cache: Mutex::new(HashMap::new()) }
+        Self { allow_private, proxies, trust_any_certificate: false, cache: Mutex::new(HashMap::new()) }
+    }
+
+    /// Clients that accept any server certificate. For tests with a self-signed local server.
+    #[cfg(feature = "testkit")]
+    pub fn trusting_any_certificate(mut self) -> Self {
+        self.trust_any_certificate = true;
+        self
     }
 
     pub fn proxies(&self) -> &Proxies {
@@ -96,6 +105,9 @@ impl Clients {
                 proxy = proxy.basic_auth(user, &password);
             }
             b = b.proxy(proxy);
+        }
+        if self.trust_any_certificate {
+            b = b.danger_accept_invalid_certs(true);
         }
         if key.http == HttpMode::Http1Only {
             b = b.http1_only();

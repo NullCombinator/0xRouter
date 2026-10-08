@@ -211,6 +211,41 @@ pub fn fingerprints(st: &crate::state::EngineState) -> std::collections::BTreeMa
     out
 }
 
+fn source(by: SourceBy, level: SourceLevel) -> Source {
+    Source { by, level }
+}
+
+/// Whether `provider`'s connections are kept for reuse, and who said so (spec 013, US5).
+pub fn reuse_for(registry: &Registry, provider: &str) -> (bool, Source) {
+    match registry.settings(provider).connection.reuse {
+        Some(on) => (on, source(SourceBy::Operator, SourceLevel::Provider)),
+        None => (true, source(SourceBy::BuiltIn, SourceLevel::Default)),
+    }
+}
+
+/// The HTTP version `provider` is spoken in, and who said so: the operator's `http2` at the
+/// provider, then a plugin that declares `http2 = false`, then negotiation. The operator's `on`
+/// only allows HTTP/2; it never forces it on a server that doesn't offer it.
+pub fn http_for(registry: &Registry, provider: &str) -> (clients::HttpMode, Source) {
+    use clients::HttpMode::{Http1Only, Negotiate};
+    match registry.settings(provider).connection.http2 {
+        Some(false) => return (Http1Only, source(SourceBy::Operator, SourceLevel::Provider)),
+        Some(true) => return (Negotiate, source(SourceBy::Operator, SourceLevel::Provider)),
+        None => {}
+    }
+    // One endpoint without HTTP/2 puts the whole provider on HTTP/1.1: the client is per
+    // provider, not per endpoint.
+    let off = registry.provider(provider).is_ok_and(|p| {
+        p.endpoints.values().flat_map(|e| &e.0).any(|e| e.http2 == Some(false))
+            || p.transport.iter().chain(&p.transports).any(|t| t.http2 == Some(false))
+    });
+    if off {
+        (Http1Only, source(SourceBy::Plugin, SourceLevel::Endpoint))
+    } else {
+        (Negotiate, source(SourceBy::BuiltIn, SourceLevel::Default))
+    }
+}
+
 /// The client for `account`'s requests to `provider`, and the proxy it goes through: the key is
 /// the resolved proxy, whether the operator turned HTTP/2 or connection reuse off, and nothing
 /// else (research R5).
@@ -220,15 +255,10 @@ pub fn client_for(
     account: Option<&crate::accounts::Account>,
 ) -> Result<(reqwest::Client, ChosenProxy), clients::ClientError> {
     let chosen = proxy_for(&st.registry, provider, account);
-    let settings = st.registry.settings(provider);
     let key = clients::ClientKey {
         proxy: chosen.name.clone(),
-        http: if settings.connection.http2 == Some(false) {
-            clients::HttpMode::Http1Only
-        } else {
-            clients::HttpMode::Negotiate
-        },
-        reuse: settings.connection.reuse.unwrap_or(true),
+        http: http_for(&st.registry, provider).0,
+        reuse: reuse_for(&st.registry, provider).0,
     };
     st.clients.get(&key).map(|c| (c, chosen))
 }
@@ -286,7 +316,19 @@ pub fn view(registry: &Registry, only: Option<&str>) -> Result<serde_json::Value
                 (e != base).then(|| serde_json::json!({"id": id, "timeouts": timeouts_json(&e)}))
             })
             .collect();
-        out.push(serde_json::json!({"id": p.id, "timeouts": timeouts_json(&base), "models": models}));
+        let (reuse, reuse_source) = reuse_for(registry, &p.id);
+        let (http, http_source) = http_for(registry, &p.id);
+        let http = match http {
+            clients::HttpMode::Http1Only => "off",
+            clients::HttpMode::Negotiate => "negotiate",
+        };
+        out.push(serde_json::json!({
+            "id": p.id,
+            "timeouts": timeouts_json(&base),
+            "reuse": {"value": reuse, "source": reuse_source},
+            "http2": {"value": http, "source": http_source},
+            "models": models,
+        }));
     }
     Ok(serde_json::json!({"ok": true, "providers": out}))
 }

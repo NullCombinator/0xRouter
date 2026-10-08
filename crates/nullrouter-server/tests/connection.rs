@@ -271,3 +271,44 @@ async fn the_connection_view_shows_each_timeout_with_its_source_and_the_models_t
     let all = nullrouter_server::operator::handle(&s.engine, &json!({"op": "connection.view"})).await;
     assert!(all["providers"].as_array().unwrap().len() >= 2, "{all}");
 }
+
+/// `duo`, whose plugin declares that its endpoint doesn't speak HTTP/2.
+fn no_h2(mock: &nullrouter_engine::testkit::MockUpstream) -> Vec<(&'static str, String)> {
+    let (id, body) = duo(mock).remove(0);
+    vec![(id, body.replace("wire = \"openai-chat\"\n", "wire = \"openai-chat\"\nhttp2 = false\n"))]
+}
+
+/// FR-033, FR-034: `reuse` and `http2` per provider, with the source that decided each.
+#[tokio::test]
+async fn reuse_and_http2_resolve_operator_over_plugin_over_default() {
+    let s = server_with(no_h2).await;
+    let view = |s: &Server| {
+        let engine = s.engine.clone();
+        async move {
+            let v = nullrouter_server::operator::handle(&engine, &json!({"op": "connection.view", "provider": "duo"})).await;
+            assert_eq!(v["ok"], true, "{v}");
+            v["providers"][0].clone()
+        }
+    };
+
+    configure(&s, "").await.unwrap();
+    let p = view(&s).await;
+    assert_eq!(p["http2"], json!({"value": "off", "source": {"by": "plugin", "level": "endpoint"}}), "{p}");
+    assert_eq!(p["reuse"], json!({"value": true, "source": {"by": "built_in", "level": "default"}}), "{p}");
+
+    // The operator's `on` beats the plugin; it asks to negotiate, not to force.
+    configure(&s, "[provider.duo.connection]\nhttp2 = true\nreuse = false\n").await.unwrap();
+    let p = view(&s).await;
+    assert_eq!(p["http2"], json!({"value": "negotiate", "source": {"by": "operator", "level": "provider"}}), "{p}");
+    assert_eq!(p["reuse"], json!({"value": false, "source": {"by": "operator", "level": "provider"}}), "{p}");
+
+    configure(&s, "[provider.duo.connection]\nhttp2 = false\n").await.unwrap();
+    let p = view(&s).await;
+    assert_eq!(p["http2"], json!({"value": "off", "source": {"by": "operator", "level": "provider"}}), "{p}");
+
+    // Both still serve a request.
+    s.mock.respond(|_| chat_whole());
+    let (status, rec) = run(&s, ask(&s, "duo/fast")).await;
+    assert_eq!(status, 200);
+    assert_eq!(rec.attempts[0].timing.as_ref().and_then(|t| t.http.as_deref()), Some("1.1"));
+}

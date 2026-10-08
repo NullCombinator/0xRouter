@@ -61,6 +61,7 @@ fn endpoint(url: String, wire: Option<&str>) -> Endpoint {
         stall_timeout_ms: None,
         connect_timeout_ms: None,
         first_token_timeout_ms: None,
+        http2: None,
         force_stream: false,
         vision: false,
         retry: BTreeMap::new(),
@@ -96,6 +97,7 @@ fn text_endpoints(t: &Transport, vision: bool) -> Vec<Endpoint> {
             }
             e.timeout_ms = t.timeout_ms;
             e.stall_timeout_ms = t.stall_timeout_ms;
+            e.http2 = t.http2;
             e.vision = vision;
             e.retry = t
                 .retry

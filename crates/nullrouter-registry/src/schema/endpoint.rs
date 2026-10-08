@@ -38,6 +38,9 @@ pub struct Endpoint {
     pub connect_timeout_ms: Option<u64>,
     /// Time from the response headers to the first model output; 0 = off.
     pub first_token_timeout_ms: Option<u64>,
+    /// Only `false` has an effect: this endpoint's host doesn't speak HTTP/2, so the provider's
+    /// requests use HTTP/1.1.
+    pub http2: Option<bool>,
     #[serde(default)]
     pub force_stream: bool,
     #[serde(default)]

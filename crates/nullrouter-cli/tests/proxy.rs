@@ -193,3 +193,22 @@ fn a_password_from_the_environment_is_not_printed_by_any_command() {
         assert!(!out.contains(USER), "command {i} printed the username: {out}");
     }
 }
+
+#[test]
+fn connection_set_takes_reuse_and_http2_as_switches_and_show_names_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    ok(h, &["accounts", "add", "anthropic", "main"], "sk-cli-SENTINEL-0013\n");
+
+    ok(h, &["connection", "set", "anthropic", "http2", "off"], "");
+    ok(h, &["connection", "set", "anthropic", "reuse", "off"], "");
+    let config = std::fs::read_to_string(h.join("config.toml")).unwrap();
+    assert!(config.contains("http2 = false") && config.contains("reuse = false"), "{config}");
+    let shown = ok(h, &["connection", "show", "anthropic"], "");
+    assert!(shown.contains("http2") && shown.contains("reuse"), "{shown}");
+
+    let bad = refused(h, &["connection", "set", "anthropic", "http2", "maybe"]);
+    assert!(bad.contains("on") && bad.contains("off"), "{bad}");
+    ok(h, &["connection", "unset", "anthropic", "http2"], "");
+    assert!(!std::fs::read_to_string(h.join("config.toml")).unwrap().contains("http2"));
+}

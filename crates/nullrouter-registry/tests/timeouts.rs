@@ -75,3 +75,12 @@ fn a_model_takes_timeouts_only() {
     let e = errors("[provider.openrouter.model.\"m\".connection]\nproxy = \"x\"\n");
     assert!(e.contains("proxy"), "{e}");
 }
+
+#[test]
+fn reuse_and_http2_are_read_per_provider() {
+    let reg = ok("[provider.openrouter.connection]\nreuse = false\nhttp2 = false\n");
+    let c = reg.settings("openrouter").connection;
+    assert_eq!((c.reuse, c.http2), (Some(false), Some(false)));
+    let c = reg.settings("anthropic").connection;
+    assert_eq!((c.reuse, c.http2), (None, None));
+}

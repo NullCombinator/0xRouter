@@ -20,9 +20,10 @@ pub(crate) enum Command {
         provider: String,
         #[arg(long)]
         model: Option<String>,
-        /// connect-timeout, header-timeout, first-token-timeout or stall-timeout.
+        /// connect-timeout, header-timeout, first-token-timeout, stall-timeout, reuse or http2.
         key: String,
-        /// A duration (`500ms`, `30s`, `5m`), or `off` for first-token-timeout.
+        /// A duration (`500ms`, `30s`, `5m`), `off` for first-token-timeout, or `on`/`off` for
+        /// reuse and http2.
         value: String,
     },
     /// Remove a setting, so the plugin's value or the built-in default applies again.
@@ -85,12 +86,28 @@ fn config_key(key: &str) -> Result<&'static str, String> {
         "header-timeout" => "header_timeout_ms",
         "first-token-timeout" => "first_token_timeout_ms",
         "stall-timeout" => "stall_timeout_ms",
+        "reuse" => "reuse",
+        "http2" => "http2",
         _ => {
             return Err(format!(
-                "unknown key {key:?}; allowed: connect-timeout, header-timeout, first-token-timeout, stall-timeout"
+                "unknown key {key:?}; allowed: connect-timeout, header-timeout, first-token-timeout, stall-timeout, reuse, http2"
             ));
         }
     })
+}
+
+/// `reuse` and `http2` are switches kept for a provider, never a model.
+fn is_switch(key: &str) -> bool {
+    matches!(key, "reuse" | "http2")
+}
+
+/// `on` or `off`, as the TOML boolean it is written as.
+fn parse_switch(key: &str, value: &str) -> Result<String, String> {
+    match value {
+        "on" => Ok("true".into()),
+        "off" => Ok("false".into()),
+        _ => Err(format!("{key} takes on or off, not {value:?}")),
+    }
 }
 
 /// A timeout in ms from `500ms`, `30s`, `5m`; `off` is 0 and only the first token takes it.
@@ -116,7 +133,14 @@ fn change(
     value: Option<&str>,
 ) -> Result<String, String> {
     let ckey = config_key(key)?;
-    let ms = value.map(|v| parse_value(key, v)).transpose()?;
+    if is_switch(key) && model.is_some() {
+        return Err(format!("{key} is set for a provider, not a model"));
+    }
+    let new = match value {
+        Some(v) if is_switch(key) => Some(parse_switch(key, v)?),
+        Some(v) => Some(parse_value(key, v)?.to_string()),
+        None => None,
+    };
     let handle = nullrouter_server::views::open_registry(home).map_err(|e| e.message)?;
     let snapshot = handle.snapshot();
     let known: Vec<&str> = snapshot.providers().map(|p| p.id.as_str()).collect();
@@ -134,7 +158,7 @@ fn change(
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
     let what = format!("{provider}{} {key}", model.map_or(String::new(), |m| format!(" model {m}")));
-    let (edited, changed) = edit(&text, &header, ckey, ms.map(|v| v.to_string()).as_deref());
+    let (edited, changed) = edit(&text, &header, ckey, new.as_deref());
     if !changed {
         return Ok(format!("{what}: was not set"));
     }
@@ -238,6 +262,10 @@ fn render(view: &Value) -> String {
         ] {
             line(&mut out, "  ", name, &p["timeouts"][key]);
         }
+        let reuse = if p["reuse"]["value"] == false { "off" } else { "on" };
+        let http2 = p["http2"]["value"].as_str().unwrap_or("negotiate");
+        let _ = writeln!(out, "  {:<20} {:<9} {}", "reuse", reuse, source(&p["reuse"]["source"]));
+        let _ = writeln!(out, "  {:<20} {:<9} {}", "http2", http2, source(&p["http2"]["source"]));
         for m in p["models"].as_array().into_iter().flatten() {
             let _ = writeln!(out, "  model {}", scrub(&m["id"]));
             for (key, name) in [

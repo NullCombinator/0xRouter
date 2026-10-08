@@ -305,10 +305,10 @@ its provider has no HTTP/2. The default stays as today: reuse, and HTTP/2 negoti
 **Independent Test**: by default the second request reuses its connection. With reuse off, every
 request shows a connect time. With HTTP/2 off, records show HTTP/1.1 (spec US5).
 
-- [ ] T055 [P] [US5] Write US5 scenarios 1–3 in `crates/nullrouter-server/tests/connection.rs` against an HTTP/2-capable TLS test server (from T004). Cover the plugin's `http2 = false` → HTTP/1.1, and that operator `http2 on` doesn't force HTTP/2 against a server without it (negotiation)
-- [ ] T056 [US5] Add `http2: Option<bool>` to `Transport` in `crates/nullrouter-registry/src/schema/transport.rs`. Only `false` has an effect (contracts/config-files.md)
-- [ ] T057 [US5] Resolve `reuse` and `http` (operator provider → plugin `http2 = false` → on/negotiate) in `crates/nullrouter-engine/src/connection/mod.rs`, and feed them into `ClientKey`. Record `connection` and `http` per attempt (T018 sets `http`; set `connection` from the clock at `end_attempt`)
-- [ ] T058 [US5] Add the `reuse on|off` and `http2 on|off` keys to `crates/nullrouter-cli/src/cmd/connection.rs`, and to `connection show` and the `connection.view` op
+- [X] T055 [P] [US5] Write US5 scenarios 1–3 in `crates/nullrouter-server/tests/connection.rs` against an HTTP/2-capable TLS test server (from T004). Cover the plugin's `http2 = false` → HTTP/1.1, and that operator `http2 on` doesn't force HTTP/2 against a server without it (negotiation) — done: resolution and view in `server/tests/connection.rs`; the TLS version check is in `engine/tests/http_mode.rs` (the T004 TLS code is engine dev-deps only) behind a testkit-gated `trusting_any_certificate`
+- [X] T056 [US5] Add `http2: Option<bool>` to `Transport` in `crates/nullrouter-registry/src/schema/transport.rs`. Only `false` has an effect (contracts/config-files.md) — done; also on schema-2 `Endpoint`, since schema 2 rejects `[transport]`
+- [X] T057 [US5] Resolve `reuse` and `http` (operator provider → plugin `http2 = false` → on/negotiate) in `crates/nullrouter-engine/src/connection/mod.rs`, and feed them into `ClientKey`. Record `connection` and `http` per attempt (T018 sets `http`; set `connection` from the clock at `end_attempt`) — done; one endpoint with `http2 = false` puts the whole provider on HTTP/1.1 (the client is per provider); `connection` and `http` were already recorded by the attempt clock
+- [X] T058 [US5] Add the `reuse on|off` and `http2 on|off` keys to `crates/nullrouter-cli/src/cmd/connection.rs`, and to `connection show` and the `connection.view` op — done
 
 ---
 
