@@ -17,6 +17,8 @@ nullrouter-adapter-kit.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
+tokio.workspace = true
+wat = "1"
 
 [[bench]]
 name = "sandbox"
