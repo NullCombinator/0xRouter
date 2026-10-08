@@ -3,8 +3,7 @@
 //! Each new row is classified against the fit before it joins it. Idle rows (0router sent
 //! nothing) are judged by the reading step alone; busy rows by the fit's predictive range.
 
-use std::time::Duration;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use super::linalg::Mat;
 use super::model::{self, Fit, MRow, P, Spec};
