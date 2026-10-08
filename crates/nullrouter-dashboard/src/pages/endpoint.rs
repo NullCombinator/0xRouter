@@ -7,13 +7,12 @@ use maud::{Markup, html};
 use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
-use crate::components::{
-    Head, Tone, badge, card, disabled, empty, kv, name, section_bar, side_panel, side_section, slot,
-};
+use crate::components::{Head, Tone, badge, card, disabled, empty, kv, name, section_bar, side_panel, side_section};
 use crate::landscape;
 use crate::page::{ViewName, Want};
 
-pub const VIEWS: &[ViewName] = &[ViewName::Check, ViewName::Keys, ViewName::Accounts, ViewName::Latency];
+pub const VIEWS: &[ViewName] =
+    &[ViewName::Check, ViewName::Keys, ViewName::Accounts, ViewName::Latency, ViewName::Usage];
 
 /// The hint beside the disabled "Add Agent" (research R15).
 pub const ADD_HINT: &str = "In the CLI: `nullrouter keys issue <name>`";
@@ -29,6 +28,7 @@ pub fn wants(_req: &Req) -> Vec<Want> {
         Want::new(ViewName::Keys, json!({})),
         Want::new(ViewName::Accounts, json!({})),
         Want::new(ViewName::Latency, json!({})),
+        Want::new(ViewName::Usage, json!({"period": "today"})),
     ]
 }
 
@@ -72,6 +72,15 @@ fn endpoint(check: &Value) -> Markup {
     )
 }
 
+/// A key's requests so far today: its row in `usage --period today`, else 0.
+fn today(usage: &Value, id: &str) -> u64 {
+    usage["agents"]
+        .as_array()
+        .and_then(|a| a.iter().find(|r| r["id"] == id))
+        .and_then(|r| r["requests"].as_u64())
+        .unwrap_or(0)
+}
+
 /// One key as `keys list` shows it: name, id, `…last4`, created, revoked, break behaviour and
 /// last used, with a place for the day's requests.
 fn key_card(ctx: &Ctx<'_>, k: &Value) -> Markup {
@@ -95,7 +104,7 @@ fn key_card(ctx: &Ctx<'_>, k: &Value) -> Markup {
                     None => html! { "never" },
                 }))
             }
-            (slot("Requests today"))
+            (kv("requests today", html! { (today(ctx.json(ViewName::Usage), text("id"))) }))
         }
     }
 }

@@ -9,10 +9,11 @@ use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
 use crate::access::encode_component;
-use crate::components::{Head, Tone, badge, card, empty, kv, modal, name, notice, slot};
+use crate::components::{Head, Tone, badge, card, empty, kv, modal, name, notice};
 use crate::page::{ViewName, Want};
 
-pub const VIEWS: &[ViewName] = &[ViewName::Usage, ViewName::Records, ViewName::Record, ViewName::Check];
+pub const VIEWS: &[ViewName] =
+    &[ViewName::Usage, ViewName::Latency, ViewName::Records, ViewName::Record, ViewName::Check];
 
 /// The period filter: the value `usage --period` takes, and its label (9router's filter).
 pub const PERIODS: [(&str, &str); 6] =
@@ -38,6 +39,7 @@ pub const NO_OLDER: &str = "No older request records.";
 pub fn wants(req: &Req) -> Vec<Want> {
     let mut wants = vec![
         Want::new(ViewName::Usage, json!({"period": period_of(req)})),
+        Want::new(ViewName::Latency, json!({})),
         Want::new(ViewName::Records, json!({"limit": PAGE, "before": req.get("before")})),
     ];
     if let Some(id) = &req.window {
@@ -199,7 +201,7 @@ fn record_href(req: &Req, id: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The overview: three slots and Recent Requests
+// The overview: the period filter, the cards, the topology graph and Recent Requests
 
 fn overview(ctx: &Ctx<'_>, records: &[Value]) -> Markup {
     html! {
@@ -210,7 +212,7 @@ fn overview(ctx: &Ctx<'_>, records: &[Value]) -> Markup {
             div class="usage-overview__period" { (period_filter(ctx)) }
             div class="usage-overview__stats" { (stats(ctx.json(ViewName::Usage))) }
             div class="usage-overview__pair" {
-                div class="usage-overview__graph" { (slot("Topology graph")) }
+                div class="usage-overview__graph" { (crate::topology::topology(ctx.json(ViewName::Usage), ctx.json(ViewName::Latency), ctx.tz)) }
                 (recent(ctx, records))
             }
         }

@@ -12,18 +12,14 @@ fn slots(html: &str) -> Vec<String> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_slots_hold_a_title_and_no_digits() {
+async fn no_slot_is_left_each_card_shows_its_requests_today() {
     let d = Dash::dashboard().await;
     let html = d.ok("/endpoint").await;
-    let slots = slots(&html);
     let cards = html.matches("<article class=\"key-card").count();
     assert!(cards > 0, "the fixture has keys");
-    assert_eq!(slots.len(), cards, "Requests today on each card; the landscape is drawn now");
-    for s in &slots {
-        assert!(!s.chars().any(|c| c.is_ascii_digit()), "a slot shows no number: {s:?}");
-        assert!(s.contains("Arrives with the next dashboard slice."), "{s:?}");
-    }
-    assert!(slots.iter().all(|s| s.contains("Requests today")), "{slots:?}");
+    assert!(slots(&html).is_empty(), "every spec 009 slot on Endpoint & Key is filled");
+    assert_eq!(text_of(&html).matches("requests today").count(), cards, "one on each card");
+    assert!(html.contains("landscape__svg"), "the landscape is drawn");
 }
 
 #[tokio::test(flavor = "multi_thread")]

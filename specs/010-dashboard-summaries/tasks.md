@@ -176,14 +176,14 @@ untagged keys are handled the same.
 
 ### Tests for User Story 4
 
-- [ ] T041 [P] [US4] Dashboard agreement tests: `crates/nullrouter-dashboard/tests/agreement/endpoint.rs` (each card's "requests today" equals `usage --period today` for that key, 0 when absent); `crates/nullrouter-dashboard/tests/agreement/providers.rs` (the window's "last response" equals `latency`'s `last`, or "None in the last 24 hours"); `crates/nullrouter-dashboard/tests/agreement/usage.rs` (for each period the graph's providers and counts equal `usage --period <p>`, edges red for a failed last response and amber on the newest, no in-flight count)
-- [ ] T042 [P] [US4] Unit tests in `crates/nullrouter-dashboard/src/topology.rs`: providers on an ellipse after 9router's `buildLayout` (`ProviderTopology.js:263`), router centred, no agent nodes, labels printed, no animation or script
+- [x] T041 [P] [US4] Dashboard agreement tests: `crates/nullrouter-dashboard/tests/agreement/endpoint.rs` (each card's "requests today" equals `usage --period today` for that key, 0 when absent); `crates/nullrouter-dashboard/tests/agreement/providers.rs` (the window's "last response" equals `latency`'s `last`, or "None in the last 24 hours"); `crates/nullrouter-dashboard/tests/agreement/usage.rs` (for each period the graph's providers and counts equal `usage --period <p>`, edges red for a failed last response and amber on the newest, no in-flight count)
+- [x] T042 [P] [US4] Unit tests in `crates/nullrouter-dashboard/src/topology.rs`: providers on an ellipse after 9router's `buildLayout` (`ProviderTopology.js:263`), router centred, no agent nodes, labels printed, no animation or script
 
 ### Implementation for User Story 4
 
-- [ ] T043 [US4] Fill "requests today" on each key card in `crates/nullrouter-dashboard/src/pages/endpoint.rs` from `Usage` with `{"period":"today","at":as_of}` (`agents[<id>].requests`, else 0)
-- [ ] T044 [US4] Fill "last response" in the provider window in `crates/nullrouter-dashboard/src/pages/providers.rs` from `Latency` ("resolved · <local time>", "failed · <local time> · <status>", or "None in the last 24 hours")
-- [ ] T045 [US4] Implement `crates/nullrouter-dashboard/src/topology.rs` (inline SVG) and replace the "Topology graph" slot in `crates/nullrouter-dashboard/src/pages/usage.rs`, providers and counts from `Usage` for the chosen period, last response from `Latency`, labelled "last 24 h"
+- [x] T043 [US4] Fill "requests today" on each key card in `crates/nullrouter-dashboard/src/pages/endpoint.rs` from `Usage` with `{"period":"today","at":as_of}` (`agents[<id>].requests`, else 0)
+- [x] T044 [US4] Fill "last response" in the provider window in `crates/nullrouter-dashboard/src/pages/providers.rs` from `Latency` ("resolved · <local time>", "failed · <local time> · <status>", or "None in the last 24 hours")
+- [x] T045 [US4] Implement `crates/nullrouter-dashboard/src/topology.rs` (inline SVG) and replace the "Topology graph" slot in `crates/nullrouter-dashboard/src/pages/usage.rs`, providers and counts from `Usage` for the chosen period, last response from `Latency`, labelled "last 24 h"
 
 **Checkpoint**: every spec 009 slot is filled; `slot(` is no longer called on Endpoint & Key, Providers or Usage.
 

@@ -12,7 +12,7 @@ use nullrouter_engine::journal::Target;
 use nullrouter_engine::testkit::homes;
 use serde_json::{Value, json};
 
-use crate::common::{Dash, shows_instant, text_of};
+use crate::common::{Dash, home_with_traffic, shows_instant, text_of};
 
 const ALPHABET: &[u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
@@ -146,15 +146,15 @@ fn with_decisions() -> (tempfile::TempDir, String, String) {
             &moved,
             "2026-10-01T12:30:00Z",
             json!({"kind":"cold","at":"2026-10-01T12:30:00Z","size_tokens":18400,
-                "amortization_window":{"start":"2026-10-01T05:00:00.000Z","length":"5h"},
-                "warm":{"provider":"anthropic","account":"max","model":"m","prefix_tokens":41200,"idle_s":38.0,
-                    "stayed":false,"moved_because":"reserve_floor"},
-                "order":[1,0,2],
-                "candidates":[
-                    candidate("anthropic","pro","subscription",json!({"pace":0.88,"share":0.39,"deficit_before":-91200})),
-                    candidate("anthropic","max","subscription",json!({"pace":1.42,"share":0.61,"deficit_before":91200})),
-                    candidate("openrouter","main","payg",json!({"price_now":3.0,"why_not":"reserve_floor"})),
-                ]}),
+            "amortization_window":{"start":"2026-10-01T05:00:00.000Z","length":"5h"},
+            "warm":{"provider":"anthropic","account":"max","model":"m","prefix_tokens":41200,"idle_s":38.0,
+                "stayed":false,"moved_because":"reserve_floor"},
+            "order":[1,0,2],
+            "candidates":[
+                candidate("anthropic","pro","subscription",json!({"pace":0.88,"share":0.39,"deficit_before":-91200})),
+                candidate("anthropic","max","subscription",json!({"pace":1.42,"share":0.61,"deficit_before":91200})),
+                candidate("openrouter","main","payg",json!({"price_now":3.0,"why_not":"reserve_floor"})),
+            ]}),
         ),
     ];
     let mut text = String::new();
@@ -186,7 +186,10 @@ fn append(dir: &tempfile::TempDir, text: &str) {
 
 /// The `<tr class="usage-row">` blocks of the page, in order.
 fn rows(html: &str) -> Vec<String> {
-    html.split("<tr class=\"usage-row\">").skip(1).map(|r| r.split("</tr>").next().unwrap_or_default().to_owned()).collect()
+    html.split("<tr class=\"usage-row\">")
+        .skip(1)
+        .map(|r| r.split("</tr>").next().unwrap_or_default().to_owned())
+        .collect()
 }
 
 fn row_id(row: &str) -> String {
@@ -241,7 +244,10 @@ async fn older_is_records_list_before_the_last_id() {
     let first = first.as_array().unwrap().clone();
     assert_eq!(first.len(), 50);
     let html = d.ok("/usage").await;
-    assert_eq!(rows(&html).iter().map(|r| row_id(r)).collect::<Vec<_>>(), first.iter().map(|r| s(&r["id"])).collect::<Vec<_>>());
+    assert_eq!(
+        rows(&html).iter().map(|r| row_id(r)).collect::<Vec<_>>(),
+        first.iter().map(|r| s(&r["id"])).collect::<Vec<_>>()
+    );
 
     let last = s(&first[49]["id"]);
     assert!(html.contains(&format!("href=\"/usage?before={last}\"")), "Older links to ?before=<last id>");
@@ -326,7 +332,11 @@ fn assert_window(html: &str, rec: &Value, extra: &Value) {
             has(format!("dropped {}: {}", s(&dropped["path"]), s(&dropped["reason"])));
         }
         for forced in a["forced"].as_array().unwrap() {
-            has(format!("forced {}: {}", s(&forced[0]), forced[1].as_str().map_or_else(|| forced[1].to_string(), str::to_owned)));
+            has(format!(
+                "forced {}: {}",
+                s(&forced[0]),
+                forced[1].as_str().map_or_else(|| forced[1].to_string(), str::to_owned)
+            ));
         }
     }
 }
@@ -528,7 +538,9 @@ fn assert_cards_equal_usage(html: &str, u: &Value, what: &str) {
     let un = &u["cost"]["unpriced"];
     if n(&un["requests"]) > 0 {
         assert!(text.contains(&format!("{} not priced", comma(n(&un["requests"])))), "{what}: not priced\n{text}");
-        for (k, label) in [("no_price", "no price"), ("account_gone", "account gone"), ("no_output_price", "no output price")] {
+        for (k, label) in
+            [("no_price", "no price"), ("account_gone", "account gone"), ("no_output_price", "no output price")]
+        {
             if n(&un[k]) > 0 {
                 assert!(text.contains(&format!("{} {label}", n(&un[k]))), "{what}: {label}\n{text}");
             }
@@ -592,9 +604,66 @@ async fn the_filter_is_a_get_form_with_the_six_periods_and_no_script() {
     let d = Dash::dashboard().await;
     let html = d.ok("/usage").await;
     assert!(html.contains("method=\"get\""), "a GET form");
-    for (value, label) in [("today", "Today"), ("24h", "24h"), ("7d", "7D"), ("30d", "30D"), ("60d", "60D"), ("all", "All")] {
+    for (value, label) in
+        [("today", "Today"), ("24h", "24h"), ("7d", "7D"), ("30d", "30D"), ("60d", "60D"), ("all", "All")]
+    {
         assert!(html.contains(&format!("name=\"period\" value=\"{value}\"")), "{value}");
         assert!(text_of(&html).contains(label), "{label}");
     }
     assert!(!html.contains("<script"), "no script");
+}
+
+/// The topology graph's `<g>` nodes: (provider, count, edge class) in page order.
+fn topology_nodes(html: &str) -> Vec<(String, String)> {
+    let svg = html.split("<svg class=\"topology\"").nth(1).map_or("", |s| s.split("</svg>").next().unwrap_or_default());
+    svg.split("<title>")
+        .skip(1)
+        .map(|g| {
+            let id = g.split("</title>").next().unwrap_or_default().to_owned();
+            let count = g
+                .split("topology__count")
+                .nth(1)
+                .and_then(|c| c.split('>').nth(1))
+                .and_then(|c| c.split('<').next())
+                .unwrap_or_default();
+            (id, count.to_owned())
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_topology_graph_has_the_providers_and_counts_usage_prints_with_the_edges_latency_implies() {
+    let d = Dash::start(home_with_traffic()).await;
+    let latency = d.view(ViewName::Latency, json!({})).await;
+    for period in PERIODS {
+        let html = d.ok(&format!("/usage?period={period}")).await;
+        let u = d.view(ViewName::Usage, json!({"period": period})).await;
+        let want: Vec<(String, String)> = u["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| (p["id"].as_str().unwrap().to_owned(), p["requests"].to_string()))
+            .collect();
+        assert_eq!(topology_nodes(&html), want, "{period}");
+        let failed = u["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| {
+                latency["providers"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|r| r["id"] == p["id"] && r["last"]["result"] == "failed")
+            })
+            .count();
+        assert_eq!(
+            html.matches("topology__edge--failed").count(),
+            failed,
+            "{period}: red edges are the failed last responses"
+        );
+        let text = text_of(&html);
+        assert!(!want.is_empty() == text.contains("last response · last 24 h"), "{period}: the label");
+        assert!(!text.to_lowercase().contains("in flight now"), "{period}: no in-flight count on the graph");
+    }
 }

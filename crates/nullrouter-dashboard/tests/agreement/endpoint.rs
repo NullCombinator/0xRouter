@@ -6,7 +6,7 @@ use nullrouter_dashboard::page::ViewName;
 use nullrouter_engine::files::DashboardToken;
 use serde_json::{Value, json};
 
-use crate::common::{Dash, TOKEN, assert_fields, assert_shows, text_of};
+use crate::common::{Dash, TOKEN, assert_fields, assert_shows, home_with_traffic, text_of};
 
 /// The key cards of the page, each as its own HTML.
 fn key_cards(html: &str) -> Vec<String> {
@@ -147,37 +147,6 @@ fn latency_pair(v: &Value) -> String {
     }
 }
 
-/// The fixture home plus three requests a minute ago: two by `ak_fixture1` on `xai`, one by
-/// `ak_fixture2` on `anthropic`, so the last 24 hours have traffic to draw.
-fn home_with_traffic() -> tempfile::TempDir {
-    let dir = nullrouter_engine::testkit::homes::dashboard();
-    let now = jiff::Timestamp::now() - jiff::SignedDuration::from_secs(60);
-    let at = now.to_string();
-    let day = &at[..10];
-    let mut text = String::new();
-    for (n, (agent, provider, started, ttft)) in [
-        ("ak_fixture1", "xai", 4.0, 300.0),
-        ("ak_fixture1", "xai", 6.0, 1900.0),
-        ("ak_fixture2", "anthropic", 5.0, 640.0),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let id = format!("rq_land{n}");
-        for line in [
-            json!({"v":1,"t":"open","id":id,"arrived":at,"agent":agent,"style":"anthropic-messages","op":"generate","type":"text","target":"t"}),
-            json!({"v":1,"t":"attempt","id":id,"attempt":{"n":1,"provider":provider,"account":"main","model":"m","kind":"initial","started":started,"ended":2000.0,"outcome":{"state":"ok"},"dropped":[],"forced":[]}}),
-            json!({"v":1,"t":"close","id":id,"outcome":"succeeded","served_by":{"provider":provider,"account":"main","model":"m"},"ttft_ms":ttft,"total_ms":2000.0,"usage":null,"break_handling":{"kind":"none"},"job":null}),
-        ] {
-            text += &(line.to_string() + "\n");
-        }
-    }
-    let path = dir.path().join("records").join(format!("{day}.jsonl"));
-    let old = std::fs::read_to_string(&path).unwrap_or_default();
-    std::fs::write(path, old + &text).unwrap();
-    dir
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn the_landscape_prints_what_latency_prints() {
     let d = Dash::start(home_with_traffic()).await;
@@ -240,4 +209,29 @@ async fn an_agents_colour_is_the_same_on_two_loads_and_after_a_key_is_appended()
     let after = colours(&d.ok("/endpoint").await);
     assert_eq!(after[..first.len()], first[..], "{after:?} vs {first:?}");
     assert_eq!(after.len(), first.len() + 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn each_card_shows_the_requests_today_usage_prints() {
+    let d = Dash::start(home_with_traffic()).await;
+    let usage = d.view(ViewName::Usage, json!({"period": "today"})).await;
+    let keys = d.view(ViewName::Keys, json!({})).await;
+    let html = d.ok("/endpoint").await;
+    let cards = key_cards(&html);
+    assert_eq!(cards.len(), keys.as_array().unwrap().len());
+    let mut some = false;
+    for (card, k) in cards.iter().zip(keys.as_array().unwrap()) {
+        let want = usage["agents"]
+            .as_array()
+            .and_then(|a| a.iter().find(|r| r["id"] == k["id"]))
+            .map_or(0, |r| r["requests"].as_u64().unwrap());
+        some |= want > 0;
+        assert!(
+            text_of(card).contains(&format!("requests today {want}")),
+            "key {}: requests today {want}\n{}",
+            k["id"],
+            text_of(card)
+        );
+    }
+    assert!(some, "the home has a key with requests today");
 }

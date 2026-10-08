@@ -42,17 +42,19 @@ fn many() -> tempfile::TempDir {
 
 /// The `<div class="slot">` blocks of the page.
 fn slots(html: &str) -> Vec<String> {
-    html.split("<div class=\"slot\">").skip(1).map(|s| s.split("</div>").next().unwrap_or_default().to_owned()).collect()
+    html.split("<div class=\"slot\">")
+        .skip(1)
+        .map(|s| s.split("</div>").next().unwrap_or_default().to_owned())
+        .collect()
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn only_the_topology_graph_is_still_a_slot_here() {
-    // Spec 010 fills the period filter and the stat cards; the graph is T045.
+async fn no_slot_is_left_the_graph_the_filter_and_the_cards_are_drawn() {
     let d = Dash::dashboard().await;
     let html = d.ok("/usage").await;
     let found = slots(&html);
-    assert_eq!(found.len(), 1, "the topology graph");
-    assert!(text_of(&found[0]).contains("Topology graph"));
+    assert!(found.is_empty(), "every spec 009 slot on Usage is filled: {found:?}");
+    assert!(html.contains("class=\"topology\"") || html.contains("No providers in this period"), "the graph is drawn");
     let text = text_of(&html);
     for title in ["Total Requests", "Total Input Tokens", "Cached Tokens", "Output Tokens", "Est. Cost"] {
         assert!(text.contains(title), "{title}");
@@ -112,5 +114,6 @@ async fn an_empty_home_says_there_are_no_records_yet() {
     assert!(text.contains(usage::EMPTY), "{text}");
     assert!(!html.contains("usage-row"), "no rows");
     assert!(!text.contains("Older"), "no Older link");
-    assert_eq!(slots(&html).len(), 1, "the topology graph stays a slot until T045");
+    assert!(slots(&html).is_empty(), "no slot is left");
+    assert!(text.contains("No providers in this period"), "{text}");
 }

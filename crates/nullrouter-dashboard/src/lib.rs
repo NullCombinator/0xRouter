@@ -33,6 +33,7 @@ pub mod logos;
 pub mod page;
 pub mod pages;
 pub mod time;
+pub mod topology;
 
 /// What every handler shares.
 pub struct Shared {

@@ -76,7 +76,6 @@ impl Dash {
         .await;
         let addr = handle.addr().expect("the dashboard bound a loopback port");
 
-
         let http = Client::builder()
             .redirect(redirect::Policy::none())
             .no_proxy()
@@ -202,5 +201,39 @@ pub fn assert_fields(html: &str, object: &Value, keys: &[&str], what: &str) {
 
 /// The `<section class="card">` blocks of the page, in order (a card's text and its HTML).
 pub fn cards(html: &str) -> Vec<String> {
-    html.split("<section class=\"card").skip(1).map(|s| s.split("</section>").next().unwrap_or_default().to_owned()).collect()
+    html.split("<section class=\"card")
+        .skip(1)
+        .map(|s| s.split("</section>").next().unwrap_or_default().to_owned())
+        .collect()
+}
+
+/// The fixture home plus three requests a minute ago: two by `ak_fixture1` on `xai`, one by
+/// `ak_fixture2` on `anthropic`, so the last 24 hours have traffic to draw.
+pub fn home_with_traffic() -> tempfile::TempDir {
+    let dir = nullrouter_engine::testkit::homes::dashboard();
+    let now = jiff::Timestamp::now() - jiff::SignedDuration::from_secs(60);
+    let at = now.to_string();
+    let day = &at[..10];
+    let mut text = String::new();
+    for (n, (agent, provider, started, ttft)) in [
+        ("ak_fixture1", "xai", 4.0, 300.0),
+        ("ak_fixture1", "xai", 6.0, 1900.0),
+        ("ak_fixture2", "anthropic", 5.0, 640.0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = format!("rq_land{n}");
+        for line in [
+            json!({"v":1,"t":"open","id":id,"arrived":at,"agent":agent,"style":"anthropic-messages","op":"generate","type":"text","target":"t"}),
+            json!({"v":1,"t":"attempt","id":id,"attempt":{"n":1,"provider":provider,"account":"main","model":"m","kind":"initial","started":started,"ended":2000.0,"outcome":{"state":"ok"},"dropped":[],"forced":[]}}),
+            json!({"v":1,"t":"close","id":id,"outcome":"succeeded","served_by":{"provider":provider,"account":"main","model":"m"},"ttft_ms":ttft,"total_ms":2000.0,"usage":null,"break_handling":{"kind":"none"},"job":null}),
+        ] {
+            text += &(line.to_string() + "\n");
+        }
+    }
+    let path = dir.path().join("records").join(format!("{day}.jsonl"));
+    let old = std::fs::read_to_string(&path).unwrap_or_default();
+    std::fs::write(path, old + &text).unwrap();
+    dir
 }
