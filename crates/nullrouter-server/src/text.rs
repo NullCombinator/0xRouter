@@ -122,7 +122,7 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
         },
         Answer::Events { rx, forced: true } => match attempt::collect(&client, &inc.body, rx).await {
             Ok(r) => match response::encode(&client, &r, unix_now()) {
-                Ok(body) => relay::json(200, &through_adapter(&engine, &id, response.as_ref(), body), &id),
+                Ok(body) => relay::json(200, &through_adapter(engine, &id, response.as_ref(), body), &id),
                 Err(e) => fail(502, &format!("0router: {e}")),
             },
             Err(e) => fail(e.status.unwrap_or(502), &e.message),
