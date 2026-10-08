@@ -284,7 +284,7 @@ resumes. A secret scan finds no credentials (spec US4, SC-008, SC-011).
   - clear any pause whose definition or assignment changed on reload (research R8, data-model § ProxyState)
 - [X] T051 [US4] Skip candidates behind a paused proxy in `outgoing()` (`crates/nullrouter-engine/src/attempt.rs`) as a `skipped` attempt with reason `proxy <name> paused`, no cooldown and the existing skip path. Quota polls, refreshes and job polls for those accounts skip with the same reason. When no candidate remains, the client error names the proxy (FR-028)
 - [X] T052 [US4] Add the `proxy.fixed` op, and paused proxies in `live.snapshot` and `connection.view`, in `crates/nullrouter-server/src/operator.rs`. Make `reload` load `proxies.toml` (done: `proxy_board` lives on the engine; the redactor learns proxy passwords and usernames from `proxies.toml`; `connection.view` gains `proxy` and `accounts`; the probe uses reqwest for an `https` proxy; quota polls, refreshes and job polls do not yet skip a paused proxy, only attempts do)
-- [ ] T053 [US4] Implement `nullrouter proxy add|list|remove|use|clear|fixed` in `crates/nullrouter-cli/src/cmd/proxy.rs`:
+- [X] T053 [US4] Implement `nullrouter proxy add|list|remove|use|clear|fixed` in `crates/nullrouter-cli/src/cmd/proxy.rs`:
   - the password comes from stdin or `--password-env`, never argv;
   - `list` shows `user ✓` or `—`;
   - `remove` is refused while the proxy is assigned, naming the assignments;

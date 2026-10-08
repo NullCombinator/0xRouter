@@ -155,7 +155,7 @@ fn change(
 
 /// `text` with `key` set to `value` (or removed) in the table `[header]`; every other line is
 /// kept as written. The flag is whether anything changed.
-fn edit(text: &str, header: &str, key: &str, value: Option<&str>) -> (String, bool) {
+pub(crate) fn edit(text: &str, header: &str, key: &str, value: Option<&str>) -> (String, bool) {
     let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
     let is_table = |l: &str| l.trim_start().starts_with('[');
     let is_key = |l: &str| l.split_once('=').is_some_and(|(k, _)| k.trim() == key);

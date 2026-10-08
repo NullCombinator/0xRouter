@@ -2,6 +2,7 @@ pub(crate) mod accounts;
 pub(crate) mod behaviour;
 pub(crate) mod check;
 pub(crate) mod connection;
+pub(crate) mod proxy;
 pub(crate) mod dashboard;
 pub(crate) mod keys;
 pub(crate) mod live;

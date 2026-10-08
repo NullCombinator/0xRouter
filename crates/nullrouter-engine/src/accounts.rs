@@ -638,6 +638,13 @@ impl Accounts {
         Ok(())
     }
 
+    /// Sets (`Some`) or clears (`None`) the account's proxy assignment.
+    pub fn set_proxy(&mut self, provider: &str, name: &str, proxy: Option<String>) -> Result<(), AccountError> {
+        let at = self.position(provider, name)?;
+        self.list[at].proxy = proxy;
+        Ok(())
+    }
+
     /// Replaces the account's routing overrides.
     pub fn set_routing(&mut self, provider: &str, name: &str, routing: RoutingOverrides) -> Result<(), AccountError> {
         let at = self.position(provider, name)?;
