@@ -65,10 +65,15 @@ pub fn build(home: &OperatorHome, args: &Value, live: &Live) -> Result<View, Vie
     let providers: Vec<Value> = rows(&latency["providers"])
         .into_iter()
         .map(|(id, mut v)| {
-            let per_agent: Vec<Value> = rows(&v["agents"])
+            let mut counts: Vec<(String, u64)> = v["agents"]
+                .as_object()
                 .into_iter()
-                .map(|(a, n)| json!({"id": a, "name": name(&a), "requests": n}))
+                .flatten()
+                .map(|(a, n)| (a.clone(), n.as_u64().unwrap_or(0)))
                 .collect();
+            counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            let per_agent: Vec<Value> =
+                counts.into_iter().map(|(a, n)| json!({"id": a, "name": name(&a), "requests": n})).collect();
             v["agents"] = json!(per_agent);
             v["id"] = json!(id);
             v
