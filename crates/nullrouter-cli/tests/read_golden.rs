@@ -112,6 +112,18 @@ impl Drop for Serving {
     }
 }
 
+/// Whether the server answers an HTTP request on `port` (it accepts only after recovery).
+fn http_answers(port: u16) -> bool {
+    use std::io::{Read, Write};
+    let Ok(mut s) = std::net::TcpStream::connect(("127.0.0.1", port)) else { return false };
+    let _ = s.set_read_timeout(Some(Duration::from_millis(500)));
+    if s.write_all(b"GET / HTTP/1.1\r\nhost: x\r\nconnection: close\r\n\r\n").is_err() {
+        return false;
+    }
+    let mut first = [0u8; 5];
+    s.read_exact(&mut first).is_ok() && &first == b"HTTP/"
+}
+
 fn serve(home: &Path) -> Serving {
     let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     let child = Command::new(env!("CARGO_BIN_EXE_nullrouter"))
@@ -127,7 +139,11 @@ fn serve(home: &Path) -> Serving {
     let serving = Serving(child, port);
     for _ in 0..500 {
         if home.join("run/operator.sock").exists() && std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
-            return serving;
+            // Both listeners are bound before the server recovers the journal, and recovery
+            // closes any open request as interrupted: an HTTP answer only comes after it.
+            if http_answers(port) {
+                return serving;
+            }
         }
         std::thread::sleep(Duration::from_millis(20));
     }
