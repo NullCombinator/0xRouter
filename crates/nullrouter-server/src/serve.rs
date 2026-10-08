@@ -191,21 +191,37 @@ async fn dispatch(State(app): State<Arc<App>>, req: Request) -> Response {
     }
 }
 
-/// Serves `app` on `listener` until `shutdown` resolves, then lets open requests finish.
-pub async fn run(
-    app: Arc<App>,
-    listener: TcpListener,
-    shutdown: impl Future<Output = ()> + Send + 'static,
-) -> std::io::Result<()> {
-    // A crash left requests open and perhaps a torn last line: make the segments whole before
-    // anything is served (spec 006, FR-037).
-    let engine = app.engine.clone();
+/// Makes the journal's newest segments whole after a crash (spec 006, FR-037): a torn last line
+/// is cut off, and a request left open is recorded as interrupted.
+pub async fn recover_journal(engine: &Arc<Engine>) {
+    let engine = engine.clone();
     match tokio::task::spawn_blocking(move || engine.recover_journal()).await {
         Ok(Ok(0)) => {}
         Ok(Ok(n)) => tracing::warn!("{n} requests were still open when 0router last stopped; recorded as interrupted"),
         Ok(Err(e)) => tracing::warn!("the record journal could not be checked: {e}"),
         Err(e) => tracing::warn!("the record journal check did not finish: {e}"),
     }
+}
+
+/// Serves `app` on `listener` until `shutdown` resolves, then lets open requests finish. The
+/// journal is made whole before anything is served.
+pub async fn run(
+    app: Arc<App>,
+    listener: TcpListener,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
+    recover_journal(&app.engine).await;
+    serve_recovered(app, listener, shutdown).await
+}
+
+/// [`run`] for a caller that has already called [`recover_journal`]. `nullrouter serve` does so
+/// before it opens the operator socket, so that the socket means the server is ready; recovering
+/// again here would close a request opened since.
+pub async fn serve_recovered(
+    app: Arc<App>,
+    listener: TcpListener,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
     // Stream frames are small: without TCP_NODELAY, Nagle holds the first one for the
     // client's delayed ACK (~40 ms on Linux).
     let listener = listener.tap_io(|tcp| {

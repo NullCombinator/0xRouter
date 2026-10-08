@@ -47,6 +47,10 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
         if let Ok(addr) = listener.local_addr() {
             engine.status.set_client_listen(addr.to_string());
         }
+        // The operator socket appearing means the server is ready, so the journal is made whole
+        // first: until then no client of the socket can read a request a crash left open as
+        // still in flight.
+        serve::recover_journal(&engine).await;
         let socket = operator::bind(&home).map_err(|e| {
             eprintln!("cannot open the operator socket: {e}");
             ExitCode::from(1)
@@ -71,7 +75,7 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
         .await;
         let ops = tokio::spawn(operator::serve(engine, socket, until_stopped(stopped)));
         tracing::info!("listening on {listen}");
-        let served = serve::run(app, listener, serve::signal()).await;
+        let served = serve::serve_recovered(app, listener, serve::signal()).await;
         let _ = stop.send(true);
         let _ = ops.await;
         dashboard.stopped().await;
