@@ -12,6 +12,7 @@ use super::ssrf::{check_endpoint_url, check_public_host};
 use super::style_gate::placeholders;
 use crate::floor::{Floor, PatternRisk};
 use crate::schema::{
+    check_timeout_ms,
     AuthScheme, CapabilityKind, Endpoint, EndpointAuth, Forwarding, HeaderValue, KNOWN_OAUTH_PARAMS,
     KNOWN_SECTION_FORMATS, ModelType, ModelsLiveDecl, PluginFile, PluginSource, ProviderEntity, QuotaAccounts,
     QuotaDecl, QuotaDecoder, QuotaSource, RedirectKind, RouteOp, RoutingDecl, SignInDecl, SignInFlow, SignInParamValue,
@@ -160,7 +161,11 @@ fn semantic_errors(p: &PluginFile) -> Found {
             err(FieldPath::of(key), "schema 1 has no `".to_owned() + key + "`; set schema = 2");
         }
         for (i, m) in p.models.iter().flatten().enumerate() {
-            for (key, present) in [("wires", m.wires.is_some()), ("force", !m.force.is_empty())] {
+            for (key, present) in [
+                ("wires", m.wires.is_some()),
+                ("force", !m.force.is_empty()),
+                ("timeouts", m.timeouts.is_some()),
+            ] {
                 if present {
                     err(FieldPath::of("models").index(i).key(key), format!("schema 1 has no `{key}`; set schema = 2"));
                 }
@@ -234,6 +239,18 @@ fn semantic_errors(p: &PluginFile) -> Found {
             err(base.key("id"), format!("duplicate of models[{j}]"));
         } else {
             seen.insert((&m.id, m.kind), i);
+        }
+        if let Some(t) = &m.timeouts {
+            for (key, v, off) in [
+                ("connect_ms", t.connect_ms, false),
+                ("headers_ms", t.headers_ms, false),
+                ("first_token_ms", t.first_token_ms, true),
+                ("stall_ms", t.stall_ms, false),
+            ] {
+                if let Some(rule) = v.and_then(|v| check_timeout_ms(v, off).err()) {
+                    err(base.key("timeouts").key(key), rule);
+                }
+            }
         }
         for (j, name) in m.params.iter().flatten().enumerate() {
             if check_map_key(name).is_some() {
@@ -774,6 +791,16 @@ fn check_endpoint(
     for name in e.headers.keys().filter(|n| check_map_key(n).is_some()) {
         err(base.key("headers").key(name.as_str()), "credential-bearing header not allowed in plugins".into());
     }
+    for (key, v, off) in [
+        ("timeout_ms", e.timeout_ms, false),
+        ("stall_timeout_ms", e.stall_timeout_ms, false),
+        ("connect_timeout_ms", e.connect_timeout_ms, false),
+        ("first_token_timeout_ms", e.first_token_timeout_ms, true),
+    ] {
+        if let Some(rule) = v.and_then(|v| check_timeout_ms(v, off).err()) {
+            err(base.key(key), rule);
+        }
+    }
     for status in e.retry.keys().filter(|s| !is_status(s)) {
         err(base.key("retry").key(status.as_str()), "keys are HTTP statuses 100-599".into());
     }
@@ -1064,6 +1091,30 @@ kind = "llm"
         let no_count = GateCtx { style_ops: BTreeMap::new(), ..ctx() };
         let got = v2(V2, &no_count).unwrap_err();
         assert!(got.iter().any(|r| r.contains("count_tokens route")), "{got:?}");
+    }
+
+    #[test]
+    fn endpoint_and_model_timeouts_parse_and_are_range_checked() {
+        let with = V2
+            .replace(
+                "wire = \"anthropic-messages\"\n\n[endpoints.text.token_count]",
+                "wire = \"anthropic-messages\"\nconnect_timeout_ms = 5000\nfirst_token_timeout_ms = 0\n\n[endpoints.text.token_count]",
+            )
+            .replace(
+                "id = \"m1\"\nkind = \"llm\"",
+                "id = \"m1\"\nkind = \"llm\"\ntimeouts = { first_token_ms = 600000, stall_ms = 600000 }",
+            );
+        let g = v2(&with, &ctx()).unwrap();
+        let e = &g.entity.endpoints[&ModelType::Text].0[0];
+        assert_eq!((e.connect_timeout_ms, e.first_token_timeout_ms), (Some(5000), Some(0)));
+        let t = g.entity.models.as_ref().unwrap()[0].timeouts.unwrap();
+        assert_eq!((t.first_token_ms, t.stall_ms, t.connect_ms), (Some(600_000), Some(600_000), None));
+
+        v2_fails(&with.replace("connect_timeout_ms = 5000", "connect_timeout_ms = 0"), "endpoints.text.connect_timeout_ms: 0 ms is out of range");
+        v2_fails(&with.replace("connect_timeout_ms = 5000", "timeout_ms = 3600001"), "endpoints.text.timeout_ms: 3600001 ms is out of range");
+        v2_fails(&with.replace("first_token_timeout_ms = 0", "first_token_timeout_ms = 9999999"), "endpoints.text.first_token_timeout_ms");
+        v2_fails(&with.replace("stall_ms = 600000", "stall_ms = 0"), "models[0].timeouts.stall_ms: 0 ms is out of range");
+        v2_fails(&with.replace("first_token_ms = 600000", "first_token_ms = 3600001"), "models[0].timeouts.first_token_ms");
     }
 
     #[test]

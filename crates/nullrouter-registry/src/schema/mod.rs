@@ -23,6 +23,7 @@ mod transport;
 
 pub use capability::{CapabilitySection, ModelRoute, SectionEndpoint, SectionLimits, SectionModel};
 pub use config::{
+    ConnectionSettings, GlobalConnection, MAX_TIMEOUT_MS, ModelConnection, ModelSettings, check_timeout_ms,
     DashboardSettings, Decision, MemberDecl, OperatorConfig, PipelineSettings, ProviderSettings, RoutingSettings,
     ServerSettings, UnifiedModelDecl,
 };
@@ -34,7 +35,7 @@ pub use endpoint::{
 pub use enums::{AuthHook, AuthKind, AuthScheme, CapabilityKind, Category, ContentKind, ModelKind, Quirk, WireFormat};
 pub use forwarding::{ForwardHeader, Forwarding, ToClient, ToUpstream};
 pub use identity::{HeaderValue, IdentityDecl, Placeholder};
-pub use model::Model;
+pub use model::{Model, ModelTimeouts};
 pub use models_live::{LiveModelType, ModelsLiveDecl};
 pub(crate) use oauth::oauth_urls;
 pub use oauth::{OAuthDecl, ParamValue, host_set};

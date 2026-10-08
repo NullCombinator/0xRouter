@@ -34,6 +34,10 @@ pub struct Endpoint {
     /// Time to response headers.
     pub timeout_ms: Option<u64>,
     pub stall_timeout_ms: Option<u64>,
+    /// Time to the TCP/TLS connection.
+    pub connect_timeout_ms: Option<u64>,
+    /// Time from the response headers to the first model output; 0 = off.
+    pub first_token_timeout_ms: Option<u64>,
     #[serde(default)]
     pub force_stream: bool,
     #[serde(default)]

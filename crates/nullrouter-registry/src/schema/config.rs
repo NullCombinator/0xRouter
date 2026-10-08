@@ -31,6 +31,84 @@ pub struct OperatorConfig {
     pub routing: RoutingSettings,
     #[serde(default)]
     pub dashboard: DashboardSettings,
+    /// `[connection]`: settings for every provider (spec 013).
+    #[serde(default)]
+    pub connection: GlobalConnection,
+}
+
+/// The longest timeout an operator or a plugin may set: one hour.
+pub const MAX_TIMEOUT_MS: u64 = 3_600_000;
+
+/// The rule for a timeout: 1–3 600 000 ms, or 0 for a first-token timeout (off).
+pub fn check_timeout_ms(v: u64, allow_off: bool) -> Result<(), String> {
+    match v {
+        0 if allow_off => Ok(()),
+        1..=MAX_TIMEOUT_MS => Ok(()),
+        _ if allow_off => Err(format!("{v} ms is out of range; use 1-{MAX_TIMEOUT_MS}, or 0 for off")),
+        _ => Err(format!("{v} ms is out of range; use 1-{MAX_TIMEOUT_MS}")),
+    }
+}
+
+fn de_timeout<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
+    let v = Option::<u64>::deserialize(d)?;
+    v.map_or(Ok(()), |v| check_timeout_ms(v, false)).map_err(D::Error::custom)?;
+    Ok(v)
+}
+
+fn de_timeout_or_off<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
+    let v = Option::<u64>::deserialize(d)?;
+    v.map_or(Ok(()), |v| check_timeout_ms(v, true)).map_err(D::Error::custom)?;
+    Ok(v)
+}
+
+/// `[connection]`: only the proxy applies to every provider.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GlobalConnection {
+    /// A proxy name from `proxies.toml`, or `"none"`.
+    pub proxy: Option<String>,
+}
+
+/// `[provider.P.connection]`: how requests to one provider are sent (spec 013). Absent keys
+/// fall through to the plugin's declaration, then the built-in default.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectionSettings {
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub connect_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub header_timeout_ms: Option<u64>,
+    /// 0 = off.
+    #[serde(default, deserialize_with = "de_timeout_or_off")]
+    pub first_token_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub stall_timeout_ms: Option<u64>,
+    pub reuse: Option<bool>,
+    pub http2: Option<bool>,
+    /// A proxy name from `proxies.toml`, or `"none"`.
+    pub proxy: Option<String>,
+}
+
+/// `[provider.P.model."M".connection]`: timeouts only.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelConnection {
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub connect_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub header_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout_or_off")]
+    pub first_token_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub stall_timeout_ms: Option<u64>,
+}
+
+/// `[provider.P.model."M"]`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelSettings {
+    #[serde(default)]
+    pub connection: ModelConnection,
 }
 
 /// `[dashboard]` (spec 009): whether `serve` also serves the read-only dashboard, and where.
@@ -166,16 +244,21 @@ pub struct MemberDecl {
 }
 
 /// Operator settings for one provider. Keyed by provider id, so they survive a replace.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderSettings {
     #[serde(default = "yes")]
     pub allow_uncatalogued_models: bool,
+    #[serde(default)]
+    pub connection: ConnectionSettings,
+    /// Model id → that model's settings.
+    #[serde(default)]
+    pub model: BTreeMap<String, ModelSettings>,
 }
 
 impl Default for ProviderSettings {
     fn default() -> Self {
-        Self { allow_uncatalogued_models: true }
+        Self { allow_uncatalogued_models: true, connection: ConnectionSettings::default(), model: BTreeMap::new() }
     }
 }
 

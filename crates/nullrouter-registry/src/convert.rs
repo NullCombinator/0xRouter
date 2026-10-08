@@ -59,6 +59,8 @@ fn endpoint(url: String, wire: Option<&str>) -> Endpoint {
         encoding: None,
         timeout_ms: None,
         stall_timeout_ms: None,
+        connect_timeout_ms: None,
+        first_token_timeout_ms: None,
         force_stream: false,
         vision: false,
         retry: BTreeMap::new(),

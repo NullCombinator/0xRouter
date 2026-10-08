@@ -215,7 +215,7 @@ is never cut (spec US3).
   - a timeout's record carries `timeout: {which, ms, source}`;
   - the header timeout counts from the attempt's start, connect included (research R12);
   - a hand-edited invalid `config.toml` (a 0 header timeout) on `reload` is refused with the field named, and the previous settings stay in force (FR-032)
-- [ ] T035 [P] [US3] Write schema tests in `crates/nullrouter-registry/tests/` (the existing plugin-validation test file):
+- [X] T035 [P] [US3] Write schema tests in `crates/nullrouter-registry/tests/` (the existing plugin-validation test file):
   - `connect_timeout_ms`, `first_token_timeout_ms` and `[[models]] timeouts` parse;
   - `config.toml` `[provider.P.connection]` and `[provider.P.model."M".connection]` parse;
   - "Timeouts are 1–3 600 000 ms; first token may also be 0 (off)" is enforced, with the field named in the error;
@@ -223,8 +223,8 @@ is never cut (spec US3).
 
 ### Implementation for User Story 3
 
-- [ ] T036 [P] [US3] Add `connect_timeout_ms` and `first_token_timeout_ms` to `Endpoint` in `crates/nullrouter-registry/src/schema/endpoint.rs`, and `timeouts: Option<ModelTimeouts { connect_ms, headers_ms, first_token_ms, stall_ms }>` to `Model` in `crates/nullrouter-registry/src/schema/model.rs`, with validation in the plugin gate (contracts/config-files.md)
-- [ ] T037 [P] [US3] Add `ConnectionSettings` (`connect_timeout_ms`, `header_timeout_ms`, `first_token_timeout_ms`, `stall_timeout_ms`, `reuse`, `http2`, `proxy`) to `ProviderSettings`, a per-model map `model: BTreeMap<String, ModelConnection>` (timeouts only), and the top-level `[connection]` (proxy only) in `crates/nullrouter-registry/src/schema/config.rs`. Validate "Timeouts are 1–3 600 000 ms; first token may also be 0 (off)"
+- [X] T036 [P] [US3] Add `connect_timeout_ms` and `first_token_timeout_ms` to `Endpoint` in `crates/nullrouter-registry/src/schema/endpoint.rs`, and `timeouts: Option<ModelTimeouts { connect_ms, headers_ms, first_token_ms, stall_ms }>` to `Model` in `crates/nullrouter-registry/src/schema/model.rs`, with validation in the plugin gate (contracts/config-files.md)
+- [X] T037 [P] [US3] Add `ConnectionSettings` (`connect_timeout_ms`, `header_timeout_ms`, `first_token_timeout_ms`, `stall_timeout_ms`, `reuse`, `http2`, `proxy`) to `ProviderSettings`, a per-model map `model: BTreeMap<String, ModelConnection>` (timeouts only), and the top-level `[connection]` (proxy only) in `crates/nullrouter-registry/src/schema/config.rs`. Validate "Timeouts are 1–3 600 000 ms; first token may also be 0 (off)"
 - [ ] T038 [US3] Implement `Effective` resolution in `crates/nullrouter-engine/src/connection/mod.rs`: `fn effective(st: &EngineState, provider, account, model, endpoint) -> Effective`, with each timeout's `Source`, as in data-model § Effective connection settings. Move `upstream::stall_timeout` and the header-timeout lookup there, leaving `upstream.rs`'s env helpers in place
 - [ ] T039 [US3] Use `Effective` in `crates/nullrouter-engine/src/attempt.rs`:
   - resolve once in `candidate()`, so an in-flight request keeps its settings (FR-031);

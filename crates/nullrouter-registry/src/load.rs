@@ -742,7 +742,7 @@ pub(crate) fn validate_config(
     for (token, s) in &config.provider {
         match reg.index_of(token) {
             Some(p) => {
-                settings.insert(reg.providers[p].id.clone(), *s);
+                settings.insert(reg.providers[p].id.clone(), s.clone());
             }
             None if excused(token) => {}
             None => err(FieldPath::of("provider").key(token.as_str()), "unknown provider".into()),

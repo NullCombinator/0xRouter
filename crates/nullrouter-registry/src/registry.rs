@@ -335,7 +335,7 @@ impl Registry {
 
     /// Operator settings for `provider_id`; the default when `config.toml` has none.
     pub fn settings(&self, provider_id: &str) -> ProviderSettings {
-        self.settings.get(provider_id).copied().unwrap_or_default()
+        self.settings.get(provider_id).cloned().unwrap_or_default()
     }
 
     /// Whether the bundled client secret for `provider_id` is released in this snapshot.
