@@ -1121,7 +1121,14 @@ impl Run {
     ) -> Ended {
         let timeout = self.eff.map_or(out.header_timeout, |e| e.headers.duration());
         let clock = self.clock();
-        let send = time::timeout(timeout, timing::ATTEMPT.scope(clock.clone(), out.into_request(&st.http).send()));
+        let (client, chosen) = match connection::client_for(st, &c.provider.id, c.account) {
+            Ok(x) => x,
+            Err(e) => return Ended::Failed(Fail::transport(ErrorClass::InBand, format!("0router: {e}"), false)),
+        };
+        if let Some(name) = &chosen.name {
+            clock.set_proxy(name);
+        }
+        let send = time::timeout(timeout, timing::ATTEMPT.scope(clock.clone(), out.into_request(&client).send()));
         let resp = match self.wait(send).await {
             None => return Ended::Cancelled,
             Some(Err(_)) => {
