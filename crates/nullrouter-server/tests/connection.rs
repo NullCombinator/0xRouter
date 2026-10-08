@@ -109,10 +109,11 @@ fn failed_as_timeout(rec: &RequestRecord) -> String {
 
 #[tokio::test]
 async fn an_operator_header_timeout_beats_the_default_and_removing_it_restores_the_default() {
-    let s = server().await;
-    configure(&s, "[provider.mockco.connection]\nheader_timeout_ms = 200\n").await.unwrap();
+    // A model that timed out rests, so the second half uses the provider's other model.
+    let s = server_with(duo).await;
+    configure(&s, "[provider.duo.connection]\nheader_timeout_ms = 200\n").await.unwrap();
     s.mock.push([Step::StallHeaders { hold: Duration::from_secs(3) }]);
-    let (status, rec) = run(&s, ask(&s, "mockco/m1")).await;
+    let (status, rec) = run(&s, ask(&s, "duo/fast")).await;
     assert_ne!(status, 200, "nothing else could serve it");
     let reason = failed_as_timeout(&rec);
     assert!(reason.contains("200 ms"), "{reason}");
@@ -124,7 +125,7 @@ async fn an_operator_header_timeout_beats_the_default_and_removing_it_restores_t
     // Scenario 2: the override is gone, so the same delay is fine under the built-in 60 s.
     configure(&s, "").await.unwrap();
     s.mock.push([phased(400, 0, 10, thinking(0))]);
-    let (status, rec) = run(&s, ask(&s, "mockco/m1")).await;
+    let (status, rec) = run(&s, ask(&s, "duo/slow")).await;
     assert_eq!(status, 200);
     assert_eq!(timeout_of(&rec), None);
 }
@@ -141,8 +142,9 @@ async fn a_model_has_its_own_first_token_timeout_over_its_providers() {
 
     // Output comes 400 ms after the headers: too late for `fast`, in time for `slow`.
     s.mock.push([phased(0, 400, 10, thinking(0))]);
-    let (status, rec) = run(&s, ask(&s, "duo/fast")).await;
-    assert_ne!(status, 200);
+    // A stream is committed before its first output, so the client sees 200 and the failure
+    // is on the record.
+    let (_, rec) = run(&s, ask(&s, "duo/fast")).await;
     let reason = failed_as_timeout(&rec);
     assert!(reason.contains("no model output within 150 ms"), "{reason}");
     assert_eq!(
