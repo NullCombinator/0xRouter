@@ -43,6 +43,7 @@ tempfile.workspace = true
 criterion.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 nullrouter-engine = { path = ".", features = ["testkit"] }
+nullrouter-adapters = { workspace = true, features = ["testkit"] }
 
 [[bench]]
 name = "engine"

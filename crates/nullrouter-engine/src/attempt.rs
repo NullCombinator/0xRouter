@@ -53,6 +53,7 @@ use crate::jobs::Job;
 use crate::keys::AgentId;
 use crate::plan::{self, Candidate, Step};
 use crate::records::{
+    AdapterOutcome, AdapterRun, FailReason, InvalidOutputRule, NotRunReason,
     Attempt, AttemptKind, AttemptOutcome, AttemptPlacement, BreakHandling, ErrorClass, JobRef, Outcome, ServedBy, Usage,
 };
 use crate::routing::{CandidateKey, PlacementReason, WhyNot};
@@ -246,9 +247,24 @@ fn write_forced<'v>(
     forced
 }
 
+/// The client-style request an attempt sends from: the body as received and its IR, or, when the
+/// key's harness adapter edited it, the edited body and the IR decoded from that.
+pub(crate) struct Source<'a> {
+    pub body: &'a Value,
+    pub ir: &'a ir::Request,
+}
+
+/// What the adapter made of the request for one candidate.
+struct Adapted {
+    body: Value,
+    /// Decoded only for a cross-style attempt, the one that encodes from the IR.
+    ir: Option<ir::Request>,
+}
+
 /// The upstream body for `c` and the client keys it couldn't carry.
 fn body_for(
     req: &TextRequest,
+    src: &Source<'_>,
     c: &Candidate<'_>,
     wire: &Style,
     upstream_stream: bool,
@@ -263,9 +279,9 @@ fn body_for(
             stream: c.endpoint.force_stream.then_some(true),
             include_usage: upstream_stream,
         };
-        return Ok((request::forward(&req.body, wire, &edits).map_err(carry)?, Vec::new()));
+        return Ok((request::forward(src.body, wire, &edits).map_err(carry)?, Vec::new()));
     }
-    let mut ir = req.ir.clone();
+    let mut ir = src.ir.clone();
     ir.model.clone_from(&c.upstream_id);
     ir.stream = upstream_stream;
     let enc = request::encode(&ir, wire, &req.client.id).map_err(carry)?;
@@ -274,15 +290,20 @@ fn body_for(
 
 /// The count body for `c`: the client's own, with the model replaced, when the endpoint
 /// speaks the client's style; else encoded without generation parameters.
-fn count_body(req: &TextRequest, c: &Candidate<'_>, wire: &Style) -> Result<(Value, Vec<Dropped>), Failure> {
+fn count_body(
+    req: &TextRequest,
+    src: &Source<'_>,
+    c: &Candidate<'_>,
+    wire: &Style,
+) -> Result<(Value, Vec<Dropped>), Failure> {
     let carry = |e: nullrouter_wire::codec::CodecError| {
         Failure::new(400, format!("0router: {} can't take this request: {e}", c.provider.id))
     };
     if c.same_style(&req.client.id) {
         let edits = Edits { model: Some(&c.upstream_id), ..Edits::default() };
-        return Ok((request::forward(&req.body, wire, &edits).map_err(carry)?, Vec::new()));
+        return Ok((request::forward(src.body, wire, &edits).map_err(carry)?, Vec::new()));
     }
-    let mut ir = req.ir.clone();
+    let mut ir = src.ir.clone();
     ir.model.clone_from(&c.upstream_id);
     let enc = request::encode_count(&ir, wire, &req.client.id).map_err(carry)?;
     Ok((enc.body, enc.dropped))
@@ -459,6 +480,10 @@ struct Run {
     /// A whole (non-stream) answer, kept until the request's `close` line is written so the
     /// client never has the end of the body before the journal has the record (FR-037).
     held: Option<Reply>,
+    /// The harness adapter's edited request for the candidate being tried, if it edited.
+    adapted: Option<Adapted>,
+    /// What the adapter did for the candidate being tried; every attempt it starts records it.
+    adapter_run: Option<AdapterRun>,
 }
 
 fn cooldown_key<'c>(c: &'c Candidate<'_>) -> (&'c str, &'c str, &'c str) {
@@ -542,6 +567,8 @@ impl Engine {
             routed: None,
             placing: None,
             held: None,
+            adapted: None,
+            adapter_run: None,
         };
         tokio::spawn(run.run(st));
         answer.await.unwrap_or_else(|_| Err(Failure::new(500, "0router: the request ended without an answer")))
@@ -745,6 +772,7 @@ impl Run {
                 &counted
             }
         };
+        self.adapt(st, c);
         let outbound = match (&self.req.media, &wire) {
             (Some(m), wire) => match media_body(&self.req, m, c, wire.as_deref()) {
                 Ok(o) => o,
@@ -757,7 +785,7 @@ impl Run {
                     tried,
                 );
             }
-            (None, Some(wire)) if self.req.count => match count_body(&self.req, c, wire) {
+            (None, Some(wire)) if self.req.count => match count_body(&self.req, &self.source(), c, wire) {
                 Ok((body, dropped)) => Outbound {
                     body: Bytes::from(body.to_string()),
                     content_type: "application/json".into(),
@@ -769,7 +797,7 @@ impl Run {
             },
             (None, Some(wire)) => {
                 let upstream_stream = self.req.stream || c.endpoint.force_stream;
-                match body_for(&self.req, c, wire, upstream_stream) {
+                match body_for(&self.req, &self.source(), c, wire, upstream_stream) {
                     Ok((mut body, dropped)) => {
                         let forced = force(&mut body, c, st);
                         Outbound {
@@ -794,7 +822,7 @@ impl Run {
             let prefilled;
             let ob = match self.broken.as_ref().map(|b| b.reason.clone()) {
                 None => &outbound,
-                Some(reason) => match wire.as_deref().map(|w| breaks::continuation(&self.req, c, w, &self.seen)) {
+                Some(reason) => match wire.as_deref().map(|w| breaks::continuation(&self.req, &self.source(), c, w, &self.seen)) {
                     Some(Ok((mut body, dropped))) => {
                         kind = AttemptKind::Continuation;
                         self.resume_with(Resume::Continue);
@@ -1668,6 +1696,7 @@ impl Run {
             usage: None,
             dropped,
             forced,
+            adapter: self.adapter_run.clone(),
             placement: match kind {
                 AttemptKind::SameAccountRetry => {
                     self.placing.map(|p| AttemptPlacement { reason: PlacementReason::Retry, rank: p.rank })
@@ -1724,6 +1753,63 @@ impl Run {
             r.usage = usage;
             r.total_ms = Some(at);
         });
+    }
+
+    /// The request an attempt sends from: the adapter's edited body when it edited, else the
+    /// request as received.
+    fn source(&self) -> Source<'_> {
+        match &self.adapted {
+            Some(a) => Source { body: &a.body, ir: a.ir.as_ref().unwrap_or(&self.req.ir) },
+            None => Source { body: &self.req.body, ir: &self.req.ir },
+        }
+    }
+
+    /// Runs the key's harness adapter on the client-style request for candidate `c`, before the
+    /// upstream body is built (research R2). A fallback or resume runs it again against the
+    /// original body. Edits that no longer decode are dropped, and the run says so.
+    fn adapt(&mut self, st: &EngineState, c: &Candidate<'_>) {
+        self.adapted = None;
+        self.adapter_run = None;
+        let Some(runner) = self.engine.runner_for(st, &self.req.agent.key) else { return };
+        let mut run = if self.req.media.is_some() {
+            runner.not_run(&self.req.body, NotRunReason::MediaRequest).run
+        } else {
+            let ctx = nullrouter_adapter_kit::Context {
+                direction: nullrouter_adapter_kit::Direction::Request,
+                provider: c.provider.id.clone(),
+                target_style: c.endpoint.wire.clone().unwrap_or_else(|| "custom".into()),
+                same_style: c.same_style(&self.req.client.id),
+                model: c.upstream_id.clone(),
+                model_type: "text".into(),
+                capabilities: nullrouter_adapter_kit::Capabilities {
+                    vision: Some(c.endpoint.vision),
+                    ..Default::default()
+                },
+                stream: self.req.stream,
+                attempt: self.n + 1,
+            };
+            let out = runner.run_request(&ctx, &self.req.body);
+            let mut run = out.run;
+            if let std::borrow::Cow::Owned(body) = out.body {
+                let ir = if ctx.same_style {
+                    Ok(None)
+                } else {
+                    nullrouter_wire::codec::request::decode(&self.req.client, &body).map(Some)
+                };
+                match ir {
+                    Ok(ir) => self.adapted = Some(Adapted { body, ir }),
+                    Err(_) => {
+                        run.outcome = AdapterOutcome::Failed {
+                            reason: FailReason::InvalidOutput { rule: InvalidOutputRule::Undecodable },
+                        };
+                        run.changes.clear();
+                    }
+                }
+            }
+            run
+        };
+        run.clean_with(|s| st.redactor.redact(&crate::records::plain(s)).into_owned());
+        self.adapter_run = Some(run);
     }
 
     /// A plan entry that can't be tried: a `skipped` attempt and an attempt line.

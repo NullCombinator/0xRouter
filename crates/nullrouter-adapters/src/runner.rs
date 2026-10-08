@@ -2,6 +2,8 @@
 //! table by name; third-party ones are WASM handles (wired in with the store, user story 2).
 
 use std::borrow::Cow;
+#[cfg(feature = "testkit")]
+use std::sync::Arc;
 use std::time::Instant;
 
 use nullrouter_adapter_kit::{Context, Edits};
@@ -53,10 +55,29 @@ pub struct WasmHandle {
     pub version: String,
 }
 
+/// A test adapter: a closure over the context and body, declared selectors included. Only
+/// built with the `testkit` feature, so no production path can reach it.
+#[cfg(feature = "testkit")]
+#[derive(Clone)]
+pub struct Fixture {
+    pub name: String,
+    pub selectors: Vec<Selector>,
+    pub request: Arc<dyn Fn(&Context, &Value) -> Edits + Send + Sync>,
+}
+
+#[cfg(feature = "testkit")]
+impl std::fmt::Debug for Fixture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Fixture").field("name", &self.name).finish_non_exhaustive()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum AdapterRunner {
     Builtin(Builtin),
     Wasm(WasmHandle),
+    #[cfg(feature = "testkit")]
+    Fixture(Fixture),
 }
 
 /// The body to go on with, and what happened.
@@ -76,10 +97,13 @@ impl AdapterRunner {
         match self {
             AdapterRunner::Builtin(b) => (b.name(), "builtin"),
             AdapterRunner::Wasm(w) => (&w.harness, &w.version),
+            #[cfg(feature = "testkit")]
+            AdapterRunner::Fixture(f) => (&f.name, "fixture"),
         }
     }
 
-    fn not_run<'a>(&self, body: &'a Value, reason: NotRunReason) -> RunOutcome<'a> {
+    /// A run that did nothing, for `reason`.
+    pub fn not_run<'a>(&self, body: &'a Value, reason: NotRunReason) -> RunOutcome<'a> {
         let (h, v) = self.identity();
         RunOutcome { body: Cow::Borrowed(body), run: AdapterRun::new(h, v, AdapterOutcome::NotRun { reason }) }
     }
@@ -97,6 +121,13 @@ impl AdapterRunner {
                 (selectors, b.on_request(ctx, body))
             }
             AdapterRunner::Wasm(_) => return self.not_run(body, NotRunReason::NoApprovedVersion),
+            #[cfg(feature = "testkit")]
+            AdapterRunner::Fixture(f) => {
+                if selector::extract(body, &f.selectors).is_empty() {
+                    return self.not_run(body, NotRunReason::NoSelectorMatch);
+                }
+                (f.selectors.clone(), (f.request)(ctx, body))
+            }
         };
         let (h, v) = self.identity();
         let mut run = AdapterRun::new(h, v, AdapterOutcome::Ran);

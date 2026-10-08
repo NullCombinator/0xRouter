@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
 use arc_swap::ArcSwap;
+use nullrouter_adapters::runner::{AdapterRunner, WasmHandle};
 use nullrouter_registry::{
     LoadReport, OperatorHome, Registry, RegistryHandle, RuntimeSettings, SecretString, StartupError,
 };
@@ -125,6 +126,9 @@ pub struct Engine {
     pub history: Arc<crate::quota::history::History>,
     /// Live model lists, shared with every snapshot.
     pub live_models: Arc<LiveModels>,
+    /// Adapter runners installed at run time (third-party modules, test fixtures), by harness
+    /// name. Built-in adapters are not here: they resolve from a static table.
+    runners: ArcSwap<BTreeMap<String, AdapterRunner>>,
     /// The listeners `serve` bound, for the operator socket's `server.status`.
     pub status: crate::status::ServerStatus,
     /// Wakes the maintenance task after a reload or a token change.
@@ -175,6 +179,26 @@ fn assemble(
 }
 
 impl Engine {
+    /// Makes `runner` the one that serves keys bound to `harness`.
+    pub fn install_runner(&self, harness: &str, runner: AdapterRunner) {
+        let mut next = (**self.runners.load()).clone();
+        next.insert(harness.to_owned(), runner);
+        self.runners.store(Arc::new(next));
+    }
+
+    /// The runner for the harness agent key `key_id` is bound to. `None` for a key with no
+    /// harness. A harness with no built-in and nothing installed gets a runner that records
+    /// `not_run` (`no_approved_version`) and changes nothing.
+    pub fn runner_for(&self, st: &EngineState, key_id: &str) -> Option<AdapterRunner> {
+        let name = st.keys.iter().find(|k| k.id == key_id)?.harness.as_ref()?;
+        if let Some(r) = self.runners.load().get(name.as_str()) {
+            return Some(r.clone());
+        }
+        Some(AdapterRunner::builtin(name).unwrap_or_else(|| {
+            AdapterRunner::Wasm(WasmHandle { harness: name.to_string(), version: "none".into() })
+        }))
+    }
+
     /// Loads everything under `home`. Refuses shared `accounts.toml` / `keys.toml` /
     /// `tokens.toml`.
     pub fn open(home: OperatorHome) -> Result<(Self, StateReport), StateError> {
@@ -237,6 +261,7 @@ impl Engine {
             status: Default::default(),
             install_id: OnceLock::new(),
             generation: AtomicU64::new(1),
+            runners: ArcSwap::from_pointee(BTreeMap::new()),
             reload: Mutex::new(()),
         };
         let st = engine.snapshot();
