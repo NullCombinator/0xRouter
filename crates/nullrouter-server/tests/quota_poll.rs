@@ -477,3 +477,35 @@ async fn the_live_model_list_joins_the_static_one_in_every_style() {
     assert!(q.engine.fetch_live_models("grok-cli").await.is_err());
     assert!(has(&listed("openai").await, "grok-cli/grok-live"));
 }
+
+#[tokio::test]
+async fn a_paused_proxy_stops_the_poll_before_anything_is_sent() {
+    use nullrouter_engine::connection::fingerprints;
+    use nullrouter_engine::testkit::MockProxy;
+
+    let q = setup().await;
+    let home = q._dir.path();
+    let proxy = MockProxy::start().await;
+    nullrouter_engine::files::write_private(
+        &home.join("proxies.toml"),
+        &format!("schema = 1\n\n[[proxy]]\nname = \"eu\"\nurl = \"http://{}\"\n", proxy.addr()),
+    )
+    .unwrap();
+    let mut list = Accounts::load(&home.join(accounts::FILE)).unwrap();
+    list.set_proxy("opencode-go", "main", Some("eu".into())).unwrap();
+    list.save().unwrap();
+    q.engine.reload().await.unwrap();
+
+    // Through a healthy proxy the poll works.
+    let ok = q.engine.poll_quota("opencode-go", "main").await.unwrap();
+    assert!(ok.error.is_none(), "{ok:?}");
+    assert!(proxy.carried() >= 1);
+
+    let print = fingerprints(&q.engine.snapshot()).remove("eu").unwrap();
+    q.engine.proxy_board.pause("eu", "connect to proxy failed", &print);
+    let (carried, seen) = (proxy.carried(), q.mock.connections());
+    let paused = q.engine.poll_quota("opencode-go", "main").await.unwrap();
+    let error = paused.error.expect("the poll fails while the proxy is paused");
+    assert_eq!((error.class, error.reason.as_str()), (PollErrorClass::Withheld, "proxy eu paused"));
+    assert_eq!((proxy.carried(), q.mock.connections()), (carried, seen), "nothing was sent");
+}

@@ -343,6 +343,9 @@ impl Engine {
         crate::upstream::check_ip_host(&url, allow_private)
             .map_err(|e| PollError::new(PollErrorClass::Invalid, e.to_string()))?;
         let timeout = self.quota.timing().timeout;
+        if let Some(proxy) = crate::connection::paused_for(&self.proxy_board, st, &entity.id, Some(account)) {
+            return Err(PollError::new(PollErrorClass::Withheld, format!("proxy {proxy} paused")));
+        }
         let (client, _) = crate::connection::client_for(st, &entity.id, Some(account))
             .map_err(|e| PollError::new(PollErrorClass::Invalid, redact(e.to_string())))?;
         let mut refreshed = false;

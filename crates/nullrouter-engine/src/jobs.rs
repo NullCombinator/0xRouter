@@ -247,6 +247,9 @@ impl Engine {
                     .ok_or_else(|| failure(502, format!("0router: account {}/{name} is gone", job.provider)))?,
             ),
         };
+        if let Some(proxy) = crate::connection::paused_for(&self.proxy_board, st, &job.provider, account) {
+            return Err(failure(502, format!("0router: proxy {proxy} paused")));
+        }
         let (client, _) = crate::connection::client_for(st, &job.provider, account)
             .map_err(|e| failure(502, format!("0router: {e}")))?;
         let released = account

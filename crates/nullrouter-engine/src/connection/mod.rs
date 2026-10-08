@@ -168,6 +168,17 @@ pub fn proxy_for(registry: &Registry, provider: &str, account: Option<&crate::ac
         .unwrap_or(ChosenProxy { name: None, level: None })
 }
 
+/// The name of the paused proxy `account`'s calls to `provider` would go through, if any. Every
+/// upstream call skips a paused proxy, not only request attempts (spec 013, research R8).
+pub fn paused_for(
+    board: &pause::ProxyBoard,
+    st: &crate::state::EngineState,
+    provider: &str,
+    account: Option<&crate::accounts::Account>,
+) -> Option<String> {
+    proxy_for(&st.registry, provider, account).name.filter(|n| board.paused(n).is_some())
+}
+
 /// What each proxy is and where it is used: its definition and every account, provider or
 /// "all" setting that names it. A pause lasts while this stays the same (research R8).
 pub fn fingerprints(st: &crate::state::EngineState) -> std::collections::BTreeMap<String, String> {
