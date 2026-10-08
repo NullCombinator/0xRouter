@@ -700,7 +700,7 @@ async fn views_show_no_secret_beyond_its_last_four() {
 const TEST_KEY: &str = "sk-test-SENTINEL-T051";
 const OUTPUT: &str = "OUTPUT-SENTINEL-T051 the model's answer is never kept";
 
-/// A pair test refused with the key quoted, then a combo test answered with a sentinel output:
+/// A combo test answered with a sentinel output, then a pair test refused with the key quoted:
 /// neither the key, the test prompt nor the output shows in the logs, the test's records, what
 /// `test.plan`, `test.run` and `verdicts.list` answer, or `routing/verdicts.jsonl`.
 #[tokio::test]
@@ -722,7 +722,11 @@ async fn model_tests_keep_no_secret_prompt_or_output() {
     let calls = Arc::new(AtomicUsize::new(0));
     let n = calls.clone();
     s.mock.respond(move |r| match n.fetch_add(1, Ordering::SeqCst) {
-        0 => {
+        0 => Step::json(
+            200,
+            json!({"id": "x", "object": "chat.completion", "model": "m1", "choices": [{"index": 0, "message": {"role": "assistant", "content": OUTPUT}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 3, "completion_tokens": 9}}),
+        ),
+        _ => {
             let auth = r.headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
             let message = format!("The model m1 does not exist for {auth}");
             Step::Reply {
@@ -731,10 +735,6 @@ async fn model_tests_keep_no_secret_prompt_or_output() {
                 body: Bytes::from(json!({"error": {"message": message}}).to_string()),
             }
         }
-        _ => Step::json(
-            200,
-            json!({"id": "x", "object": "chat.completion", "model": "m1", "choices": [{"index": 0, "message": {"role": "assistant", "content": OUTPUT}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 3, "completion_tokens": 9}}),
-        ),
     });
 
     let mut socket = Vec::new();
@@ -744,10 +744,10 @@ async fn model_tests_keep_no_secret_prompt_or_output() {
     let st = s.engine.snapshot();
     let planned = model_tests::expand(&s.engine, &st, Some("alpha/m1"), None).unwrap();
     let stop = CancellationToken::new();
-    let pair = model_tests::run_pair(&s.engine, &planned[0], Source::Test, "tr_s", &stop).await.unwrap();
-    assert_eq!(pair.state, Some(State::Broken), "{pair:?}");
     let combo = model_tests::combo::run_combo(&s.engine, "c", Source::Test, "tr_s", &stop).await.unwrap().unwrap();
     assert_eq!(combo.state, State::Pass, "{combo:?}");
+    let pair = model_tests::run_pair(&s.engine, &planned[0], Source::Test, "tr_s", &stop).await.unwrap();
+    assert_eq!(pair.state, Some(State::Broken), "{pair:?}");
     // What `test.run` streams.
     socket.push(json!({"event": "result", "result": pair}).to_string());
     socket.push(json!({"event": "combo", "result": combo}).to_string());
