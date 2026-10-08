@@ -207,7 +207,7 @@ is never cut (spec US3).
 
 ### Tests for User Story 3
 
-- [ ] T033 [P] [US3] Write resolution tests in `crates/nullrouter-engine/src/connection/mod.rs` (`#[cfg(test)]`): every precedence step for each of the four timeouts, and the `Source` reported. Today's env overrides (`FETCH_CONNECT_TIMEOUT_MS` for connect and header, `STREAM_STALL_TIMEOUT_MS`) remain the built-in level. First token is off unless set
+- [X] T033 [P] [US3] Write resolution tests in `crates/nullrouter-engine/src/connection/mod.rs` (`#[cfg(test)]`): every precedence step for each of the four timeouts, and the `Source` reported. Today's env overrides (`FETCH_CONNECT_TIMEOUT_MS` for connect and header, `STREAM_STALL_TIMEOUT_MS`) remain the built-in level. First token is off unless set
 - [ ] T034 [P] [US3] Write `crates/nullrouter-server/tests/connection.rs` for timeouts:
   - US3 scenarios 1–4 and 6;
   - SC-006: a thinking stream of 5 min (paused tokio clock) with gaps below stall completes with defaults;
@@ -225,8 +225,8 @@ is never cut (spec US3).
 
 - [X] T036 [P] [US3] Add `connect_timeout_ms` and `first_token_timeout_ms` to `Endpoint` in `crates/nullrouter-registry/src/schema/endpoint.rs`, and `timeouts: Option<ModelTimeouts { connect_ms, headers_ms, first_token_ms, stall_ms }>` to `Model` in `crates/nullrouter-registry/src/schema/model.rs`, with validation in the plugin gate (contracts/config-files.md)
 - [X] T037 [P] [US3] Add `ConnectionSettings` (`connect_timeout_ms`, `header_timeout_ms`, `first_token_timeout_ms`, `stall_timeout_ms`, `reuse`, `http2`, `proxy`) to `ProviderSettings`, a per-model map `model: BTreeMap<String, ModelConnection>` (timeouts only), and the top-level `[connection]` (proxy only) in `crates/nullrouter-registry/src/schema/config.rs`. Validate "Timeouts are 1–3 600 000 ms; first token may also be 0 (off)"
-- [ ] T038 [US3] Implement `Effective` resolution in `crates/nullrouter-engine/src/connection/mod.rs`: `fn effective(st: &EngineState, provider, account, model, endpoint) -> Effective`, with each timeout's `Source`, as in data-model § Effective connection settings. Move `upstream::stall_timeout` and the header-timeout lookup there, leaving `upstream.rs`'s env helpers in place
-- [ ] T039 [US3] Use `Effective` in `crates/nullrouter-engine/src/attempt.rs`:
+- [X] T038 [US3] Implement `Effective` resolution in `crates/nullrouter-engine/src/connection/mod.rs`: `fn effective(st: &EngineState, provider, account, model, endpoint) -> Effective`, with each timeout's `Source`, as in data-model § Effective connection settings. Move `upstream::stall_timeout` and the header-timeout lookup there, leaving `upstream.rs`'s env helpers in place
+- [X] T039 [US3] Use `Effective` in `crates/nullrouter-engine/src/attempt.rs`:
   - resolve once in `candidate()`, so an in-flight request keeps its settings (FR-031);
   - header timeout from the attempt's start;
   - put the connect timeout on the clock (enforced by T012's layer);

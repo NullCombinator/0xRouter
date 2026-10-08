@@ -54,11 +54,12 @@ use crate::keys::AgentId;
 use crate::plan::{self, Candidate, Step};
 use crate::records::{
     Attempt, AttemptKind, AttemptOutcome, AttemptPlacement, AttemptTiming, BreakHandling, ErrorClass, JobRef, Outcome,
-    ServedBy, Usage,
+    ServedBy, TimeoutHit, TimeoutKind, Usage,
 };
 use crate::routing::{CandidateKey, PlacementReason, WhyNot};
 use crate::signin::refresh::Refreshed;
 use crate::state::{Engine, EngineState};
+use crate::connection::{self, Effective};
 use crate::timing::{self, AttemptClock, DEFAULT_CONNECT_TIMEOUT};
 use crate::upstream::{self, RequestParts, SignedIn};
 
@@ -479,6 +480,8 @@ struct Run {
     held: Option<Reply>,
     /// The running attempt's marks (spec 013). Kept after the attempt ends, for the close wait.
     clock: Option<Arc<AttemptClock>>,
+    /// The timeouts the running candidate is held to, resolved from the request's snapshot (FR-031).
+    eff: Option<Effective>,
     /// Deliberate retry waiting since the last attempt began, handed to the next attempt's clock.
     pending_retry: Duration,
     /// Sign-in token refresh time since the last attempt began, handed on the same way.
@@ -570,6 +573,7 @@ impl Engine {
             placing: None,
             held: None,
             clock: None,
+            eff: None,
             pending_retry: Duration::ZERO,
             pending_refresh: Duration::ZERO,
         };
@@ -761,6 +765,7 @@ impl Run {
         tried: &mut Vec<Tried>,
     ) -> Result<bool, Failure> {
         let account = c.account.map(|a| a.name.clone());
+        self.eff = Some(connection::effective(st, c.provider, &c.requested, &c.upstream_id, c.endpoint));
         let skip = |run: &mut Self, reason: String, tried: &mut Vec<Tried>| {
             run.skip(&c.provider.id, account.clone(), &c.upstream_id, &reason, None, tried);
             Ok(false)
@@ -1114,13 +1119,20 @@ impl Run {
         wire: Option<&Arc<Style>>,
         out: upstream::Outgoing,
     ) -> Ended {
-        let timeout = out.header_timeout;
+        let timeout = self.eff.map_or(out.header_timeout, |e| e.headers.duration());
         let clock = self.clock();
         let send = time::timeout(timeout, timing::ATTEMPT.scope(clock.clone(), out.into_request(&st.http).send()));
         let resp = match self.wait(send).await {
             None => return Ended::Cancelled,
             Some(Err(_)) => {
+                self.timed_out(TimeoutKind::Headers);
                 let reason = format!("no response headers within {} ms", timeout.as_millis());
+                return Ended::Failed(Fail::transport(ErrorClass::Timeout, reason, false));
+            }
+            Some(Ok(Err(e))) if connect_timed_out(&e).is_some() => {
+                self.timed_out(TimeoutKind::Connect);
+                let ms = connect_timed_out(&e).map_or(0, |d| d.as_millis());
+                let reason = format!("no connection within {ms} ms");
                 return Ended::Failed(Fail::transport(ErrorClass::Timeout, reason, false));
             }
             Some(Ok(Err(e))) => {
@@ -1139,7 +1151,7 @@ impl Run {
             resp.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_owned);
         let is_stream =
             content_type.as_deref().is_some_and(|c| c.starts_with("text/event-stream") || c.contains("ndjson"));
-        let stall = upstream::stall_timeout(c.endpoint);
+        let stall = self.eff.map_or_else(|| upstream::stall_timeout(c.endpoint), |e| e.stall.duration());
         let ok = (200..300).contains(&status);
         if ok {
             clock.mark_headers();
@@ -1420,6 +1432,7 @@ impl Run {
             match self.wait(time::timeout(stall, resp.chunk())).await {
                 None => return Err(Ended::Cancelled),
                 Some(Err(_)) => {
+                    self.timed_out(TimeoutKind::Stall);
                     let reason = format!("no byte for {} ms", stall.as_millis());
                     return Err(Ended::Failed(Fail::transport(ErrorClass::Stall, reason, false)));
                 }
@@ -1468,13 +1481,23 @@ impl Run {
         let mut merge = self.broken.as_ref().is_some_and(|b| b.resume == Some(Resume::Continue))
             && self.seen.open == breaks::Open::Text;
         let cut = |u: &ir::Usage| (!u.is_empty()).then(|| Usage::reported(u, t.usage.semantics));
+        // From the headers until the first output; thinking is output (research R12).
+        let first_token = self.eff.and_then(|e| e.first_token);
+        let first_by = time::Instant::now() + first_token.map_or(Duration::ZERO, |t| t.duration());
         loop {
+            let waiting_first = first_token.is_some() && !output;
             let chunk = tokio::select! {
                 _ = self.req.cancel.cancelled() => return Ended::Cancelled,
+                _ = time::sleep_until(first_by), if waiting_first => {
+                    self.timed_out(TimeoutKind::FirstToken);
+                    let reason = format!("no model output within {} ms", first_token.map_or(0, |t| t.ms));
+                    return Ended::Failed(Fail::transport(ErrorClass::Timeout, reason, false));
+                }
                 c = time::timeout(stall, resp.chunk()) => c,
             };
             let (frames, eof) = match chunk {
                 Err(_) => {
+                    self.timed_out(TimeoutKind::Stall);
                     let reason = format!("no byte for {} ms", stall.as_millis());
                     return Ended::Failed(Fail {
                         usage: cut(&usage),
@@ -1756,6 +1779,12 @@ impl Run {
         }
     }
 
+    /// Notes on the attempt which timeout ended it and where its value came from (research R12).
+    fn timed_out(&self, which: TimeoutKind) {
+        let Some(t) = self.eff.and_then(|e| e.hit(which)) else { return };
+        self.clock().set_timeout(TimeoutHit { which, ms: t.ms, source: t.source });
+    }
+
     /// The running attempt's clock; a detached one when no attempt is running.
     fn clock(&self) -> Arc<AttemptClock> {
         self.clock.clone().unwrap_or_else(|| Arc::new(AttemptClock::new(self.req.arrived, DEFAULT_CONNECT_TIMEOUT)))
@@ -1791,7 +1820,8 @@ impl Run {
             },
             timing: None,
         };
-        let clock = Arc::new(AttemptClock::new(self.req.arrived, DEFAULT_CONNECT_TIMEOUT));
+        let connect = self.eff.map_or(DEFAULT_CONNECT_TIMEOUT, |e| e.connect.duration());
+        let clock = Arc::new(AttemptClock::new(self.req.arrived, connect));
         clock.add_retry_wait(std::mem::take(&mut self.pending_retry));
         clock.add_refresh(std::mem::take(&mut self.pending_refresh));
         self.engine.live.attempt(self.id(), &a, clock.clone());
@@ -1997,4 +2027,16 @@ mod tests {
         assert_eq!(session_input(&AgentId::new("ak_1", None)), "ak_1");
         assert_eq!(session_input(&AgentId::new("ak_1", Some("sess-9"))), "ak_1:sess-9");
     }
+}
+
+/// The connect limit a send error ran into, when that is what ended it.
+fn connect_timed_out(e: &(dyn std::error::Error + 'static)) -> Option<Duration> {
+    let mut cur = Some(e);
+    while let Some(err) = cur {
+        if let Some(t) = err.downcast_ref::<crate::connection::clients::ConnectTimedOut>() {
+            return Some(t.0);
+        }
+        cur = err.source();
+    }
+    None
 }
