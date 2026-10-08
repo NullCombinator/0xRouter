@@ -366,7 +366,7 @@ mocks, then live, every turn completes and every change is recorded.
     `REJECTS_ECHOED_REASONING`, and cite the run date in a comment.
   - Re-run until every turn passes (SC-001). Record the results in
     `tests/harness/README.md`.
-- [ ] T032 [US1] Add `nullrouter adapters list` in `crates/nullrouter-cli/src/cmd/adapters.rs`
+- [X] T032 [US1] Add `nullrouter adapters list` in `crates/nullrouter-cli/src/cmd/adapters.rs`
   (new) that shows hermes as `built-in`, for US1's operator view. Other subcommands return
   "not available yet" until US2.
 
