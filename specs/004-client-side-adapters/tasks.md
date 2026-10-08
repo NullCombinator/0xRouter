@@ -560,9 +560,13 @@ foundation here, not a later story.
     server's callers `.await` them. `WasmHandle` holds the loaded module and, per request, the
     client style (`with_client`) that the guardrail decodes with. Without a client style an
     edit is never applied. Tests: `tests/wasm_runner.rs`, on WAT modules.
-  - Still to do: the response and event sides (the arm keeps `reads_responses() == false`, so
-    third-party adapters see no responses yet), the guardrail's event check, loading from the
-    store at reload, the hash re-check with `source_mismatch`, the module cache, alerts and
+  - Loading done, not yet run in CI: `loader.rs` reads the serving version, re-hashes its
+    source and module (`not_run{source_mismatch}` plus a `source_mismatch` alert on a
+    difference), refuses a module the load gate refuses (`module_refused` alert), and keeps
+    compiled modules by `wasm_hash`. `WasmHandle` now carries the `not_run` reason, so a suspect
+    version records `suspect`. Tests: `tests/loader.rs`. The engine does not call the loader yet.
+  - Still to do: the engine calling the loader at reload, the response and event sides (the arm keeps `reads_responses() == false`, so
+    third-party adapters see no responses yet), the guardrail's event check, alerts and
     the suspect mark on a `Blocked` run, and `builder_client.rs`.
 - [ ] T047 [P] `nullrouter-adapters` testkit in `src/testkit.rs` (feature `testkit`).
   - `install_fixture(home, harness, wasm_bytes, source_dir, state)` writes a store entry

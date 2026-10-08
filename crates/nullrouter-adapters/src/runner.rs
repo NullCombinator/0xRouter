@@ -11,6 +11,7 @@ use nullrouter_wire::codec::{Style, request};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::HarnessName;
 use crate::apply::{self, ContentChange, Rule};
 use crate::builtin::hermes;
 use crate::guard::{self, Verdict};
@@ -18,7 +19,6 @@ use crate::record::{
     AdapterDirection, AdapterOutcome, AdapterRef, AdapterRun, FailReason, GuardrailEvent, NotRunReason,
 };
 use crate::selector::{self, Selector};
-use crate::HarnessName;
 
 /// The built-in adapters, a closed set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,8 +69,10 @@ pub struct WasmModule {
 pub struct WasmHandle {
     pub harness: String,
     pub version: String,
-    /// `None`: no version serves, and the arm records `not_run`.
+    /// `None`: no version serves, and the arm records `not_run` for `reason`.
     pub module: Option<Arc<WasmModule>>,
+    /// Why nothing runs when `module` is `None`.
+    pub reason: NotRunReason,
     /// The key's client style, which the guardrail decodes with. Set for each request by
     /// [`AdapterRunner::with_client`]; without it an edit is never applied.
     pub client: Option<Arc<Style>>,
@@ -79,11 +81,23 @@ pub struct WasmHandle {
 impl WasmHandle {
     /// A harness with no approved version.
     pub fn absent(harness: &str) -> Self {
-        Self { harness: harness.to_owned(), version: "none".into(), module: None, client: None }
+        Self::unavailable(harness, "none", NotRunReason::NoApprovedVersion)
+    }
+
+    /// A harness whose version cannot run, for `reason` (a suspect or tampered version).
+    pub fn unavailable(harness: &str, version: &str, reason: NotRunReason) -> Self {
+        Self { harness: harness.to_owned(), version: version.to_owned(), module: None, reason, client: None }
     }
 
     pub fn loaded(harness: &str, version: &str, module: WasmModule) -> Self {
-        Self { harness: harness.to_owned(), version: version.to_owned(), module: Some(Arc::new(module)), client: None }
+        let module = Some(Arc::new(module));
+        Self {
+            harness: harness.to_owned(),
+            version: version.to_owned(),
+            module,
+            reason: NotRunReason::NoApprovedVersion,
+            client: None,
+        }
     }
 }
 
@@ -217,7 +231,7 @@ impl AdapterRunner {
     /// Whatever goes wrong, the original body goes on (FR-018).
     async fn wasm_request<'a>(&self, w: &WasmHandle, ctx: &Context, body: &'a Value) -> RunOutcome<'a> {
         let started = Instant::now();
-        let Some(m) = &w.module else { return self.not_run(body, NotRunReason::NoApprovedVersion) };
+        let Some(m) = &w.module else { return self.not_run(body, w.reason) };
         let parts = selector::extract(body, &m.request_selectors);
         if parts.is_empty() {
             return self.not_run(body, NotRunReason::NoSelectorMatch);
@@ -314,7 +328,9 @@ impl AdapterRunner {
         match self {
             AdapterRunner::Builtin(_) | AdapterRunner::Wasm(_) => false,
             #[cfg(feature = "testkit")]
-            AdapterRunner::Fixture(f) => !f.response_selectors.is_empty() && (f.response.is_some() || f.event.is_some()),
+            AdapterRunner::Fixture(f) => {
+                !f.response_selectors.is_empty() && (f.response.is_some() || f.event.is_some())
+            }
         }
     }
 
