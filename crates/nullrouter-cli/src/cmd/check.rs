@@ -38,6 +38,7 @@ pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, Exit
     }
     let errors = !list("skipped").is_empty()
         || !list("dropped_unified_models").is_empty()
+        || !list("paused_proxies").is_empty()
         || lines(&s["errors"]).next().is_some()
         || modes.iter().any(|m| m["error"] == true);
     Ok(ExitCode::from(u8::from(errors)))

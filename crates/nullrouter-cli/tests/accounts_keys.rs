@@ -239,12 +239,12 @@ fn accounts_list_shows_sign_in_states_and_the_command() {
     fn cells(l: &str) -> Vec<&str> {
         l.split("  ").map(str::trim).filter(|c| !c.is_empty()).collect()
     }
-    assert_eq!(cells(lines[0]), ["provider", "name", "kind", "order", "priority", "secret", "state"], "{text}");
-    assert_eq!(cells(lines[1]), ["anthropic", "api", "key", "1", "1", "…0003", "active"], "{text}");
-    assert_eq!(cells(lines[2]), ["anthropic", "max", "signin", "0", "1", "…h3Kq", "active"], "{text}");
+    assert_eq!(cells(lines[0]), ["provider", "name", "kind", "order", "priority", "secret", "proxy", "state"], "{text}");
+    assert_eq!(cells(lines[1]), ["anthropic", "api", "key", "1", "1", "…0003", "—", "active"], "{text}");
+    assert_eq!(cells(lines[2]), ["anthropic", "max", "signin", "0", "1", "…h3Kq", "—", "active"], "{text}");
     assert_eq!(
         cells(lines[3]),
-        ["xai", "main", "signin", "0", "1", "…Zt1c", "needs sign-in since 2026-10-03 14:02 (invalid_grant)"],
+        ["xai", "main", "signin", "0", "1", "…Zt1c", "—", "needs sign-in since 2026-10-03 14:02 (invalid_grant)"],
         "{text}"
     );
     assert_eq!(
@@ -256,6 +256,7 @@ fn accounts_list_shows_sign_in_states_and_the_command() {
             "0",
             "1",
             "…p0Lm",
+            "—",
             "refused by provider since 2026-10-03 14:02 (not for this client)"
         ],
         "{text}"

@@ -8,6 +8,8 @@ exit: 0
     "order": 0,
     "priority": 1.0,
     "secret": "…5555",
+    "proxy": null,
+    "proxy_level": null,
     "state": "active",
     "state_since": null,
     "state_reason": null,

@@ -264,7 +264,7 @@ resumes. A secret scan finds no credentials (spec US4, SC-008, SC-011).
 
 ### Implementation for User Story 4
 
-- [ ] T046 [US4] (load, save and validation done; adding the passwords to the `Redactor` waits for the engine wiring in T048) Implement the `proxies.toml` load and save in `crates/nullrouter-engine/src/connection/proxy.rs`:
+- [X] T046 [US4] (load, save and validation done; adding the passwords to the `Redactor` waits for the engine wiring in T048) Implement the `proxies.toml` load and save in `crates/nullrouter-engine/src/connection/proxy.rs`:
   - schema 1, `[[proxy]] { name, url, username?, password? }`, with the password a string or `{ env = "VAR" }`;
   - mode 0600, written atomically through `crate::files`;
   - validation: "`name` matches `[a-z0-9][a-z0-9_-]{0,31}` and is unique; `none` is reserved; `url` scheme is `http`, `https` or `socks5`, with a host and port; the URL itself has no credentials" (data-model § Proxy).
@@ -291,7 +291,7 @@ resumes. A secret scan finds no credentials (spec US4, SC-008, SC-011).
   - `use` and `clear` write `config.toml` or `accounts.toml`; an unknown provider or account is refused with the list of known ones.
 
   Follow contracts/cli.md § `nullrouter proxy`, and register the command in `cmd/mod.rs`
-- [ ] T054 [US4] Add a `PROXY` column to `nullrouter accounts list` in `crates/nullrouter-cli/src/cmd/accounts.rs`. In `crates/nullrouter-cli/src/cmd/check.rs`, report paused proxies as errors, assignments that name undefined proxies, and `proxies.toml`'s file mode
+- [X] T054 [US4] Add a `PROXY` column to `nullrouter accounts list` in `crates/nullrouter-cli/src/cmd/accounts.rs`. In `crates/nullrouter-cli/src/cmd/check.rs`, report paused proxies as errors, assignments that name undefined proxies, and `proxies.toml`'s file mode
 
 **Checkpoint**: US4 works. Push with the user's OK and verify SC-008 and SC-011 in CI.
 

@@ -119,3 +119,37 @@ fn fixed_probes_the_proxy_and_resumes_only_when_it_answers() {
     assert!(text(&o).contains("up reachable; traffic resumed"));
     assert!(refused(h, &["proxy", "fixed", "nope"]).contains("known proxies"));
 }
+
+#[test]
+fn accounts_list_and_check_show_the_proxy_a_pause_and_a_name_nobody_defined() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    ok(h, &["accounts", "add", "anthropic", "main"], "sk-cli-SENTINEL-0011\n");
+    ok(h, &["proxy", "add", "eu", "http://127.0.0.1:3128"], "");
+    ok(h, &["proxy", "use", "eu", "--account", "anthropic/main"], "");
+
+    let list = ok(h, &["accounts", "list"], "");
+    assert!(list.contains("proxy") && list.contains("eu (account)"), "{list}");
+
+    // A pause (written as the engine writes it) is an error with the fix named.
+    let routing = h.join("routing");
+    std::fs::create_dir_all(&routing).unwrap();
+    std::fs::set_permissions(&routing, std::fs::Permissions::from_mode(0o700)).unwrap();
+    nullrouter_engine::files::write_private(
+        &routing.join("proxies.json"),
+        r#"{"paused":{"eu":{"since":"2026-10-08T10:00:00Z","reason":"connect to proxy failed"}}}"#,
+    )
+    .unwrap();
+    let o = nr(h, &["check"], "");
+    let said = text(&o);
+    assert!(!o.status.success(), "{said}");
+    assert!(said.contains("error: proxy eu is paused (unreachable since 2026-10-08T10:00:00Z)"), "{said}");
+    assert!(said.contains("nullrouter proxy fixed eu"), "{said}");
+
+    // An assignment naming a proxy nobody defined is a note, not an error.
+    let mut list = Accounts::load(&h.join(accounts::FILE)).unwrap();
+    list.set_proxy("anthropic", "main", Some("gone".into())).unwrap();
+    list.save().unwrap();
+    let said = text(&nr(h, &["check"], ""));
+    assert!(said.contains("note: account anthropic/main is assigned proxy \"gone\", which isn't defined"), "{said}");
+}

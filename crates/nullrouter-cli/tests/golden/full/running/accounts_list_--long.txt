@@ -1,10 +1,10 @@
 exit: 0
 --- stdout
-provider    name    kind    order  priority  secret                    state
-anthropic   main    key     1      1         …0001                     active
-anthropic   spare   key     2      1         …0002                     disabled
-openrouter  envkey  key     3      0.5       env:NR_FIXTURE_UNSET_VAR  active
-xai         work    signin  4      1         …1111                     active
+provider    name    kind    order  priority  secret                    proxy  state
+anthropic   main    key     1      1         …0001                     —      active
+anthropic   spare   key     2      1         …0002                     —      disabled
+openrouter  envkey  key     3      0.5       env:NR_FIXTURE_UNSET_VAR  —      active
+xai         work    signin  4      1         …1111                     —      active
     email work@example.test  tier pro  expires 2026-10-03T20:23:00Z  refreshed 2026-10-03T12:00:00Z
 xai         old     signin  5      1         …3333                     needs sign-in since 2026-10-02 09:05 (the refresh token expired)
     email -  tier -  expires 2026-10-02T09:00:00Z  refreshed -
