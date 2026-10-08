@@ -217,6 +217,11 @@ impl MockUpstream {
         self.inner.connections.load(Ordering::SeqCst)
     }
 
+    /// Connections that did not come through `proxy`: what reached the upstream directly.
+    pub fn direct_connections(&self, proxy: &super::MockProxy) -> usize {
+        self.connections().saturating_sub(proxy.carried())
+    }
+
     /// When clients dropped streamed bodies before their end.
     pub fn disconnects(&self) -> Vec<Instant> {
         lock(&self.inner.disconnects).clone()

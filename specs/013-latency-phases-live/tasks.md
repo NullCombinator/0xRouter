@@ -250,7 +250,7 @@ resumes. A secret scan finds no credentials (spec US4, SC-008, SC-011).
 
 ### Tests for User Story 4
 
-- [ ] T042 [P] [US4] Add `crates/nullrouter-engine/src/testkit/mock_proxy.rs`: a minimal HTTP CONNECT and SOCKS5 proxy on 127.0.0.1, with optional basic auth, a request counter, `stop()` and `start()`. Make `MockUpstream` count direct connections separately from proxied ones
+- [X] T042 [P] [US4] Add `crates/nullrouter-engine/src/testkit/mock_proxy.rs`: a minimal HTTP CONNECT and SOCKS5 proxy on 127.0.0.1, with optional basic auth, a request counter, `stop()` and `start()`. Make `MockUpstream` count direct connections separately from proxied ones (done: `stop()` is async, `start()` is `start_again()`; HTTP CONNECT, absolute-form HTTP and SOCKS5; `MockUpstream::direct_connections(&proxy)` is connections minus those the proxy carried)
 - [ ] T043 [P] [US4] Write `crates/nullrouter-server/tests/proxy.rs`:
   - US4 scenarios 1–3: account, provider and all levels, and `none` at each;
   - the record's `proxy` name;
