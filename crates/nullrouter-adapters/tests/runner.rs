@@ -40,6 +40,7 @@ fn a_run_with_no_edits_borrows_the_body() {
 #[test]
 fn the_response_side_reports_no_selector_match_for_hermes() {
     let r = AdapterRunner::builtin(&HarnessName::new("hermes").unwrap()).unwrap();
-    let out = r.run_response(&ctx(), &json!({}));
+    let body = json!({});
+    let out = r.run_response(&ctx(), &body);
     assert_eq!(out.run.outcome, AdapterOutcome::NotRun { reason: NotRunReason::NoSelectorMatch });
 }
