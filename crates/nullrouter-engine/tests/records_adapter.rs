@@ -4,7 +4,7 @@ use nullrouter_adapter_kit::{Edits, Path, Reason};
 use nullrouter_adapters::apply::changes;
 use nullrouter_engine::records::{
     AdapterDirection, AdapterOutcome, AdapterRef, AdapterRun, FailReason, GuardrailEvent, GuardrailRule,
-    InvalidOutputRule, NotRunReason, RequestRecord,
+    InvalidOutputRule, NotRunReason, RequestRecord, redact_run,
 };
 use nullrouter_engine::redact::Redactor;
 use nullrouter_registry::SecretString;
@@ -88,7 +88,7 @@ fn paths_are_cleaned_of_secrets_and_control_characters() {
     // A client can name a key anything, including a secret it has seen.
     e.remove(&Path::root().child(&format!("{SECRET}\u{1b}[31m")), Reason::TargetRejectsField);
     run.changes = changes(&e.edits);
-    run.redact(&redactor);
+    redact_run(&mut run, &redactor);
     let text = serde_json::to_string(&run).unwrap();
     assert!(!text.contains(SECRET), "{text}");
     assert!(text.contains("***"), "{text}");

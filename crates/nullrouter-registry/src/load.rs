@@ -490,6 +490,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
         server: config.server.clone(),
         pipeline: config.pipeline,
         dashboard: config.dashboard.clone(),
+        adapters: config.adapters.clone(),
         routing: RoutingSettings {
             amortization: config.routing.amortization,
             amortization_for: outcome.amortization_for,

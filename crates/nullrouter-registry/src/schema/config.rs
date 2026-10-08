@@ -31,6 +31,86 @@ pub struct OperatorConfig {
     pub routing: RoutingSettings,
     #[serde(default)]
     pub dashboard: DashboardSettings,
+    #[serde(default)]
+    pub adapters: AdaptersSettings,
+}
+
+/// `[adapters]` (spec 004): where the catalogue and builder are, and the sandbox's limits.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdaptersSettings {
+    /// HTTPS URL of the catalogue index. The SSRF rules are applied when it is fetched.
+    #[serde(default = "default_catalogue_url", deserialize_with = "de_https_url")]
+    pub catalogue_url: String,
+    /// Path to the builder binary. Absent means `nullrouter-builder` on `PATH`, and installs
+    /// stop at `queued` if that isn't there either.
+    #[serde(default)]
+    pub builder: Option<String>,
+    #[serde(default = "default_request_deadline", deserialize_with = "de_request_deadline")]
+    pub request_deadline_ms: u32,
+    #[serde(default = "default_event_deadline", deserialize_with = "de_event_deadline")]
+    pub event_deadline_ms: u32,
+    #[serde(default = "default_memory", deserialize_with = "de_memory")]
+    pub memory_mib: u32,
+    /// The pooling allocator's instance count.
+    #[serde(default = "default_instances", deserialize_with = "de_instances")]
+    pub max_instances: u32,
+}
+
+impl Default for AdaptersSettings {
+    fn default() -> Self {
+        Self {
+            catalogue_url: default_catalogue_url(),
+            builder: None,
+            request_deadline_ms: default_request_deadline(),
+            event_deadline_ms: default_event_deadline(),
+            memory_mib: default_memory(),
+            max_instances: default_instances(),
+        }
+    }
+}
+
+fn default_catalogue_url() -> String {
+    "https://raw.githubusercontent.com/NullCombinator/0xRouter/main/catalogue/index.toml".into()
+}
+fn default_request_deadline() -> u32 {
+    20
+}
+fn default_event_deadline() -> u32 {
+    2
+}
+fn default_memory() -> u32 {
+    64
+}
+fn default_instances() -> u32 {
+    64
+}
+
+fn de_https_url<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    let s = String::deserialize(d)?;
+    if s.starts_with("https://") && s.len() > "https://".len() {
+        Ok(s)
+    } else {
+        Err(D::Error::custom("catalogue_url must be an https:// URL"))
+    }
+}
+
+fn in_range<'de, D: Deserializer<'de>>(d: D, name: &str, lo: u32, hi: u32) -> Result<u32, D::Error> {
+    let v = u32::deserialize(d)?;
+    if (lo..=hi).contains(&v) { Ok(v) } else { Err(D::Error::custom(format!("{name} must be {lo} to {hi}"))) }
+}
+
+fn de_request_deadline<'de, D: Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    in_range(d, "request_deadline_ms", 1, 1000)
+}
+fn de_event_deadline<'de, D: Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    in_range(d, "event_deadline_ms", 1, 100)
+}
+fn de_memory<'de, D: Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    in_range(d, "memory_mib", 1, 512)
+}
+fn de_instances<'de, D: Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    in_range(d, "max_instances", 1, 4096)
 }
 
 /// `[dashboard]` (spec 009): whether `serve` also serves the read-only dashboard, and where.
@@ -201,6 +281,29 @@ mod tests {
         assert!(!c.allow_private_endpoints);
         assert_eq!(c.server.listen, "127.0.0.1:20129");
         assert_eq!(c.pipeline.break_behaviour, BreakBehaviour::Restart);
+    }
+
+    #[test]
+    fn adapters_defaults_and_ranges() {
+        let c: OperatorConfig = toml::from_str("").unwrap();
+        let a = &c.adapters;
+        assert_eq!((a.request_deadline_ms, a.event_deadline_ms, a.memory_mib, a.max_instances), (20, 2, 64, 64));
+        assert!(a.builder.is_none() && a.catalogue_url.starts_with("https://"));
+        let c: OperatorConfig =
+            toml::from_str("[adapters]\nbuilder = \"/opt/nr-builder\"\nrequest_deadline_ms = 1000\nevent_deadline_ms = 100\nmemory_mib = 512\n")
+                .unwrap();
+        assert_eq!(c.adapters.builder.as_deref(), Some("/opt/nr-builder"));
+        for bad in [
+            "request_deadline_ms = 0",
+            "request_deadline_ms = 1001",
+            "event_deadline_ms = 101",
+            "memory_mib = 0",
+            "memory_mib = 513",
+            "catalogue_url = \"http://example.com/index.toml\"",
+            "surprise = 1",
+        ] {
+            assert!(toml::from_str::<OperatorConfig>(&format!("[adapters]\n{bad}\n")).is_err(), "{bad}");
+        }
     }
 
     #[test]

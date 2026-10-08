@@ -10,9 +10,9 @@ use crate::logo::Logo;
 use crate::lookup::{Catalog, derive_model_name};
 use crate::resolve::NotFound;
 use crate::schema::{
-    CapabilityKind, CapabilitySection, ContentKind, DashboardSettings, Endpoint, Model, ModelKind, ModelType,
-    PipelineSettings, ProviderEntity, ProviderSettings, RoutingSettings, SectionModel, ServerSettings, StyleFile,
-    WireFormat,
+    AdaptersSettings, CapabilityKind, CapabilitySection, ContentKind, DashboardSettings, Endpoint, Model, ModelKind,
+    ModelType, PipelineSettings, ProviderEntity, ProviderSettings, RoutingSettings, SectionModel, ServerSettings,
+    StyleFile, WireFormat,
 };
 use crate::validate::FieldPath;
 
@@ -100,6 +100,8 @@ pub struct RuntimeSettings {
     pub dashboard: DashboardSettings,
     /// `[routing]`, with target keys written as unified names or `provider-id/model`.
     pub routing: RoutingSettings,
+    /// `[adapters]` (spec 004).
+    pub adapters: AdaptersSettings,
 }
 
 /// A lookup token claimed by two providers.

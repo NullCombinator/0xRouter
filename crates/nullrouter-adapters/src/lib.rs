@@ -8,6 +8,7 @@ pub mod catalogue;
 pub mod fingerprint;
 pub mod gate;
 pub mod guard;
+pub mod record;
 pub mod review;
 pub mod runner;
 pub mod scramble;

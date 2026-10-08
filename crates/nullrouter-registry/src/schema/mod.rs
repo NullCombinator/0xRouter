@@ -23,8 +23,8 @@ mod transport;
 
 pub use capability::{CapabilitySection, ModelRoute, SectionEndpoint, SectionLimits, SectionModel};
 pub use config::{
-    DashboardSettings, Decision, MemberDecl, OperatorConfig, PipelineSettings, ProviderSettings, RoutingSettings,
-    ServerSettings, UnifiedModelDecl,
+    AdaptersSettings, DashboardSettings, Decision, MemberDecl, OperatorConfig, PipelineSettings, ProviderSettings,
+    RoutingSettings, ServerSettings, UnifiedModelDecl,
 };
 pub use duration::parse_duration;
 pub use endpoint::{

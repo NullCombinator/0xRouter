@@ -250,12 +250,12 @@ share: edits, selectors, key binding, records.
   - `GuardrailEvent` and `ContentChange` exactly as in the data model.
   - Run the redactor over `path` strings.
   - Make T013 pass.
-- [ ] T021 `[adapters]` config: add `pub adapters: AdaptersSettings` (`#[serde(default)]`,
+- [X] T021 `[adapters]` config: add `pub adapters: AdaptersSettings` (`#[serde(default)]`,
   `deny_unknown_fields`) to `OperatorConfig` in `crates/nullrouter-registry/src/schema/config.rs`,
   and pass it into the engine state in `crates/nullrouter-engine/src/state.rs`. Fields and
   defaults: `catalogue_url`, `builder`, `request_deadline_ms = 20` (1–1000),
   `event_deadline_ms = 2` (1–100), `memory_mib = 64` (1–512), `max_instances = 64`.
-- [ ] T022 The runner in `crates/nullrouter-adapters/src/runner.rs`.
+- [X] T022 The runner in `crates/nullrouter-adapters/src/runner.rs`.
   - `enum AdapterRunner { Builtin(Builtin), Wasm(WasmHandle) }`. The `Wasm` arm is a stub
     returning `not_run` until T046.
   - `run_request(&self, ctx, &Value) -> RunOutcome { body: Cow<Value>, run: AdapterRun }`,
