@@ -1,6 +1,6 @@
 //! The adapter seam in the attempt loop (spec 004, T014), with a test adapter that removes every
 //! part its selector matches. (e) and (f), the response side and a client disconnect during an
-//! adapter call, belong with the response seam; (h) and (i) are still to be written.
+//! adapter call, belong with the response seam and are not here yet.
 
 mod common;
 
@@ -11,7 +11,11 @@ use nullrouter_adapter_kit::{Context, Edits, Reason};
 use nullrouter_adapters::runner::{AdapterRunner, Fixture};
 use nullrouter_adapters::selector::{Selector, extract};
 use nullrouter_engine::keys::Keys;
-use nullrouter_engine::records::{AdapterOutcome, RequestRecord};
+use nullrouter_engine::attempt::{Answer, Media};
+use nullrouter_engine::records::{AdapterOutcome, NotRunReason, RequestRecord};
+use nullrouter_engine::routing::PlacementReason;
+use nullrouter_engine::testkit::{MockUpstream, Step};
+use nullrouter_registry::schema::ModelType;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -187,4 +191,129 @@ async fn a_cross_style_attempt_encodes_from_the_edited_request() {
     let run = rec.attempts[0].adapter.as_ref().unwrap();
     assert_eq!(run.outcome, AdapterOutcome::Ran);
     assert_eq!(run.changes[0].path, "messages[0].content[1]");
+}
+
+#[tokio::test]
+async fn a_token_count_runs_the_request_side() {
+    let s = setup(|m| vec![("mockco", messages_plugin(m, "mockco"))], &[("mockco", "main")], "").await;
+    // Give the endpoint a count URL on the same host, so the count goes upstream.
+    let plugin = format!(
+        "{}[endpoints.text.token_count]\nurl = \"{}\"\n",
+        messages_plugin(&s.mock, "mockco"),
+        s.mock.url("/count")
+    );
+    std::fs::write(s._dir.path().join("plugins/mockco.toml"), plugin).unwrap();
+    s.engine.reload().await.unwrap();
+    s.mock.push([Step::json(200, json!({"input_tokens": 5}))]);
+    let seen = Seen::default();
+    s.engine.install_runner("fixture", remover("fixture", "messages[*].tag", &seen));
+    let id = key(&s, Some("fixture"));
+
+    let body = json!({"model": "mockco/m1", "max_tokens": 8, "messages": [{"role": "user", "content": "hi", "tag": "TAG-SENTINEL"}]});
+    let mut req = request(&s, "anthropic-messages", "mockco/m1", body, &id, CancellationToken::new());
+    req.count = true;
+    let rid = req.id.clone();
+    s.engine.text(s.engine.snapshot(), req).await.unwrap();
+    let rec = settled(&s, &rid).await;
+
+    assert_eq!(seen.lock().unwrap().len(), 1, "the request side ran for the count");
+    let got = s.mock.received();
+    assert_eq!(got[0].path_and_query, "/count");
+    assert!(!String::from_utf8_lossy(&got[0].body).contains("TAG-SENTINEL"));
+    assert_eq!(rec.attempts[0].adapter.as_ref().unwrap().outcome, AdapterOutcome::Ran);
+}
+
+/// A provider with an embeddings endpoint on the openai-chat wire.
+fn embeddings_plugin(mock: &MockUpstream) -> String {
+    format!(
+        "schema = 2\nid = \"alpha\"\ncategory = \"apikey\"\n[auth]\nkind = \"apikey\"\n\
+         [endpoints.embeddings]\nurl = \"{}\"\nwire = \"openai-chat\"\n\
+         [[models]]\nid = \"e1\"\nkind = \"embedding\"\n",
+        mock.url("/alpha/embeddings")
+    )
+}
+
+#[tokio::test]
+async fn a_media_request_runs_no_adapter_and_records_why() {
+    let s = setup(|m| vec![("alpha", embeddings_plugin(m))], &[("alpha", "a1")], "").await;
+    s.mock.push([Step::json(
+        200,
+        json!({"object": "list", "data": [{"object": "embedding", "index": 0, "embedding": [0.5]}], "model": "e1", "usage": {"prompt_tokens": 2, "total_tokens": 2}}),
+    )]);
+    let seen = Seen::default();
+    s.engine.install_runner("fixture", remover("fixture", "$", &seen));
+    let id = key(&s, Some("fixture"));
+
+    let body = json!({"model": "alpha/e1", "input": "hi"});
+    let mut req = request(&s, "openai-chat", "alpha/e1", chat_body("alpha/e1", false), &id, CancellationToken::new());
+    let codec = req.client.type_codec(ModelType::Embeddings).unwrap().clone();
+    let input = codec.decode_request(&body).unwrap();
+    req.body = body;
+    req.media = Some(Media { ty: ModelType::Embeddings, codec, variant: None, input, voice: None, job: false });
+    let rid = req.id.clone();
+    let Ok(Answer::Media(_)) = s.engine.text(s.engine.snapshot(), req).await else { panic!("expected a media answer") };
+    let rec = settled(&s, &rid).await;
+
+    assert!(seen.lock().unwrap().is_empty(), "no adapter call for a media request");
+    assert_eq!(
+        rec.attempts[0].adapter.as_ref().unwrap().outcome,
+        AdapterOutcome::NotRun { reason: NotRunReason::MediaRequest }
+    );
+    assert_eq!(s.mock.received()[0].json()["input"], "hi", "the request goes on unedited");
+}
+
+const SUB: &str = "[routing.cache]\nmode = \"automatic\"\nlifetime = \"5m\"\nmin_tokens = 0\n\n[[routing.window]]\nname = \"5h\"\nlength = \"5h\"\nunit = \"weighted_tokens\"\ncapacity = 1000000\n";
+
+fn turns(turns: &[&str]) -> Value {
+    let mut messages = vec![json!({"role": "system", "content": "You are a careful assistant. Answer in one short sentence and never guess."})];
+    for (i, t) in turns.iter().enumerate() {
+        messages.push(json!({"role": if i % 2 == 0 { "user" } else { "assistant" }, "content": t}));
+    }
+    json!({"model": "u", "stream": false, "messages": messages})
+}
+
+#[tokio::test]
+async fn routing_fingerprints_the_request_as_received_so_a_changed_adapter_still_finds_the_warm_account() {
+    let f = Fleet::new()
+        .provider("alpha", SUB, &[("5h", "tokens")])
+        .account("alpha", "one", 1.0)
+        .account("alpha", "two", 1.0)
+        .unified(&[("alpha", "m1")])
+        .build()
+        .await;
+    let s = &f.setup;
+    // Turn one goes through an adapter that rewrites the first user turn; turn two through one
+    // that does nothing. If routing fingerprinted the edited body, the two chains would differ
+    // and the second request would miss the account that holds the cache.
+    let rewrite = AdapterRunner::Fixture(Fixture {
+        name: "fixture".into(),
+        selectors: vec![Selector::parse("messages[1].content").unwrap()],
+        request: Arc::new(|_: &Context, _: &Value| {
+            let mut e = Edits::default();
+            e.convert(&nullrouter_adapter_kit::Path::parse("messages[1].content").unwrap(), json!("REWRITTEN"), Reason::FormatConversion);
+            e
+        }),
+    });
+    s.engine.install_runner("fixture", rewrite);
+    let id = key(s, Some("fixture"));
+
+    let ask = |t: Vec<&'static str>| {
+        let req = request(s, "openai-chat", "u", turns(&t), &id, CancellationToken::new());
+        let rid = req.id.clone();
+        async move {
+            s.engine.text(s.engine.snapshot(), req).await.unwrap();
+            settled(s, &rid).await
+        }
+    };
+    let first = ask(vec!["one"]).await;
+    let sent = String::from_utf8_lossy(&s.mock.received()[0].body).to_string();
+    assert!(sent.contains("REWRITTEN") && !sent.contains("\"one\""), "the adapter edited what went upstream: {sent}");
+
+    let seen = Seen::default();
+    s.engine.install_runner("fixture", remover("fixture", "messages[*].never", &seen));
+    let second = ask(vec!["one", "two", "three"]).await;
+
+    let account = |r: &RequestRecord| r.served_by.as_ref().and_then(|x| x.account.clone());
+    assert_eq!(account(&first), account(&second), "the follow-up stays on the warm account");
+    assert_eq!(second.attempts.last().and_then(|a| a.placement).unwrap().reason, PlacementReason::Warm);
 }
