@@ -560,7 +560,7 @@ foundation here, not a later story.
     server's callers `.await` them. `WasmHandle` holds the loaded module and, per request, the
     client style (`with_client`) that the guardrail decodes with. Without a client style an
     edit is never applied. Tests: `tests/wasm_runner.rs`, on WAT modules.
-  - Loading done, not yet run in CI: `loader.rs` reads the serving version, re-hashes its
+  - Loading done (green in CI #135): `loader.rs` reads the serving version, re-hashes its
     source and module (`not_run{source_mismatch}` plus a `source_mismatch` alert on a
     difference), refuses a module the load gate refuses (`module_refused` alert), and keeps
     compiled modules by `wasm_hash`. `WasmHandle` now carries the `not_run` reason, so a suspect
