@@ -64,12 +64,13 @@ async fn every_request_in_flight_is_listed_in_its_phase_and_gone_soon_after_it_e
     for i in 0..200 {
         s.mock.push([if i % 2 == 0 { phased(park, Duration::ZERO, "hi") } else { phased(Duration::ZERO, park, "hi") }]);
     }
+    // Each request builds its own client, which takes a while: build all 200 first, so they
+    // start together and the polling window below begins when they do.
+    let reqs: Vec<_> = (0..200).map(|_| chat(&s, "hello")).collect();
     let sent = Instant::now();
-    let tasks: Vec<_> = (0..200)
-        .map(|_| {
-            let req = chat(&s, "hello");
-            tokio::spawn(async move { req.send().await.unwrap().bytes().await.unwrap() })
-        })
+    let tasks: Vec<_> = reqs
+        .into_iter()
+        .map(|req| tokio::spawn(async move { req.send().await.unwrap().bytes().await.unwrap() }))
         .collect();
 
     // Half sit in headers, half in first token. At every poll, no request whose record is still
