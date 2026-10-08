@@ -335,7 +335,7 @@ same-account retry with a 500 ms `retry wait` before falling over (spec US6).
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T065 [P] Write `crates/nullrouter-engine/tests/routing_latency_blind.rs` (SC-009, FR-035): a unified model with two members, one 10× slower via `Step::Phased`. The sequence of placements equals the run where both are equally fast. Also check by search that no `routing/` or `route.rs` code reads `timing` or `phases`
+- [X] T065 [P] Write `crates/nullrouter-engine/tests/routing_latency_blind.rs` (SC-009, FR-035): a unified model with two members, one 10× slower via `Step::Phased`. The sequence of placements equals the run where both are equally fast. Also check by search that no `routing/` or `route.rs` code reads `timing` or `phases` — done; the slow member answers after 300 ms against 30 ms, over eight requests of four agents; the source search covers `route.rs`, `plan.rs` and `routing/`
 - [ ] T066 [P] Add the criterion group `phases` to `crates/nullrouter-server/benches/server.rs`: one streamed request through the in-process server against `MockUpstream`, with timing on and off (a `testkit` switch that makes the clock a no-op). **User-gated**: running it needs local cargo, which the project rule forbids by default. Ask the user before one `nice` run with 2 jobs on and off; record the result in `target/` and the pass or fail in the slice notes. Without that run, report SC-004 as unverified (research R15, SC-004)
 - [ ] T067 [P] Document in `docs/operator-config.md`:
   - new sections "Phases in records", "The live view", "Connection settings" (timeouts and precedence, reuse, HTTP/2, retries) and "Proxies" (files, levels, pause and `proxy fixed`);
