@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
 use common::{SECRET, server};
+use nullrouter_engine::records::{Outcome, Query};
 use nullrouter_engine::testkit::Step;
 use nullrouter_server::operator;
 use serde_json::{Value, json};
@@ -71,18 +72,31 @@ async fn every_request_in_flight_is_listed_in_its_phase_and_gone_soon_after_it_e
         })
         .collect();
 
-    // Half sit in headers, half in first token; none is missing from the list.
-    let mut matched = false;
+    // Half sit in headers, half in first token. At every poll, no request whose record is still
+    // in progress is missing from the list (the record is read first, so a request that ends
+    // in between shows up as finished, not missing).
+    let (mut most, mut split) = (0, false);
     while sent.elapsed() < Duration::from_millis(1200) {
+        let open: Vec<String> = s
+            .engine
+            .records
+            .query(&Query::default())
+            .into_iter()
+            .filter(|r| r.outcome == Outcome::InProgress)
+            .map(|r| r.id)
+            .collect();
         let a = snapshot(&s).await;
-        let waiting = phase_count(&a, "headers") + phase_count(&a, "connect");
-        if in_flight(&a).len() == 200 && phase_count(&a, "first_token") == 100 && waiting == 100 {
-            matched = true;
-            break;
+        let listed: Vec<&str> = in_flight(&a).iter().filter_map(|r| r["id"].as_str()).collect();
+        for id in &open {
+            let still = s.engine.records.get(id).is_some_and(|r| r.outcome == Outcome::InProgress);
+            assert!(!still || listed.contains(&id.as_str()), "{id} is in progress but not in the live list");
         }
+        most = most.max(listed.len());
+        split |= phase_count(&a, "first_token") >= 90 && phase_count(&a, "headers") + phase_count(&a, "connect") >= 90;
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    assert!(matched, "{:?}", snapshot(&s).await["in_flight"].as_array().map(Vec::len));
+    assert!(most >= 190, "at most {most} of 200 requests were ever listed together");
+    assert!(split, "the requests never showed both in headers and in first token");
 
     for t in tasks {
         t.await.unwrap();

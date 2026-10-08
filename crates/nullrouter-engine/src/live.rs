@@ -269,7 +269,8 @@ mod tests {
         assert!(s.attempt.is_none());
         assert_eq!(s.finished[0]["phases"]["router_overhead"], 4.0);
         assert_eq!(s.finished[0]["ended_in"], "headers");
-        let keys: Vec<_> = serde_json::to_value(s).unwrap().as_object().unwrap().keys().cloned().collect();
+        let mut keys: Vec<_> = serde_json::to_value(s).unwrap().as_object().unwrap().keys().cloned().collect();
+        keys.sort();
         assert_eq!(keys, ["agent", "attempt", "finished", "id", "since_arrival_ms", "target"]);
     }
 }

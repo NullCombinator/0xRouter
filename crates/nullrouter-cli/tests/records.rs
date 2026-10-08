@@ -241,7 +241,12 @@ async fn serve(home: &Path) -> Serving {
         // Connect, don't just look for the file: the CLI's "a server runs" is this connect.
         let sock = home.join("run/operator.sock");
         if std::os::unix::net::UnixStream::connect(&sock).is_ok() && tokio::net::TcpStream::connect(&listen).await.is_ok() {
-            return serving;
+            // Both listeners are bound before the server recovers the journal and starts
+            // accepting, and recovery closes any open request as interrupted: wait for an HTTP
+            // answer, which only comes after it.
+            if reqwest::get(format!("http://{listen}/")).await.is_ok() {
+                return serving;
+            }
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
