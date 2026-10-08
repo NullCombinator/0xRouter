@@ -109,6 +109,8 @@ pub struct Engine {
     pub router: crate::routing::Router,
     /// Account rests per model and backoff levels (research R6). In memory only.
     pub cooldowns: Cooldowns,
+    /// Requests in flight, for `live.snapshot` (spec 013). In memory only.
+    pub live: crate::live::Live,
     /// Video jobs by their `vj_` id.
     pub jobs: crate::jobs::JobMap,
     /// Sign-in account tokens (spec 005, research R6). Kept across reloads; re-read only
@@ -226,6 +228,7 @@ impl Engine {
             journal,
             router,
             cooldowns: Cooldowns::default(),
+            live: Default::default(),
             jobs: crate::jobs::JobMap::default(),
             tokens,
             sessions: AgentSessions::default(),

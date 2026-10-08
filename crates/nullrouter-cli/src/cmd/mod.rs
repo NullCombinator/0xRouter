@@ -3,6 +3,7 @@ pub(crate) mod behaviour;
 pub(crate) mod check;
 pub(crate) mod dashboard;
 pub(crate) mod keys;
+pub(crate) mod live;
 pub(crate) mod model;
 pub(crate) mod plugins;
 pub(crate) mod providers;

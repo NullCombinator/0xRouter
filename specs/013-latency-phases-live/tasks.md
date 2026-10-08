@@ -158,7 +158,7 @@ gone one refresh after it ends, and `--json` gives one snapshot (spec US2).
 
 ### Tests for User Story 2
 
-- [ ] T026 [P] [US2] Write `crates/nullrouter-server/tests/live.rs` (SC-005): 200 concurrent requests parked in chosen phases with `Step::Phased`, and `live.snapshot` every 100 ms. Assert:
+- [X] T026 [P] [US2] Write `crates/nullrouter-server/tests/live.rs` (SC-005):  ⟵ **Done except** the router-overhead-before-first-attempt case (engine unit test only: too short to catch from outside); the slow socket client's reply is small, so it checks the lock is not held, not a full buffer 200 concurrent requests parked in chosen phases with `Step::Phased`, and `live.snapshot` every 100 ms. Assert:
   - no request in flight is missing;
   - no request still listed one second after it ended;
   - each current phase is correct within one second of the change;
@@ -166,12 +166,12 @@ gone one refresh after it ends, and `--json` gives one snapshot (spec US2).
   - a request before its first attempt shows `router_overhead`;
   - a snapshot with nothing in flight gives `[]`;
   - a socket client that requests a snapshot and never reads the reply doesn't slow requests: 50 requests complete within the same time as without it (FR-020)
-- [ ] T027 [P] [US2] Write the content check in `crates/nullrouter-server/tests/live.rs` (FR-019): a request whose prompt, answer and headers carry marker strings, and whose account secret is a marker. The serialized snapshot contains none of them
-- [ ] T028 [P] [US2] Write CLI tests in `crates/nullrouter-cli/src/cmd/live.rs` (`#[cfg(test)]`): rendering of a snapshot as in contracts/cli.md (`nothing in flight`, the paused-proxy line, the finished-phases column), and `no server is running` exiting 1
+- [X] T027 [P] [US2] Write the content check in `crates/nullrouter-server/tests/live.rs` (FR-019): a request whose prompt, answer and headers carry marker strings, and whose account secret is a marker. The serialized snapshot contains none of them
+- [X] T028 [P] [US2] Write CLI tests in `crates/nullrouter-cli/src/cmd/live.rs` (`#[cfg(test)]`): rendering of a snapshot as in contracts/cli.md (`nothing in flight`, the paused-proxy line, the finished-phases column), and `no server is running` exiting 1
 
 ### Implementation for User Story 2
 
-- [ ] T029 [US2] Implement `LiveEntry` and `Live` (`Mutex<HashMap<String, LiveEntry>>`) in `crates/nullrouter-engine/src/live.rs`, with:
+- [X] T029 [US2] Implement `LiveEntry` and `Live` (`Mutex<HashMap<String, LiveEntry>>`) in `crates/nullrouter-engine/src/live.rs`, with:
   - `insert` at arrival;
   - `attempt(id, n, provider, account, model, clock)`;
   - `finish_attempt(id, AttemptPhases)`;
@@ -179,13 +179,13 @@ gone one refresh after it ends, and `--json` gives one snapshot (spec US2).
   - `snapshot(now) -> Vec<LiveSnapshot>`, which clones the `Arc`s under the lock and reads the clocks after unlocking (research R9).
 
   The entry holds no content, headers or secrets (data-model § LiveEntry)
-- [ ] T030 [US2] Wire the live table into `crates/nullrouter-engine/src/attempt.rs` and `crates/nullrouter-engine/src/state.rs` (`Engine.live`):
+- [X] T030 [US2] Wire the live table into `crates/nullrouter-engine/src/attempt.rs` and `crates/nullrouter-engine/src/state.rs` (`Engine.live`):
   - insert before the request's first `await`;
   - set the attempt at `start_attempt`;
   - finish at `end_attempt`;
   - remove in `end_request` and on every early return or drop path. Use a drop guard on the request runner, so a panic or cancellation can't leave an entry
-- [ ] T031 [US2] Add the `live.snapshot` op to `crates/nullrouter-server/src/operator.rs`. It returns `{ok, as_of, paused_proxies, in_flight}`, newest first, and lists paused proxies as an empty list until US4 (contracts/operator-socket.md). Also make `records.list` give an in-flight request's `slowest` its current phase and time from the live table, marked in progress (FR-013, research R14)
-- [ ] T032 [US2] Implement `nullrouter live [--json]` in `crates/nullrouter-cli/src/cmd/live.rs` and register it in `crates/nullrouter-cli/src/cmd/mod.rs`:
+- [X] T031 [US2] Add the `live.snapshot` op to `crates/nullrouter-server/src/operator.rs`. It returns `{ok, as_of, paused_proxies, in_flight}`, newest first, and lists paused proxies as an empty list until US4 (contracts/operator-socket.md). Also make `records.list` give an in-flight request's `slowest` its current phase and time from the live table, marked in progress (FR-013, research R14)
+- [X] T032 [US2] Implement `nullrouter live [--json]` in `crates/nullrouter-cli/src/cmd/live.rs` and register it in `crates/nullrouter-cli/src/cmd/mod.rs`:
   - poll once a second;
   - redraw with ANSI clear when `std::io::IsTerminal` says stdout is a terminal, else print one snapshot per poll;
   - quit on Ctrl-C;

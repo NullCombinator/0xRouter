@@ -68,6 +68,8 @@ enum Command {
     /// Request records of the running server.
     #[command(subcommand)]
     Records(cmd::records::Command),
+    /// The requests in flight, and the phase each is in.
+    Live,
     /// Bundled, installed and community plugins.
     #[command(subcommand)]
     Plugins(cmd::plugins::Command),
@@ -101,6 +103,7 @@ fn main() -> ExitCode {
         Command::Dashboard(c) => cmd::dashboard::run(cli.home, c, cli.json),
         Command::Behaviour(c) => cmd::behaviour::run(cli.home, c, cli.json),
         Command::Records(c) => cmd::records::run(cli.home, c, cli.json),
+        Command::Live => cmd::live::run(cli.home, cli.json),
         Command::Plugins(c) => cmd::plugins::run(cli.home, c, cli.json),
         Command::Quota(c) => cmd::quota::run(cli.home, c, cli.json),
         Command::Routing(c) => cmd::routing::run(cli.home, c, cli.json),

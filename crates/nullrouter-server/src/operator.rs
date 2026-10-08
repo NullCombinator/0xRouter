@@ -126,6 +126,7 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
             }
         },
         Some("records.list") => records_list(engine, req).await,
+        Some("live.snapshot") => live_snapshot(engine),
         Some("records.get") => {
             let Some(id) = str_of("id") else { return json!({"ok": false, "error": "the request names no id"}) };
             if let Some(r) = engine.records.get(&id) {
@@ -218,6 +219,29 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
 }
 
 /// `keys.last_used`: the journal read runs on the blocking pool, as `records.get`'s does.
+/// The requests in flight (spec 013, contracts/operator-socket.md). Paused proxies come with
+/// the proxy slice; until then the list is empty. The agent shows as the key's name.
+fn live_snapshot(engine: &Arc<Engine>) -> Value {
+    let st = engine.snapshot();
+    let names: std::collections::HashMap<&str, &str> = st.keys.iter().map(|k| (k.id.as_str(), k.name.as_str())).collect();
+    let in_flight: Vec<Value> = engine
+        .live
+        .snapshot()
+        .into_iter()
+        .filter_map(|s| serde_json::to_value(&s).ok().map(|v| (s.agent, v)))
+        .map(|(agent, mut v)| {
+            v["agent"] = json!(names.get(agent.as_str()).copied().unwrap_or(&agent));
+            v
+        })
+        .collect();
+    json!({
+        "ok": true,
+        "as_of": nullrouter_engine::clock::now_rfc3339(),
+        "paused_proxies": [],
+        "in_flight": in_flight,
+    })
+}
+
 async fn keys_last_used(engine: &Arc<Engine>) -> Value {
     use nullrouter_engine::keys::{self, Keys};
 
@@ -290,6 +314,17 @@ async fn records_list(engine: &Arc<Engine>, req: &Value) -> Value {
     disk.retain(|r| r["id"].as_str().is_none_or(|id| !ids.contains(id)));
     disk.extend(live);
     disk.iter_mut().for_each(|r| nullrouter_engine::phases::decorate(r, None));
+    // A request in flight shows the phase it is in now (FR-013).
+    for r in disk.iter_mut().filter(|r| r["outcome"] == "in_progress") {
+        if let Some((phase, ms)) = r["id"].as_str().and_then(|id| engine.live.current(id)) {
+            r["slowest"] = json!({
+                "phase": phase.name(),
+                "ms": ms,
+                "side": nullrouter_engine::phases::side(phase),
+                "in_progress": true,
+            });
+        }
+    }
     disk.sort_by(|a, b| b["id"].as_str().cmp(&a["id"].as_str()));
     disk.truncate(limit.unwrap_or(usize::MAX));
     json!({"ok": true, "records": disk})

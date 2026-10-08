@@ -436,6 +436,19 @@ enum Ended {
     Cancelled,
 }
 
+/// Takes the request out of the live table when the runner ends, however it ends: a panic or a
+/// cancelled task can't leave an entry behind (spec 013, FR-018).
+struct LiveGuard {
+    engine: Arc<Engine>,
+    id: String,
+}
+
+impl Drop for LiveGuard {
+    fn drop(&mut self) {
+        self.engine.live.remove(&self.id);
+    }
+}
+
 /// One request's walk through its plan.
 struct Run {
     engine: Arc<Engine>,
@@ -470,6 +483,7 @@ struct Run {
     pending_retry: Duration,
     /// Sign-in token refresh time since the last attempt began, handed on the same way.
     pending_refresh: Duration,
+    _live: LiveGuard,
 }
 
 fn cooldown_key<'c>(c: &'c Candidate<'_>) -> (&'c str, &'c str, &'c str) {
@@ -538,7 +552,9 @@ impl Engine {
     /// [`Engine::text`], with the provider headers forwarded to the client.
     pub async fn reply(self: &Arc<Self>, st: Arc<EngineState>, req: TextRequest) -> Result<Reply, Failure> {
         let (first, answer) = oneshot::channel();
+        self.live.insert(&req.id, req.arrived, &req.agent.key, &crate::records::plain(&req.target));
         let run = Run {
+            _live: LiveGuard { engine: self.clone(), id: req.id.clone() },
             engine: self.clone(),
             req,
             first: Some(first),
@@ -1778,6 +1794,7 @@ impl Run {
         let clock = Arc::new(AttemptClock::new(self.req.arrived, DEFAULT_CONNECT_TIMEOUT));
         clock.add_retry_wait(std::mem::take(&mut self.pending_retry));
         clock.add_refresh(std::mem::take(&mut self.pending_refresh));
+        self.engine.live.attempt(self.id(), &a, clock.clone());
         self.clock = Some(clock);
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
         if let (Some(routed), Some(account)) = (&self.routed, c.account) {
@@ -1819,6 +1836,11 @@ impl Run {
                 a.timing = timing;
             }
         });
+        if let Some(rec) = self.engine.records.get(self.id())
+            && let Some(p) = crate::phases::of(&rec).into_iter().rev().find(|p| p.n == self.n)
+        {
+            self.engine.live.finish_attempt(self.id(), p);
+        }
     }
 
     fn end_request(&self, outcome: Outcome, usage: Option<Usage>) {
@@ -1828,6 +1850,7 @@ impl Run {
             r.usage = usage;
             r.total_ms = Some(at);
         });
+        self.engine.live.remove(self.id());
     }
 
     /// A plan entry that can't be tried: a `skipped` attempt and an attempt line.

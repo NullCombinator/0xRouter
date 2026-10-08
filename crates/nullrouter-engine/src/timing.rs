@@ -60,6 +60,7 @@ impl Span {
 pub struct AttemptClock {
     arrival: Instant,
     connect_timeout: Duration,
+    connecting: Mark,
     connected: Mark,
     headers: Mark,
     first_output: Mark,
@@ -83,6 +84,7 @@ impl AttemptClock {
         Self {
             arrival,
             connect_timeout,
+            connecting: Mark::new(),
             connected: Mark::new(),
             headers: Mark::new(),
             first_output: Mark::new(),
@@ -105,6 +107,11 @@ impl AttemptClock {
 
     pub fn connect_timeout(&self) -> Duration {
         self.connect_timeout
+    }
+
+    /// The connector layer began a connect: this attempt is not on a pooled connection.
+    pub fn mark_connecting(&self) {
+        self.connecting.set(self.now_ms());
     }
 
     pub fn mark_connected(&self) {
@@ -190,6 +197,10 @@ impl AttemptClock {
 
     pub fn first_output(&self) -> Option<f64> {
         self.first_output.get()
+    }
+
+    pub fn connecting(&self) -> Option<f64> {
+        self.connecting.get()
     }
 
     pub fn connected(&self) -> Option<f64> {

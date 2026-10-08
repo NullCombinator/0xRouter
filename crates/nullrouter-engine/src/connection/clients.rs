@@ -61,6 +61,7 @@ where
     fn call(&mut self, req: R) -> Self::Future {
         let fut = self.inner.call(req);
         Box::pin(async move {
+            let _ = ATTEMPT.try_with(|c| c.mark_connecting());
             // Read at poll time, like the completion mark, so both see the same scope.
             let limit = ATTEMPT.try_with(|c| c.connect_timeout()).unwrap_or(DEFAULT_CONNECT_TIMEOUT);
             let conn = match tokio::time::timeout(limit, fut).await {
