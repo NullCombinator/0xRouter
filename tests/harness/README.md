@@ -67,3 +67,29 @@ unchanged and adds nothing of its own, so the marks stand in for an optimizer's 
 | Claude Code (`claude`) | on `PATH` |
 | Codex CLI (`codex`) | not on `PATH`: its runner is skipped with a message |
 | headroom 0.37.0 with `[proxy]` | installed in `.venv` (2026-09-28); the `headroom` on `PATH` lacks the proxy extras |
+
+## hermes (spec 004, T028 and T031)
+
+`tests/harness/hermes/run.sh` drives the real `hermes chat` against a running server, with
+a throwaway `HERMES_HOME` whose `config.yaml` points the `custom` provider at `NR_BASE`. One
+model per run; four turns: a plain answer, a tool call (`-t terminal`, checked for a
+sentinel the tool printed), a `--continue` follow-up that replays the earlier turns, and an
+`--image` turn. Each turn must exit 0 and print something.
+
+`crates/nullrouter-server/tests/harness_hermes.rs` runs it for each model in `NR_MODELS`
+(default: the six chosen text providers). It is `#[ignore]` and spends real quota, so it is
+operator-run:
+
+```text
+nullrouter keys issue hermes-live --harness hermes
+NR_LIVE=1 NR_KEY=0r-… cargo test -p nullrouter-server --test harness_hermes -- --ignored --nocapture
+```
+
+What it does not cover: whether hermes streams. Its `streaming` option is a display
+setting, so the API call mode is hermes's own choice and the script does not control it.
+
+A failure whose output names `reasoning_content`, `reasoning` or `reasoning_details` with a
+400 or 422 is flagged: that provider goes into `REJECTS_ECHOED_REASONING` (T031), with the
+run date in a comment.
+
+Results: not run yet.
