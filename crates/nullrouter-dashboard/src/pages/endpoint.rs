@@ -7,7 +7,9 @@ use maud::{Markup, html};
 use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
-use crate::components::{Head, card, disabled, empty, kv, name, section_bar, side_panel, side_section, slot};
+use crate::components::{
+    Head, Tone, badge, card, disabled, empty, kv, name, section_bar, side_panel, side_section, slot,
+};
 use crate::page::{ViewName, Want};
 
 pub const VIEWS: &[ViewName] = &[ViewName::Check, ViewName::Keys];
@@ -67,6 +69,7 @@ fn key_card(ctx: &Ctx<'_>, k: &Value) -> Markup {
         article class=(class) {
             div class="key-card__head" {
                 b class="key-card__name" { (name(text("name"))) }
+                @if let Some(tag) = k["harness"].as_str() { (badge(Tone::Primary, tag)) }
             }
             div class="key-card__rows" {
                 (kv("id", html! { code class="code" { (text("id")) } }))

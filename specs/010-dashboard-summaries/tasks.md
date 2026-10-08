@@ -127,15 +127,15 @@ untagged keys are handled the same.
 
 ### Tests for User Story 5
 
-- [ ] T029 [P] [US5] Engine unit tests in `crates/nullrouter-engine/src/keys.rs`: `check_harness` accepts text that, trimmed, is "1 to 32 Unicode scalar values, no control characters" and refuses the rest with a message stating the limit; `set_harness` and `clear_harness` change only `harness` (digest, id, created, revoked and break behaviour byte-identical after save); a file with no tags round-trips byte for byte
-- [ ] T030 [P] [US5] CLI test in `crates/nullrouter-cli/tests/accounts_keys.rs`: `keys issue x --harness claude-code`; `keys tag <name|id> codex`; `keys tag <key> --clear`; a tag with a tab exits 1 and leaves the old tag; TEXT and `--clear` together exit 1; an unknown key exits 2 with `no key "<key>"`; a revoked key can be tagged and stays revoked; `keys list` shows the `HARNESS` column (`-` when none) and `--json` rows carry `harness`; the golden `crates/nullrouter-cli/tests/golden/keys_list*.txt` gains the column
-- [ ] T031 [P] [US5] Server test `crates/nullrouter-server/tests/harness_tag.rs` (SC-006): the same requests against a mock provider with a tagged and an untagged key give equal placements, upstream bodies and responses, and the secret issued before `keys tag` still authenticates after it
+- [x] T029 [P] [US5] Engine unit tests in `crates/nullrouter-engine/src/keys.rs`: `check_harness` accepts text that, trimmed, is "1 to 32 Unicode scalar values, no control characters" and refuses the rest with a message stating the limit; `set_harness` and `clear_harness` change only `harness` (digest, id, created, revoked and break behaviour byte-identical after save); a file with no tags round-trips byte for byte
+- [x] T030 [P] [US5] CLI test in `crates/nullrouter-cli/tests/accounts_keys.rs`: `keys issue x --harness claude-code`; `keys tag <name|id> codex`; `keys tag <key> --clear`; a tag with a tab exits 1 and leaves the old tag; TEXT and `--clear` together exit 1; an unknown key exits 2 with `no key "<key>"`; a revoked key can be tagged and stays revoked; `keys list` shows the `HARNESS` column (`-` when none) and `--json` rows carry `harness`; the golden `crates/nullrouter-cli/tests/golden/keys_list*.txt` gains the column
+- [x] T031 [P] [US5] Server test `crates/nullrouter-server/tests/harness_tag.rs` (SC-006): the same requests against a mock provider with a tagged and an untagged key give equal placements, upstream bodies and responses, and the secret issued before `keys tag` still authenticates after it
 
 ### Implementation for User Story 5
 
-- [ ] T032 [US5] Add `harness: Option<String>` with `#[serde(default, skip_serializing_if = "Option::is_none")]` to `AgentKey`, and `check_harness`, `set_harness(name_or_id, text)` and `clear_harness(name_or_id)` to `crates/nullrouter-engine/src/keys.rs`; `issue` takes an optional harness
-- [ ] T033 [US5] In `crates/nullrouter-cli/src/cmd/keys.rs`: `--harness` on `issue`; a `tag` subcommand (`<key> <TEXT>` or `<key> --clear`, mutually exclusive) that loads, mutates, saves and calls `apply`, printing `<name>: harness <text>` or `<name>: no harness` then `applied`; the `HARNESS` column in `list`; `harness` in the `--json` outputs
-- [ ] T034 [US5] Add `harness` to the keys view rows in `crates/nullrouter-server/src/views/keys.rs`, and the harness badge on key cards in `crates/nullrouter-dashboard/src/pages/endpoint.rs` (badge component, nothing when null)
+- [x] T032 [US5] Add `harness: Option<String>` with `#[serde(default, skip_serializing_if = "Option::is_none")]` to `AgentKey`, and `check_harness`, `set_harness(name_or_id, text)` and `clear_harness(name_or_id)` to `crates/nullrouter-engine/src/keys.rs`; `issue` takes an optional harness
+- [x] T033 [US5] In `crates/nullrouter-cli/src/cmd/keys.rs`: `--harness` on `issue`; a `tag` subcommand (`<key> <TEXT>` or `<key> --clear`, mutually exclusive) that loads, mutates, saves and calls `apply`, printing `<name>: harness <text>` or `<name>: no harness` then `applied`; the `HARNESS` column in `list`; `harness` in the `--json` outputs
+- [x] T034 [US5] Add `harness` to the keys view rows in `crates/nullrouter-server/src/views/keys.rs`, and the harness badge on key cards in `crates/nullrouter-dashboard/src/pages/endpoint.rs` (badge component, nothing when null)
 
 **Checkpoint**: US5 complete.
 

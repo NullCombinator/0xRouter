@@ -33,7 +33,14 @@ pub struct AgentKey {
     pub revoked: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub break_behaviour: Option<BreakBehaviour>,
+    /// Which harness the key's client is (spec 010 R7). Display only: auth, routing, adapters and
+    /// records never read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
 }
+
+/// Longest harness tag, in Unicode scalar values.
+pub const MAX_HARNESS_CHARS: usize = 32;
 
 /// The agent a request belongs to: its key, and the client's session when it sends one.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
@@ -58,6 +65,8 @@ pub enum KeyError {
     NotFound(String),
     #[error("key names can't be empty")]
     EmptyName,
+    #[error("harness tag must be 1 to 32 characters with no control characters")]
+    BadHarness,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -99,6 +108,16 @@ fn new_id() -> String {
     const ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
     let id: String = random::<8>().iter().map(|b| ALPHABET[usize::from(*b) % ALPHABET.len()] as char).collect();
     format!("ak_{id}")
+}
+
+/// The tag as stored: trimmed, 1 to 32 characters, no control characters.
+pub fn check_harness(text: &str) -> Result<String, KeyError> {
+    let t = text.trim();
+    let n = t.chars().count();
+    if n == 0 || n > MAX_HARNESS_CHARS || t.chars().any(char::is_control) {
+        return Err(KeyError::BadHarness);
+    }
+    Ok(t.to_owned())
 }
 
 impl Keys {
@@ -170,6 +189,7 @@ impl Keys {
             created: clock::now_rfc3339(),
             revoked: None,
             break_behaviour,
+            harness: None,
         });
         Ok((key, self.list.last().expect("just pushed")))
     }
@@ -179,6 +199,18 @@ impl Keys {
             .iter_mut()
             .find(|k| k.id == name_or_id || k.name == name_or_id)
             .ok_or_else(|| KeyError::NotFound(name_or_id.to_owned()))
+    }
+
+    /// Sets (or, with `None`, removes) the harness tag of a key, revoked or not. A refused tag
+    /// changes nothing.
+    pub fn set_harness(&mut self, name_or_id: &str, text: Option<&str>) -> Result<(), KeyError> {
+        let tag = text.map(check_harness).transpose()?;
+        self.find_mut(name_or_id)?.harness = tag;
+        Ok(())
+    }
+
+    pub fn clear_harness(&mut self, name_or_id: &str) -> Result<(), KeyError> {
+        self.set_harness(name_or_id, None)
     }
 
     pub fn revoke(&mut self, name_or_id: &str) -> Result<(), KeyError> {
@@ -197,6 +229,43 @@ impl Keys {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn harness_tags_are_trimmed_one_to_thirty_two_characters_without_control_characters() {
+        assert_eq!(check_harness("  claude-code ").unwrap(), "claude-code");
+        assert_eq!(check_harness(&"é".repeat(32)).unwrap().chars().count(), 32);
+        for bad in ["", "   ", &"x".repeat(33), "a\tb", "a\nb", "a\u{7f}"] {
+            assert_eq!(check_harness(bad), Err(KeyError::BadHarness), "{bad:?}");
+        }
+        assert!(KeyError::BadHarness.to_string().contains("1 to 32"));
+    }
+
+    #[test]
+    fn a_tag_changes_only_the_tag_and_an_untagged_file_is_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE);
+        let mut list = Keys::load(&path).unwrap();
+        let (secret, _) = list.issue("codex", Some(BreakBehaviour::Restart)).unwrap();
+        list.issue("other", None).unwrap();
+        list.revoke("other").unwrap();
+        let untagged = list.to_toml();
+        assert!(!untagged.contains("harness"));
+        assert_eq!(Keys::parse(&untagged, &path).unwrap().to_toml(), untagged, "round trip");
+
+        let key = |l: &Keys, n: &str| l.iter().find(|k| k.name == n).unwrap().clone();
+        let before = key(&list, "other");
+        list.set_harness("other", Some(" codex-cli ")).unwrap();
+        let after = key(&list, "other");
+        assert_eq!(after.harness.as_deref(), Some("codex-cli"));
+        assert_eq!(AgentKey { harness: None, ..after }, before, "only the tag differs; revoked stays revoked");
+        assert!(list.lookup(&secret).is_some(), "the secret still matches");
+
+        assert_eq!(list.set_harness("other", Some("a\tb")), Err(KeyError::BadHarness));
+        assert_eq!(key(&list, "other").harness.as_deref(), Some("codex-cli"), "a refused tag changes nothing");
+        assert_eq!(list.set_harness("nobody", Some("x")), Err(KeyError::NotFound("nobody".into())));
+        list.clear_harness("other").unwrap();
+        assert_eq!(list.to_toml(), untagged, "clearing returns the file to what it was");
+    }
 
     #[test]
     fn generated_keys_have_the_documented_shape() {

@@ -49,6 +49,15 @@ async fn each_key_card_shows_what_keys_list_shows() {
             Some(_) => assert_shows(card, &k["revoked"], &what),
             None => assert!(!text.contains("revoked"), "{what} is not revoked: {text}"),
         }
+        match k["harness"].as_str() {
+            Some(tag) => {
+                assert!(
+                    card.contains(&format!("badge--primary\"><span class=\"badge__dot\"></span>{tag}<")),
+                    "{what}: harness {tag}\n{card}"
+                )
+            }
+            None => assert!(!card.contains("badge"), "{what} has no tag, so no badge: {card}"),
+        }
         let behaviour = k["break"].as_str().unwrap_or("default");
         assert!(text.contains(&format!("break {behaviour}")), "{what}: break {behaviour}\n{text}");
         match k["last_used"].as_str() {
