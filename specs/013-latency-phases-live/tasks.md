@@ -208,7 +208,7 @@ is never cut (spec US3).
 ### Tests for User Story 3
 
 - [X] T033 [P] [US3] Write resolution tests in `crates/nullrouter-engine/src/connection/mod.rs` (`#[cfg(test)]`): every precedence step for each of the four timeouts, and the `Source` reported. Today's env overrides (`FETCH_CONNECT_TIMEOUT_MS` for connect and header, `STREAM_STALL_TIMEOUT_MS`) remain the built-in level. First token is off unless set
-- [ ] T034 [P] [US3] Write `crates/nullrouter-server/tests/connection.rs` for timeouts:
+- [X] T034 [P] [US3] Write `crates/nullrouter-server/tests/connection.rs` for timeouts:
   - US3 scenarios 1–4 and 6;
   - SC-006: a thinking stream of 5 min (paused tokio clock) with gaps below stall completes with defaults;
   - SC-007: change a timeout with `reload` while a request is in flight; it keeps the old one and the next request uses the new one;
