@@ -493,7 +493,7 @@ foundation here, not a later story.
   - A `transition(from, to)` table that refuses anything else.
   - Atomic writes, mode 0600 files and 0700 directories.
   - Make T035 pass.
-- [ ] T044 [P] Alerts in `crates/nullrouter-adapters/src/alerts.rs`.
+- [X] T044 [P] Alerts in `crates/nullrouter-adapters/src/alerts.rs`.
   - `adapters/alerts.toml` holds `Alert { id: al_+10, kind, harness, version, record?,
     detail, at, acked? }`. Kinds: `guardrail`, `adapter_failed`, `source_mismatch`,
     `module_refused`, `rebuild_failed`, `quarantined`, `refused`.
