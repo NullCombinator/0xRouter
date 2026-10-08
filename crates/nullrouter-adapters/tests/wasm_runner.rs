@@ -185,7 +185,8 @@ async fn output_that_is_not_json_is_an_invalid_output() {
     let text = "not json";
     let wasm = module(&format!("i64.const {}", (OUT_AT << 32) | text.len() as i64), text);
     let r = runner(&wasm, REASONING).with_client(chat());
-    let out = r.run_request(&ctx(), &conversation()).await;
+    let body = conversation();
+    let out = r.run_request(&ctx(), &body).await;
     assert_eq!(out.run.outcome, AdapterOutcome::Failed { reason: FailReason::InvalidOutput { rule: Rule::NotJson } });
 }
 
@@ -208,7 +209,8 @@ async fn a_reason_code_the_kit_does_not_know_is_refused() {
     let edit = json!({"edits": [{"op": "remove", "path": "messages[1].reasoning_content",
                                  "kind": "removed", "reason": "because"}]});
     let r = runner(&answering(&edit), REASONING).with_client(chat());
-    let out = r.run_request(&ctx(), &conversation()).await;
+    let body = conversation();
+    let out = r.run_request(&ctx(), &body).await;
     assert_eq!(
         out.run.outcome,
         AdapterOutcome::Failed { reason: FailReason::InvalidOutput { rule: Rule::UnknownReason } }
@@ -238,7 +240,8 @@ async fn adding_a_tool_call_is_blocked() {
         call("c2", "rm", "{\"path\":\"/\"}")
     ]));
     let r = runner(&answering(&more), TOOL_CALLS).with_client(chat());
-    let out = r.run_request(&ctx(), &conversation()).await;
+    let body = conversation();
+    let out = r.run_request(&ctx(), &body).await;
     assert_eq!(out.run.outcome, AdapterOutcome::Blocked, "{:?}", out.run);
     assert_eq!(out.run.guardrail.map(|g| g.rule), Some(GuardrailRule::ToolCallAdded));
 }
