@@ -770,6 +770,7 @@ NR_LIVE=1 cargo test -p nullrouter-engine --test live -- signin_anthropic signin
 NR_LIVE=1 cargo test -p nullrouter-engine --test live -- token_lifetimes --nocapture
 NR_LIVE=1 cargo test -p nullrouter-engine --test live -- quota --nocapture
 NR_LIVE=1 cargo test -p nullrouter-engine --test live -- live_routing_matches_polls --nocapture
+NR_LIVE=1 cargo test -p nullrouter-engine --test live -- model_tests --nocapture   # NR_LIVE_VIDEO=1 adds video
 ```
 
 | Check | Sends | Prints |
@@ -777,6 +778,7 @@ NR_LIVE=1 cargo test -p nullrouter-engine --test live -- live_routing_matches_po
 | `signin_anthropic` (L1) | one Messages request, `max_tokens` 5, per anthropic sign-in account | `SERVED` with the answer and usage, or `REFUSED` with the status and the provider's text for `[[signin.refused]]`. Note whether sign-in showed the code page ("paste the code") or fell back to loopback: the token store doesn't record it. |
 | `signin_grok_cli` (L3) | three streamed Responses requests through one grok-cli account: (a) every `[identity]` header, (b) the fixed-value headers only, (c) every header and a body with an `item_reference` and foreign item ids | `PASSED`/`FAILED` per variant, with the identity header names sent and the error text |
 | `token_lifetimes` (L4) | one refresh per sign-in account, saved like any refresh | the stored and the fresh `expires_in`, whether the refresh token `ROTATED`, and a hint when the lifetime is under 2 × `refresh_lead` |
+| `model_tests` (spec 011) | one model test per type you hold an account for (text, embeddings, image, speech, transcription; video with `NR_LIVE_VIDEO=1`), on the first account that can serve it, kept like any test's verdict | one line per test: `PASS`, `BROKEN` or `UNKNOWN` with the reason. It fails on a BROKEN, or when nothing passed; an UNKNOWN is for you to recognise (a rate limit, an overloaded provider). |
 | `live_routing_matches_polls` (L7) | per polled account: one quota poll, one tiny request, a second poll | for each window, the routing view's `remaining_now` beside the poll's figure, and how far it fell after the request beside the cost its meter charged. Any window where the provider charged more than 1% of capacity differently is listed under `METER CORRECTIONS NEEDED`, for a dated fix to the bundled plugin's `[[routing.window]]`. |
 | `quota` (L2, L5) | one quota read per account with `[quota]` (the fallback only when the primary yields no window), and `GET api.x.ai/v1/models` per xai account kind | the raw answer (truncated) next to the extracted windows, and the `x-ratelimit-*` headers xai returned |
 
