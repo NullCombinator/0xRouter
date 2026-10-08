@@ -7,6 +7,7 @@
 //!
 //! Not covered here yet: the 0router-side delay (needs a slow `outgoing` hook in the testkit), a
 //! broken stream resumed by a second attempt, an async media job, and the refresh case of SC-003.
+//! The refresh case needs the engine's sign-in kit (`tests/signin_kit`), which this crate lacks.
 
 mod common;
 
@@ -210,6 +211,21 @@ async fn a_client_that_stops_reading_makes_the_wait_delivery_not_generation() {
     let p = &phases::of(&rec)[0];
     assert!(ms(p, Phase::Delivery) >= 400.0, "delivery {} ms", ms(p, Phase::Delivery));
     sum_matches(&rec);
+}
+
+#[tokio::test]
+async fn a_thinking_delta_ends_first_token_before_any_text() {
+    let s = server().await;
+    let mut fr: Vec<Bytes> = (0..2).map(|_| Bytes::from_static(b": keepalive\n\n")).collect();
+    fr.push(data(chunk(json!({"role": "assistant", "reasoning_content": "hm"}), Value::Null)));
+    fr.extend(frames(0));
+    s.mock.push([phased(Duration::ZERO, FIRST, EVERY, fr)]);
+    let rec = run(&s, chat(&s, true)).await;
+    let p = &phases::of(&rec)[0];
+    // Two pings, then the thinking delta: FIRST for the first ping and EVERY for each frame after.
+    close("first token", ms(p, Phase::FirstToken), FIRST + EVERY * 2);
+    sum_matches(&rec);
+    ttft_matches(&rec);
 }
 
 #[tokio::test]
