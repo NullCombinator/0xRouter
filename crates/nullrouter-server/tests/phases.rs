@@ -255,6 +255,37 @@ async fn a_client_that_leaves_mid_generation_ends_the_attempt_in_generation() {
     assert_eq!(all[0].value(Phase::Delivery), PhaseValue::NotApplicable);
 }
 
+/// T015: once a request ends, its live entry is gone, whether it was served, failed or the
+/// client left.
+#[tokio::test]
+async fn a_finished_request_leaves_no_live_entry() {
+    let s = server().await;
+    s.mock.push([phased(Duration::ZERO, Duration::ZERO, Duration::ZERO, frames(0))]);
+    let rec = run(&s, chat(&s, true)).await;
+    assert!(rec.total_ms.is_some());
+    gone(&s).await;
+
+    s.mock.push([phased(Duration::ZERO, Duration::ZERO, Duration::from_millis(300), frames(0))]);
+    let r = chat(&s, true).send().await.unwrap();
+    let id = r.headers()[REQUEST_ID].to_str().unwrap().to_owned();
+    let mut body = r.bytes_stream();
+    body.next().await;
+    drop(body);
+    finished(&s, &id).await;
+    gone(&s).await;
+}
+
+/// The table is empty within a second of the last request ending (SC-005).
+async fn gone(s: &common::Server) {
+    for _ in 0..200 {
+        if s.engine.live.is_empty() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("{} live entries left", s.engine.live.len());
+}
+
 #[test]
 fn a_record_from_before_the_slice_reads_as_not_recorded() {
     let mut old = json!({
