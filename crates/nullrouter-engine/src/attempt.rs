@@ -765,7 +765,7 @@ impl Run {
         tried: &mut Vec<Tried>,
     ) -> Result<bool, Failure> {
         let account = c.account.map(|a| a.name.clone());
-        self.eff = Some(connection::effective(st, c.provider, &c.requested, &c.upstream_id, c.endpoint));
+        self.eff = Some(connection::effective(&st.registry, c.provider, &c.requested, &c.upstream_id, c.endpoint));
         let skip = |run: &mut Self, reason: String, tried: &mut Vec<Tried>| {
             run.skip(&c.provider.id, account.clone(), &c.upstream_id, &reason, None, tried);
             Ok(false)

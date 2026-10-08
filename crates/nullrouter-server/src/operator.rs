@@ -130,7 +130,7 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         Some("records.list") => records_list(engine, req).await,
         Some("live.snapshot") => live_snapshot(engine),
         Some("connection.view") => {
-            match nullrouter_engine::connection::view(&engine.snapshot(), str_of("provider").as_deref()) {
+            match nullrouter_engine::connection::view(&engine.snapshot().registry, str_of("provider").as_deref()) {
                 Ok(v) => v,
                 Err(error) => json!({"ok": false, "error": error}),
             }

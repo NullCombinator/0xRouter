@@ -5,10 +5,10 @@ pub mod proxy;
 
 use std::time::Duration;
 
+use nullrouter_registry::Registry;
 use nullrouter_registry::schema::{Endpoint, ProviderEntity, ProviderSettings};
 
 use crate::records::{Source, SourceBy, SourceLevel, TimeoutKind};
-use crate::state::EngineState;
 use crate::upstream::{DEFAULT_STALL_MS, DEFAULT_TIMEOUT_MS, parse_ms};
 
 /// One timeout and the level that set it.
@@ -53,13 +53,13 @@ fn at(by: SourceBy, level: SourceLevel) -> Source {
 /// `candidate`'s settings for `provider`, with the operator's `config.toml` read from the
 /// snapshot's registry.
 pub fn effective(
-    st: &EngineState,
+    registry: &Registry,
     provider: &ProviderEntity,
     requested: &str,
     upstream_id: &str,
     endpoint: &Endpoint,
 ) -> Effective {
-    let settings = st.registry.settings(&provider.id);
+    let settings = registry.settings(&provider.id);
     resolve(&settings, provider, requested, upstream_id, endpoint, &|name| std::env::var(name).ok())
 }
 
@@ -157,10 +157,10 @@ fn timeouts_json(e: &Effective) -> serde_json::Value {
 /// The `connection.view` answer (contracts/operator-socket.md): per provider, each timeout with
 /// where it came from, and the models whose timeouts differ from the provider's. `only` names
 /// one provider; an unknown one is an error listing the known ones.
-pub fn view(st: &EngineState, only: Option<&str>) -> Result<serde_json::Value, String> {
+pub fn view(registry: &Registry, only: Option<&str>) -> Result<serde_json::Value, String> {
     use nullrouter_registry::schema::ModelType;
 
-    let known: Vec<&ProviderEntity> = st.registry.providers().collect();
+    let known: Vec<&ProviderEntity> = registry.providers().collect();
     if let Some(name) = only
         && !known.iter().any(|p| p.id == name)
     {
@@ -178,8 +178,8 @@ pub fn view(st: &EngineState, only: Option<&str>) -> Result<serde_json::Value, S
         else {
             continue;
         };
-        let settings = st.registry.settings(&p.id);
-        let base = effective(st, p, "", "", endpoint);
+        let settings = registry.settings(&p.id);
+        let base = effective(registry, p, "", "", endpoint);
         let mut ids: Vec<&str> = p.models.iter().flatten().map(|m| m.id.as_str()).collect();
         ids.extend(settings.model.keys().map(String::as_str));
         ids.sort_unstable();
@@ -187,7 +187,7 @@ pub fn view(st: &EngineState, only: Option<&str>) -> Result<serde_json::Value, S
         let models: Vec<serde_json::Value> = ids
             .into_iter()
             .filter_map(|id| {
-                let e = effective(st, p, id, id, endpoint);
+                let e = effective(registry, p, id, id, endpoint);
                 (e != base).then(|| serde_json::json!({"id": id, "timeouts": timeouts_json(&e)}))
             })
             .collect();
