@@ -337,11 +337,13 @@ same-account retry with a 500 ms `retry wait` before falling over (spec US6).
 
 - [X] T065 [P] Write `crates/nullrouter-engine/tests/routing_latency_blind.rs` (SC-009, FR-035): a unified model with two members, one 10× slower via `Step::Phased`. The sequence of placements equals the run where both are equally fast. Also check by search that no `routing/` or `route.rs` code reads `timing` or `phases` — done; the slow member answers after 300 ms against 30 ms, over eight requests of four agents; the source search covers `route.rs`, `plan.rs` and `routing/`
 - [ ] T066 [P] Add the criterion group `phases` to `crates/nullrouter-server/benches/server.rs`: one streamed request through the in-process server against `MockUpstream`, with timing on and off (a `testkit` switch that makes the clock a no-op). **User-gated**: running it needs local cargo, which the project rule forbids by default. Ask the user before one `nice` run with 2 jobs on and off; record the result in `target/` and the pass or fail in the slice notes. Without that run, report SC-004 as unverified (research R15, SC-004)
-- [ ] T067 [P] Document in `docs/operator-config.md`:
+- [X] T067 [P] Document in `docs/operator-config.md`:
   - new sections "Phases in records", "The live view", "Connection settings" (timeouts and precedence, reuse, HTTP/2, retries) and "Proxies" (files, levels, pause and `proxy fixed`);
   - `proxies.toml` and `routing/proxies.json` in the directory tree;
   - the new mutating commands in the reload list
-- [ ] T068 [P] Document the plugin fields `connect_timeout_ms`, `first_token_timeout_ms`, `[[models]] timeouts`, `[transport] http2 = false` and the retry cap, plus the proxy refusal, in `docs/plugins.md`
+  - Done: the sections are in the order of the file: phases, live view, connection settings, proxies, placed before "Per-provider settings"
+- [X] T068 [P] Document the plugin fields `connect_timeout_ms`, `first_token_timeout_ms`, `[[models]] timeouts`, `[transport] http2 = false` and the retry cap, plus the proxy refusal, in `docs/plugins.md`
+  - Done: `http2 = false` is documented on the schema-2 endpoint as well as `[transport]`
 - [ ] T069 Coordination note in `specs/013-latency-phases-live/plan.md` § Coordination: list the exact edits slice 010 needs on rebase (`journal/summary.rs` router overhead → `phases::of`; SC-003's test switches from the copied definitions to 010's functions) and slice 011's (`clients.for_account` in model tests; a paused proxy makes the test skip). FR-025's model-test leg is verified by whichever slice merges second, with a test that a model test goes through the account's proxy. Save the note to agentmemory (both instances)
 - [ ] T070 Run quickstart.md §1–5 against a real provider with the user (only with their OK; `serve` needs a local build, which the no-local-cargo rule forbids unless the user allows it for this run), and record the outcome in `specs/013-latency-phases-live/quickstart.md`
 
