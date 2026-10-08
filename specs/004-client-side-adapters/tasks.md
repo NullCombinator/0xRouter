@@ -186,7 +186,7 @@ share: edits, selectors, key binding, records.
     sentinel prompt holds neither (FR-025).
   - A record with an `AdapterRun` survives slice 006's journal write and read unchanged.
     Journal lines written before this slice still read.
-- [ ] T014 [P] Engine seam tests in `crates/nullrouter-engine/tests/adapter_seam.rs`, using a
+- [X] T014 [P] Engine seam tests in `crates/nullrouter-engine/tests/adapter_seam.rs`, using a
   test adapter that removes a field.
   - (a) The request reaching the mock upstream lacks the field, and the attempt's record lists
     the change.
@@ -274,7 +274,7 @@ share: edits, selectors, key binding, records.
   - Fallback and stream-break resumes re-run the adapter against the original client body.
     The resume's continuation is added after the adapter.
   - Adapter work runs inside the attempt's `CancellationToken` scope.
-- [ ] T024 Response seam in `crates/nullrouter-server/src/relay.rs` (streamed) and in the
+- [X] T024 Response seam in `crates/nullrouter-server/src/relay.rs` (streamed) and in the
   engine's non-stream path.
   - After the event is re-encoded for the client (`for_client`), run `run_event` per event
     without buffering. Run `run_response` once on a non-stream body.
