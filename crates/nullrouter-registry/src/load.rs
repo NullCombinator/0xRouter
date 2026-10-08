@@ -494,6 +494,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
             amortization: config.routing.amortization,
             amortization_for: outcome.amortization_for,
         },
+        connection_proxy: config.connection.proxy.clone(),
     };
     registry.set_operator_state(outcome.unified, outcome.settings, runtime, report);
     Ok(registry)

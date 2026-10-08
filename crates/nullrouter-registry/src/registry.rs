@@ -100,6 +100,9 @@ pub struct RuntimeSettings {
     pub dashboard: DashboardSettings,
     /// `[routing]`, with target keys written as unified names or `provider-id/model`.
     pub routing: RoutingSettings,
+    /// `[connection] proxy`: the proxy every provider uses unless it or its account says
+    /// otherwise (a name from `proxies.toml`, or `"none"`).
+    pub connection_proxy: Option<String>,
 }
 
 /// A lookup token claimed by two providers.

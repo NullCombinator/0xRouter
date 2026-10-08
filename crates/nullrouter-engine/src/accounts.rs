@@ -156,6 +156,9 @@ pub struct Account {
     /// to the provider's hosts at load. Always empty for a sign-in account: its tokens
     /// carry their own hosts.
     pub hosts: BTreeSet<String>,
+    /// A proxy name from `proxies.toml`, or `"none"` for a direct connection whatever the
+    /// provider or `[connection]` says. `None`: inherit.
+    pub proxy: Option<String>,
 }
 
 impl Account {
@@ -180,6 +183,7 @@ impl Account {
             priority: DEFAULT_PRIORITY,
             routing: RoutingOverrides::default(),
             hosts,
+            proxy: None,
         }
     }
 
@@ -296,6 +300,8 @@ struct RawAccount {
     routing: Option<RawRouting>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hosts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    proxy: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -458,12 +464,20 @@ impl Accounts {
                 && (a.kind != AccountKind::Key
                     || a.poll_interval.is_some()
                     || a.priority.is_some()
-                    || a.routing.is_some())
+                    || a.routing.is_some()
+                    || a.proxy.is_some())
             {
                 return Err(FileError::invalid(
                     path,
-                    format!("{who}: `kind`, `poll_interval`, `priority` and `routing` need schema 2"),
+                    format!("{who}: `kind`, `poll_interval`, `priority`, `routing` and `proxy` need schema 2"),
                 ));
+            }
+            let proxy = a.proxy;
+            if let Some(p) = &proxy
+                && p != crate::connection::proxy::NONE
+                && !crate::connection::proxy::valid_name(p)
+            {
+                return Err(FileError::invalid(path, format!("{who}: proxy {p:?} is not a proxy name or \"none\"")));
             }
             let priority = a.priority.unwrap_or(DEFAULT_PRIORITY);
             if !priority.is_finite() || priority < 0.0 {
@@ -518,6 +532,7 @@ impl Accounts {
                 priority,
                 routing,
                 hosts: a.hosts.into_iter().collect(),
+                proxy,
             });
         }
         Ok(Self { path: path.to_owned(), list })
@@ -544,6 +559,7 @@ impl Accounts {
                 priority: (a.priority != DEFAULT_PRIORITY).then_some(a.priority),
                 routing: RawRouting::write(&a.routing),
                 hosts: if a.is_signin() { Vec::new() } else { a.hosts.iter().cloned().collect() },
+                proxy: a.proxy.clone(),
             })
             .collect();
         toml::to_string(&RawFile { schema: SCHEMA, accounts }).expect("accounts serialise")

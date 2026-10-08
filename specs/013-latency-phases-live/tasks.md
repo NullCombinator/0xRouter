@@ -270,7 +270,7 @@ resumes. A secret scan finds no credentials (spec US4, SC-008, SC-011).
   - validation: "`name` matches `[a-z0-9][a-z0-9_-]{0,31}` and is unique; `none` is reserved; `url` scheme is `http`, `https` or `socks5`, with a host and port; the URL itself has no credentials" (data-model § Proxy).
 
   Add each password to the `Redactor` as a secret
-- [ ] T047 [US4] Add `Account.proxy: Option<String>` (a name or `"none"`) to `crates/nullrouter-engine/src/accounts.rs` and its `accounts.toml` serde. Resolve the effective proxy (account → provider → all → none) with its level in `connection/mod.rs`'s `Effective`
+- [X] T047 [US4] (resolution is `connection::proxy_for`, apart from `Effective`, which stays `Copy`) Add `Account.proxy: Option<String>` (a name or `"none"`) to `crates/nullrouter-engine/src/accounts.rs` and its `accounts.toml` serde. Resolve the effective proxy (account → provider → all → none) with its level in `connection/mod.rs`'s `Effective`
 - [ ] T048 [US4] Implement the client cache in `crates/nullrouter-engine/src/connection/clients.rs`:
   - `ClientKey { proxy: Option<String>, http: Negotiate|Http1Only, reuse: bool }` → `reqwest::Client`, built lazily with today's `upstream::client` settings plus `Proxy::all(url).basic_auth(…)`, `http1_only()` and `pool_max_idle_per_host(0)` as the key says, and the `ConnectClock` layer always;
   - held in `ArcSwap` on `EngineState`, and rebuilt on reload when proxies change;

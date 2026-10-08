@@ -138,6 +138,35 @@ pub fn resolve(
     Effective { connect, headers, first_token, stall }
 }
 
+/// The level a proxy assignment came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProxyLevel {
+    Account,
+    Provider,
+    All,
+}
+
+/// The proxy one attempt goes through. `name: None` with a level is an explicit `none`; with no
+/// level, nothing assigned one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChosenProxy {
+    pub name: Option<String>,
+    pub level: Option<ProxyLevel>,
+}
+
+/// Account, then provider, then all providers; the first that says anything wins, and `none`
+/// is an answer (it stops the search with no proxy).
+pub fn proxy_for(registry: &Registry, provider: &str, account: Option<&crate::accounts::Account>) -> ChosenProxy {
+    let pick = |value: Option<&String>, level| {
+        value.map(|v| ChosenProxy { name: (v != proxy::NONE).then(|| v.clone()), level: Some(level) })
+    };
+    pick(account.and_then(|a| a.proxy.as_ref()), ProxyLevel::Account)
+        .or_else(|| pick(registry.settings(provider).connection.proxy.as_ref(), ProxyLevel::Provider))
+        .or_else(|| pick(registry.runtime().connection_proxy.as_ref(), ProxyLevel::All))
+        .unwrap_or(ChosenProxy { name: None, level: None })
+}
+
 fn timeout_json(t: Option<Timeout>) -> serde_json::Value {
     match t {
         Some(t) => serde_json::json!({"ms": t.ms, "source": t.source}),
@@ -363,5 +392,46 @@ kind = "llm"
         let s = operator_model(ModelConnection { stall_timeout_ms: Some(11), ..Default::default() });
         let by_up = resolve(&s, &p, "alias", "slow", &endpoint(&p), &no_env);
         assert_eq!(by_up.stall.ms, 11);
+    }
+
+    fn registry(config: &str) -> (tempfile::TempDir, std::sync::Arc<Registry>) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("config.toml"), config).unwrap();
+        let handle = nullrouter_registry::RegistryHandle::open_parity(nullrouter_registry::OperatorHome::new(dir.path()))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let snapshot = handle.snapshot();
+        (dir, snapshot)
+    }
+
+    fn accounts(text: &str) -> crate::accounts::Accounts {
+        crate::accounts::Accounts::parse(text, std::path::Path::new("accounts.toml"), |_| None).unwrap()
+    }
+
+    fn chosen(name: Option<&str>, level: Option<ProxyLevel>) -> ChosenProxy {
+        ChosenProxy { name: name.map(str::to_owned), level }
+    }
+
+    #[test]
+    fn a_proxy_comes_from_the_account_then_the_provider_then_all_and_none_is_an_answer() {
+        let (_dir, reg) = registry(
+            "[connection]\nproxy = \"all-px\"\n\n[provider.openrouter.connection]\nproxy = \"prov-px\"\n\n[provider.anthropic.connection]\nproxy = \"none\"\n",
+        );
+        let accts = accounts(
+            "schema = 2\n\
+             [[account]]\nprovider = \"openrouter\"\nname = \"a\"\nsecret = \"sk-test-aaaa\"\nproxy = \"acct-px\"\n\
+             [[account]]\nprovider = \"openrouter\"\nname = \"b\"\nsecret = \"sk-test-bbbb\"\n\
+             [[account]]\nprovider = \"openrouter\"\nname = \"c\"\nsecret = \"sk-test-cccc\"\nproxy = \"none\"\n\
+             [[account]]\nprovider = \"anthropic\"\nname = \"x\"\nsecret = \"sk-test-xxxx\"\n\
+             [[account]]\nprovider = \"openai\"\nname = \"y\"\nsecret = \"sk-test-yyyy\"\n",
+        );
+        let of = |p: &str, n: &str| proxy_for(&reg, p, accts.get(p, n));
+        assert_eq!(of("openrouter", "a"), chosen(Some("acct-px"), Some(ProxyLevel::Account)));
+        assert_eq!(of("openrouter", "b"), chosen(Some("prov-px"), Some(ProxyLevel::Provider)));
+        assert_eq!(of("openrouter", "c"), chosen(None, Some(ProxyLevel::Account)), "none at the account beats the provider");
+        assert_eq!(of("anthropic", "x"), chosen(None, Some(ProxyLevel::Provider)), "none at the provider beats all");
+        assert_eq!(of("openai", "y"), chosen(Some("all-px"), Some(ProxyLevel::All)));
+
+        let (_dir, bare) = registry("");
+        assert_eq!(proxy_for(&bare, "openai", None), chosen(None, None));
     }
 }
