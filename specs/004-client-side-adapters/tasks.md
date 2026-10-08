@@ -565,7 +565,7 @@ foundation here, not a later story.
     difference), refuses a module the load gate refuses (`module_refused` alert), and keeps
     compiled modules by `wasm_hash`. `WasmHandle` now carries the `not_run` reason, so a suspect
     version records `suspect`. Tests: `tests/loader.rs`.
-  - Engine wiring done, not yet run in CI: `Engine::open_adapters` (called by `serve`, which
+  - Engine wiring done (green in CI #137): `Engine::open_adapters` (called by `serve`, which
     refuses a group-readable `adapters/`) and `refresh_adapters` (called at every reload) put
     one runner per harness in the store into the engine. Tests: `engine/tests/adapter_store.rs`;
     T047's `install_fixture` is in `testkit.rs`, `wat_adapter` is not.
