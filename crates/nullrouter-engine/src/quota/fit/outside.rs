@@ -363,9 +363,16 @@ pub fn exclusive_at(since: Option<SystemTime>, start: SystemTime) -> bool {
     since.is_some_and(|s| s <= start)
 }
 
-/// `n` with at most two decimals and no trailing zeros: `4`, `0.2`, `12`.
+/// `n` with no decimals from 100 up, one from 10, else two, and no trailing zeros: `4`, `0.2`,
+/// `12.5`, `150`.
 fn num(n: f64) -> String {
-    let s = if n.abs() >= 10.0 { format!("{n:.0}") } else { format!("{n:.2}") };
+    let s = if n.abs() >= 100.0 {
+        format!("{n:.0}")
+    } else if n.abs() >= 10.0 {
+        format!("{n:.1}")
+    } else {
+        format!("{n:.2}")
+    };
     if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_owned() } else { s }
 }
 

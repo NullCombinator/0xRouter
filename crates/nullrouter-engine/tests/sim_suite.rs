@@ -163,7 +163,7 @@ fn spread(all: &[u64], n: usize) -> Vec<u64> {
 /// The outside use of seed index `i`: every 4th an office-hours rate, the others alternately a
 /// flat rate (its size varying with `i`) or bursts, idle and during traffic.
 fn outside_of(i: u64, reqs: &[Req]) -> (&'static str, Vec<OutsideUse>) {
-    if i % 4 == 0 {
+    if i.is_multiple_of(4) {
         return ("office-hours rate", vec![rate(1.0 + (i % 3) as f64 * 0.5, true)]);
     }
     if i % 2 == 1 {
