@@ -31,6 +31,16 @@ fn remover() -> Vec<u8> {
                                 "kind": "removed", "reason": "target_rejects_field"}]}))
 }
 
+/// `text` as the body of a WAT data string: quotes, backslashes and non-printing bytes by hex.
+fn escape(text: &str) -> String {
+    text.bytes()
+        .map(|b| match b {
+            b' '..=b'~' if b != b'"' && b != b'\\' => (b as char).to_string(),
+            _ => format!("\\{b:02x}"),
+        })
+        .collect()
+}
+
 /// A module that answers `answer` on every request.
 fn answering(answer: &Value) -> Vec<u8> {
     let out = answer.to_string();
@@ -41,7 +51,7 @@ fn answering(answer: &Value) -> Vec<u8> {
             (func (export "zr_alloc") (param i32) (result i32) i32.const 4096)
             (func (export "zr_on_request") (param i32 i32) (result i64) i64.const {})
             (@custom "nr.abi" "\01\00\00\00"))"#,
-        out.replace('"', "\\22"),
+        escape(&out),
         (OUT_AT << 32) | out.len() as i64
     ))
     .unwrap()
