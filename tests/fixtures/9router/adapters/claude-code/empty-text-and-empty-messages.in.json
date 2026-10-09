@@ -1,0 +1,57 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "model": "claude-sonnet-4-5-20250929",
+    "max_tokens": 32000,
+    "stream": true,
+    "messages": [
+      {
+        "role": "user",
+        "content": "   "
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          },
+          {
+            "type": "text",
+            "text": "Hello."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": []
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": " \n"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hi."
+          },
+          {
+            "type": "text",
+            "text": ""
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": "Bye."
+      }
+    ]
+  }
+}

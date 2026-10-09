@@ -1,0 +1,49 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "model": "claude-sonnet-4-5-20250929",
+    "max_tokens": 32000,
+    "stream": true,
+    "thinking": {
+      "type": "enabled",
+      "budget_tokens": 8000
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is 17 * 23?"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "391"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": "And 391 / 17?"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "391 / 17 = 23.",
+            "signature": "EkAKCAgIGAIqQAECAwQFBgcICQoLDA0ODxAREhMUFRYXGA=="
+          },
+          {
+            "type": "text",
+            "text": "23"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": "Thanks."
+      }
+    ]
+  }
+}

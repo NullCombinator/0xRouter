@@ -1,0 +1,16 @@
+{
+  "model": "claude-sonnet-4-5-20250929",
+  "max_tokens": 32000,
+  "stream": true,
+  "tools": [
+    { "name": "Read", "description": "Read a file", "input_schema": { "type": "object", "properties": {} } },
+    { "name": "WebSearch", "description": "Search the web", "input_schema": { "type": "object", "properties": {} } },
+    { "name": "WebFetch", "description": "Fetch a URL", "input_schema": { "type": "object", "properties": {} } },
+    { "name": "mcp__workspace__web_fetch", "description": "Fetch a URL", "input_schema": { "type": "object", "properties": {} } },
+    { "name": "mcp__exa__web_search_exa", "description": "Exa search", "input_schema": { "type": "object", "properties": {} } },
+    { "name": "mcp__browsermcp__browser_navigate", "description": "Navigate", "input_schema": { "type": "object", "properties": {} } },
+    { "name": "mcp__Claude_in_Chrome__navigate", "description": "Navigate", "input_schema": { "type": "object", "properties": {} } },
+    { "name": "mcp__tavily__tavily_crawl", "description": "Tavily crawl", "input_schema": { "type": "object", "properties": {} } }
+  ],
+  "messages": [{ "role": "user", "content": "Find the docs for axum 0.8." }]
+}

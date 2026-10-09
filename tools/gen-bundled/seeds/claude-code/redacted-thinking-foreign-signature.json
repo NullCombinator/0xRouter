@@ -1,0 +1,24 @@
+{
+  "model": "claude-sonnet-4-5-20250929",
+  "max_tokens": 32000,
+  "stream": true,
+  "thinking": { "type": "enabled", "budget_tokens": 8000 },
+  "messages": [
+    { "role": "user", "content": "Plan the refactor." },
+    { "role": "assistant", "content": [
+      { "type": "redacted_thinking", "data": "EmwKAhgBEgy3va3pzix/LafPsn4aDFIT2Xlxh0L5L8rLVyIwxtE3rAFBa8cr3qpPkNRj2YsvFSkSiUJwnu2qqUgHkzuiRiz3J1AnSsvqtUGmyL2BKhQXXDqT0NqLTRd/s+eOOdSl3bcj8Q==", "signature": "CiQBKzxNBQYHCAkKCwwNDg8=" },
+      { "type": "text", "text": "Here is the plan." }
+    ] },
+    { "role": "user", "content": "Start with step one." },
+    { "role": "assistant", "content": [
+      { "type": "redacted_thinking", "data": "EmwKAhgBEgy3va3pzix/LafPsn4aDFIT2Xlxh0L5L8rLVyIwxtE3rAFBa8cr3qpPkNRj2YsvFSkSiUJwnu2qqUgHkzuiRiz3J1AnSsvqtUGmyL2BKhQXXDqT0NqLTRd/s+eOOdSl3bcj8Q==", "signature": "EkAKCAgIGAIqQAECAwQFBgcICQoLDA0ODxAREhMUFRYXGA==" },
+      { "type": "text", "text": "Step one is done." }
+    ] },
+    { "role": "user", "content": "Next." },
+    { "role": "assistant", "content": [
+      { "type": "redacted_thinking", "data": "EmwKAhgBEgy3va3pzix/LafPsn4aDFIT2Xlxh0L5L8rLVyIwxtE3rAFBa8cr3qpPkNRj2YsvFSkSiUJwnu2qqUgHkzuiRiz3J1AnSsvqtUGmyL2BKhQXXDqT0NqLTRd/s+eOOdSl3bcj8Q==" },
+      { "type": "text", "text": "Step two is done." }
+    ] },
+    { "role": "user", "content": "Good." }
+  ]
+}

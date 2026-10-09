@@ -1,0 +1,19 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "client_tool": "claude",
+    "provider": "anthropic",
+    "passthrough": true,
+    "calls": [
+      "normalizeClaudePassthrough(body, body.model)",
+      "dedupeTools(body.tools)"
+    ],
+    "model": "claude-sonnet-4-5-20250929",
+    "dedupe_stripped": [
+      "WebSearch",
+      "WebFetch",
+      "mcp__workspace__web_fetch",
+      "mcp__Claude_in_Chrome__navigate"
+    ]
+  }
+}
