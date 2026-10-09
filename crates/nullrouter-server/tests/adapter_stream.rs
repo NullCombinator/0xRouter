@@ -11,7 +11,10 @@ use nullrouter_engine::records::{AdapterOutcome, NotRunReason, RequestRecord};
 use nullrouter_server::relay::REQUEST_ID;
 use serde_json::{Value, json};
 
-const MANIFEST: &str = r#"
+/// `adapter.toml` for a module that reads `select` on each stream event.
+fn manifest(select: &str) -> String {
+    format!(
+        r#"
 harness = "acme"
 style = "openai-chat"
 kit = "1"
@@ -20,9 +23,13 @@ kit = "1"
 selectors = ["model"]
 
 [response]
-selectors = ["choices[*].delta"]
+selectors = ["{select}"]
 events = true
-"#;
+"#
+    )
+}
+/// Only the events that carry text, so the edit finds its path on each.
+const SELECT: &str = "choices[*].delta.content";
 const OUT_AT: i64 = 32768;
 
 /// `text` as the body of a WAT data string: quotes, backslashes and non-printing bytes by hex.
@@ -54,8 +61,8 @@ fn on_events(edit: &Value) -> Vec<u8> {
 }
 
 /// Installs the module as `acme`, puts the server's key on it and reloads.
-fn install(s: &Server, wasm: &[u8]) {
-    install_fixture(s.home(), "acme", MANIFEST, wasm);
+fn install(s: &Server, select: &str, wasm: &[u8]) {
+    install_fixture(s.home(), "acme", &manifest(select), wasm);
     s.engine.open_adapters().unwrap();
     let path = s.home().join("keys.toml");
     let mut keys = Keys::load(&path).unwrap();
@@ -102,7 +109,7 @@ async fn an_event_edit_reaches_the_client_and_the_record() {
     let s = server().await;
     let edit = json!({"op": "replace", "path": "choices[0].delta.content", "kind": "converted",
                       "reason": "format_conversion", "value": "HI"});
-    install(&s, &on_events(&edit));
+    install(&s, SELECT, &on_events(&edit));
     let (text, rec) = stream(&s).await;
     assert_eq!(content(&text), "HIHI", "{text}");
     let run = rec.response_adapter.expect("the stream's adapter run is recorded");
@@ -115,7 +122,7 @@ async fn a_blocked_event_leaves_the_stream_as_it_was_and_the_version_stops_servi
     let edit = json!({"op": "replace", "path": "choices[0].delta", "kind": "converted",
         "reason": "format_conversion", "value": {"tool_calls": [{"index": 0, "id": "c9", "type": "function",
         "function": {"name": "rm", "arguments": ""}}]}});
-    install(&s, &on_events(&edit));
+    install(&s, "choices[*].delta", &on_events(&edit));
     let (text, rec) = stream(&s).await;
     assert_eq!(content(&text), "Hello", "{text}");
     assert!(!text.contains("\"rm\""), "{text}");
