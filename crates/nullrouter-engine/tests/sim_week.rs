@@ -967,3 +967,113 @@ fn a_capacity_declared_at_half_the_truth_is_fitted_within_the_week() {
     // US1 scenario 3 as written: true capacity is twice the declared one. The weights are right.
     assert_fitted(fitted.fit.as_ref().expect("a fit run"), &scenario, false);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Three accounts of one plugin (T019; US1 scenarios 4 and 5; research R8)
+
+const POOL_ACCOUNTS: [&str; 3] = ["a1", "a2", "a3"];
+/// What account `a3` charges when its output weight is twice the other accounts' (15.0).
+const DOUBLE_OUTPUT_WEIGHTS: &str = "token_weights = { input = 1.0, output = 30.0, cache_read = 0.3, cache_write = 3.75 }";
+/// True capacities as shares of the busiest five hours' cost: different per account.
+const POOL_SHARES: [f64; 3] = [0.30, 0.40, 0.50];
+
+/// Three subscription accounts of one plugin that declares the weights wrong (the true ones are
+/// 3x on output and cache) and each capacity 1/0.6 too high, over two overflow keys.
+fn pooled_week(reqs: &[Req], odd_account_weights: &'static str) -> Week {
+    let base = (peak_five_hours(reqs, THREE_TIMES_WEIGHTS) / PEAK_SHARE).round();
+    let payg = |key: &str, order: i64, toml: &str| {
+        let (provider, account) = key.split_once('/').expect("provider/account");
+        AccountDef {
+            key: CandidateKey::new(provider, account, "m"),
+            order,
+            priority: 1.0,
+            meters: Vec::new(),
+            reported: false,
+            price: PriceSpec { schedule: decl(toml).price, flat: None },
+        }
+    };
+    let mut accounts: Vec<AccountDef> = POOL_ACCOUNTS
+        .iter()
+        .zip(POOL_SHARES)
+        .enumerate()
+        .map(|(i, (name, share))| AccountDef {
+            key: CandidateKey::new(FIT_PROVIDER, name, "m"),
+            order: i as i64,
+            priority: 1.0,
+            meters: vec![five_hour((base * share / 0.6).round(), DECLARED_WEIGHTS)],
+            reported: true,
+            price: PriceSpec::default(),
+        })
+        .collect();
+    accounts.push(payg("openrouter/key", 3, "[[price]]\ninput = 1.5\n"));
+    accounts.push(payg("deepseek/key", 4, "[[price]]\ninput = 1.6\n"));
+    let defs = Defs { accounts, target: "sonnet".into(), amortization: Duration::from_secs(5 * 3600) };
+    let mut truth: Vec<TrueAccount> = POOL_ACCOUNTS
+        .iter()
+        .zip(POOL_SHARES)
+        .enumerate()
+        .map(|(i, (_, share))| {
+            let weights = if i == 2 { odd_account_weights } else { THREE_TIMES_WEIGHTS };
+            let meter = five_hour((base * share).round(), weights);
+            TrueAccount { windows: vec![TrueWindow::new(&meter, Reset::FirstUse, true, 0.0)] }
+        })
+        .collect();
+    truth.extend([TrueAccount::default(), TrueAccount::default()]);
+    let mut world = World::new(truth);
+    world.rounding = Some(Rounding::HalfUp);
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut sim = Sim::new(&defs, dir.path()).with_fit(FitRun::new(defs.accounts.len()));
+    for r in reqs {
+        sim.handle(&mut world, r);
+    }
+    sim.journal.flush_blocking();
+    Week { placed: std::mem::take(&mut sim.placed), fit: sim.fit.take() }
+}
+
+fn assert_in_range(fit: &FitRun, key: &str, want: f64) {
+    let got = fit.learner.ranges(FIT_PROVIDER, FIT_WINDOW);
+    let (est, lo, hi) = got.get(key).copied().unwrap_or_else(|| panic!("{key} has no range"));
+    assert!((est / want - 1.0).abs() <= 0.10, "{key}: fitted {est}, true {want}");
+    assert!(lo <= want && want <= hi, "{key}: the 95% range {lo}..{hi} misses the truth {want}");
+}
+
+#[test]
+fn accounts_with_equal_weights_pool_them_and_fit_each_capacity_alone() {
+    let reqs = plan(SEED);
+    let week = pooled_week(&reqs, THREE_TIMES_WEIGHTS);
+    let fit = week.fit.as_ref().expect("a fit run");
+    let states = fit.learner.number_states(FIT_PROVIDER, FIT_WINDOW);
+    // US1 scenario 4: one estimate for the weights, one capacity per account.
+    assert!(matches!(states.get("weight.output"), Some(NumberState::Fitted { .. })), "weight.output is {:?}", states.get("weight.output"));
+    assert!(
+        states.keys().all(|k| !k.starts_with("weight.") || !k.contains('@')),
+        "a weight was fitted per account: {:?}",
+        states.keys().collect::<Vec<_>>()
+    );
+    assert!(fit.learner.splits(FIT_PROVIDER, FIT_WINDOW).is_empty(), "equal accounts were split: {:?}", fit.learner.splits(FIT_PROVIDER, FIT_WINDOW));
+    assert_in_range(fit, "weight.output", THREE_TIMES_RATIOS[0]);
+    let base = (peak_five_hours(&reqs, THREE_TIMES_WEIGHTS) / PEAK_SHARE).round();
+    let published = fit.fits.window(FIT_PROVIDER, FIT_WINDOW);
+    for (name, share) in POOL_ACCOUNTS.iter().zip(POOL_SHARES) {
+        let key = format!("capacity@{name}");
+        assert!(matches!(states.get(&key), Some(NumberState::Fitted { .. })), "{key} is {:?}", states.get(&key));
+        assert_in_range(fit, &key, (base * share).round());
+        assert!(published.capacity.contains_key(*name), "{key} is not published");
+    }
+}
+
+#[test]
+fn an_account_with_twice_the_output_weight_is_split_off_and_leaves_the_pooled_fit() {
+    let reqs = plan(SEED);
+    let week = pooled_week(&reqs, DOUBLE_OUTPUT_WEIGHTS);
+    let fit = week.fit.as_ref().expect("a fit run");
+    // US1 scenario 5: the odd account is split off, naming the number; the others are not.
+    let splits = fit.learner.splits(FIT_PROVIDER, FIT_WINDOW);
+    let reason = splits.get("a3").unwrap_or_else(|| panic!("a3 was not split off: {splits:?}"));
+    assert!(reason.contains("weight.output"), "the reason doesn't name weight.output: {reason}");
+    assert_eq!(splits.len(), 1, "only the odd account is split: {splits:?}");
+    // Without its rows the pooled output weight is the other accounts' 15, not a blend toward 30.
+    assert_in_range(fit, "weight.output", THREE_TIMES_RATIOS[0]);
+    assert!(fit.learner.pooled_note(FIT_PROVIDER, FIT_WINDOW).is_none(), "two accounts remain pooled");
+}
