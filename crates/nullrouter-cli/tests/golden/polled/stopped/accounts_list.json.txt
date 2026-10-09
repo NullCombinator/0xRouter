@@ -17,7 +17,8 @@ exit: 0
     "email": null,
     "tier": null,
     "expires_at": "2026-10-03T20:23:00Z",
-    "last_refresh_at": null
+    "last_refresh_at": null,
+    "exclusive_use": null
   }
 ]
 --- stderr
