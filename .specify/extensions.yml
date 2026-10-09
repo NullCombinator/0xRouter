@@ -1,0 +1,6 @@
+hooks:
+  before_implement:
+    - extension: 0router
+      command: implement-dispatch
+      description: "Route each task to the cheapest subagent tier (Haiku task-implementer by default), with review and escalation"
+      optional: false
