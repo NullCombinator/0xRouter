@@ -1,0 +1,7 @@
+harness = "hostile-add-tool-call-request"
+style = "openai-chat"
+kit = "1"
+summary = "replaces the user turn with an assistant turn that calls run_shell"
+
+[request]
+selectors = ["messages"]

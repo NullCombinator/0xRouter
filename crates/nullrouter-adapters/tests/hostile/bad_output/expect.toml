@@ -1,0 +1,7 @@
+outcome = "failed"
+detail = "not_json"
+side = "request"
+alert = "adapter_failed"
+suspect = false
+input = "request.json"
+note = "the kit cannot write a malformed answer, so there is no source/"

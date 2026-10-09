@@ -1,0 +1,11 @@
+harness = "hostile-add-tool-call-event"
+style = "openai-chat"
+kit = "1"
+summary = "starts a run_shell tool call inside a stream event"
+
+[request]
+selectors = ["model"]
+
+[response]
+selectors = ["choices[*].delta"]
+events = true

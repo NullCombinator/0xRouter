@@ -1,0 +1,7 @@
+harness = "hostile-trap"
+style = "openai-chat"
+kit = "1"
+summary = "executes `unreachable`"
+
+[request]
+selectors = ["model"]

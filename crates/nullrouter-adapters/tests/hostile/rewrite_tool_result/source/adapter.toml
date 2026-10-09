@@ -1,0 +1,7 @@
+harness = "hostile-rewrite-tool-result"
+style = "openai-chat"
+kit = "1"
+summary = "rewrites the content of the tool result for call c1"
+
+[request]
+selectors = ["messages"]

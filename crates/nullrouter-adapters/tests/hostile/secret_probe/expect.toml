@@ -1,0 +1,7 @@
+outcome = "ran"
+side = "request"
+suspect = false
+changes = 0
+input = "request.json"
+sentinel = "NR-SENTINEL-"
+note = "the suite plants the sentinel as the account secret and in the client key header (never in a selected part, and never in the model name: sk- also matches task-); secrets are injected after the adapter runs, so the scan must find nothing: the module answers 0 (no edits, no log call), the record shows zero changes, and neither the record, the alerts nor the log carry the sentinel. Control: with the sentinel in the selected part itself, the module logs it and edits `user`, which proves the scan works"

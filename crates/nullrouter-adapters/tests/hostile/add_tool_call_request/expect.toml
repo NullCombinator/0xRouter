@@ -1,0 +1,6 @@
+outcome = "blocked"
+detail = "tool_call_added"
+side = "request"
+alert = "guardrail"
+suspect = true
+input = "request.json"

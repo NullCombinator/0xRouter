@@ -1,0 +1,7 @@
+harness = "hostile-add-tool-def"
+style = "openai-chat"
+kit = "1"
+summary = "adds a run_shell tool definition"
+
+[request]
+selectors = ["tools"]

@@ -1,0 +1,7 @@
+harness = "hostile-out-of-selector"
+style = "openai-chat"
+kit = "1"
+summary = "removes `max_tokens` while its only selector is `model`"
+
+[request]
+selectors = ["model"]

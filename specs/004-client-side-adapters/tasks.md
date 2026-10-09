@@ -818,7 +818,7 @@ until cleared, and every request completes.
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T065 [P] [US3] Hostile corpus in `crates/nullrouter-adapters/tests/hostile/`.
+- [X] T065 [P] [US3] Hostile corpus in `crates/nullrouter-adapters/tests/hostile/`.
   - Each case is a Rust source against the kit (where the attack is expressible), plus a
     checked-in `.wasm`, built by T045's `tools/build-adapter-fixtures.sh` (*operator-run*) or
     hand-written in WAT where the kit can't express the attack.
