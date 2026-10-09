@@ -591,6 +591,15 @@ plus `dedupeTools`:
 8. Duplicate built-in tools that have MCP equivalents are removed (`dedupeTools`). This is a
    tool-definition removal, allowed by FR-016.
 
+**Oracle details** (the T079 fixtures, ref `39e36d3`), which the adapter follows:
+- Wrapping a bare content block (step 3) also drops its `cache_control`.
+- A `redacted_thinking` block with only `data` and no `signature` counts as foreign (step 5).
+- Step 5's "tool results that reference them" includes a `tool_result` in a user turn.
+- A system message right after an assistant turn becomes its own user turn rather than being
+  folded, so two user turns can follow each other (step 4).
+- Step 5 applies only when `Context.provider == "anthropic"` and the style is the same; every
+  other target, including Anthropic-compatible providers, takes step 6.
+
 **Deviations (user-visible)**:
 - 9router **inserts a thinking placeholder** into an assistant turn that has a `tool_use` but no
   valid thinking block when thinking is enabled. That adds content, which IV doesn't allow an

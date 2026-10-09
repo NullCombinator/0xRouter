@@ -921,7 +921,7 @@ the reviewed source.
 
 ### Implementation for User Story 4
 
-- [ ] T076 [US4] Active-version swap in `crates/nullrouter-adapters/src/store.rs` and
+- [X] T076 [US4] Active-version swap in `crates/nullrouter-adapters/src/store.rs` and
   `runner.rs`.
   - `approve` sets `active`, and the previous version becomes `superseded`, in one atomic
     index write.
@@ -997,7 +997,7 @@ provider.
 
 ### Implementation for User Story 5
 
-- [ ] T082 [US5] Adapter package `adapters/community/claude-code/`.
+- [X] T082 [US5] Adapter package `adapters/community/claude-code/`.
   - `Cargo.toml` per the contract, with only the kit as a dependency.
   - `adapter.toml`: `harness = "claude-code"`, `style = "anthropic-messages"`, `kit = "1"`,
     request selectors `thinking`, `output_config`, `model`, `messages[*]`, `tools`, and no

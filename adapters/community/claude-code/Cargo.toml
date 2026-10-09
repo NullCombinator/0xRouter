@@ -1,0 +1,8 @@
+[package]
+name = "nr-adapter-claude-code"
+version = "0.1.0"
+edition = "2024"
+description = "Claude Code quirks for 0router: foreign thinking and server-tool blocks, haiku params"
+
+[dependencies]
+nullrouter-adapter-kit = "1"

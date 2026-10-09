@@ -1,0 +1,11 @@
+harness = "claude-code"
+style = "anthropic-messages"
+kit = "1"
+summary = "Claude Code quirks: foreign thinking and server-tool blocks, haiku params, mid-conversation system turns, duplicate tools"
+
+[request]
+selectors = ["thinking", "output_config", "model", "messages[*]", "tools"]
+
+[response]
+selectors = []
+events = false
