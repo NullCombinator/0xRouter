@@ -1045,7 +1045,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
 
 ### Tests for User Story 6 ⚠️
 
-- [ ] T085 [P] [US6] Output tests in `crates/nullrouter-cli/tests/adapter_output.rs`.
+- [X] T085 [P] [US6] Output tests in `crates/nullrouter-cli/tests/adapter_output.rs`.
   - `records show` text for three cases, matching the contract's layout exactly: an adapter
     that ran with changes, one that ran with none (it still names the adapter and version,
     US6-2), and a blocked one.
