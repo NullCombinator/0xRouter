@@ -64,7 +64,7 @@ impl Engine {
                 }
             }
         };
-        review::run(&store, harness, version, Styles { chat: &**chat, messages: &**messages }, send).await
+        review::run(&store, harness, version, Styles { chat, messages }, send).await
     }
 
     /// Installs an adapter package (a directory or a `.tar.gz`) from `input`: gate, store, build
