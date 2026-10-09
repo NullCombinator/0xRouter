@@ -469,6 +469,57 @@ fn decision(d: &Value, o: &mut String) {
     }
 }
 
+/// `hermes built-in` or `claude-code v0.1.0-1a2b3c4d`: the harness and the version that ran.
+fn adapter_who(a: &Value) -> String {
+    let version = match s(&a["version"]) {
+        "builtin" => "built-in".to_owned(),
+        v => v.to_owned(),
+    };
+    format!("{} {version}", s(&a["harness"]))
+}
+
+/// The adapter's outcome as the text writes it: `ran, 3 changes`, `not run (suspect); served as
+/// plain client`, `failed (deadline)`, `blocked by guardrail`.
+fn adapter_outcome(a: &Value) -> String {
+    let o = &a["outcome"];
+    match o["state"].as_str() {
+        Some("ran") => {
+            let n = a["changes"].as_array().map_or(0, Vec::len);
+            format!("ran, {n} {}", if n == 1 { "change" } else { "changes" })
+        }
+        Some("not_run") => format!("not run ({}); served as plain client", s(&o["reason"])),
+        Some("failed") => match o["reason"]["rule"].as_str() {
+            Some(rule) => format!("failed ({}: {rule})", s(&o["reason"]["kind"])),
+            None => format!("failed ({})", s(&o["reason"]["kind"])),
+        },
+        Some("blocked") => "blocked by guardrail".into(),
+        _ => "unknown".into(),
+    }
+}
+
+/// The change lines and the guardrail lines of an adapter run, at the contract's indent. A
+/// change is `kind  path  reason`, the kind and the path padded to their columns.
+fn adapter_detail(a: &Value, o: &mut String) {
+    for c in a["changes"].as_array().into_iter().flatten() {
+        let kind = s(&c["kind"]);
+        let path = s(&c["path"]);
+        let kind_pad = 11usize.saturating_sub(kind.len()).max(2);
+        let path_pad = 27usize.saturating_sub(path.len()).max(2);
+        let _ = writeln!(o, "       {kind}{}{path}{}{}", " ".repeat(kind_pad), " ".repeat(path_pad), s(&c["reason"]));
+    }
+    let g = &a["guardrail"];
+    if g.is_null() {
+        return;
+    }
+    let paths: Vec<&str> = g["paths"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    let mut rule = format!("       rule {}", s(&g["rule"]));
+    if !paths.is_empty() {
+        rule += &format!("  paths {}", paths.join(", "));
+    }
+    let _ = writeln!(o, "{rule}");
+    let _ = writeln!(o, "       sent unmodified; adapter marked suspect");
+}
+
 /// The `records show` text.
 fn show(r: &Value, names: &std::collections::HashMap<String, String>) -> String {
     let mut o = String::new();
@@ -531,6 +582,10 @@ fn show(r: &Value, names: &std::collections::HashMap<String, String>) -> String 
     let _ = writeln!(o, "attempts");
     for a in r["attempts"].as_array().into_iter().flatten() {
         let _ = writeln!(o, "  {}  {:<16} {:<26} {}{}", a["n"], who(a), s(&a["model"]), placed(a), outcome(a));
+        if !a["adapter"].is_null() {
+            let _ = writeln!(o, "     adapter {}: {}", adapter_who(&a["adapter"]), adapter_outcome(&a["adapter"]));
+            adapter_detail(&a["adapter"], &mut o);
+        }
         if let (Some(from), Some(to)) = (a["started"].as_f64(), a["ended"].as_f64()) {
             let used = attempt_usage(&a["usage"]);
             let _ = writeln!(o, "       {:.2} s{used}", (to - from) / 1000.0);
@@ -559,6 +614,13 @@ fn show(r: &Value, names: &std::collections::HashMap<String, String>) -> String 
         .sum();
     if sum > 0.0 {
         let _ = writeln!(o, "total {} = sum of phases", span(sum));
+    }
+    let ra = &r["response_adapter"];
+    if ra.is_null() {
+        let _ = writeln!(o, "response adapter: none");
+    } else {
+        let _ = writeln!(o, "response adapter: {}: {}", adapter_who(ra), adapter_outcome(ra));
+        adapter_detail(ra, &mut o);
     }
     o
 }
@@ -751,5 +813,50 @@ mod tests {
         let mut client = r.clone();
         client.as_object_mut().unwrap().remove("test");
         assert!(line(&client).ends_with("beta/a"), "a client request has no tag");
+    }
+
+    /// Slice 004: each attempt's adapter line, its changes and guardrail, and the response adapter.
+    #[test]
+    fn adapter_runs_follow_the_contract() {
+        let r = json!({
+            "id": "rq_01", "arrived": "2026-09-28T11:04:52Z", "outcome": "succeeded", "style": "openai-chat",
+            "break_handling": {"kind": "none"}, "response_adapter": null,
+            "attempts": [
+                {"n": 1, "provider": "openrouter", "account": "main", "model": "deepseek/deepseek-r1",
+                 "outcome": {"state": "ok"}, "dropped": [],
+                 "adapter": {"harness": "hermes", "version": "builtin", "outcome": {"state": "ran"}, "duration_us": 12,
+                     "changes": [
+                        {"path": "messages[4].images", "kind": "converted", "reason": "format_conversion"},
+                        {"path": "messages[4].content", "kind": "converted", "reason": "format_conversion"},
+                        {"path": "messages[3].reasoning_content", "kind": "removed", "reason": "target_rejects_field"}
+                     ]}},
+                {"n": 2, "provider": "anthropic", "account": "max", "model": "m",
+                 "outcome": {"state": "failed", "status": null, "class": "transient", "reason": "overloaded"}, "dropped": [],
+                 "adapter": {"harness": "claude-code", "version": "v0.1.0-1a2b3c4d", "outcome": {"state": "blocked"},
+                     "changes": [], "duration_us": 9,
+                     "guardrail": {"direction": "request", "rule": "tool_call_added", "paths": ["messages[7].content[2]"],
+                         "adapter": {"harness": "claude-code", "version": "v0.1.0-1a2b3c4d"}, "at": "2026-09-28T11:04:52Z"}}},
+                {"n": 3, "provider": "anthropic", "account": "max", "model": "m", "outcome": {"state": "ok"}, "dropped": [],
+                 "adapter": {"harness": "claude-code", "version": "v0.1.0-1a2b3c4d", "outcome": {"state": "not_run", "reason": "suspect"},
+                     "changes": [], "duration_us": 0}},
+                {"n": 4, "provider": "anthropic", "account": "max", "model": "m", "outcome": {"state": "ok"}, "dropped": [],
+                 "adapter": {"harness": "claude-code", "version": "v0.1.0-1a2b3c4d", "outcome": {"state": "failed", "reason": {"kind": "deadline"}},
+                     "changes": [], "duration_us": 0}}
+            ]
+        });
+        let text = show(&r, &Default::default());
+        for want in [
+            "     adapter hermes built-in: ran, 3 changes\n",
+            "       converted  messages[4].images         format_conversion\n",
+            "       removed    messages[3].reasoning_content  target_rejects_field\n",
+            "     adapter claude-code v0.1.0-1a2b3c4d: blocked by guardrail\n",
+            "       rule tool_call_added  paths messages[7].content[2]\n",
+            "       sent unmodified; adapter marked suspect\n",
+            "     adapter claude-code v0.1.0-1a2b3c4d: not run (suspect); served as plain client\n",
+            "     adapter claude-code v0.1.0-1a2b3c4d: failed (deadline)\n",
+            "response adapter: none\n",
+        ] {
+            assert!(text.contains(want), "{want:?} missing from:\n{text}");
+        }
     }
 }

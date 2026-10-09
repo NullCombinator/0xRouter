@@ -198,12 +198,7 @@ fn check(home: &OperatorHome, as_json: bool) -> Result<ExitCode, ExitCode> {
             continue;
         }
         let versions: Vec<&str> = h.versions.iter().map(|v| v.semver.as_str()).collect();
-        let highest = versions
-            .iter()
-            .copied()
-            .max_by_key(|s| semver::Version::parse(s).ok())
-            .unwrap_or("-")
-            .to_owned();
+        let highest = versions.iter().copied().max_by_key(|s| semver::Version::parse(s).ok()).unwrap_or("-").to_owned();
         let active = h
             .active
             .as_ref()
@@ -245,8 +240,10 @@ struct CheckRow {
 /// The table of contracts/catalogue.md § check output: columns padded to the widest cell, and an
 /// update note on rows with a newer catalogue version.
 fn print_check(rows: &[CheckRow]) {
-    let width = |head: &str, cell: fn(&CheckRow) -> &str| rows.iter().map(|r| cell(r).len()).fold(head.len(), usize::max);
-    let (wh, wi, wa) = (width("harness", |r| &r.harness), width("installed", |r| &r.installed), width("active", |r| &r.active));
+    let width =
+        |head: &str, cell: fn(&CheckRow) -> &str| rows.iter().map(|r| cell(r).len()).fold(head.len(), usize::max);
+    let (wh, wi, wa) =
+        (width("harness", |r| &r.harness), width("installed", |r| &r.installed), width("active", |r| &r.active));
     println!("{:<wh$}  {:<wi$}  {:<wa$}  catalogue newest", "harness", "installed", "active");
     for r in rows {
         let note = r.newer.first().map_or_else(String::new, |n| {

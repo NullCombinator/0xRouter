@@ -1062,7 +1062,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
 
 ### Implementation for User Story 6
 
-- [ ] T087 [US6] `records show` rendering in `crates/nullrouter-cli/src/cmd/records.rs`.
+- [X] T087 [US6] `records show` rendering in `crates/nullrouter-cli/src/cmd/records.rs`.
   - Per attempt, `adapter <harness> <version|built-in>: <outcome>`, then the change lines,
     then the guardrail lines.
   - A `response adapter:` line, per
