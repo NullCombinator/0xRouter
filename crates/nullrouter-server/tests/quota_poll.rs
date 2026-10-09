@@ -404,6 +404,7 @@ async fn outside_use_alerts_list_until_acknowledged() {
         id: "alert-01".into(),
         entry: "entry-01".into(),
         raised_at: "2026-10-08T09:00:00.000Z".into(),
+        text: None,
     };
     outside::append(q._dir.path(), "anthropic", "max", &[raised]).unwrap();
     let a = q.op(json!({"op": "quota.alerts"})).await;

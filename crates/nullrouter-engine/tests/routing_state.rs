@@ -365,8 +365,8 @@ mod meter_block {
             Line::Entry(outside_entry("01A", OutsideType::Idle, now - 30 * 24 * hour)),
             Line::Entry(outside_entry("01B", OutsideType::Busy, now - 2 * hour)),
             Line::Entry(outside_entry("01C", OutsideType::Steady, now - hour)),
-            Line::Alert { v: outside::VERSION, id: "AL1".to_owned(), entry: "01B".to_owned(), raised_at: rfc3339_millis(now) },
-            Line::Alert { v: outside::VERSION, id: "AL2".to_owned(), entry: "01B".to_owned(), raised_at: rfc3339_millis(now) },
+            Line::Alert { v: outside::VERSION, id: "AL1".to_owned(), entry: "01B".to_owned(), raised_at: rfc3339_millis(now), text: None },
+            Line::Alert { v: outside::VERSION, id: "AL2".to_owned(), entry: "01B".to_owned(), raised_at: rfc3339_millis(now), text: None },
             Line::Ack { v: outside::VERSION, alert: "AL1".to_owned(), at: rfc3339_millis(now) },
         ];
         outside::append(f.setup._dir.path(), "alpha", "one", &lines).unwrap();

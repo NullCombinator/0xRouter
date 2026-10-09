@@ -450,7 +450,7 @@ async fn a_factor_three_capacity_becomes_fitted_and_reaches_the_meters() {
     assert!(first_change.is_some_and(|n| n < entries.len()), "capacity never became significant");
     let c = fits.window("keyco", "5-hour").capacity["main"];
     assert!((c / 333_333.0 - 1.0).abs() < 0.15, "fitted capacity {c}");
-    assert!(fits.window("keyco", "5-hour").capacity.get("spare").is_none(), "spare has no evidence");
+    assert!(!fits.window("keyco", "5-hour").capacity.contains_key("spare"), "spare has no evidence");
     let states = learner.number_states("keyco", "5-hour");
     assert!(matches!(states["capacity@main"], NumberState::Fitted { .. }), "{states:?}");
 
@@ -721,7 +721,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use nullrouter_engine::quota::fit::learner::METER_CHANGED;
-use nullrouter_engine::quota::fit::store::fit_file;
 use tracing_subscriber::fmt::MakeWriter;
 
 /// `keyco_home` with a second window, `weekly`, declared and polled beside `5-hour`.
