@@ -70,6 +70,7 @@ fn three_adapter_records(home: &Path) {
         "2026-09-28",
         &[
             serde_json::json!({"v": 1, "t": "open", "id": id, "arrived": "2026-09-28T11:04:52.250Z",
+                "agent": "hermes-desktop", "session": "44ab",
                 "style": "openai-chat", "op": "generate", "type": "text", "target": "deepseek-r1"}),
             attempt(1, "openrouter", "deepseek/deepseek-r1", serde_json::json!({"state": "ok"}), hermes),
             attempt(2, "anthropic", "claude-sonnet-4-5", serde_json::json!({"state": "ok"}), claude_none),
@@ -106,6 +107,9 @@ fn records_show_prints_the_adapter_runs_with_changes_none_and_blocked() {
     // Header and the attempt header, as the contract lays them out.
     assert!(text.starts_with("rq_01  2026-09-28 11:04:52  succeeded\n"), "{text}");
     assert!(text.contains("\n  1  openrouter/main"), "{text}");
+
+    // The agent line names the harness of the first adapter run (the hermes built-in).
+    assert!(text.contains("agent       hermes-desktop / session 44ab   harness hermes (built-in)\n"), "{text}");
 
     // A run with changes: the adapter line, then one line per change at the contract's indent.
     for want in [
@@ -163,6 +167,46 @@ fn records_show_json_carries_the_adapter_run_fields() {
 
     assert_eq!(r["response_adapter"]["harness"], "hermes");
     assert_eq!(r["response_adapter"]["outcome"]["state"], "ran");
+}
+
+/// With the alert log present, the guardrail line names the alert the block raised on this record
+/// (`al_0000000001` in ALERTS, a guardrail alert for rq_01 from the same harness and version).
+#[test]
+fn records_show_names_the_guardrail_alert_for_the_block() {
+    let dir = tempfile::tempdir().unwrap();
+    three_adapter_records(dir.path());
+    adapters_home(dir.path(), INDEX, ALERTS);
+    let text = show_text(dir.path());
+    assert!(text.contains("       sent unmodified; adapter marked suspect (alert al_0000000001)\n"), "{text}");
+    // The adapter-failed alert for rq_02 is another record's and is not named.
+    assert!(!text.contains("al_0000000003"), "{text}");
+}
+
+/// A request with no adapter run: the agent line has no harness part, and the response adapter is none.
+#[test]
+fn records_show_without_an_adapter_has_no_harness_part() {
+    let dir = tempfile::tempdir().unwrap();
+    let id = "rq_01";
+    journal(
+        dir.path(),
+        "2026-09-28",
+        &[
+            serde_json::json!({"v": 1, "t": "open", "id": id, "arrived": "2026-09-28T11:04:52.250Z",
+                "agent": "hermes-desktop", "session": "44ab",
+                "style": "openai-chat", "op": "generate", "type": "text", "target": "deepseek-r1"}),
+            serde_json::json!({"v": 1, "t": "attempt", "id": id, "attempt": {
+                "n": 1, "provider": "openrouter", "account": "main", "model": "deepseek/deepseek-r1", "kind": "initial",
+                "started": 0.4, "ended": 900.0, "outcome": {"state": "ok"}, "dropped": [], "forced": []}}),
+            serde_json::json!({"v": 1, "t": "close", "id": id, "outcome": "succeeded",
+                "served_by": {"provider": "openrouter", "account": "main", "model": "deepseek/deepseek-r1"},
+                "ttft_ms": 120.0, "total_ms": 900.0, "usage": null, "break_handling": {"kind": "none"}, "job": null}),
+        ],
+    );
+    let text = show_text(dir.path());
+    assert!(text.contains("agent       hermes-desktop / session 44ab\n"), "{text}");
+    assert!(!text.contains("harness"), "{text}");
+    assert!(!text.contains("adapter hermes") && !text.contains("adapter claude"), "{text}");
+    assert!(text.contains("response adapter: none\n"), "{text}");
 }
 
 /// Writes `adapters/` (mode 0700) with `index.toml` and `alerts.toml` as the store reads them.
