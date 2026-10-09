@@ -842,7 +842,7 @@ until cleared, and every request completes.
     - `add_unplaced_field`;
     - `legit_removal`.
   - Add a README listing what each case tries.
-- [ ] T066 [US3] Hostile suite in `crates/nullrouter-server/tests/hostile.rs`.
+- [X] T066 [US3] Hostile suite in `crates/nullrouter-server/tests/hostile.rs`.
   - Install each T065 case with the testkit as `approved`, bind a key, and send streamed
     and non-streamed requests through a mock upstream.
   - Assert, per case:
