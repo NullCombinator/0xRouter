@@ -224,6 +224,9 @@ nullrouter quota poll anthropic max                # poll now (needs a running s
 nullrouter quota interval grok-cli work 15m        # or `default`; floor 2 min
 nullrouter quota prune --before 2026-09-01 [provider [name]]
 nullrouter quota forget grok-cli work              # delete one account's history
+nullrouter quota outside anthropic max            # outside use: idle, busy and steady
+nullrouter quota alerts                           # unacknowledged usage alerts
+nullrouter quota ack 01JB7…                       # acknowledge one alert, or `all`
 ```
 
 ```text
@@ -237,6 +240,145 @@ Every value belongs to the poll time shown on its account line. History lives in
 `quota/<provider>/<account>.jsonl`, with a tally checkpoint beside it
 (`<account>.tally.json`), both mode 0600. Nothing is dropped automatically: history stays
 until you prune it or forget the account. `accounts remove` keeps it.
+
+### Quota fit
+
+The plugin declares each window's meter: its capacity, a weight for each token class (`input`,
+`output`, `cache_read`, `cache_write`) and a multiplier for each model glob. Those are the
+plugin's best knowledge, and a provider can change them without notice. The **quota fit**
+checks them against the polls and the traffic 0router sent between polls, and learns the value
+each number actually has. A learned value replaces the declared one only once the evidence
+rejects the declared value, and the test gives the declared value at most a 0.1% chance of
+being replaced while it is right. Until then, routing works exactly as it did before fits
+existed.
+
+Routing takes each number from the first of these that applies:
+
+1. the account's override (`routing set`, see [Account overrides](#account-overrides));
+2. the plugin's override (`routing set-plugin`, weights and multipliers only, see
+   [Plugin overrides](#plugin-overrides));
+3. a fitted value that is significant;
+4. the plugin's declaration.
+
+An override never stops the fit: it keeps learning, and the routing view keeps showing its
+range beside the override. Each number's state is shown in [the meter block](#the-meter-block):
+
+| State | Meaning |
+|---|---|
+| `learning` | not significant yet. Shows the intervals used and the relative half-width of its 95% range, for example `312 intervals ±40%` |
+| `fitted` | significant since the time shown; routing uses the fitted value |
+| `relearning` | a break was detected, so the provider's rules changed. The number falls back to its override or declaration and learns again from the intervals after the break |
+| `restarted` | the plugin's declared meter for the window changed, so every number of that window starts again |
+| `split off` | an account's intervals disagree significantly with the pooled numbers, so it gets its own weights. Its intervals stop counting towards the pooled fit, and the reason is shown |
+| `not separable` | the traffic 0router sends can't tell this number from another (cache write from cache read, say). It stays at its declared value and names its partner |
+| `yardstick` | `weight.input` on a percent window. The other weights are relative to it, so it is never fitted |
+| `not reported` | an absolute window whose provider reports no limit, so there is no capacity to fit |
+| `not fitted` | the account reports no quota, or it is pay-as-you-go. The view says why |
+
+**Breaks.** A provider can change its rules: cut a capacity, or change what a model costs.
+When recent intervals disagree significantly and consistently with a fitted number, 0router
+records a break. That number goes back to its override or declaration, and it learns again
+from the intervals after the break. The routing view shows
+`provider rules changed around Tue 14:00 on weekly capacity, relearning`, and the server logs:
+
+```text
+WARN quota.fit: provider rules changed provider=anthropic account=max window=weekly number=capacity around=2026-10-13T14:00:00Z replaced=13.8M
+```
+
+A capacity break on one account touches only that account. Other numbers, and other accounts,
+keep their fits.
+
+**Plugin meter changes.** When a plugin update changes a window's declared meter, every fitted
+number of that window restarts from nothing, and the view says `restarted: plugin meter changed`.
+
+**Where the fit is kept.** The states, breaks and splits are saved in `quota/fit/<provider>.json`
+(mode 0600, replaced atomically). The estimates are not saved: at start 0router rebuilds them
+from the poll history, so a restart gives the same numbers. A file that doesn't parse is renamed
+`<provider>.json.bad-<time>`, the fit starts again, and `check` warns. If the disk is full, the
+fit stays in memory and the routing view says `fit state not saved since T (disk full)`.
+
+**Pruning and removal.**
+
+- `quota prune` folds the pruned rows that belong to a fit into a prior first, so no fitted
+  number moves because of a prune.
+- `quota forget <provider> <account>` deletes that account's outside-use file with its history.
+- `accounts remove` keeps the account's history. Its outside-use file is renamed
+  `<account>.outside.jsonl.removed-<time>` and is never read again. The pooled numbers keep what
+  the account's rows taught them, through a prior folded in at removal. A re-added account starts
+  with an empty outside-use list.
+- `plugins remove <provider>` deletes `quota/fit/<provider>.json`.
+
+### Outside use and usage alerts
+
+Every polled account gets outside-use detection, with no opt-in. Outside use is use the provider
+reports that 0router's own traffic doesn't explain. Three kinds are listed:
+
+- **idle**: use in an interval when 0router sent nothing, beyond rounding noise;
+- **busy**: use during 0router's traffic that is beyond what the fit can explain
+  (`beyond explained use`);
+- **steady**: a rate per hour that continues over time, learned separately for each 4-hour part
+  of the day (`00–04`, `04–08`, … `20–24`).
+
+A one-step change (one percentage point on a percent window, one unit on a counted window) is
+rounding noise and is not listed. A busy interval that turns out to be a rule change is dropped
+from the list once the break is found. Outside use never changes the estimate of what is left:
+that stays the last poll less 0router's own counted traffic.
+
+```text
+anthropic/max            weekly   idle   Wed 02:10–02:30   4%
+anthropic/max            5-hour   busy   Wed 15:40–15:50   3% beyond explained use
+anthropic/max            weekly   steady 08–12 since Mon 08:00   0.2%/h
+xai/main                 not polled: no outside-use detection
+```
+
+The list is kept in `quota/<provider>/<account>.outside.jsonl`. `quota prune --before T` drops its
+lines that start before T, except unacknowledged alerts and their entries.
+
+On an [exclusive-use](#exclusive-use) account, outside use beyond rounding noise raises a
+**usage alert**: an idle drop, a busy burst the fit can't explain, or a steady rate significantly
+above zero. An alert:
+
+- states facts only: the account, the window, the interval or rate, and the amount. It says what
+  was used and when, and never names a cause;
+- changes nothing on the account: its state, priority, routing and sign-in stay as they are;
+- appears in `quota alerts`, as a warning in `nullrouter check`, under the account in the routing
+  view, and in the server log as `WARN quota.alert: …`.
+
+```bash
+nullrouter quota alerts                  # unacknowledged alerts
+nullrouter quota ack 01JB7…              # one alert, by its whole id or any unique prefix
+nullrouter quota ack all anthropic max   # every alert in scope; give a provider and account to limit it
+```
+
+```text
+01JB7… anthropic/max  Wed 02:20  4% of weekly used 02:10–02:30 with no traffic from 0router
+01JB8… anthropic/max  Wed 16:00  3% of 5-hour used 15:40–15:50 beyond what 0router's traffic explains
+```
+
+The CLI prints alert ids whole, 26 characters each, because ULIDs raised minutes apart share their
+first characters. Acknowledging an alert changes nothing at the provider. The alert leaves
+`quota alerts`, and its entry stays in `quota outside`. `quota outside`, `quota alerts` and
+`quota ack` work without a server; with one running, `ack` goes through it, so the routing view
+updates at once.
+
+### Exclusive use
+
+Declare an account exclusive-use only when it is used just through 0router. Only declared
+accounts raise usage alerts, and withdrawing the declaration stops new ones. Outside use is
+listed for every polled account either way, and the declaration changes no routing.
+
+```bash
+nullrouter accounts exclusive anthropic max on     # used only through 0router
+nullrouter accounts exclusive anthropic max off    # withdraw the declaration
+```
+
+A declaration needs quota polls. For an account whose provider reports no quota, `on` exits 2:
+
+```text
+account xai/main: exclusive use needs quota polls; xai reports no quota for this account
+```
+
+`accounts list` has an `exclusive` column: `since <date>`, or blank.
 
 ## Agent keys
 
@@ -389,6 +531,9 @@ nullrouter routing set anthropic max cache_lifetime=1h reserve=10%
 nullrouter routing set anthropic max window.5-hour.capacity=12000000
 nullrouter routing set openrouter main price.input=3 price.output=15
 nullrouter routing unset anthropic max window.5-hour      # or one field: window.5-hour.capacity
+nullrouter routing set anthropic max window.weekly.weight.output=15
+nullrouter routing set anthropic max 'window.weekly.multiplier.claude-opus-*=1.5'
+nullrouter routing unset anthropic max window.weekly.weight.output
 ```
 
 They are saved in `accounts.toml`:
@@ -404,11 +549,46 @@ priority = 2
 cache_lifetime = "1h"                            # > 0, at most 24h
 reserve = "10%"                                  # 0–50%, every window; default 5%
 window."5-hour" = { capacity = 12_000_000 }      # also length, reserve
+window."weekly" = { token_weights = { output = 15.0 }, model_multiplier = { "claude-opus-*" = 1.5 } }
 # price = { input = 3.0, output = 15.0 }         # per million tokens; replaces the plugin's schedule
 ```
 
 The values are checked by the same rules as the plugin's (see `docs/plugins.md`, `[routing]`).
 A window name that matches none of the plugin's windows is refused.
+
+Weights and multipliers are checked by the plugin's rules. Overrides never stop the fit: it keeps
+learning beside them (see [Quota fit](#quota-fit)).
+
+### Plugin overrides
+
+A weight or multiplier that should differ for every account of a plugin can be set on the plugin
+instead. It is saved in `config.toml`:
+
+```bash
+nullrouter routing set-plugin anthropic window.weekly.weight.output=15
+nullrouter routing unset-plugin anthropic window.weekly.weight.output
+```
+
+```toml
+# config.toml
+[provider.anthropic.meter."weekly"]
+token_weights = { output = 15.0 }
+model_multiplier = { "claude-opus-*" = 1.5 }
+```
+
+For each number, routing takes the account's override if it has one, else the plugin's, else the
+fit, else the declaration. Plugin overrides:
+
+- cover weights and multipliers only. Capacity is per account:
+  `routing set-plugin anthropic window.weekly.capacity=…` exits 2 with
+  `capacity is per account; use routing set <provider> <account>`;
+- follow the plugin's rules. A multiplier glob the plugin's meter doesn't declare is refused,
+  as is a weight on a `requests` window, for example
+  `routing.window.weekly.model_multiplier: anthropic declares no glob "claude-opus-4*" for window weekly`;
+- apply to every account of the plugin, and never stop the fit.
+
+Overriding `weight.input` on a percent window changes the yardstick. The fit's other numbers are
+relative to it, so they keep their meaning.
 
 ### Amortization window
 
@@ -465,6 +645,46 @@ the window's meter. `--json` gives the exact numbers per window: `remaining_at_p
 Warnings appear on their own lines, for example
 `opencode-go/main: window rolling capacity assumed` when no capacity is declared anywhere for
 that window, or `records not kept since 09:01 (disk full): 214 requests`.
+
+### The meter block
+
+Under each polled account, the routing view adds a `meter` block: one line per window for its
+capacity, then one line per meter number. It always shows, so it answers at a glance which
+numbers are declared, which are learned and which are overridden.
+
+```text
+  anthropic/max    polled      1.42  61%    +91.2k     1         5m     5-hour 5.6M/9.0M wtok · …
+    meter 5-hour   capacity      9.0M declared · fit 13.1M–14.6M · in use 13.8M fit since Tue 09:10
+                   weight.input  1     yardstick
+                   weight.output 5     declared · fit 14.2–15.9 · in use 15 override (account)
+                   weight.cache_read 0.1  declared · learning 312 intervals ±40%
+                   weight.cache_write 1.25 declared · not separable from weight.cache_read
+                   multiplier.claude-opus-*  1.67 declared · learning 40 intervals ±120%
+    meter weekly   capacity      90.0M declared · relearning since Tue 14:00 (provider rules changed)
+    outside use    3 intervals this week (last Wed 02:10–02:30, 4% of weekly) · steady up to 0.2%/h (08–12) since Mon
+    usage alert    01JB7… 4% of weekly used 02:10–02:30 Wed with no traffic from 0router (nullrouter quota ack 01JB7…)
+  anthropic/team   polled      …
+    meter 5-hour   split off since Wed 11:00: weight.output 2.1× the pooled value
+  opencode-go/main estimated   …
+    meter          not fitted: provider reports no quota
+```
+
+Each meter line reads `name  declared · fit <95% range> · in use <value> <source> <state>`. The
+`declared` value is always shown. The `fit` range appears once a number has one. `in use` is left
+out when the declared value is the one in use. The source is `declared`, `fit`, `override (account)`
+or `override (plugin)`, and the state is one of the states in [Quota fit](#quota-fit). The
+`outside use` line summarises the account's outside use for the week, and each `usage alert` line
+gives that alert's text and its id.
+
+Warnings in the block, in addition to the existing ones:
+
+- `anthropic/max: provider rules changed around Tue 14:00 on weekly capacity, relearning`;
+- `fit state not saved since 09:01 (disk full)`;
+- `anthropic/max: 2 unacknowledged usage alerts (nullrouter quota alerts)`.
+
+`--json` gives the same facts: each account gains `meter` (one entry per window and number, with
+its declared, override, fit, value in use, source and state), `outside_use` and `fit_note`, which
+explains why an account is not fitted.
 
 ## Request records
 
@@ -895,7 +1115,7 @@ config.toml:4:1 unified_model[0].members[1].provider: unknown provider "xx"
   - any error rejects the reload, and the previous state keeps serving;
   - in-flight requests keep the snapshot they started with;
   - nothing watches the files. Each mutating command (`accounts`, `keys`, `behaviour`,
-    `quota interval`, `routing set`/`unset`/`window`, `connection set`/`unset`, `proxy add`/`remove`/`use`/`clear`/`fixed`,
+    `quota interval`, `accounts exclusive`, `routing set`/`unset`/`set-plugin`/`unset-plugin`/`window`, `connection set`/`unset`, `proxy add`/`remove`/`use`/`clear`/`fixed`,
     `verdicts settings`, `plugins install`/`uninstall`) writes its file atomically and then asks the running
     server to reload over the operator socket. It prints `applied` when the server
     acknowledged, or `saved; applies at next start` when no server is running. A hand
@@ -913,6 +1133,10 @@ config.toml:4:1 unified_model[0].members[1].provider: unknown provider "xx"
   the model still loads, and `resolve` prints the same note);
 - quota windows a provider reports that no `[[routing.window]]` meter names (paced in their own
   unit);
+- unacknowledged usage alerts, as warnings: they change nothing on the account, so the exit status
+  is unchanged;
+- fit state files that don't parse (renamed aside, and the fit starts again), and fit state not
+  being kept (disk full);
 - pay-as-you-go accounts with no price, and an `explicit` cache mode on a provider none of whose
   endpoints speaks a style with cache markers;
 - file modes of the sign-in, quota, record and routing files;
