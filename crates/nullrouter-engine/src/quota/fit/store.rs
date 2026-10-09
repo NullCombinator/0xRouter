@@ -195,6 +195,17 @@ pub fn save(home: &Path, provider: &str, fit: &StoredFit) -> Result<(), FileErro
     files::write_private(&path, &text)
 }
 
+/// Deletes `quota/fit/<provider>.json` (a removed plugin's fits go with it). Returns whether a
+/// file was there. A missing file is not an error; set-aside `.bad-*` copies are left alone.
+pub fn remove(home: &Path, provider: &str) -> Result<bool, FileError> {
+    let path = fit_file(home, provider)?;
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(source) => Err(FileError::Io { path, source }),
+    }
+}
+
 /// Whether the last save reached the disk. The caller keeps the fit in memory while saves
 /// fail, calls [`record`](Self::record) after each save, and shows [`warning`](Self::warning).
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -351,5 +362,15 @@ mod tests {
         assert_eq!(s.warning().as_deref(), Some("fit state not saved since 15:01 (disk full)"));
         s.record(Ok(()), t0 + Duration::from_secs(180));
         assert_eq!(s.warning(), None);
+    }
+
+    #[test]
+    fn remove_deletes_the_fit_file_and_a_missing_one_is_fine() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        save(dir, "p", &sample()).unwrap();
+        assert!(remove(dir, "p").unwrap());
+        assert!(!remove(dir, "p").unwrap());
+        assert!(matches!(load(dir, "p"), Ok(Loaded::Missing)));
     }
 }

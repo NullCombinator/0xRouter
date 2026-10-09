@@ -250,6 +250,15 @@ pub fn in_effect(
     (meter, sources)
 }
 
+/// Whether the fit covers `account`: its provider reports quota for it, so it has polls.
+/// Pay-as-you-go accounts and accounts with no quota reports are out (spec Edge Cases).
+pub fn is_fitted_account(provider: &nullrouter_registry::ProviderEntity, account: &crate::accounts::Account) -> bool {
+    crate::quota::poll::reported(provider, account).is_some()
+}
+
+/// The note a view shows when every account of a window is split off.
+pub const NO_POOLED_FIT: &str = "no pooled fit remains: every account is fitted on its own";
+
 /// The fits of every plugin window, keyed by provider, then window name.
 #[derive(Debug, Clone, Default)]
 pub struct Fits {
@@ -290,6 +299,11 @@ impl Meters {
         let mut next = HashMap::new();
         for account in st.accounts.iter() {
             let Some(provider) = st.registry.providers().find(|p| p.id == account.provider) else { continue };
+            // Pay-as-you-go and unpolled accounts are never fitted, and pooled numbers don't
+            // apply to them: their routing keeps reading the declaration.
+            if !is_fitted_account(provider, account) {
+                continue;
+            }
             let declared = provider.routing().windows;
             let mut windows = Vec::with_capacity(declared.len());
             let mut sources = BTreeMap::new();

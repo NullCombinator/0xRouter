@@ -145,6 +145,8 @@ pub struct Learner {
     blocked: BTreeSet<String>,
     /// Whether the last save of each provider reached the disk.
     pub saves: BTreeMap<String, SaveState>,
+    /// Accounts the fit leaves alone, with the reason (FR-029).
+    unfitted: BTreeMap<(String, String), String>,
 }
 
 impl Fits {
@@ -197,6 +199,20 @@ impl Learner {
             .unwrap_or_default()
     }
 
+    /// Why the fit doesn't cover `account`: no quota reports, or pay-as-you-go. `None`: it does.
+    pub fn not_fitted(&self, provider: &str, account: &str) -> Option<NumberState> {
+        self.unfitted.get(&(provider.to_owned(), account.to_owned())).map(|r| NumberState::NotFitted(r.clone()))
+    }
+
+    /// The note a view shows for `window` when every account is split off, so no pooled fit
+    /// remains; `None` otherwise.
+    pub fn pooled_note(&self, provider: &str, window: &str) -> Option<&'static str> {
+        let win = self.windows.get(&(provider.to_owned(), window.to_owned()))?;
+        let (spec, _) = win.last.as_ref()?;
+        let all = !spec.accounts.is_empty() && spec.accounts.iter().all(|a| win.splits.contains_key(a));
+        all.then_some(super::NO_POOLED_FIT)
+    }
+
     fn load_store(&mut self, home: &Path, provider: &str) {
         if self.stored.contains_key(provider) {
             return;
@@ -229,7 +245,13 @@ impl Learner {
         now: SystemTime,
     ) -> bool {
         let Some(entity) = st.registry.providers().find(|p| p.id == provider) else { return false };
-        let mut accounts: Vec<String> = st.accounts.for_provider(provider).map(|a| a.name.clone()).collect();
+        // Only polled accounts are fitted; the others are listed as not fitted.
+        let (fitted, unfitted): (Vec<_>, Vec<_>) = st.accounts.for_provider(provider).partition(|a| super::is_fitted_account(entity, a));
+        self.unfitted.retain(|(p, _), _| p != provider);
+        for a in unfitted {
+            self.unfitted.insert((provider.to_owned(), a.name.clone()), "no quota reports (or pay-as-you-go)".to_owned());
+        }
+        let mut accounts: Vec<String> = fitted.iter().map(|a| a.name.clone()).collect();
         accounts.sort();
         if !tails.iter().any(|(a, _)| accounts.iter().any(|x| x.as_str() == *a)) {
             return false;
@@ -237,7 +259,7 @@ impl Learner {
         self.load_store(home, provider);
         let declared = entity.routing().windows;
         for meter in declared {
-            self.window(home, provider, meter, &accounts, tails, now);
+            self.window(home, provider, declared, meter, &accounts, tails, now);
         }
         // A window the plugin no longer declares is forgotten.
         self.windows.retain(|(p, w), _| p != provider || declared.iter().any(|m| m.name == *w));
@@ -264,7 +286,7 @@ impl Learner {
     }
 
     /// One window: new rows, classification, refit, splits, number states, published numbers.
-    fn window(&mut self, home: &Path, provider: &str, meter: &MeterDecl, accounts: &[String], tails: &[(&str, &[Entry])], now: SystemTime) {
+    fn window(&mut self, home: &Path, provider: &str, declared: &[MeterDecl], meter: &MeterDecl, accounts: &[String], tails: &[(&str, &[Entry])], now: SystemTime) {
         let matches = |name: &str| name == meter.name || glob_match(&meter.name, name);
         // The unit the provider reports the window in, from the newest good entry.
         let unit = tails
@@ -273,6 +295,9 @@ impl Learner {
             .find_map(|e| e.windows.iter().find(|w| matches(&w.name)).map(|w| w.unit));
         let Some(unit) = unit else { return };
         let hash = store::meter_hash(meter);
+        // A capacity the plugin doesn't declare is assumed from peers; the fit starts from it.
+        let assumed = assumed_meter(declared, meter);
+        let meter = &assumed;
         let key = (provider.to_owned(), meter.name.clone());
         let changed = self.windows.get(&key).is_some_and(|w| w.hash != hash);
         if changed || !self.windows.contains_key(&key) {
@@ -393,6 +418,25 @@ fn weight_of(w: &TokenWeights, class: TokenClass) -> f64 {
         TokenClass::CacheRead => w.cache_read,
         TokenClass::CacheWrite => w.cache_write,
     }
+}
+
+/// The meter with a missing capacity filled from its peers: the median capacity of the other
+/// windows of the same length and unit (the routing core's rule, research R5). Unchanged when
+/// the capacity is declared or no peer has one.
+fn assumed_meter(declared: &[MeterDecl], meter: &MeterDecl) -> MeterDecl {
+    let mut out = meter.clone();
+    if meter.capacity.is_some() {
+        return out;
+    }
+    let mut peers: Vec<f64> = declared
+        .iter()
+        .filter(|m| m.name != meter.name && m.length == meter.length && m.unit == meter.unit)
+        .filter_map(|m| m.capacity)
+        .filter(|c| c.is_finite() && *c > 0.0)
+        .collect();
+    peers.sort_by(f64::total_cmp);
+    out.capacity = peers.get(peers.len() / 2).copied();
+    out
 }
 
 /// Where the Gauss-Newton run starts: the declared meter.
@@ -723,5 +767,32 @@ impl Shared {
     /// Whether the last save of `provider`'s fit state failed, as the view warns.
     pub fn save_warning(&self, provider: &str) -> Option<String> {
         lock(&self.learner).saves.get(provider).and_then(SaveState::warning)
+    }
+}
+
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+
+    fn meter(name: &str, length: &str, capacity: Option<f64>) -> MeterDecl {
+        let cap = capacity.map_or(String::new(), |c| format!("capacity = {c}\n"));
+        let text = format!("name = \"{name}\"\nlength = \"{length}\"\nunit = \"weighted_tokens\"\n{cap}");
+        toml::from_str(&text).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    #[test]
+    fn a_missing_capacity_starts_from_the_median_of_its_peers() {
+        let all = [meter("a", "5h", Some(100.0)), meter("b", "5h", None), meter("c", "5h", Some(300.0)), meter("d", "7d", Some(9.0))];
+        assert_eq!(assumed_meter(&all, &all[1]).capacity, Some(300.0));
+        assert_eq!(assumed_meter(&all, &all[0]).capacity, Some(100.0), "declared stays declared");
+        let alone = [meter("b", "5h", None)];
+        assert_eq!(assumed_meter(&alone, &alone[0]).capacity, None);
+    }
+
+    #[test]
+    fn counted_and_balance_windows_have_no_capacity_number() {
+        let m = meter("credits", "30d", None);
+        let spec = Spec { kind: Kind::Counted, accounts: vec!["a".into()], globs: vec![], utc_offset_secs: 0 };
+        assert!(numbers(&spec, &m).iter().all(|n| n.number != MeterNumber::Capacity));
     }
 }
