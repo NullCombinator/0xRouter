@@ -724,7 +724,7 @@ serves before approval, and an operator with no adapters needs none of it.
 
 ### Implementation for User Story 2
 
-- [ ] T056 [US2] The gate in `crates/nullrouter-adapters/src/gate.rs`, per
+- [X] T056 [US2] The gate in `crates/nullrouter-adapters/src/gate.rs`, per
   [R7](research.md#r7-validation-gate-for-adapter-source) and the contract table.
   - The file walk uses `symlink_metadata`, and never follows links.
   - Size and count caps: 256 KiB total, 64 files, 64 KiB per `.rs` file.
