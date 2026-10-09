@@ -162,10 +162,12 @@ a session table (state for no gain), the token in the URL (leaks through history
   `ArcSwap` load.
 - Headers on every response: the CSP (`default-src 'none'; style-src 'self'; font-src 'self';
   img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`),
-  `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, `X-Content-Type-Options: nosniff`,
   `Cache-Control: no-store` (assets: immutable, content-hashed paths),
   `Cross-Origin-Resource-Policy: same-origin`. A `Host` that isn't the dashboard's loopback
   address and port gets 421 (DNS rebinding). `POST /signin` needs `Origin` absent or its own.
+  Amended by the security review (security-review.md H1): the policy was `no-referrer`, under
+  which a browser's form post sends `Origin: null`, so no browser could sign in.
 
 ## R9. "Last used" on keys: from the journal, through the server when it runs (FR-029a)
 
