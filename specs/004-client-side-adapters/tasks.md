@@ -1067,7 +1067,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
     then the guardrail lines.
   - A `response adapter:` line, per
     [contracts/operator-cli.md](contracts/operator-cli.md#records-show-additions-text).
-- [ ] T088 [US6] `alerts` CLI in `crates/nullrouter-cli/src/cmd/alerts.rs` (new): `list
+- [X] T088 [US6] `alerts` CLI in `crates/nullrouter-cli/src/cmd/alerts.rs` (new): `list
   [--all]` and `ack <id>|--all`.
 - [ ] T089 [US6] `adapters list` in full, in `crates/nullrouter-cli/src/cmd/adapters.rs`:
   harness, versions and states, the active version, `rebuilding` or `rebuild_failed` flags,

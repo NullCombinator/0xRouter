@@ -1,5 +1,6 @@
 pub(crate) mod accounts;
 pub(crate) mod adapters;
+pub(crate) mod alerts;
 pub(crate) mod behaviour;
 pub(crate) mod catalogue;
 pub(crate) mod check;
