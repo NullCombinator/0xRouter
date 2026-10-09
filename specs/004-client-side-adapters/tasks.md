@@ -1080,7 +1080,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
 
 ## Phase 10: Polish & Cross-Cutting Concerns
 
-- [ ] T091 [P] Benchmarks, per [R14](research.md#r14-performance-and-benchmarks).
+- [X] T091 [P] Benchmarks, per [R14](research.md#r14-performance-and-benchmarks).
   - `crates/nullrouter-adapters/benches/adapters.rs`: `guard_request` at 10 KB, 100 KB and
     1 MB (anthropic-messages, one removal), `guard_event`, `selector_extract` on 1 MB, and
     `hermes_request` with images.
