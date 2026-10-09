@@ -256,6 +256,7 @@ pub fn view_targets(engine: &Engine, st: &EngineState, only: Option<&str>) -> Ve
 /// target that has no plan (no endpoint, no account) is left out.
 pub fn view_all(engine: &Engine, st: &EngineState, only: Option<&str>, now: SystemTime) -> Vec<view::TargetView> {
     let routing = &st.settings().routing;
+    let fit = view::FitInputs::build(engine, st, now);
     let mut out = Vec::new();
     for target in view_targets(engine, st, only) {
         let verdicts = engine.verdicts.snapshot();
@@ -290,7 +291,7 @@ pub fn view_all(engine: &Engine, st: &EngineState, only: Option<&str>, now: Syst
             deficits,
         };
         let window = AmortizationWindow { start: crate::routing::ledger::window_start(now, length), length };
-        out.push(view::view(&input, window, now));
+        out.push(view::view(&input, window, &fit, now));
     }
     out
 }

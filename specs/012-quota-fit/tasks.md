@@ -117,12 +117,12 @@ priority").
 
 ### Tests for US3
 
-- [ ] T034 [P] [US3] In `crates/nullrouter-engine/tests/routing_state.rs`, assert the view's `meter` per account and window carries `declared`, `account_override`, `plugin_override`, `fit {value, low, high}`, `in_use`, `source`, `state`, `since`, `progress {intervals, half_width}`, `partner` and `reason`, for learning, fitted, not-separable and yardstick numbers (Story 3 scenarios 1–4, contracts/operator-socket.md § WindowMeterView)
+- [X] T034 [P] [US3] In `crates/nullrouter-engine/tests/routing_state.rs`, assert the view's `meter` per account and window carries `declared`, `account_override`, `plugin_override`, `fit {value, low, high}`, `in_use`, `source`, `state`, `since`, `progress {intervals, half_width}`, `partner` and `reason`, for learning, fitted, not-separable and yardstick numbers (Story 3 scenarios 1–4, contracts/operator-socket.md § WindowMeterView)
 - [ ] T035 [P] [US3] In `crates/nullrouter-cli/tests/routing.rs`, add a golden-text test of the meter block for one learning, one fitted, one yardstick and one not-separable number, plus the `not fitted: provider reports no quota` line (contracts/cli.md § The routing view; Story 3 scenario 5)
 
 ### Implementation for US3
 
-- [ ] T036 [US3] Add `meter: Vec<WindowMeterView>`, `outside_use: OutsideSummary` and `fit_note: Option<String>` to `AccountView` in `crates/nullrouter-engine/src/routing/view.rs`, filled from `Fits` and the outside-use list, with shapes exactly as in contracts/operator-socket.md (including `set_aside` counts per reason)
+- [X] T036 [US3] Add `meter: Vec<WindowMeterView>`, `outside_use: OutsideSummary` and `fit_note: Option<String>` to `AccountView` in `crates/nullrouter-engine/src/routing/view.rs`, filled from `Fits` and the outside-use list, with shapes exactly as in contracts/operator-socket.md (including `set_aside` counts per reason)
 - [ ] T037 [US3] Carry the new fields through the `routing.view` op in `crates/nullrouter-server/src/operator.rs`, and add the warnings `… provider rules changed around …`, `fit state not saved since … (disk full)` and `…: N unacknowledged usage alerts (nullrouter quota alerts)` to the view's warnings
 - [ ] T038 [US3] Render the meter block under each polled account in `crates/nullrouter-cli/src/routing_text.rs`, in the line format `name  declared · fit <low>–<high> · in use <value> <source> <state>` (leave out `in use` when it equals the declared value), the `outside use …` summary line, and one `usage alert` line per unacknowledged alert with its text, as in contracts/cli.md (FR-027)
 

@@ -27,7 +27,7 @@ use nullrouter_registry::schema::{MeterDecl, MeterUnit, QuotaUnit, TokenWeights,
 use super::classify::{self, Inseparable, is_evidence, reclassify_epoch, separability};
 use super::outside;
 use super::model::{self, Fit, Kind, P, Spec, Theta};
-use super::rows::{Class, Row, rows_from};
+use super::rows::{Class, Row, SetAside, rows_from};
 use super::split::{self, test_splits};
 use super::store::{self, Loaded, Restart, SaveState, StoredFit, StoredNumber, StoredWindow};
 use super::test::rejects;
@@ -46,6 +46,22 @@ const SPLIT_ROUNDS: usize = 2;
 const WIDE: f64 = 1.0e6;
 /// Why a window restarts when its declared meter changed.
 pub const METER_CHANGED: &str = "plugin_meter_changed";
+
+/// Why the fit leaves an account alone: the provider declares no meters (priced per token).
+pub const NOTE_PAYG: &str = "pay-as-you-go";
+/// Why the fit leaves an account alone: the provider declares meters but reports no quota for it.
+pub const NOTE_NO_QUOTA: &str = "provider reports no quota";
+
+/// The note for an account the fit doesn't cover; `None` when it covers it.
+pub fn unfitted_note(entity: &nullrouter_registry::ProviderEntity, account: &crate::accounts::Account) -> Option<&'static str> {
+    if super::is_fitted_account(entity, account) {
+        None
+    } else if entity.routing().windows.is_empty() {
+        Some(NOTE_PAYG)
+    } else {
+        Some(NOTE_NO_QUOTA)
+    }
+}
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -141,6 +157,30 @@ fn stored_number(s: &NumberState) -> Option<StoredNumber> {
     Some(StoredNumber { state: state.to_owned(), since })
 }
 
+/// Rows set aside in a window, per reason (contracts/operator-socket.md `set_aside`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SetAsideCounts {
+    pub reset: u64,
+    pub usage_unreported: u64,
+    pub exhausted: u64,
+}
+
+/// What a view reads of one plugin window, copied out of the learner.
+#[derive(Debug, Clone)]
+pub struct WindowSnapshot {
+    pub epoch: SystemTime,
+    /// A weighted-token window reported as percent: weights are ratios to the input weight.
+    pub percent: bool,
+    /// Keyed like the store: `<number>` or `capacity@<account>`.
+    pub numbers: BTreeMap<String, NumberState>,
+    /// `(estimate, low, high)` per informed number, keyed like `numbers`.
+    pub ranges: BTreeMap<String, (f64, f64, f64)>,
+    /// Accounts split off, with when and why.
+    pub splits: BTreeMap<String, (SystemTime, String)>,
+    /// Per account.
+    pub set_aside: BTreeMap<String, SetAsideCounts>,
+}
+
 /// The learner's mutable state, for every plugin. Only the poll path touches it.
 #[derive(Debug, Default)]
 pub struct Learner {
@@ -212,6 +252,35 @@ impl Learner {
             .unwrap_or_default()
     }
 
+    /// Every window the learner holds, by `(provider, window)`, as owned copies.
+    pub fn snapshot_all(&self) -> BTreeMap<(String, String), WindowSnapshot> {
+        self.windows
+            .iter()
+            .map(|(key, w)| {
+                let mut set_aside: BTreeMap<String, SetAsideCounts> = BTreeMap::new();
+                for r in &w.rows {
+                    if let Class::SetAside(why) = r.class {
+                        let c = set_aside.entry(r.account.clone()).or_default();
+                        match why {
+                            SetAside::Reset => c.reset += 1,
+                            SetAside::UsageUnreported => c.usage_unreported += 1,
+                            SetAside::Exhausted => c.exhausted += 1,
+                        }
+                    }
+                }
+                let snap = WindowSnapshot {
+                    epoch: w.epoch,
+                    percent: w.last.as_ref().is_some_and(|(s, _)| s.kind == Kind::Percent),
+                    numbers: w.numbers.clone(),
+                    ranges: w.ranges.clone(),
+                    splits: w.splits.iter().map(|(a, s)| (a.clone(), (s.since, s.reason.clone()))).collect(),
+                    set_aside,
+                };
+                (key.clone(), snap)
+            })
+            .collect()
+    }
+
     /// Why the fit doesn't cover `account`: no quota reports, or pay-as-you-go. `None`: it does.
     pub fn not_fitted(&self, provider: &str, account: &str) -> Option<NumberState> {
         self.unfitted.get(&(provider.to_owned(), account.to_owned())).map(|r| NumberState::NotFitted(r.clone()))
@@ -262,7 +331,8 @@ impl Learner {
         let (fitted, unfitted): (Vec<_>, Vec<_>) = st.accounts.for_provider(provider).partition(|a| super::is_fitted_account(entity, a));
         self.unfitted.retain(|(p, _), _| p != provider);
         for a in unfitted {
-            self.unfitted.insert((provider.to_owned(), a.name.clone()), "no quota reports (or pay-as-you-go)".to_owned());
+            let note = unfitted_note(entity, a).unwrap_or(NOTE_NO_QUOTA);
+            self.unfitted.insert((provider.to_owned(), a.name.clone()), note.to_owned());
         }
         let accounts: Vec<String> = fitted.iter().map(|a| a.name.clone()).collect();
         let ov = super::window_overrides(st, provider);
@@ -824,6 +894,11 @@ impl Shared {
     fn publish(&self, next: Fits) {
         self.fits.store(Arc::new(next));
         self.meters.rebuild(&self.state.load(), &self.fits.load());
+    }
+
+    /// Every window the learner holds, copied out under one brief lock (the view's read).
+    pub fn snapshot_all(&self) -> BTreeMap<(String, String), WindowSnapshot> {
+        lock(&self.learner).snapshot_all()
     }
 
     /// Whether the last save of `provider`'s fit state failed, as the view warns.

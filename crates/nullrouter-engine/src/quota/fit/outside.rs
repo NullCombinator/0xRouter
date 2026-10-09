@@ -177,6 +177,38 @@ pub fn read(
     Ok(out)
 }
 
+/// A usage alert as the operator sees it (contracts/state-files.md, plus `text`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Alert {
+    pub v: u32,
+    /// A ULID.
+    pub id: String,
+    /// The outside-use entry that raised it.
+    pub entry: String,
+    pub raised_at: String,
+    /// What the alert says. `None` until the detector (T059) writes it.
+    pub text: Option<String>,
+}
+
+/// The account's alerts no `ack` line names, newest first. An unreadable or missing file: none
+/// (the view fails open).
+pub fn alerts(home: &Path, provider: &str, account: &str) -> Vec<Alert> {
+    let Ok(path) = outside_file(home, provider, account) else { return Vec::new() };
+    let Ok(text) = std::fs::read_to_string(&path) else { return Vec::new() };
+    let mut raised: Vec<Alert> = Vec::new();
+    let mut acked: HashSet<String> = HashSet::new();
+    for line in text.lines() {
+        match serde_json::from_str::<Line>(line) {
+            Ok(Line::Alert { v, id, entry, raised_at }) => raised.push(Alert { v, id, entry, raised_at, text: None }),
+            Ok(Line::Ack { alert, .. }) => {
+                acked.insert(alert);
+            }
+            _ => {}
+        }
+    }
+    raised.into_iter().rev().filter(|a| !acked.contains(&a.id)).collect()
+}
+
 /// The part of the day `q` as the entry names it: `08-12`.
 pub fn part_name(q: usize) -> String {
     format!("{:02}-{:02}", q * 4, q * 4 + 4)
