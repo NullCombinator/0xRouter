@@ -990,7 +990,7 @@ provider.
   - With a non-Anthropic context, `server_tool_use` and `web_search_tool_result` are removed
     with `target_cannot_carry_block`.
   - No edit adds a tool call or a tool definition: the guardrail passes on every fixture.
-- [ ] T081 [P] [US5] Claude Code harness runner:
+- [X] T081 [P] [US5] Claude Code harness runner:
   `crates/nullrouter-server/tests/harness_claude_code.rs` (`#[ignore]`, `NR_LIVE=1`), with
   sessions using tools and web search against each chosen text provider. It reuses slice
   003's `tests/harness/` Claude Code runner, pointed at a key bound to `claude-code`.
