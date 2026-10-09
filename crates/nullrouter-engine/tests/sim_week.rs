@@ -1014,7 +1014,7 @@ fn pooled_run(
         .zip(POOL_SHARES)
         .enumerate()
         .map(|(i, (name, share))| AccountDef {
-            key: CandidateKey::new(FIT_PROVIDER, name, "m"),
+            key: CandidateKey::new(FIT_PROVIDER, *name, "m"),
             order: i as i64,
             priority: 1.0,
             meters: vec![five_hour((base * share / 0.6).round(), DECLARED_WEIGHTS)],

@@ -462,6 +462,7 @@ impl Learner {
     }
 
     /// One window: new rows, classification, refit, splits, number states, published numbers.
+    #[allow(clippy::too_many_arguments)]
     fn window(&mut self, home: &Path, provider: &str, declared: &[MeterDecl], meter: &MeterDecl, accounts: &[String], ov: Option<&WindowOverrides>, tails: &[(&str, &[Entry])], now: SystemTime) {
         let none = WindowOverrides::default();
         let ov = ov.unwrap_or(&none);
@@ -1104,7 +1105,7 @@ pub fn fold_prior(
             let old = win.base.prior.take();
             let mut rows = Vec::new();
             for (n, tail) in &tails {
-                if !account.is_none_or(|a| a == n.as_str()) {
+                if account.is_some_and(|a| a != n.as_str()) {
                     continue;
                 }
                 let floor = win.base.account_epochs.get(n).and_then(|e| parse(e)).map_or(win.epoch, |e| e.max(win.epoch));
