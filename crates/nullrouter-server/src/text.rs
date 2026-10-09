@@ -145,9 +145,10 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
 }
 
 /// A collected answer through the key's adapter, if it reads responses; the run is recorded.
-async fn through_adapter(engine: &Engine, id: &str, side: Option<&ResponseSide>, body: Value) -> Value {
+async fn through_adapter(engine: &Arc<Engine>, id: &str, side: Option<&ResponseSide>, body: Value) -> Value {
     let Some(side) = side else { return body };
     let (edited, run) = side.whole(&body).await;
+    engine.settle_adapter_run(&run, id).await;
     engine.records.update(id, |r| r.response_adapter = Some(run));
     edited.unwrap_or(body)
 }
@@ -236,6 +237,7 @@ async fn write_stream(
         _ => out,
     };
     if let Some(run) = tap.and_then(Tap::finish) {
+        written.engine.settle_adapter_run(&run, &written.id).await;
         written.engine.records.update(&written.id, |r| r.response_adapter = Some(run));
     }
     if !out.is_empty() && tx.send(Ok(Bytes::from(out))).await.is_err() {

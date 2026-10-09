@@ -22,8 +22,9 @@ use crate::runner::{WasmHandle, WasmModule};
 use crate::selector::Selector;
 use crate::store::{Store, StoreError, VersionEntry, VersionId, VersionState};
 
-/// How long a module has on a request (research R5).
+/// How long a module has on a request or a whole answer, and on one stream event (research R5).
 pub const REQUEST_DEADLINE: Duration = Duration::from_millis(20);
+pub const EVENT_DEADLINE: Duration = Duration::from_millis(2);
 
 /// `adapter.toml`: what the adapter says it reads. The gate (T056) holds it to the rules in the
 /// data model; the loader only needs the selectors and which exports to demand.
@@ -62,6 +63,10 @@ impl Manifest {
 
     fn request_selectors(&self) -> Result<Vec<Selector>, String> {
         self.request.selectors.iter().map(|s| Selector::parse(s)).collect()
+    }
+
+    fn response_selectors(&self) -> Result<Vec<Selector>, String> {
+        self.response.selectors.iter().map(|s| Selector::parse(s)).collect()
     }
 
     fn flags(&self) -> ModuleFlags {
@@ -178,6 +183,7 @@ impl Loader {
             .map_err(|_| MANIFEST_INVALID)
             .and_then(|t| Manifest::parse(t).map_err(|_| MANIFEST_INVALID))?;
         let request_selectors = manifest.request_selectors().map_err(|_| MANIFEST_INVALID)?;
+        let response_selectors = manifest.response_selectors().map_err(|_| MANIFEST_INVALID)?;
         let expected = entry.wasm_hash.as_deref().ok_or(&["module_missing"][..])?;
         let module = match self.cached(expected) {
             Some(m) => m,
@@ -197,6 +203,10 @@ impl Loader {
             module,
             request_selectors,
             request_deadline: REQUEST_DEADLINE,
+            response_selectors,
+            events: manifest.response.events,
+            response_deadline: REQUEST_DEADLINE,
+            event_deadline: EVENT_DEADLINE,
             redact: self.redact.clone(),
         })
     }

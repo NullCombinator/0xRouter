@@ -16,6 +16,7 @@ use std::collections::BTreeMap;
 use nullrouter_wire::codec::{Style, request, response};
 use nullrouter_wire::ir::{BlockKind, Event, Part, ResultContent, Tool};
 use nullrouter_wire::ir::{Request, Response};
+use nullrouter_wire::stream::{Frame, StreamReader};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -80,6 +81,21 @@ pub fn check_event(before: &[Event], after: &[Event]) -> Verdict {
         check(&b.0, &a.0, GuardrailRule::ToolCallAdded, GuardrailRule::ToolCallAdded),
         check(&b.1, &a.1, GuardrailRule::ToolCallChanged, GuardrailRule::ToolCallChanged),
     ])
+}
+
+/// Checks one edited client stream event against the original, both read by `style`'s stream
+/// reader with no state carried over. A tool-call argument delta read this way opens a call
+/// with no id and no name, the same on both sides, so only an added or changed start or
+/// fragment is a violation. Either event failing to read is [`Verdict::Undecodable`].
+pub fn check_event_frame(style: &Style, before: &Value, after: &Value) -> Verdict {
+    let read = |event: &Value| -> Option<Vec<Event>> {
+        let frame = Frame { event: None, data: event.to_string() };
+        StreamReader::new(style).ok()?.read(&frame).ok()
+    };
+    match (read(before), read(after)) {
+        (Some(b), Some(a)) => check_event(&b, &a),
+        _ => Verdict::Undecodable,
+    }
 }
 
 type Check<'a> = (&'a [Item], &'a [Item], GuardrailRule, GuardrailRule);

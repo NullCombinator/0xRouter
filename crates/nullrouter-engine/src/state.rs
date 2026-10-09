@@ -230,6 +230,17 @@ impl Engine {
         }
     }
 
+    /// [`note_adapter_run`](Self::note_adapter_run) for the async path: only a `failed` or
+    /// `blocked` run has anything to act on, and that runs on a blocking thread.
+    pub async fn settle_adapter_run(self: &Arc<Self>, run: &nullrouter_adapters::record::AdapterRun, record: &str) {
+        use nullrouter_adapters::record::AdapterOutcome;
+        if !matches!(run.outcome, AdapterOutcome::Failed { .. } | AdapterOutcome::Blocked) {
+            return;
+        }
+        let (engine, run, record) = (self.clone(), run.clone(), record.to_owned());
+        let _ = tokio::task::spawn_blocking(move || engine.note_adapter_run(&run, &record)).await;
+    }
+
     /// The runner for the harness agent key `key_id` is bound to. `None` for a key with no
     /// harness. A harness with no built-in and nothing installed gets a runner that records
     /// `not_run` (`no_approved_version`) and changes nothing.

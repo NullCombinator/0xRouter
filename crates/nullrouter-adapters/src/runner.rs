@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use nullrouter_adapter_kit::{Context, Edits, Part};
 use nullrouter_sandbox::{CallError, Entry, LoadedModule, Redactor, SandboxEngine};
-use nullrouter_wire::codec::{Style, request};
+use nullrouter_wire::codec::{Style, request, response};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -60,6 +60,12 @@ pub struct WasmModule {
     /// What the manifest says the adapter reads on a request.
     pub request_selectors: Vec<Selector>,
     pub request_deadline: Duration,
+    /// What it reads on a whole answer, and on each stream event when `events` is set. Empty:
+    /// the adapter never runs on responses.
+    pub response_selectors: Vec<Selector>,
+    pub events: bool,
+    pub response_deadline: Duration,
+    pub event_deadline: Duration,
     /// Scrubs secrets from the module's log lines.
     pub redact: Redactor,
 }
@@ -214,7 +220,7 @@ impl AdapterRunner {
                 }
                 (selectors, b.on_request(ctx, body))
             }
-            AdapterRunner::Wasm(w) => return self.wasm_request(w, ctx, body).await,
+            AdapterRunner::Wasm(w) => return self.wasm_call(w, ctx, body, Side::Request).await,
             #[cfg(feature = "testkit")]
             AdapterRunner::Fixture(f) => {
                 if selector::extract(body, &f.selectors).is_empty() {
@@ -226,28 +232,27 @@ impl AdapterRunner {
         self.finish(body, &selectors, edits, started)
     }
 
-    /// The request side of a third-party adapter: the selected parts go to the sandbox, the
-    /// edits that come back are checked and applied to a copy, and the guardrail sees the copy.
-    /// Whatever goes wrong, the original body goes on (FR-018).
-    async fn wasm_request<'a>(&self, w: &WasmHandle, ctx: &Context, body: &'a Value) -> RunOutcome<'a> {
+    /// One call of a third-party adapter: the selected parts go to the sandbox, the edits that
+    /// come back are checked and applied to a copy, and the guardrail sees the copy. Whatever
+    /// goes wrong, the original body goes on (FR-018).
+    async fn wasm_call<'a>(&self, w: &WasmHandle, ctx: &Context, body: &'a Value, side: Side) -> RunOutcome<'a> {
         let started = Instant::now();
         let Some(m) = &w.module else { return self.not_run(body, w.reason) };
-        let parts = selector::extract(body, &m.request_selectors);
+        let (selectors, deadline) = match side {
+            Side::Request => (&m.request_selectors, m.request_deadline),
+            Side::Response => (&m.response_selectors, m.response_deadline),
+            Side::Event if m.events => (&m.response_selectors, m.event_deadline),
+            Side::Event => return self.not_run(body, NotRunReason::NoSelectorMatch),
+        };
+        let parts = selector::extract(body, selectors);
         if parts.is_empty() {
             return self.not_run(body, NotRunReason::NoSelectorMatch);
         }
         let Ok(input) = serde_json::to_vec(&CallInput { ctx, parts: &parts }) else {
             return self.failed(body, FailReason::InvalidOutput { rule: Rule::NotJson }, started);
         };
-        let called = nullrouter_sandbox::call(
-            &m.sandbox,
-            &m.module,
-            Entry::Request,
-            &input,
-            m.request_deadline,
-            m.redact.clone(),
-        )
-        .await;
+        let called =
+            nullrouter_sandbox::call(&m.sandbox, &m.module, side.entry(), &input, deadline, m.redact.clone()).await;
         let edits = match called {
             Ok(None) => Edits::default(),
             Ok(Some(bytes)) => match apply::parse_output(&bytes) {
@@ -256,15 +261,12 @@ impl AdapterRunner {
             },
             Err(e) => return self.failed(body, fail_reason(&e), started),
         };
-        let mut out = self.finish(body, &m.request_selectors, edits, started);
+        let mut out = self.finish(body, selectors, edits, started);
         if out.run.outcome != AdapterOutcome::Ran || !matches!(out.body, Cow::Owned(_)) {
             return out;
         }
         let verdict = match &w.client {
-            Some(client) => match request::decode(client, body) {
-                Ok(before) => guard::check_request(client, &before, &out.body),
-                Err(_) => Verdict::Undecodable,
-            },
+            Some(client) => side.verdict(client, body, &out.body),
             None => {
                 tracing::error!("adapter {} ran with no client style; its edits are dropped", w.harness);
                 Verdict::Undecodable
@@ -279,7 +281,7 @@ impl AdapterRunner {
             Verdict::Violation { rule, paths } => {
                 out.run.outcome = AdapterOutcome::Blocked;
                 out.run.guardrail = Some(GuardrailEvent {
-                    direction: AdapterDirection::Request,
+                    direction: side.direction(),
                     rule,
                     paths,
                     adapter: AdapterRef { harness: w.harness.clone(), version: w.version.clone() },
@@ -326,7 +328,8 @@ impl AdapterRunner {
     /// parsed for it (research R2).
     pub fn reads_responses(&self) -> bool {
         match self {
-            AdapterRunner::Builtin(_) | AdapterRunner::Wasm(_) => false,
+            AdapterRunner::Builtin(_) => false,
+            AdapterRunner::Wasm(w) => w.module.as_ref().is_some_and(|m| !m.response_selectors.is_empty()),
             #[cfg(feature = "testkit")]
             AdapterRunner::Fixture(f) => {
                 !f.response_selectors.is_empty() && (f.response.is_some() || f.event.is_some())
@@ -358,8 +361,52 @@ impl AdapterRunner {
                 let edits = call(ctx, body);
                 self.finish(body, &f.response_selectors, edits, started)
             }
+            AdapterRunner::Wasm(w) => {
+                self.wasm_call(w, ctx, body, if event { Side::Event } else { Side::Response }).await
+            }
             // hermes has no response side.
             _ => self.not_run(body, NotRunReason::NoSelectorMatch),
+        }
+    }
+}
+
+/// Which of a third-party adapter's three entries a call goes to.
+#[derive(Clone, Copy)]
+enum Side {
+    Request,
+    Response,
+    Event,
+}
+
+impl Side {
+    fn entry(self) -> Entry {
+        match self {
+            Side::Request => Entry::Request,
+            Side::Response => Entry::Response,
+            Side::Event => Entry::Event,
+        }
+    }
+
+    fn direction(self) -> AdapterDirection {
+        match self {
+            Side::Request => AdapterDirection::Request,
+            Side::Response => AdapterDirection::Response,
+            Side::Event => AdapterDirection::Event,
+        }
+    }
+
+    /// The guardrail's verdict on `after`, an edit of `before`, both in the client's style.
+    fn verdict(self, client: &Style, before: &Value, after: &Value) -> Verdict {
+        match self {
+            Side::Request => match request::decode(client, before) {
+                Ok(b) => guard::check_request(client, &b, after),
+                Err(_) => Verdict::Undecodable,
+            },
+            Side::Response => match response::decode(client, before) {
+                Ok(b) => guard::check_response(client, &b, after),
+                Err(_) => Verdict::Undecodable,
+            },
+            Side::Event => guard::check_event_frame(client, before, after),
         }
     }
 }

@@ -575,9 +575,16 @@ foundation here, not a later story.
     again, so the next request records `not_run{suspect}`. Test: `adapter_store.rs`. The index is
     read, changed and written whole, so an operator command running at the same moment can lose
     the mark; the next block marks it again.
-  - Still to do: the response and event sides (the arm keeps `reads_responses() == false`, so
-    third-party adapters see no responses yet), the guardrail's event check, and
-    `builder_client.rs`.
+  - Response and event sides done, not yet run in CI: the arm calls `zr_on_response` on a whole
+    answer and `zr_on_event` on each stream event when the manifest declares response selectors
+    (`events = true` for events; 20 ms and 2 ms deadlines). `reads_responses()` is true for such a
+    module. The guardrail checks an answer with `check_response` and an event with the new
+    `check_event_frame`, which reads the original and the edited event with a fresh stream reader
+    each, so no state is carried across events: a tool-argument delta opens a call with no id on
+    both sides, and only an added or changed start or fragment is a violation. Failed and blocked
+    response runs raise alerts and mark the version suspect, like request runs
+    (`Engine::settle_adapter_run`). Tests: `tests/wasm_runner.rs`.
+  - Still to do: `builder_client.rs` (waits for the builder, T045).
 - [ ] T047 [P] `nullrouter-adapters` testkit in `src/testkit.rs` (feature `testkit`).
   - `install_fixture(home, harness, wasm_bytes, source_dir, state)` writes a store entry
     directly, with the correct hashes.
