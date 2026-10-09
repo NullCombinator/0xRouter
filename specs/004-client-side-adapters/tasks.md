@@ -710,14 +710,14 @@ serves before approval, and an operator with no adapters needs none of it.
     `not_run{no_approved_version}`, until `approve`. From the next request on, the adapter
     runs.
   - Keys bound to other harnesses are unaffected.
-- [ ] T054 [P] [US2] No-adapter run test in
+- [X] T054 [P] [US2] No-adapter run test in
   `crates/nullrouter-server/tests/no_adapters.rs` (SC-011, US2-7).
   - With `[adapters] builder` pointing at a missing path, and no `[review]`, `serve` starts
     and logs no adapter warning.
   - Slice 003's end-to-end smoke passes, and the process never spawns a child.
   - The rest of SC-011 is CI's full workspace run: no test outside this slice configures a
     builder or a review model.
-- [ ] T055 [P] [US2] Zero-contact test in `crates/nullrouter-server/tests/catalogue_quiet.rs`.
+- [X] T055 [P] [US2] Zero-contact test in `crates/nullrouter-server/tests/catalogue_quiet.rs`.
   - With `catalogue_url` pointing at a counting mock, run `serve` through a full request mix,
     a reload and a restart.
   - The mock counts 0 requests (SC-012, FR-031).
