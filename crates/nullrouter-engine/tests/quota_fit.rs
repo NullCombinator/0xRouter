@@ -967,3 +967,96 @@ fn a_removed_and_added_again_account_starts_learning_with_no_outside_record() {
     assert_eq!(w.account_epochs["main"], nullrouter_engine::quota::extract::rfc3339_millis(t(1200)));
     assert!(w.prior.as_ref().is_none_or(|p| p.params.iter().all(|n| !n.ends_with("@main") && !n.starts_with("b@main"))), "{:?}", w.prior);
 }
+
+// ---- an idle alert and its withdrawal (T056, Story 6) ----
+
+/// `keyco_home`'s accounts, with `main` in exclusive use since poll 0 (`t(0)`) when `exclusive`.
+fn keyco_accounts(dir: &tempfile::TempDir, exclusive: bool) {
+    let mut accounts = String::from("schema = 2\n");
+    for (order, name) in ["main", "spare"].iter().enumerate() {
+        accounts += &format!(
+            "[[account]]\nprovider = \"keyco\"\nname = \"{name}\"\nsecret = \"sk-{name}\"\norder = {order}\n"
+        );
+        if exclusive && *name == "main" {
+            accounts += "exclusive_use = \"2027-01-15T08:00:00Z\"\n";
+        }
+    }
+    nullrouter_engine::files::write_private(&dir.path().join(nullrouter_engine::accounts::FILE), &accounts).unwrap();
+}
+
+/// The idle alert's text: `keyco/main: N% of 5-hour used HH:MM–HH:MM <Day> with no traffic from 0router`.
+/// The provider is `keyco`, which contains "key", so the no-"key" check looks past the `keyco/main: ` prefix.
+fn assert_idle_alert_text(text: &str) {
+    let body = text.strip_prefix("keyco/main: ").unwrap_or_else(|| panic!("{text}"));
+    assert!(body.chars().next().is_some_and(|c| c.is_ascii_digit()), "{text}");
+    assert!(body.contains("% of 5-hour used "), "{text}");
+    assert!(body.contains('\u{2013}'), "{text}");
+    assert!(body.ends_with(" with no traffic from 0router"), "{text}");
+    assert!(!text.to_lowercase().contains("leak"), "{text}");
+    assert!(!body.to_lowercase().contains("key"), "{text}");
+}
+
+#[test]
+fn an_idle_alert_states_facts_and_changes_nothing_until_the_declaration_is_withdrawn() {
+    use nullrouter_engine::quota::fit::outside::{self, OutsideType};
+
+    let dir = keyco_home();
+    keyco_accounts(&dir, true);
+    let (engine, _) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
+    let st = engine.snapshot();
+    let main_state = |engine: &Engine| {
+        let st = engine.snapshot();
+        let a = st.accounts.get("keyco", "main").expect("main is declared");
+        (a.disabled, a.priority, a.routing.clone())
+    };
+    let before = main_state(&engine);
+
+    // Polls 80 and 90 have no traffic, and the percent rises 4 points over the interval before each.
+    let mut entries = third_capacity_history(100);
+    for idle in [80, 90] {
+        entries[idle].tally.clear();
+    }
+    let entries = with_burst(with_burst(entries, 80, 4.0), 90, 4.0);
+
+    let mut learner = Learner::default();
+    let mut fits = Fits::default();
+    for n in 4..=80 {
+        fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &entries[..n], t(10 * (n as u64 - 1)));
+    }
+    let fitted = learner.number_states("keyco", "5-hour");
+    assert!(matches!(fitted["capacity@main"], NumberState::Fitted { .. }), "{fitted:?}");
+    assert!(outside::alerts(dir.path(), "keyco", "main").is_empty());
+
+    // The idle interval before poll 80 is listed and alerted once, while the account is in exclusive use.
+    fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &entries[..81], t(800));
+    let idle_entries: Vec<_> = outside::read(dir.path(), "keyco", "main", None, None)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.ty == OutsideType::Idle)
+        .collect();
+    assert_eq!(idle_entries.len(), 1, "{idle_entries:?}");
+    let alerts = outside::alerts(dir.path(), "keyco", "main");
+    assert_eq!(alerts.len(), 1, "{alerts:?}");
+    assert_eq!(alerts[0].entry, idle_entries[0].id);
+    let text = alerts[0].text.as_deref().expect("the alert carries its text");
+    assert_idle_alert_text(text);
+    assert_eq!(main_state(&engine), before, "an alert changes no account state");
+
+    // Withdrawn: the declaration goes. The next idle drop is still listed, but raises no alert.
+    keyco_accounts(&dir, false);
+    let (engine, _) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
+    let st = engine.snapshot();
+    assert_eq!(main_state(&engine), before, "withdrawing the declaration changes no account state");
+    for n in 82..=91 {
+        fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &entries[..n], t(10 * (n as u64 - 1)));
+    }
+    let alerts = outside::alerts(dir.path(), "keyco", "main");
+    assert_eq!(alerts.len(), 1, "a withdrawn declaration raises no new alert: {alerts:?}");
+    let listed_idle = outside::read(dir.path(), "keyco", "main", None, None)
+        .unwrap()
+        .iter()
+        .filter(|e| e.ty == OutsideType::Idle)
+        .count();
+    assert_eq!(listed_idle, 2, "the second idle drop is still listed");
+    assert_eq!(main_state(&engine), before);
+}
