@@ -22,10 +22,6 @@ kit = "1"
 
 [request]
 selectors = ["model"]
-
-[response]
-selectors = ["choices[*].delta"]
-events = true
 "#;
 
 fn acme() -> HarnessName {

@@ -138,16 +138,30 @@ pub async fn run_builder(
     timeout: Duration,
 ) -> BuildOutcome {
     let program = builder.unwrap_or(DEFAULT_BUILDER);
-    let mut child = match Command::new(program)
-        .arg("--home")
-        .arg(home)
-        .arg("build")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-    {
+    let spawn = || {
+        Command::new(program)
+            .arg("--home")
+            .arg(home)
+            .arg("build")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+    };
+    // A builder binary that was just written can be briefly busy (ETXTBSY) while another
+    // thread's fork still holds the write descriptor; that clears within milliseconds.
+    let mut spawned = spawn();
+    for _ in 0..10 {
+        match &spawned {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                spawned = spawn();
+            }
+            _ => break,
+        }
+    }
+    let mut child = match spawned {
         Ok(child) => child,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return BuildOutcome::NotInstalled,
         Err(e) => {
