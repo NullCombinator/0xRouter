@@ -584,6 +584,10 @@ foundation here, not a later story.
     both sides, and only an added or changed start or fragment is a violation. Failed and blocked
     response runs raise alerts and mark the version suspect, like request runs
     (`Engine::settle_adapter_run`). Tests: `tests/wasm_runner.rs`.
+  - Stream path through the server (green in CI #150): `crates/nullrouter-server/tests/adapter_stream.rs`
+    drives a store version over a real streamed answer: an event edit reaches the client and the
+    record, and a blocked event leaves the stream as it was, marks the version suspect and the
+    next request records `not_run{suspect}`.
   - Still to do: `builder_client.rs` (waits for the builder, T045).
 - [ ] T047 [P] `nullrouter-adapters` testkit in `src/testkit.rs` (feature `testkit`).
   - `install_fixture(home, harness, wasm_bytes, source_dir, state)` writes a store entry
