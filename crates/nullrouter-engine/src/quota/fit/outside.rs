@@ -194,7 +194,16 @@ pub struct Alert {
 /// (the view fails open).
 pub fn alerts(home: &Path, provider: &str, account: &str) -> Vec<Alert> {
     let Ok(path) = outside_file(home, provider, account) else { return Vec::new() };
-    let Ok(text) = std::fs::read_to_string(&path) else { return Vec::new() };
+    unacknowledged(&path).unwrap_or_default()
+}
+
+/// The alerts of the file at `path` that no `ack` line names, newest first. No file: none.
+fn unacknowledged(path: &Path) -> Result<Vec<Alert>, FileError> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(history::io_err(path)(e)),
+    };
     let mut raised: Vec<Alert> = Vec::new();
     let mut acked: HashSet<String> = HashSet::new();
     for line in text.lines() {
@@ -206,7 +215,49 @@ pub fn alerts(home: &Path, provider: &str, account: &str) -> Vec<Alert> {
             _ => {}
         }
     }
-    raised.into_iter().rev().filter(|a| !acked.contains(&a.id)).collect()
+    Ok(raised.into_iter().rev().filter(|a| !acked.contains(&a.id)).collect())
+}
+
+/// What [`ack`] acknowledges.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AckTarget<'a> {
+    /// The alert whose id is this, or starts with it: the short form the CLI shows.
+    Id(&'a str),
+    /// Every unacknowledged alert.
+    All,
+}
+
+/// Acknowledges the account's unacknowledged alerts that `target` names (FR-027). Appends one
+/// `ack` line per alert in a single write, and returns their ids. An `Id` that matches no
+/// unacknowledged alert (or is empty) acknowledges nothing. An `Id` prefix that matches more than
+/// one alert is an error, and writes nothing. An alert already acknowledged is not written again.
+pub fn ack(
+    home: &Path,
+    provider: &str,
+    account: &str,
+    target: AckTarget<'_>,
+    now: SystemTime,
+) -> Result<Vec<String>, FileError> {
+    let path = outside_file(home, provider, account)?;
+    let open = unacknowledged(&path)?;
+    let ids: Vec<String> = match target {
+        AckTarget::All => open.into_iter().map(|a| a.id).collect(),
+        AckTarget::Id("") => Vec::new(),
+        AckTarget::Id(prefix) => {
+            let mut hits = open.into_iter().filter(|a| a.id.starts_with(prefix)).map(|a| a.id);
+            match (hits.next(), hits.next()) {
+                (None, _) => Vec::new(),
+                (Some(id), None) => vec![id],
+                (Some(_), Some(_)) => {
+                    return Err(FileError::invalid(&path, format!("alert id {prefix} is ambiguous; give more of it")));
+                }
+            }
+        }
+    };
+    let at = rfc3339_millis(now);
+    let lines: Vec<Line> = ids.iter().map(|id| Line::Ack { v: VERSION, alert: id.clone(), at: at.clone() }).collect();
+    append(home, provider, account, &lines)?;
+    Ok(ids)
 }
 
 /// The part of the day `q` as the entry names it: `08-12`.
@@ -458,5 +509,104 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         append(dir.path(), "anthropic", "max", &[]).unwrap();
         assert!(!outside_file(dir.path(), "anthropic", "max").unwrap().exists());
+    }
+
+    fn when(secs: u64) -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(secs)
+    }
+
+    fn alert_line(id: &str, entry: &str, secs: u64) -> Line {
+        Line::Alert { v: VERSION, id: id.to_owned(), entry: entry.to_owned(), raised_at: at(secs) }
+    }
+
+    fn alert_ids(home: &Path) -> Vec<String> {
+        alerts(home, "anthropic", "max").into_iter().map(|a| a.id).collect()
+    }
+
+    #[test]
+    fn ack_by_full_id_leaves_the_other_alert_listed() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        append(home, "anthropic", "max", &[alert_line("01JKA1", "01JKE1", 1500), alert_line("01JKB2", "01JKE2", 1600)])
+            .unwrap();
+
+        let got = ack(home, "anthropic", "max", AckTarget::Id("01JKA1"), when(1700)).unwrap();
+        assert_eq!(got, ["01JKA1"]);
+        assert_eq!(alert_ids(home), ["01JKB2"]);
+        // An id that names nothing acknowledges nothing and is not an error.
+        assert!(ack(home, "anthropic", "max", AckTarget::Id("01JZZ"), when(1700)).unwrap().is_empty());
+        assert!(ack(home, "anthropic", "max", AckTarget::Id(""), when(1700)).unwrap().is_empty());
+        assert_eq!(alert_ids(home), ["01JKB2"]);
+    }
+
+    #[test]
+    fn ack_by_prefix_acknowledges_the_one_alert_it_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        append(home, "anthropic", "max", &[alert_line("01JLA1", "01JLE1", 1500), alert_line("01JLB2", "01JLE2", 1600)])
+            .unwrap();
+
+        let got = ack(home, "anthropic", "max", AckTarget::Id("01JLB"), when(1700)).unwrap();
+        assert_eq!(got, ["01JLB2"]);
+        assert_eq!(alert_ids(home), ["01JLA1"]);
+    }
+
+    #[test]
+    fn ack_all_acknowledges_only_the_unacknowledged_alerts() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let lines = [
+            alert_line("01JMA1", "01JME1", 1500),
+            alert_line("01JMB2", "01JME2", 1600),
+            alert_line("01JMC3", "01JME3", 1700),
+        ];
+        append(home, "anthropic", "max", &lines).unwrap();
+        ack(home, "anthropic", "max", AckTarget::Id("01JMA1"), when(1800)).unwrap();
+
+        let got = ack(home, "anthropic", "max", AckTarget::All, when(1900)).unwrap();
+        assert_eq!(got, ["01JMC3", "01JMB2"]);
+        assert!(alert_ids(home).is_empty());
+    }
+
+    #[test]
+    fn an_ambiguous_prefix_is_an_error_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        append(home, "anthropic", "max", &[alert_line("01JNA1", "01JNE1", 1500), alert_line("01JNA2", "01JNE2", 1600)])
+            .unwrap();
+        let path = outside_file(home, "anthropic", "max").unwrap();
+        let before = fs::read_to_string(&path).unwrap();
+
+        let err = ack(home, "anthropic", "max", AckTarget::Id("01JNA"), when(1700)).unwrap_err();
+        assert!(err.to_string().contains("ambiguous"), "{err}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), before);
+        assert_eq!(alert_ids(home), ["01JNA2", "01JNA1"]);
+    }
+
+    #[test]
+    fn a_second_ack_is_a_no_op() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        append(home, "anthropic", "max", &[alert_line("01JPA1", "01JPE1", 1500)]).unwrap();
+        assert_eq!(ack(home, "anthropic", "max", AckTarget::Id("01JPA1"), when(1700)).unwrap(), ["01JPA1"]);
+        let path = outside_file(home, "anthropic", "max").unwrap();
+        let before = fs::read_to_string(&path).unwrap();
+
+        assert!(ack(home, "anthropic", "max", AckTarget::Id("01JPA1"), when(1800)).unwrap().is_empty());
+        assert!(ack(home, "anthropic", "max", AckTarget::All, when(1800)).unwrap().is_empty());
+        assert_eq!(fs::read_to_string(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn an_acknowledged_alert_leaves_the_list_and_its_entry_stays() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        append(home, "anthropic", "max", &[Line::Entry(entry("01JQE1", OutsideType::Busy, 1000))]).unwrap();
+        append(home, "anthropic", "max", &[alert_line("01JQA1", "01JQE1", 1500)]).unwrap();
+        assert_eq!(alert_ids(home), ["01JQA1"]);
+
+        ack(home, "anthropic", "max", AckTarget::Id("01JQA1"), when(1700)).unwrap();
+        assert!(alert_ids(home).is_empty());
+        assert_eq!(ids(&read(home, "anthropic", "max", None, None).unwrap()), ["01JQE1"]);
     }
 }
