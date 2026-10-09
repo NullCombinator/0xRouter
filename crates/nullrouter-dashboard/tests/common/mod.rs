@@ -22,7 +22,7 @@ use nullrouter_registry::schema::DashboardSettings;
 use nullrouter_server::serve::{self, App};
 use reqwest::header::COOKIE;
 use reqwest::{Client, StatusCode, redirect};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::sync::oneshot;
 
 /// The token every suite signs in with.
