@@ -184,23 +184,175 @@ fn pad(rows: &[Vec<String>]) -> Vec<String> {
         .collect()
 }
 
+/// A weight, multiplier or rate to two decimals, without trailing zeros: `1`, `0.1`, `1.25`.
+fn decimal(x: f64) -> String {
+    format!("{x:.2}").trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
+fn source_text(v: &Value) -> &'static str {
+    match v.as_str() {
+        Some("account_override") => "override (account)",
+        Some("plugin_override") => "override (plugin)",
+        Some("fit") => "fit",
+        Some("declared") => "declared",
+        _ => "?",
+    }
+}
+
+/// `Tue 09:10`, for a time a meter number or a split carries.
+fn when(v: &Value) -> Option<String> {
+    time_of(v).map(|t| format!("{} {}", weekday(t), hm(t)))
+}
+
+/// One number of a meter: its name, then its segments, `9.0M declared · fit 13.1M–14.6M · in use …`.
+fn meter_number(n: &Value) -> (String, String) {
+    let name = n["number"].as_str().unwrap_or("?").to_owned();
+    let capacity = name == "capacity";
+    let fmt = |x: f64| if capacity { si(x) } else { decimal(x) };
+    let state = n["state"].as_str().unwrap_or("?");
+    let declared = n["declared"].as_f64();
+    let mut segs = vec![match (declared, state) {
+        (Some(d), "yardstick") => format!("{} yardstick", fmt(d)),
+        (Some(d), _) => format!("{} declared", fmt(d)),
+        (None, _) => "assumed".to_owned(),
+    }];
+    match state {
+        "fitted" => {
+            if let (Some(lo), Some(hi)) = (n["fit"]["low"].as_f64(), n["fit"]["high"].as_f64()) {
+                segs.push(format!("fit {}–{}", fmt(lo), fmt(hi)));
+            }
+        }
+        "learning" => segs.push(match (n["progress"]["intervals"].as_u64(), n["progress"]["half_width"].as_f64()) {
+            (Some(i), Some(h)) => format!("learning {i} intervals ±{:.0}%", h * 100.0),
+            _ => "learning".to_owned(),
+        }),
+        "not_separable" => segs.push(format!("not separable from {}", n["partner"].as_str().unwrap_or("?"))),
+        "relearning" | "restarted" => {
+            let mut s = state.to_owned();
+            if let Some(w) = when(&n["since"]) {
+                s += &format!(" since {w}");
+            }
+            if let Some(r) = n["reason"].as_str() {
+                s += &format!(" ({r})");
+            }
+            segs.push(s);
+        }
+        "not_reported" => segs.push("not reported".to_owned()),
+        _ => {}
+    }
+    // A fitted number's time rides on its `in use` segment; with no such segment it stands alone.
+    let since = if state == "fitted" { when(&n["since"]) } else { None };
+    let mut since_used = false;
+    if let Some(u) = n["in_use"].as_f64().filter(|u| declared != Some(*u)) {
+        let mut s = format!("in use {} {}", fmt(u), source_text(&n["source"]));
+        if let Some(w) = &since {
+            s += &format!(" since {w}");
+            since_used = true;
+        }
+        segs.push(s);
+    }
+    if let (Some(w), false) = (&since, since_used) {
+        segs.push(format!("fitted since {w}"));
+    }
+    (name, segs.join(" · "))
+}
+
+/// One window's meter: `meter <window>` on its first line, then the split line if the account is
+/// split off, then each number with its name in one column.
+fn meter(m: &Value) -> Vec<String> {
+    let label = format!("meter {}", m["window"].as_str().unwrap_or("?"));
+    let mut body = Vec::new();
+    if m["split"].is_object() {
+        let since = when(&m["split"]["since"]).unwrap_or_else(|| "?".to_owned());
+        body.push(format!("split off since {since}: {}", m["split"]["reason"].as_str().unwrap_or("?")));
+    }
+    let numbers: Vec<(String, String)> = m["numbers"].as_array().into_iter().flatten().map(meter_number).collect();
+    let width = numbers.iter().map(|(n, _)| n.chars().count()).max().unwrap_or(0) + 2;
+    body.extend(numbers.iter().map(|(n, d)| format!("{n:<width$}{d}")));
+    if body.is_empty() {
+        return vec![format!("    {label}")];
+    }
+    body.iter()
+        .enumerate()
+        .map(|(i, l)| if i == 0 { format!("    {label:<15}{l}") } else { format!("{:19}{l}", "") })
+        .collect()
+}
+
+/// An account's outside use at a glance: `3 intervals this week (last Wed 02:10–02:30, 4% of weekly) · steady …`.
+fn outside(o: &Value) -> String {
+    let n = o["intervals_7d"].as_u64().unwrap_or(0);
+    let mut s = format!("{n} interval{} this week", if n == 1 { "" } else { "s" });
+    let last = &o["last"];
+    if last.is_object() {
+        let span = match (time_of(&last["start"]), time_of(&last["end"])) {
+            (Some(a), Some(b)) => format!("{} {}–{}", weekday(a), hm(a), hm(b)),
+            (Some(a), None) => format!("{} {}", weekday(a), hm(a)),
+            _ => "?".to_owned(),
+        };
+        let mut inner = format!("last {span}");
+        if let Some(a) = last["amount"].as_f64() {
+            let window = last["window"].as_str().unwrap_or("?");
+            let amount = if last["unit"] == "percent" {
+                format!("{}% of {window}", decimal(a))
+            } else {
+                format!("{} {} of {window}", decimal(a), last["unit"].as_str().unwrap_or("?"))
+            };
+            inner += &format!(", {amount}");
+            if last["type"] == "busy" {
+                inner += " beyond explained use";
+            }
+        }
+        s += &format!(" ({inner})");
+    }
+    for st in o["steady"].as_array().into_iter().flatten() {
+        let rate = st["rate_per_hour"].as_f64().map_or_else(|| "?".to_owned(), decimal);
+        let day = time_of(&st["since"]).map_or("?", weekday);
+        s += &format!(" · steady up to {rate}%/h ({}) since {day}", st["part"].as_str().unwrap_or("?"));
+    }
+    s
+}
+
+/// The lines under an account's row: its fit note or meter, its outside use and its usage alerts.
+fn details(a: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(note) = a["fit_note"].as_str() {
+        out.push(format!("    {:<15}not fitted: {note}", "meter"));
+    }
+    for m in a["meter"].as_array().into_iter().flatten() {
+        out.extend(meter(m));
+    }
+    let o = &a["outside_use"];
+    if o.is_object() {
+        out.push(format!("    {:<15}{}", "outside use", outside(o)));
+        for al in o["alerts"].as_array().into_iter().flatten() {
+            let text = al["text"].as_str().unwrap_or("(no text yet)");
+            out.push(format!("    {:<15}{} {text}", "usage alert", al["id"].as_str().unwrap_or("?")));
+        }
+    }
+    out
+}
+
 fn target(t: &Value, now: SystemTime, out: &mut String) {
     let accounts: Vec<&Value> = t["accounts"].as_array().into_iter().flatten().collect();
     let (payg, subs): (Vec<&Value>, Vec<&Value>) = accounts.into_iter().partition(|a| a["tier"] == "payg");
+    let ordered: Vec<&Value> = subs.iter().chain(&payg).copied().collect();
     let mut cells = vec![
         ["account", "source", "pace", "share", "deficit", "priority", "cache", "windows"].map(str::to_owned).to_vec(),
     ];
-    cells.extend(subs.iter().chain(&payg).map(|a| row(a, now)));
+    cells.extend(ordered.iter().map(|a| row(a, now)));
     let lines = pad(&cells);
     let name = t["target"].as_str().unwrap_or("?");
     let first = if subs.is_empty() { "pay-as-you-go tier" } else { "subscription tier" };
     out.push_str(&format!("{name:<LABEL_AT$}{first}\n"));
     out.push_str(&format!("  {}\n", lines[0]));
-    for (i, line) in lines[1..].iter().enumerate() {
+    for (i, (a, line)) in ordered.iter().zip(&lines[1..]).enumerate() {
         if i == subs.len() && !subs.is_empty() && !payg.is_empty() {
             out.push_str(&format!("{:<LABEL_AT$}pay-as-you-go tier\n", ""));
         }
         out.push_str(&format!("  {line}\n"));
+        for d in details(a) {
+            out.push_str(&format!("{d}\n"));
+        }
     }
 }
 

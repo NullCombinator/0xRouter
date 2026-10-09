@@ -287,6 +287,58 @@ fn set_plugin_takes_a_declared_multiplier_and_refuses_the_rest() {
     assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), text);
 }
 
+#[test]
+fn the_meter_block_shows_each_number_state_and_the_unfitted_line() {
+    let answer = json!({
+        "amortization": {"start": "2026-10-04T05:00:00.000Z", "length": "5h"},
+        "journal": {"kept": true, "last_sync_age_s": 0.4},
+        "targets": [{"target": "sonnet", "accounts": [
+            {"provider": "anthropic", "account": "max", "tier": "subscription", "source": "polled",
+             "priority": 1.0, "pace": 1.42, "share": 0.61, "deficit": 91200, "cache_lifetime": "5m",
+             "price_now": null, "why_not": null, "windows": [],
+             "meter": [{"window": "5-hour", "epoch": "2026-10-04T05:00:00.000Z", "split": null,
+                 "set_aside": {"reset": 0, "usage_unreported": 0, "exhausted": 0},
+                 "numbers": [
+                     {"number": "capacity", "declared": 9000000.0, "account_override": null, "plugin_override": null,
+                      "fit": {"value": 13800000.0, "low": 13100000.0, "high": 14600000.0}, "in_use": 13800000.0,
+                      "source": "fit", "state": "fitted", "since": "2026-10-06T09:10:00.000Z", "progress": null,
+                      "partner": null, "reason": null},
+                     {"number": "weight.input", "declared": 1.0, "account_override": null, "plugin_override": null,
+                      "fit": null, "in_use": null, "source": "declared", "state": "yardstick", "since": null,
+                      "progress": null, "partner": null, "reason": null},
+                     {"number": "weight.cache_read", "declared": 0.1, "account_override": null, "plugin_override": null,
+                      "fit": null, "in_use": null, "source": "declared", "state": "learning", "since": null,
+                      "progress": {"intervals": 312, "half_width": 0.4}, "partner": null, "reason": null},
+                     {"number": "weight.cache_write", "declared": 1.25, "account_override": null, "plugin_override": null,
+                      "fit": null, "in_use": null, "source": "declared", "state": "not_separable", "since": null,
+                      "progress": null, "partner": "weight.cache_read", "reason": null}
+                 ]}]},
+            {"provider": "opencode-go", "account": "main", "tier": "subscription", "source": "estimated",
+             "priority": 1.0, "pace": 1.05, "share": 0.2, "deficit": 0, "cache_lifetime": "5m",
+             "price_now": null, "why_not": null, "windows": [], "meter": [],
+             "fit_note": "provider reports no quota"}
+        ]}]
+    });
+    let now = nullrouter_engine::clock::parse_rfc3339("2026-10-04T07:12:00Z").unwrap();
+    let text = nullrouter_cli::routing_text::render(&answer, now);
+    let lines: Vec<&str> = text.lines().collect();
+    let max = lines.iter().position(|l| l.contains("anthropic/max")).unwrap();
+    let want = [
+        format!(
+            "    {:<15}{:<20}{}",
+            "meter 5-hour",
+            "capacity",
+            "9.0M declared · fit 13.1M–14.6M · in use 13.8M fit since Tue 09:10"
+        ),
+        format!("{:19}{:<20}{}", "", "weight.input", "1 yardstick"),
+        format!("{:19}{:<20}{}", "", "weight.cache_read", "0.1 declared · learning 312 intervals ±40%"),
+        format!("{:19}{:<20}{}", "", "weight.cache_write", "1.25 declared · not separable from weight.cache_read"),
+    ];
+    assert_eq!(lines[max + 1..max + 5].join("\n"), want.join("\n"), "{text}");
+    assert!(lines[max + 5].contains("opencode-go/main"), "{text}");
+    assert_eq!(lines[max + 6], format!("    {:<15}{}", "meter", "not fitted: provider reports no quota"), "{text}");
+}
+
 // ---- against a running server ----
 
 struct Serving(Child);
