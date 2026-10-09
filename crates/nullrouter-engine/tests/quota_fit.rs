@@ -645,3 +645,71 @@ fn a_multiplier_group_with_no_traffic_is_learning_with_no_intervals() {
         other => panic!("expected Learning with 0 intervals, got {other:?}"),
     }
 }
+
+// ---- overrides reach the meters in effect (T044, Story 4) ----
+
+/// `weighted_home` with the given plugin-level meter override in `config.toml` and the given
+/// routing table text under account `main` (either may be empty).
+fn override_home(plugin_meter: &str, main_routing: &str) -> tempfile::TempDir {
+    let dir = weighted_home();
+    std::fs::write(dir.path().join("config.toml"), format!("allow_private_endpoints = true\n{plugin_meter}")).unwrap();
+    let path = dir.path().join(nullrouter_engine::accounts::FILE);
+    let text = std::fs::read_to_string(&path).unwrap();
+    let (head, tail) = text.split_once("[[account]]\nprovider = \"keyco\"\nname = \"spare\"").unwrap();
+    let text = format!("{head}{main_routing}[[account]]\nprovider = \"keyco\"\nname = \"spare\"{tail}");
+    nullrouter_engine::files::write_private(&path, &text).unwrap();
+    dir
+}
+
+fn meters_of(dir: &tempfile::TempDir) -> Meters {
+    let (engine, _) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
+    let meters = Meters::default();
+    meters.rebuild(&engine.snapshot(), &Fits::default());
+    meters
+}
+
+#[test]
+fn overrides_reach_the_meter_in_effect_and_removing_them_restores_the_declaration() {
+    use nullrouter_engine::quota::fit::{MeterNumber, Source};
+    let output = MeterNumber::Weight(TokenClass::Output);
+    let cache_read = MeterNumber::Weight(TokenClass::CacheRead);
+    let multiplier = MeterNumber::Multiplier("big-*".to_owned());
+
+    let plugin = "[provider.keyco.meter.\"5-hour\"]\ntoken_weights = { output = 7.0, cache_read = 0.2 }\nmodel_multiplier = { \"big-*\" = 3.0 }\n";
+    let account = "[account.routing.window.\"5-hour\"]\ntoken_weights = { output = 9.0 }\n";
+
+    // A plugin override alone applies to every account of the plugin.
+    let dir = override_home(plugin, "");
+    let meters = meters_of(&dir);
+    for name in ["main", "spare"] {
+        let m = meters.get("keyco", name).unwrap_or_else(|| panic!("{name} has a replaced meter"));
+        let w = m.windows[0].token_weights.unwrap();
+        assert_eq!((w.output, w.cache_read, w.input), (7.0, 0.2, 1.0), "{name}");
+        assert_eq!(m.windows[0].model_multiplier["big-*"], 3.0);
+        assert_eq!(m.sources["5-hour"][&output], Source::PluginOverride);
+        assert_eq!(m.sources["5-hour"][&multiplier], Source::PluginOverride);
+    }
+
+    // An account's own override beats the plugin's for that account only.
+    let dir = override_home(plugin, account);
+    let meters = meters_of(&dir);
+    let main = meters.get("keyco", "main").unwrap();
+    assert_eq!(main.windows[0].token_weights.unwrap().output, 9.0);
+    assert_eq!(main.windows[0].token_weights.unwrap().cache_read, 0.2, "the plugin's other number still applies");
+    assert_eq!(main.sources["5-hour"][&output], Source::AccountOverride);
+    assert_eq!(main.sources["5-hour"][&cache_read], Source::PluginOverride);
+    let spare = meters.get("keyco", "spare").unwrap();
+    assert_eq!(spare.windows[0].token_weights.unwrap().output, 7.0);
+    assert_eq!(spare.sources["5-hour"][&output], Source::PluginOverride);
+
+    // An account override with no plugin override.
+    let dir = override_home("", account);
+    let meters = meters_of(&dir);
+    assert_eq!(meters.get("keyco", "main").unwrap().sources["5-hour"][&output], Source::AccountOverride);
+    assert!(meters.get("keyco", "spare").is_none(), "no override, no fit: routing reads the declaration");
+
+    // Removing the overrides restores the declaration (FR-011).
+    let dir = override_home("", "");
+    let meters = meters_of(&dir);
+    assert!(meters.get("keyco", "main").is_none() && meters.get("keyco", "spare").is_none());
+}

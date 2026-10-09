@@ -25,7 +25,7 @@ use std::time::SystemTime;
 
 use arc_swap::ArcSwap;
 use indexmap::IndexMap;
-use nullrouter_registry::schema::MeterDecl;
+use nullrouter_registry::schema::{MeterDecl, PartialTokenWeights};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// One of the four token classes a `weighted_tokens` window charges differently.
@@ -250,6 +250,42 @@ pub fn in_effect(
     (meter, sources)
 }
 
+impl NumberOverrides {
+    /// The overrides one level sets on one window.
+    pub fn from_parts(capacity: Option<f64>, weights: Option<&PartialTokenWeights>, multipliers: &IndexMap<String, f64>) -> Self {
+        let weights = weights.map_or([None; 4], |w| [w.input, w.output, w.cache_read, w.cache_write]);
+        Self { capacity, weights, multipliers: multipliers.clone() }
+    }
+}
+
+/// The overrides of one plugin window: the plugin's own, and each account's.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WindowOverrides {
+    pub plugin: NumberOverrides,
+    pub accounts: BTreeMap<String, NumberOverrides>,
+}
+
+/// The overrides of every window of `provider` that has any, by window name. Capacity applies at
+/// account level only: the routing core also reads an account's capacity override
+/// (`routing::meter::capacity_of`), and reads the same value, so the two agree. The meter in
+/// effect carries it so a view can name its source.
+pub fn window_overrides(st: &crate::state::EngineState, provider: &str) -> BTreeMap<String, WindowOverrides> {
+    let mut out: BTreeMap<String, WindowOverrides> = BTreeMap::new();
+    for (name, o) in &st.registry.settings(provider).meter {
+        out.entry(name.clone()).or_default().plugin =
+            NumberOverrides::from_parts(None, o.token_weights.as_ref(), &o.model_multiplier);
+    }
+    for a in st.accounts.for_provider(provider) {
+        for (name, w) in &a.routing.window {
+            let o = NumberOverrides::from_parts(w.capacity, w.token_weights.as_ref(), &w.model_multiplier);
+            if o != NumberOverrides::default() {
+                out.entry(name.clone()).or_default().accounts.insert(a.name.clone(), o);
+            }
+        }
+    }
+    out
+}
+
 /// Whether the fit covers `account`: its provider reports quota for it, so it has polls.
 /// Pay-as-you-go accounts and accounts with no quota reports are out (spec Edge Cases).
 pub fn is_fitted_account(provider: &nullrouter_registry::ProviderEntity, account: &crate::accounts::Account) -> bool {
@@ -297,19 +333,21 @@ impl Meters {
     /// Recomputes every account's meters from the registry in `st` and the fits.
     pub fn rebuild(&self, st: &crate::state::EngineState, fits: &Fits) {
         let mut next = HashMap::new();
+        let mut by_provider: HashMap<String, BTreeMap<String, WindowOverrides>> = HashMap::new();
         for account in st.accounts.iter() {
             let Some(provider) = st.registry.providers().find(|p| p.id == account.provider) else { continue };
             // Pay-as-you-go and unpolled accounts are never fitted, and pooled numbers don't
-            // apply to them: their routing keeps reading the declaration.
-            if !is_fitted_account(provider, account) {
-                continue;
-            }
+            // apply to them; operator overrides still do (FR-019, FR-020), so they get a cell
+            // built from the overrides alone.
+            let fitted = is_fitted_account(provider, account);
+            let ovs = by_provider.entry(account.provider.clone()).or_insert_with(|| window_overrides(st, &account.provider));
             let declared = provider.routing().windows;
             let mut windows = Vec::with_capacity(declared.len());
             let mut sources = BTreeMap::new();
             for meter in declared {
-                let fit = fits.window(&account.provider, &meter.name);
-                let (m, src) = in_effect(meter, None, None, &fit, &account.name);
+                let fit = if fitted { fits.window(&account.provider, &meter.name) } else { WindowFit::default() };
+                let o = ovs.get(&meter.name);
+                let (m, src) = in_effect(meter, o.map(|o| &o.plugin), o.and_then(|o| o.accounts.get(&account.name)), &fit, &account.name);
                 if !src.is_empty() {
                     sources.insert(meter.name.clone(), src);
                 }

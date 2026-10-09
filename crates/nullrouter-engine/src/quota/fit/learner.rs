@@ -10,9 +10,11 @@
 //! lock that only the poll path takes ([`Shared`]); requests read the published [`Fits`] and the
 //! [`Meters`] built from it, and never see the learner.
 //!
-//! The value tested against is the declared value. Operator overrides of weights and
-//! multipliers are not wired into the engine yet (`Meters::rebuild` passes none), so there is
-//! nothing else in effect to test against.
+//! The value tested against is the value in effect: an operator override when one is set,
+//! else the declared value (FR-020). A capacity is per account, so its override is the
+//! account's. Weights and multipliers are pooled over the accounts, so they are tested against
+//! the plugin-level override; an account's own weight override moves only that account's meter
+//! and does not change what the pooled fit is tested against.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -29,7 +31,7 @@ use super::rows::{Class, Row, rows_from};
 use super::split::{self, test_splits};
 use super::store::{self, Loaded, Restart, SaveState, StoredFit, StoredNumber, StoredWindow};
 use super::test::rejects;
-use super::{Fits, MeterNumber, Meters, NumberState, Progress, TokenClass, WindowFit};
+use super::{Fits, MeterNumber, Meters, NumberState, Progress, TokenClass, WindowFit, WindowOverrides};
 use crate::clock;
 use crate::quota::extract::rfc3339_millis;
 use crate::quota::history::{self, Entry};
@@ -263,7 +265,8 @@ impl Learner {
             self.unfitted.insert((provider.to_owned(), a.name.clone()), "no quota reports (or pay-as-you-go)".to_owned());
         }
         let accounts: Vec<String> = fitted.iter().map(|a| a.name.clone()).collect();
-        self.run_declared(fits, home, provider, entity.routing().windows, &accounts, tails, now)
+        let ov = super::window_overrides(st, provider);
+        self.run_declared(fits, home, provider, entity.routing().windows, &accounts, &ov, tails, now)
     }
 
     /// [`Fits::observe`] without an engine snapshot: `declared` are the plugin's windows and
@@ -279,7 +282,7 @@ impl Learner {
         tails: &[(&str, &[Entry])],
         now: SystemTime,
     ) -> bool {
-        self.run_declared(fits, home, provider, declared, accounts, tails, now)
+        self.run_declared(fits, home, provider, declared, accounts, &BTreeMap::new(), tails, now)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -290,6 +293,7 @@ impl Learner {
         provider: &str,
         declared: &[MeterDecl],
         accounts: &[String],
+        overrides: &BTreeMap<String, WindowOverrides>,
         tails: &[(&str, &[Entry])],
         now: SystemTime,
     ) -> bool {
@@ -300,7 +304,7 @@ impl Learner {
         }
         self.load_store(home, provider);
         for meter in declared {
-            self.window(home, provider, declared, meter, &accounts, tails, now);
+            self.window(home, provider, declared, meter, &accounts, overrides.get(&meter.name), tails, now);
         }
         // A window the plugin no longer declares is forgotten.
         self.windows.retain(|(p, w), _| p != provider || declared.iter().any(|m| m.name == *w));
@@ -327,7 +331,9 @@ impl Learner {
     }
 
     /// One window: new rows, classification, refit, splits, number states, published numbers.
-    fn window(&mut self, home: &Path, provider: &str, declared: &[MeterDecl], meter: &MeterDecl, accounts: &[String], tails: &[(&str, &[Entry])], now: SystemTime) {
+    fn window(&mut self, home: &Path, provider: &str, declared: &[MeterDecl], meter: &MeterDecl, accounts: &[String], ov: Option<&WindowOverrides>, tails: &[(&str, &[Entry])], now: SystemTime) {
+        let none = WindowOverrides::default();
+        let ov = ov.unwrap_or(&none);
         let matches = |name: &str| name == meter.name || glob_match(&meter.name, name);
         // The unit the provider reports the window in, from the newest good entry.
         let unit = tails
@@ -388,7 +394,7 @@ impl Learner {
         if added == 0 {
             return;
         }
-        refit(win, &spec, meter, now);
+        refit(win, &spec, meter, ov, now);
         list_steady_rates(win, home, provider, &spec, meter, unit, now);
     }
 
@@ -531,7 +537,7 @@ fn list_steady_rates(win: &mut Win, home: &Path, provider: &str, spec: &Spec, me
 
 /// Refits the pool over the epoch's evidence, reclassifies, tests splits, then updates the
 /// numbers (R3, R6, R8).
-fn refit(win: &mut Win, spec: &Spec, meter: &MeterDecl, now: SystemTime) {
+fn refit(win: &mut Win, spec: &Spec, meter: &MeterDecl, ov: &WindowOverrides, now: SystemTime) {
     let mut splits_found = 0;
     loop {
         if !settle(win, spec, meter, now) {
@@ -550,7 +556,7 @@ fn refit(win: &mut Win, spec: &Spec, meter: &MeterDecl, now: SystemTime) {
         }
         splits_found += 1;
     }
-    update_numbers(win, spec, meter, now);
+    update_numbers(win, spec, meter, ov, now);
 }
 
 /// Fits the pool and reclassifies the epoch against the fit until the classes stop moving.
@@ -596,20 +602,27 @@ impl Num {
     }
 }
 
-fn numbers(spec: &Spec, meter: &MeterDecl) -> Vec<Num> {
+/// The numbers of a window with the value each is tested against: the plugin override of a
+/// weight or multiplier, else the declaration; for a capacity, the account's override, else the
+/// declaration.
+fn numbers(spec: &Spec, meter: &MeterDecl, ov: &WindowOverrides) -> Vec<Num> {
     let ln = |v: f64| (v.is_finite() && v > 0.0).then(|| v.ln());
-    let w = meter.token_weights.unwrap_or_default();
+    let declared_w = meter.token_weights.unwrap_or_default();
+    let class_index = |c: TokenClass| TokenClass::ALL.iter().position(|x| *x == c).unwrap_or(0);
+    let in_effect = |c: TokenClass| ov.plugin.weights[class_index(c)].unwrap_or_else(|| weight_of(&declared_w, c));
+    let input = in_effect(TokenClass::Input);
     let mut out = Vec::new();
     if matches!(spec.kind, Kind::Percent | Kind::RequestsPercent) {
-        let scale = if spec.kind == Kind::Percent { 100.0 * w.input } else { 100.0 };
+        let scale = if spec.kind == Kind::Percent { 100.0 * input } else { 100.0 };
         for (a, name) in spec.accounts.iter().enumerate() {
+            let capacity = ov.accounts.get(name).and_then(|o| o.capacity).or(meter.capacity);
             out.push(Num {
                 key: format!("{}@{name}", MeterNumber::Capacity),
                 number: MeterNumber::Capacity,
                 p: P::K(a),
                 account: Some(name.clone()),
                 scale: Some(scale),
-                null_log: meter.capacity.and_then(ln),
+                null_log: capacity.and_then(ln),
             });
         }
     }
@@ -619,18 +632,19 @@ fn numbers(spec: &Spec, meter: &MeterDecl) -> Vec<Num> {
         _ => &[],
     };
     for (c, class) in classes.iter().enumerate() {
-        let (p, declared) = if spec.kind == Kind::Percent {
-            (P::Rho(c), weight_of(&w, *class) / w.input)
+        let (p, null) = if spec.kind == Kind::Percent {
+            (P::Rho(c), in_effect(*class) / input)
         } else {
-            (P::W(c), weight_of(&w, *class))
+            (P::W(c), in_effect(*class))
         };
         let number = MeterNumber::Weight(*class);
-        out.push(Num { key: number.to_string(), number, p, account: None, scale: None, null_log: ln(declared) });
+        out.push(Num { key: number.to_string(), number, p, account: None, scale: None, null_log: ln(null) });
     }
     if matches!(spec.kind, Kind::Percent | Kind::Counted) {
         for (i, (glob, factor)) in meter.model_multiplier.iter().enumerate() {
             let number = MeterNumber::Multiplier(glob.clone());
-            out.push(Num { key: number.to_string(), number, p: P::Mu(i), account: None, scale: None, null_log: ln(*factor) });
+            let null = ov.plugin.multipliers.get(glob).copied().unwrap_or(*factor);
+            out.push(Num { key: number.to_string(), number, p: P::Mu(i), account: None, scale: None, null_log: ln(null) });
         }
     }
     out
@@ -648,10 +662,10 @@ fn name_of(spec: &Spec, p: P) -> String {
 }
 
 /// After a refit: each number's state, and the significant numbers to publish.
-fn update_numbers(win: &mut Win, spec: &Spec, meter: &MeterDecl, now: SystemTime) {
+fn update_numbers(win: &mut Win, spec: &Spec, meter: &MeterDecl, ov: &WindowOverrides, now: SystemTime) {
     let Some((_, fit)) = &win.last else { return };
     let insep: BTreeMap<P, Inseparable> = separability(fit).into_iter().map(|i| (i.number, i)).collect();
-    let list = numbers(spec, meter);
+    let list = numbers(spec, meter, ov);
     // Numbers tested together share the lifetime bound (R5).
     let m = list
         .iter()
@@ -841,6 +855,6 @@ mod edge_tests {
     fn counted_and_balance_windows_have_no_capacity_number() {
         let m = meter("credits", "30d", None);
         let spec = Spec { kind: Kind::Counted, accounts: vec!["a".into()], globs: vec![], utc_offset_secs: 0 };
-        assert!(numbers(&spec, &m).iter().all(|n| n.number != MeterNumber::Capacity));
+        assert!(numbers(&spec, &m, &WindowOverrides::default()).iter().all(|n| n.number != MeterNumber::Capacity));
     }
 }
