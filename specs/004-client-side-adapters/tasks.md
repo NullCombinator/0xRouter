@@ -575,7 +575,7 @@ foundation here, not a later story.
     again, so the next request records `not_run{suspect}`. Test: `adapter_store.rs`. The index is
     read, changed and written whole, so an operator command running at the same moment can lose
     the mark; the next block marks it again.
-  - Response and event sides done, not yet run in CI: the arm calls `zr_on_response` on a whole
+  - Response and event sides done (green in CI #145): the arm calls `zr_on_response` on a whole
     answer and `zr_on_event` on each stream event when the manifest declares response selectors
     (`events = true` for events; 20 ms and 2 ms deadlines). `reads_responses()` is true for such a
     module. The guardrail checks an answer with `check_response` and an event with the new
