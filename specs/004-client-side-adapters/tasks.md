@@ -910,7 +910,7 @@ the reviewed source.
     new hash. The version serves with no state change, and no review is enqueued.
   - A stub returning `compile` gives `rebuild_failed`, an alert, and plain-client keys
     (SC-013, FR-032).
-- [ ] T074 [P] [US4] No-auto-update test in
+- [X] T074 [P] [US4] No-auto-update test in
   `crates/nullrouter-adapters/tests/catalogue.rs` (extend).
   - `catalogue check` against a mock index listing a newer version prints it.
   - The store is unchanged afterwards, byte for byte (US4-4).

@@ -1,6 +1,6 @@
 //! The catalogue client (T052) against a local HTTPS server whose CA the client trusts in-test.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -210,6 +210,25 @@ fn staged(home: &Path) -> usize {
     std::fs::read_dir(home.join("adapters/.staging")).map(|d| d.count()).unwrap_or(0)
 }
 
+/// Every file under `home/adapters`, keyed by its path relative to that dir, sorted.
+fn snapshot(home: &Path) -> BTreeMap<String, Vec<u8>> {
+    fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<String, Vec<u8>>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(root, &path, out);
+            } else {
+                let rel = path.strip_prefix(root).unwrap().display().to_string();
+                out.insert(rel, std::fs::read(&path).unwrap());
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    let root = home.join("adapters");
+    walk(&root, &root, &mut out);
+    out
+}
+
 #[test]
 fn the_index_parses_and_unknown_keys_are_refused() {
     let good = index_text("https://example.com/a.tar.gz", &"a".repeat(64), &format!("sha256:{}", "b".repeat(64)));
@@ -403,4 +422,41 @@ async fn catalogue_and_local_installs_of_one_source_differ_only_in_origin() {
         files
     };
     assert_eq!(source(home_c.path(), &from_catalogue), source(home_l.path(), &from_local));
+}
+
+#[tokio::test]
+async fn catalogue_check_reports_a_newer_version_and_leaves_the_store_untouched() {
+    let mock = serve().await;
+    let packed = archive("noop", &noop_files());
+    let fp = fingerprint::of_files(&noop_files()).to_string();
+    let url_10 = mock.url("/noop.tar.gz");
+    let url_11 = mock.url("/noop-1.1.0.tar.gz");
+    let sha_10 = sha(&packed);
+    // 1.1.0 is listed but its archive is never routed: a fetch of it would get a 404.
+    let sha_11 = "d".repeat(64);
+    let index = format!(
+        "schema = 1\n\n[[entry]]\nharness = \"noop\"\nsummary = \"s\"\nstyle = \"openai-chat\"\n\n\
+         [[entry.version]]\nsemver = \"1.0.0\"\nsource = \"{url_10}\"\nsha256 = \"{sha_10}\"\n\
+         source_fp = \"{fp}\"\nkit = \"1\"\n\n\
+         [[entry.version]]\nsemver = \"1.1.0\"\nsource = \"{url_11}\"\nsha256 = \"{sha_11}\"\n\
+         source_fp = \"{fp}\"\nkit = \"1\"\n"
+    );
+    mock.route("/index.toml", Reply::Ok(index.into_bytes()));
+    mock.route("/noop.tar.gz", Reply::Ok(packed));
+
+    let home = tempfile::tempdir().unwrap();
+    let url = mock.url("/index.toml");
+    mock.client().install(home.path(), &url, "noop", Some("1.0.0"), opts(&["openai-chat"])).await.unwrap();
+    let before = snapshot(home.path());
+    assert!(!before.is_empty(), "the install stored files");
+
+    // What `catalogue check` does for an installed harness at 1.0.0.
+    let hits = mock.hits();
+    let fetched = mock.client().fetch_index(&url).await.unwrap();
+    let entry = fetched.entry("noop").unwrap();
+    let newer: Vec<&str> = entry.newer_than("1.0.0").iter().map(|v| v.semver.as_str()).collect();
+    assert_eq!(newer, ["1.1.0"]);
+    assert_eq!(mock.hits() - hits, 1, "only the index was fetched, no archive");
+
+    assert_eq!(snapshot(home.path()), before, "the store is unchanged, byte for byte");
 }
