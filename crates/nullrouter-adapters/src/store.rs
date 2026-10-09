@@ -249,6 +249,27 @@ impl Index {
         Ok(())
     }
 
+    /// Replaces a version's `state_reason` without moving it, such as `builder_not_installed`
+    /// on a version waiting in `queued`.
+    pub fn set_reason(&mut self, name: &HarnessName, id: &VersionId, reason: &str) -> Result<(), StoreError> {
+        self.version_mut(name, id)?.state_reason = reason.to_owned();
+        Ok(())
+    }
+
+    /// Records what the build produced: the module's hash and the kit ABI it was built for.
+    pub fn set_built(
+        &mut self,
+        name: &HarnessName,
+        id: &VersionId,
+        wasm_hash: &str,
+        kit_abi: u32,
+    ) -> Result<(), StoreError> {
+        let v = self.version_mut(name, id)?;
+        v.wasm_hash = Some(wasm_hash.to_owned());
+        v.kit_abi = Some(kit_abi);
+        Ok(())
+    }
+
     /// The operator's approval of a `reported` version: it becomes `active`, and the version that
     /// was active (if any) becomes `superseded`. Requests already running on that one finish on it.
     pub fn approve(&mut self, name: &HarnessName, id: &VersionId) -> Result<(), StoreError> {

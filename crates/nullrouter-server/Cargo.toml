@@ -32,6 +32,8 @@ reqwest.workspace = true
 # A third-party adapter on a streamed answer (spec 004 T046): a store version with a WAT module.
 nullrouter-adapters = { workspace = true, features = ["testkit"] }
 wat = "1"
+# The install pipeline test (T053) sets up a real builder and runs its binary.
+nullrouter-builder.workspace = true
 # The secrets sentinel (spec 005 T091) drives the CLI's sign-in driver and quota text. A
 # dev-dependency cycle: integration tests link the one server library the CLI links.
 nullrouter-cli = { path = "../nullrouter-cli" }

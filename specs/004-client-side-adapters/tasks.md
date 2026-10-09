@@ -701,7 +701,7 @@ serves before approval, and an operator with no adapters needs none of it.
   - A local `.tar.gz` that the operator supplies goes through the same unpack rules (FR-031).
   - Catalogue and local installs of the same source produce identical store entries apart
     from `origin` (SC-012).
-- [ ] T053 [P] [US2] Install pipeline test in
+- [X] T053 [P] [US2] Install pipeline test in
   `crates/nullrouter-server/tests/adapter_install.rs`. It needs the builder and skips when
   the target is missing.
   - `adapters install fixtures/noop` goes queued → building → in_review → reported (mock
@@ -765,7 +765,7 @@ serves before approval, and an operator with no adapters needs none of it.
   - Write `review.json` with `model`, `provider`, `tokens_in`, `tokens_out` and `record`.
   - Reviews run from a one-at-a-time background queue (a tokio task).
   - Make T051 pass.
-- [ ] T060 [US2] The install flow in `crates/nullrouter-adapters/src/lib.rs` (`install()`).
+- [X] T060 [US2] The install flow in `crates/nullrouter-adapters/src/lib.rs` (`install()`).
   - Unpack an archive, or read a directory.
   - Run the gate. A refusal writes a version entry with state `refused` and its reasons, and
     raises a `refused` alert.

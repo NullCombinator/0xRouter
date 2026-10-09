@@ -4,11 +4,13 @@
 //! internal request as the sender, and a single worker task that takes versions in order. The
 //! worker holds the engine weakly, so a dropped engine ends it.
 
+use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use nullrouter_adapters::HarnessName;
 use nullrouter_adapters::review::{self, ReviewCall, ReviewEnd, ReviewError, ReviewReply, Styles};
-use nullrouter_adapters::store::{Store, VersionId};
+use nullrouter_adapters::store::{Origin, Store, VersionId, VersionState};
+use nullrouter_adapters::{BUILD_TIMEOUT, InstallError, InstallOptions, Installed, install};
 use tokio::sync::mpsc;
 
 use crate::internal::{InternalError, InternalRequest};
@@ -62,6 +64,33 @@ impl Engine {
             }
         };
         review::run(&store, harness, version, Styles { chat: &**chat, messages: &**messages }, send).await
+    }
+
+    /// Installs an adapter package (a directory or a `.tar.gz`) from `input`: gate, store, build
+    /// with `builder` (`None`: `nullrouter-builder` on `PATH`), and, once the build is stored,
+    /// queues the review. The install pipeline lives in the adapters crate, which cannot reach
+    /// the queue, so the engine is the caller that starts it. Returns where the install ended.
+    pub async fn install_adapter(
+        self: &Arc<Self>,
+        input: &Path,
+        builder: Option<&str>,
+    ) -> Result<Installed, InstallError> {
+        let st = self.snapshot();
+        let styles: Vec<&str> = st.styles.keys().map(String::as_str).collect();
+        let opts = InstallOptions {
+            styles: &styles,
+            builder,
+            origin: Origin::Local(input.display().to_string()),
+            build_timeout: BUILD_TIMEOUT,
+        };
+        let done = install(self.home().path(), input, &opts).await?;
+        // A new harness shows in the index at once: keys bound to it are plain clients until approval.
+        let engine = self.clone();
+        let _ = tokio::task::spawn_blocking(move || engine.refresh_adapters()).await;
+        if done.state == VersionState::InReview {
+            self.enqueue_review(done.harness.clone(), done.version.clone());
+        }
+        Ok(done)
     }
 
     /// Queues a review. Returns at once; the worker takes versions one at a time.
