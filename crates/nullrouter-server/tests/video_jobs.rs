@@ -240,3 +240,38 @@ async fn polling_a_job_adds_nothing_to_the_submits_phases() {
     assert_eq!(after.attempts.len(), 1, "polls are not attempts");
     assert_eq!(serde_json::to_value(&after.attempts[0].timing).unwrap(), serde_json::to_value(Some(timing)).unwrap());
 }
+
+#[tokio::test]
+async fn a_paused_proxy_stops_a_job_poll_before_anything_is_sent() {
+    use nullrouter_engine::accounts::{self, Accounts};
+    use nullrouter_engine::connection::fingerprints;
+    use nullrouter_engine::testkit::MockProxy;
+
+    let s = server_with(|m| vec![vidco(m)]).await;
+    let proxy = MockProxy::start().await;
+    nullrouter_engine::files::write_private(
+        &s.home().join("proxies.toml"),
+        &format!("schema = 1\n\n[[proxy]]\nname = \"eu\"\nurl = \"http://{}\"\n", proxy.addr()),
+    )
+    .unwrap();
+    let mut list = Accounts::load(&s.home().join(accounts::FILE)).unwrap();
+    list.set_proxy("vidco", "main", Some("eu".into())).unwrap();
+    list.save().unwrap();
+    s.engine.reload().await.unwrap();
+
+    s.mock.on("/v1/videos/generations", [Step::json(200, json!({"request_id": "req-1"}))]);
+    s.mock.on("/v1/videos/req-1", [Step::json(200, json!({"status": "processing"}))]);
+    let (_, vj) = submit(&s, "vidco/vid").await;
+    let first = json(get(&s, &format!("/v1/videos/{vj}")).send().await.unwrap()).await;
+    assert_eq!(first["status"], "in_progress", "{first}");
+    assert!(proxy.carried() >= 2, "the submit and the poll used the account's proxy");
+
+    let print = fingerprints(&s.engine.snapshot()).remove("eu").unwrap();
+    s.engine.proxy_board.pause("eu", "connect to proxy failed", &print);
+    let (carried, seen) = (proxy.carried(), s.mock.received().len());
+    let r = get(&s, &format!("/v1/videos/{vj}")).send().await.unwrap();
+    assert_eq!(r.status(), 502);
+    let body = r.text().await.unwrap();
+    assert!(body.contains("proxy eu paused"), "{body}");
+    assert_eq!((proxy.carried(), s.mock.received().len()), (carried, seen), "nothing was sent");
+}
