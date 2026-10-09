@@ -15,6 +15,8 @@ use nullrouter_registry::{
 use nullrouter_wire::codec::Style;
 
 use crate::accounts::{self, Accounts};
+use crate::connection::pause::ProxyBoard;
+use crate::connection::proxy::{self, Proxies};
 use crate::cooldown::Cooldowns;
 use crate::files::{DashboardToken, FileError};
 use crate::identity::AgentSessions;
@@ -22,8 +24,6 @@ use crate::keys::{self, BreakBehaviour, Keys};
 use crate::models_live::LiveModels;
 use crate::records::RecordStore;
 use crate::redact::{Redactor, SharedRedactor};
-use crate::connection::pause::ProxyBoard;
-use crate::connection::proxy::{self, Proxies};
 use crate::tokens::TokenCells;
 use crate::upstream;
 
@@ -199,10 +199,7 @@ fn assemble(
         })
         .collect();
     let http = upstream::client(registry.runtime().allow_private_endpoints);
-    let clients = crate::connection::clients::Clients::new(
-        registry.runtime().allow_private_endpoints,
-        proxies,
-    );
+    let clients = crate::connection::clients::Clients::new(registry.runtime().allow_private_endpoints, proxies);
     (
         EngineState {
             registry,
@@ -231,10 +228,15 @@ impl Engine {
 
     /// Opens the adapter store under the home and loads every harness's serving version. Fails
     /// when `adapters/` can be entered by other users. Blocking.
+    ///
+    /// The sandbox limits (`[adapters]` deadlines, `memory_mib`, `max_instances`) are read from the
+    /// current snapshot here and fixed from then on: a config reload while serving does not
+    /// resize the pool or change them.
     pub fn open_adapters(&self) -> Result<(), StateError> {
         let shared = self.shared_redactor.clone();
         let redact: nullrouter_adapters::loader::Redactor = Arc::new(move |s: &str| shared.redact(s).into_owned());
-        let loader = nullrouter_adapters::loader::Loader::open(self.home().path(), redact)
+        let limits = nullrouter_adapters::loader::Limits::from_settings(&self.snapshot().settings().adapters);
+        let loader = nullrouter_adapters::loader::Loader::open_with(self.home().path(), redact, limits)
             .map_err(|e| StateError::Adapters(e.to_string()))?;
         if self.adapters.set(loader).is_ok() {
             self.refresh_adapters();

@@ -164,3 +164,26 @@ fn a_second_load_reuses_the_compiled_module() {
     let (a, b) = (f.loader.handle(&f.name), f.loader.handle(&f.name));
     assert!(Arc::ptr_eq(&a.module.as_ref().unwrap().module, &b.module.as_ref().unwrap().module));
 }
+
+#[test]
+fn adapters_settings_reach_the_loader_limits() {
+    use nullrouter_adapters::loader::Limits;
+    use nullrouter_registry::schema::AdaptersSettings;
+    use std::time::Duration;
+
+    // The defaults in the config are the loader's built-in limits.
+    assert_eq!(Limits::from_settings(&AdaptersSettings::default()), Limits::default());
+
+    let settings = AdaptersSettings {
+        request_deadline_ms: 50,
+        event_deadline_ms: 5,
+        memory_mib: 8,
+        max_instances: 4,
+        ..AdaptersSettings::default()
+    };
+    let limits = Limits::from_settings(&settings);
+    assert_eq!(limits.memory_bytes, 8 << 20);
+    let home = tempfile::tempdir().unwrap();
+    let loader = Loader::open_with(home.path(), Arc::new(|s: &str| s.to_owned()), limits).expect("opens");
+    assert_eq!(loader.deadlines(), (Duration::from_millis(50), Duration::from_millis(5)));
+}

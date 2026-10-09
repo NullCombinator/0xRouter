@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use wasmtime::{ResourceLimiter, Store, Trap, UpdateDeadline};
 
 use crate::abi::{EXPORT_ALLOC, EXPORT_MEMORY, MAX_IO, unpack};
-use crate::engine::{MEMORY_LIMIT, SandboxEngine};
+use crate::engine::SandboxEngine;
 use crate::module::{LoadedModule, Redactor, State};
 
 /// Longest a module's table may grow to.
@@ -63,7 +63,7 @@ impl CallError {
 
 impl ResourceLimiter for State {
     fn memory_growing(&mut self, _current: usize, desired: usize, _maximum: Option<usize>) -> wasmtime::Result<bool> {
-        if desired > MEMORY_LIMIT {
+        if desired > self.memory_limit {
             // An error, not `false`: a refusal the module could ignore would let it carry on.
             self.memory_exceeded = true;
             wasmtime::bail!("memory limit");
@@ -109,7 +109,7 @@ pub async fn call(
         return Err(CallError::InputTooLarge);
     }
     let end = Instant::now() + deadline;
-    let mut store = Store::new(engine.engine(), State::new(redact, engine.enter()));
+    let mut store = Store::new(engine.engine(), State::new(redact, engine.enter(), engine.memory_limit()));
     store.limiter(|state| state);
     store.set_epoch_deadline(1);
     // Yielding with a new deadline alone would never stop a loop; this stops it at `end`.

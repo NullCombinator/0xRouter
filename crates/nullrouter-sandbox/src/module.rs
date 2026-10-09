@@ -38,6 +38,7 @@ pub const MAX_LOG_CALLS: u32 = 8;
 /// What one call runs against: the limiter's verdict and the log budget.
 pub struct State {
     pub(crate) memory_exceeded: bool,
+    pub(crate) memory_limit: usize,
     logs: u32,
     redact: Redactor,
     /// Counts this call's store while it exists.
@@ -45,8 +46,8 @@ pub struct State {
 }
 
 impl State {
-    pub(crate) fn new(redact: Redactor, live: crate::engine::LiveGuard) -> Self {
-        Self { memory_exceeded: false, logs: 0, redact, _live: live }
+    pub(crate) fn new(redact: Redactor, live: crate::engine::LiveGuard, memory_limit: usize) -> Self {
+        Self { memory_exceeded: false, memory_limit, logs: 0, redact, _live: live }
     }
 }
 

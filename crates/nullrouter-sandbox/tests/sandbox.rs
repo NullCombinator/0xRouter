@@ -214,6 +214,18 @@ async fn memory_grown_past_the_ceiling_returns_memory() {
 }
 
 #[tokio::test]
+async fn an_engine_built_with_a_smaller_limit_refuses_growth_the_default_allows() {
+    // 20 pages is 1.3 MB: over a 1 MiB limit, well within the default 64 MiB.
+    let grow = with_request("i32.const 20 memory.grow drop i64.const 0");
+    let small = SandboxEngine::with_memory_limit(4, 1 << 20).unwrap();
+    assert_eq!(small.memory_limit(), 1 << 20);
+    let m = loaded(&small, &grow);
+    let out = call(&small, &m, Entry::Request, b"{}", DEADLINE, plain()).await;
+    assert_eq!(out, Err(CallError::Memory));
+    assert_eq!(run(&grow, b"{}").await, Ok(None));
+}
+
+#[tokio::test]
 async fn a_trap_returns_trap() {
     let trap = with_request("unreachable");
     let err = run(&trap, b"{}").await.unwrap_err();

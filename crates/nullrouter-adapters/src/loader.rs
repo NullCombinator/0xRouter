@@ -101,17 +101,65 @@ pub enum OpenError {
     Sandbox(String),
 }
 
-/// How many module instances may run at once.
-const MAX_INSTANCES: u32 = 16;
+/// The sandbox's limits (`[adapters]` in config.toml). The `Default` is the built-in values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    pub request_deadline: Duration,
+    pub event_deadline: Duration,
+    /// Linear memory one call may use, in bytes.
+    pub memory_bytes: usize,
+    /// The pooling allocator's instance count.
+    pub max_instances: u32,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            request_deadline: REQUEST_DEADLINE,
+            event_deadline: EVENT_DEADLINE,
+            memory_bytes: nullrouter_sandbox::engine::DEFAULT_MEMORY_LIMIT,
+            max_instances: MAX_INSTANCES,
+        }
+    }
+}
+
+impl Limits {
+    /// The limits `[adapters]` sets.
+    pub fn from_settings(s: &nullrouter_registry::schema::AdaptersSettings) -> Self {
+        Self {
+            request_deadline: Duration::from_millis(u64::from(s.request_deadline_ms)),
+            event_deadline: Duration::from_millis(u64::from(s.event_deadline_ms)),
+            memory_bytes: (s.memory_mib as usize) << 20,
+            max_instances: s.max_instances,
+        }
+    }
+}
+
+/// How many module instances may run at once unless the config says otherwise.
+const MAX_INSTANCES: u32 = 64;
 
 impl Loader {
     /// Opens `$home/adapters` (creating it, or refusing one other users can enter) and starts the
     /// sandbox.
     pub fn open(home: &Path, redact: Redactor) -> Result<Loader, OpenError> {
+        Self::open_with(home, redact, Limits::default())
+    }
+
+    /// [`Loader::open`] with the given limits. They are fixed for the loader's life: a config
+    /// reload does not resize the pool or change the deadlines.
+    pub fn open_with(home: &Path, redact: Redactor, limits: Limits) -> Result<Loader, OpenError> {
         let store = Store::open(home)?;
         let alerts = Arc::new(AlertLog::open(&store));
-        let sandbox = SandboxEngine::new(MAX_INSTANCES).map_err(|e| OpenError::Sandbox(e.to_string()))?;
-        Ok(Self::new(store, alerts, Arc::new(sandbox), redact))
+        let sandbox = SandboxEngine::with_memory_limit(limits.max_instances, limits.memory_bytes)
+            .map_err(|e| OpenError::Sandbox(e.to_string()))?;
+        let loader = Self::new(store, alerts, Arc::new(sandbox), redact);
+        *loader.deadlines.lock().unwrap_or_else(|e| e.into_inner()) = (limits.request_deadline, limits.event_deadline);
+        Ok(loader)
+    }
+
+    /// The request/answer and event deadlines new handles get.
+    pub fn deadlines(&self) -> (Duration, Duration) {
+        *self.deadlines.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Calls that hold a sandbox instance right now.

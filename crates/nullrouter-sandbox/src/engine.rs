@@ -7,7 +7,7 @@ use std::time::Duration;
 use wasmtime::{Config, Engine, InstanceAllocationStrategy, PoolingAllocationConfig};
 
 /// Linear memory an adapter may use, in bytes (contracts/adapter-kit.md, Limits).
-pub const MEMORY_LIMIT: usize = 64 << 20;
+pub const DEFAULT_MEMORY_LIMIT: usize = 64 << 20;
 
 /// One epoch is one millisecond, so a deadline of N ms is N ticks.
 const TICK: Duration = Duration::from_millis(1);
@@ -23,6 +23,8 @@ pub struct SandboxEngine {
     stop: Arc<AtomicBool>,
     /// Calls whose store exists right now; see [`SandboxEngine::live_instances`].
     live: Arc<AtomicUsize>,
+    /// Linear memory one call may use, in bytes.
+    memory_limit: usize,
 }
 
 /// Counts one call's store in [`SandboxEngine::live_instances`] for as long as it lives. It sits
@@ -48,6 +50,11 @@ impl SandboxEngine {
     /// workspace builds wasmtime without its `threads` feature, so the proposal isn't compiled in
     /// and `Config::wasm_threads` doesn't exist.
     pub fn new(max_instances: u32) -> Result<Self, EngineError> {
+        Self::with_memory_limit(max_instances, DEFAULT_MEMORY_LIMIT)
+    }
+
+    /// Like [`SandboxEngine::new`], with each call's linear memory capped at `memory_limit` bytes.
+    pub fn with_memory_limit(max_instances: u32, memory_limit: usize) -> Result<Self, EngineError> {
         let mut config = Config::new();
         config.epoch_interruption(true).consume_fuel(false).wasm_relaxed_simd(false).wasm_multi_memory(false);
         let mut pool = PoolingAllocationConfig::default();
@@ -55,7 +62,7 @@ impl SandboxEngine {
             .total_memories(max_instances)
             .total_tables(max_instances)
             .total_stacks(max_instances)
-            .max_memory_size(MEMORY_LIMIT);
+            .max_memory_size(memory_limit);
         config.allocation_strategy(InstanceAllocationStrategy::Pooling(pool));
         let engine = Engine::new(&config).map_err(|e| EngineError(e.to_string()))?;
 
@@ -70,7 +77,12 @@ impl SandboxEngine {
                 }
             })
             .map_err(|e| EngineError(e.to_string()))?;
-        Ok(Self { engine, stop, live: Arc::new(AtomicUsize::new(0)) })
+        Ok(Self { engine, stop, live: Arc::new(AtomicUsize::new(0)), memory_limit })
+    }
+
+    /// Linear memory one call may use, in bytes.
+    pub fn memory_limit(&self) -> usize {
+        self.memory_limit
     }
 
     pub fn engine(&self) -> &Engine {
