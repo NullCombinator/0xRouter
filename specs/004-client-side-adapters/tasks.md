@@ -739,7 +739,7 @@ serves before approval, and an operator with no adapters needs none of it.
       elements or encoding more than 128 bytes.
   - Collect every reason, and sort them by file and line.
   - Make T049 pass.
-- [ ] T057 [US2] The scrambler in `crates/nullrouter-adapters/src/scramble.rs`, per
+- [X] T057 [US2] The scrambler in `crates/nullrouter-adapters/src/scramble.rs`, per
   [R10](research.md#r10-review-pipeline).
   - Pass 1 collects the definitions.
   - Pass 2 is a `VisitMut` that renames defined identifiers to `v1…vN` in first-seen order,
