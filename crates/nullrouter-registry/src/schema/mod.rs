@@ -25,7 +25,7 @@ mod transport;
 pub use capability::{CapabilitySection, ModelRoute, SectionEndpoint, SectionLimits, SectionModel};
 pub use config::{
     BROKEN_RETEST_ON, ComboDecl, ConnectionSettings, DashboardSettings, Decision, GlobalConnection, MAX_TIMEOUT_MS,
-    MemberDecl, ModelConnection, ModelSettings, OperatorConfig, PipelineSettings, ProviderSettings, RetrySettings,
+    MemberDecl, MeterOverride, ModelConnection, ModelSettings, OperatorConfig, PipelineSettings, ProviderSettings, RetrySettings,
     RoutingSettings, ServerSettings, TEST_TYPES, TestSettings, TestTimeouts, UnifiedModelDecl, check_timeout_ms,
     parse_broken_retest,
 };

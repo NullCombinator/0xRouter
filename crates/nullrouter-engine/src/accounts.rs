@@ -12,8 +12,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use indexmap::IndexMap;
 use nullrouter_registry::schema::{
-    Percent, check_capacity, check_length, check_lifetime, check_price_value, check_reserve, parse_duration,
+    PartialTokenWeights, Percent, check_capacity, check_length, check_lifetime, check_multiplier, check_price_value,
+    check_reserve, check_weight, check_weights_unit, parse_duration,
 };
 use nullrouter_registry::{ProviderEntity, Registry, SecretString};
 use reqwest::Url;
@@ -75,11 +77,15 @@ pub struct PriceOverride {
     pub cache_write: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct WindowOverride {
     pub capacity: Option<f64>,
     pub length: Option<Duration>,
     pub reserve: Option<Percent>,
+    /// Replaces the declared weights of the classes set (a `requests` window has none).
+    pub token_weights: Option<PartialTokenWeights>,
+    /// Model glob → factor. Each glob must be one the window's declaration has.
+    pub model_multiplier: IndexMap<String, f64>,
 }
 
 impl RoutingOverrides {
@@ -124,6 +130,16 @@ impl RoutingOverrides {
             if let Some(r) = w.reserve {
                 note(&format!("window.{name}.reserve"), check_reserve(r));
             }
+            if let Some(tw) = &w.token_weights {
+                for (k, v) in tw.classes() {
+                    if let Some(v) = v {
+                        note(&format!("window.{name}.token_weights"), check_weight(k, v));
+                    }
+                }
+            }
+            for (glob, f) in &w.model_multiplier {
+                note(&format!("window.{name}.model_multiplier"), check_multiplier(glob, *f));
+            }
         }
         found.into_iter().next()
     }
@@ -131,6 +147,27 @@ impl RoutingOverrides {
     /// Names of overridden windows that the provider's declaration doesn't have.
     pub fn unknown_windows<'a>(&'a self, declared: &[nullrouter_registry::schema::MeterDecl]) -> Vec<&'a str> {
         self.window.keys().filter(|n| !declared.iter().any(|d| d.name == **n)).map(String::as_str).collect()
+    }
+
+    /// The first refusal that needs the provider's declared windows: `token_weights` on a window
+    /// whose unit isn't `weighted_tokens`, or a `model_multiplier` glob the window doesn't declare.
+    /// Worded as the gate words the plugin's own declaration. Overridden windows the declaration
+    /// doesn't have are left to [`Self::unknown_windows`].
+    pub fn meter_problem(&self, provider: &str, declared: &[nullrouter_registry::schema::MeterDecl]) -> Option<String> {
+        for (name, w) in &self.window {
+            let Some(d) = declared.iter().find(|d| d.name == *name) else { continue };
+            if w.token_weights.is_some()
+                && let Err(e) = check_weights_unit(d.unit)
+            {
+                return Some(format!("window.{name}.token_weights: {e}"));
+            }
+            if let Some(glob) = w.model_multiplier.keys().find(|g| !d.model_multiplier.contains_key(*g)) {
+                return Some(format!(
+                    "window.{name}.model_multiplier: {provider} declares no glob {glob:?} for window {name}"
+                ));
+            }
+        }
+        None
     }
 }
 
@@ -338,6 +375,10 @@ struct RawWindow {
     length: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reserve: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    token_weights: Option<PartialTokenWeights>,
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    model_multiplier: IndexMap<String, f64>,
 }
 
 impl RawRouting {
@@ -353,6 +394,8 @@ impl RawRouting {
                     capacity: w.capacity,
                     length: w.length.as_deref().map(|v| duration(&at("length"), v)).transpose()?,
                     reserve: w.reserve.as_deref().map(|v| percent(&at("reserve"), v)).transpose()?,
+                    token_weights: w.token_weights,
+                    model_multiplier: w.model_multiplier,
                 },
             );
         }
@@ -390,6 +433,8 @@ impl RawRouting {
                         capacity: w.capacity,
                         length: w.length.map(format_duration),
                         reserve: w.reserve.map(|p| p.to_string()),
+                        token_weights: w.token_weights,
+                        model_multiplier: w.model_multiplier.clone(),
                     };
                     (n.clone(), raw)
                 })
@@ -666,6 +711,10 @@ impl Accounts {
                         a.provider, a.name, a.provider
                     ),
                 ));
+            }
+            if let Some(problem) = a.routing.meter_problem(&a.provider, declared.windows) {
+                let who = format!("account {}/{}", a.provider, a.name);
+                return Err(FileError::invalid(&self.path, format!("{who}: routing.{problem}")));
             }
         }
         Ok(())
@@ -982,7 +1031,7 @@ kind = "signin"
         assert_eq!(max.routing.cache_lifetime, Some(Duration::from_secs(3600)));
         assert_eq!(max.routing.reserve, Some(Percent(10.0)));
         assert_eq!(max.routing.price.unwrap().output, Some(15.0));
-        let w = max.routing.window["5-hour"];
+        let w = &max.routing.window["5-hour"];
         assert_eq!(
             (w.capacity, w.length, w.reserve),
             (Some(12_000_000.0), Some(Duration::from_secs(5 * 3600)), Some(Percent(8.0)))
@@ -1019,6 +1068,84 @@ kind = "signin"
         }
         let one = "schema = 1\n[[account]]\nprovider=\"x\"\nname=\"m\"\nsecret=\"sk-0000000000\"\npriority = 2\n";
         assert!(Accounts::parse(one, p, |_| None).unwrap_err().to_string().contains("need schema 2"));
+    }
+
+    const WEIGHTS: &str = r#"
+schema = 2
+[[account]]
+provider = "anthropic"
+name = "max"
+kind = "signin"
+[account.routing]
+window."5-hour" = { token_weights = { output = 15.0 }, model_multiplier = { "claude-opus-*" = 1.5 } }
+"#;
+
+    #[test]
+    fn window_weights_and_multipliers_parse_and_round_trip() {
+        let p = Path::new("accounts.toml");
+        let a = Accounts::parse(WEIGHTS, p, |_| None).unwrap();
+        let routing = &a.get("anthropic", "max").unwrap().routing;
+        let w = &routing.window["5-hour"];
+        assert_eq!(w.token_weights, Some(PartialTokenWeights { output: Some(15.0), ..Default::default() }));
+        assert_eq!(w.model_multiplier.get("claude-opus-*"), Some(&1.5));
+        let b = Accounts::parse(&a.to_toml(), p, |_| None).unwrap();
+        assert_eq!(&b.get("anthropic", "max").unwrap().routing, routing);
+    }
+
+    #[test]
+    fn window_weight_value_refusals_use_the_gate_wording() {
+        let p = Path::new("accounts.toml");
+        let head = "schema = 2\n[[account]]\nprovider=\"x\"\nname=\"m\"\nkind=\"signin\"\n[account.routing]\n";
+        let cases = [
+            ("window.w = { token_weights = { output = -1.0 } }\n", "window.w.token_weights: output must be 0 or more"),
+            (
+                "window.w = { model_multiplier = { \"big-*\" = 0.0 } }\n",
+                "window.w.model_multiplier: \"big-*\": a factor must be more than 0",
+            ),
+            ("window.w = { token_weights = { thinking = 2.0 } }\n", "unknown field"),
+        ];
+        for (tail, want) in cases {
+            let err = Accounts::parse(&format!("{head}{tail}"), p, |_| None).unwrap_err().to_string();
+            assert!(err.contains(want), "{want}: {err}");
+        }
+    }
+
+    #[test]
+    fn window_weights_refused_on_requests_and_undeclared_globs() {
+        use nullrouter_registry::schema::RoutingDecl;
+        let p = Path::new("accounts.toml");
+        let declared = toml::from_str::<RoutingDecl>(
+            "[[window]]\nname = \"5-hour\"\nlength = \"5h\"\nunit = \"weighted_tokens\"\n\
+             model_multiplier = { \"claude-*\" = 2.0 }\n\n[[window]]\nname = \"per-minute\"\nlength = \"1m\"\n\
+             unit = \"requests\"\n",
+        )
+        .unwrap()
+        .window;
+
+        // The glob `claude-opus-*` is not one the window declares (`claude-*` is).
+        let a = Accounts::parse(WEIGHTS, p, |_| None).unwrap();
+        let r = &a.get("anthropic", "max").unwrap().routing;
+        assert_eq!(
+            r.meter_problem("anthropic", &declared).as_deref(),
+            Some("window.5-hour.model_multiplier: anthropic declares no glob \"claude-opus-*\" for window 5-hour"),
+        );
+
+        // Token weights on a requests window.
+        let text = "schema = 2\n[[account]]\nprovider=\"anthropic\"\nname=\"max\"\nkind=\"signin\"\n\
+                    [account.routing]\nwindow.\"per-minute\" = { token_weights = { output = 15.0 } }\n";
+        let b = Accounts::parse(text, p, |_| None).unwrap();
+        let r = &b.get("anthropic", "max").unwrap().routing;
+        assert_eq!(
+            r.meter_problem("anthropic", &declared).as_deref(),
+            Some("window.per-minute.token_weights: only applies to unit \"weighted_tokens\""),
+        );
+
+        // A declared glob on a weighted window is accepted.
+        let text = "schema = 2\n[[account]]\nprovider=\"anthropic\"\nname=\"max\"\nkind=\"signin\"\n\
+                    [account.routing]\nwindow.\"5-hour\" = { token_weights = { output = 15.0 }, \
+                    model_multiplier = { \"claude-*\" = 1.5 } }\n";
+        let c = Accounts::parse(text, p, |_| None).unwrap();
+        assert_eq!(c.get("anthropic", "max").unwrap().routing.meter_problem("anthropic", &declared), None);
     }
 
     #[test]

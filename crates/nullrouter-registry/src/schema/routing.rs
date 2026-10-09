@@ -144,6 +144,33 @@ impl Default for TokenWeights {
     }
 }
 
+/// `token_weights` in an operator's account override: each class is optional, and a class that
+/// is absent keeps the declared weight.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartialTokenWeights {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<f64>,
+}
+
+impl PartialTokenWeights {
+    /// The four classes in `TokenClass` order, each with its value when one is set.
+    pub fn classes(&self) -> [(&'static str, Option<f64>); 4] {
+        [
+            ("input", self.input),
+            ("output", self.output),
+            ("cache_read", self.cache_read),
+            ("cache_write", self.cache_write),
+        ]
+    }
+}
+
 /// One `[[routing.window]]`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -343,6 +370,21 @@ pub fn check_price_value(v: f64) -> Result<(), String> {
     if v.is_finite() && v >= 0.0 { Ok(()) } else { Err("a price must be 0 or more".into()) }
 }
 
+/// One `token_weights` class (`class` names it in the wording): 0 or more.
+pub fn check_weight(class: &str, v: f64) -> Result<(), String> {
+    if v.is_finite() && v >= 0.0 { Ok(()) } else { Err(format!("{class} must be 0 or more")) }
+}
+
+/// `token_weights` only applies to `weighted_tokens`.
+pub fn check_weights_unit(unit: MeterUnit) -> Result<(), String> {
+    if unit == MeterUnit::WeightedTokens { Ok(()) } else { Err("only applies to unit \"weighted_tokens\"".into()) }
+}
+
+/// A `model_multiplier` factor: more than 0. `glob` names it in the wording.
+pub fn check_multiplier(glob: &str, f: f64) -> Result<(), String> {
+    if f.is_finite() && f > 0.0 { Ok(()) } else { Err(format!("{glob:?}: a factor must be more than 0")) }
+}
+
 impl CacheDecl {
     /// The rules for one `[routing.cache]`: `(key, rule)` per broken rule.
     pub fn problems(&self) -> Vec<(&'static str, String)> {
@@ -373,24 +415,23 @@ impl MeterDecl {
             out.push(("capacity", e));
         }
         if let Some(w) = &self.token_weights {
-            if self.unit != MeterUnit::WeightedTokens {
-                out.push(("token_weights", "only applies to unit \"weighted_tokens\"".into()));
+            if let Err(e) = check_weights_unit(self.unit) {
+                out.push(("token_weights", e));
             }
-            let all = [
+            for (k, v) in [
                 ("input", w.input),
                 ("output", w.output),
                 ("cache_read", w.cache_read),
                 ("cache_write", w.cache_write),
-            ];
-            for (k, v) in all {
-                if !v.is_finite() || v < 0.0 {
-                    out.push(("token_weights", format!("{k} must be 0 or more")));
+            ] {
+                if let Err(e) = check_weight(k, v) {
+                    out.push(("token_weights", e));
                 }
             }
         }
         for (glob, f) in &self.model_multiplier {
-            if !f.is_finite() || *f <= 0.0 {
-                out.push(("model_multiplier", format!("{glob:?}: a factor must be more than 0")));
+            if let Err(e) = check_multiplier(glob, *f) {
+                out.push(("model_multiplier", e));
             }
         }
         if let Some(Err(e)) = self.reserve.map(check_reserve) {

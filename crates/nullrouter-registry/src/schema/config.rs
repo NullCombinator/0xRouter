@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde::de::{Deserializer, Error as _};
 
@@ -10,6 +11,7 @@ use super::duration::{de_duration, parse_duration};
 use super::endpoint::RetryOverride;
 use super::enums::ModelKind;
 use super::primitives::BreakBehaviour;
+use super::routing::PartialTokenWeights;
 use crate::validate::FieldPath;
 
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
@@ -420,7 +422,7 @@ pub struct MemberDecl {
 }
 
 /// Operator settings for one provider. Keyed by provider id, so they survive a replace.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderSettings {
     #[serde(default = "yes")]
@@ -433,6 +435,10 @@ pub struct ProviderSettings {
     /// Model id → that model's settings.
     #[serde(default)]
     pub model: BTreeMap<String, ModelSettings>,
+    /// `[provider.P.meter."<window>"]`: plugin-level token weights and model multipliers for one
+    /// window, applied to every account of the plugin (spec 012, FR-019).
+    #[serde(default)]
+    pub meter: BTreeMap<String, MeterOverride>,
 }
 
 impl Default for ProviderSettings {
@@ -442,7 +448,41 @@ impl Default for ProviderSettings {
             connection: ConnectionSettings::default(),
             retry: RetrySettings::default(),
             model: BTreeMap::new(),
+            meter: BTreeMap::new(),
         }
+    }
+}
+
+/// `[provider.P.meter."<window>"]`: the weights and multipliers an operator sets for a whole
+/// plugin. Capacity has no plugin-level override: it is per account, so a `capacity` key is
+/// refused where it is read.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MeterOverride {
+    pub token_weights: Option<PartialTokenWeights>,
+    /// Glob → factor. Each glob must be one the plugin's meter declares; checked at load.
+    pub model_multiplier: IndexMap<String, f64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)] // `capacity` is refused by its deserializer; a value is never kept.
+struct RawMeterOverride {
+    #[serde(default, deserialize_with = "refuse_capacity")]
+    capacity: Option<()>,
+    #[serde(default)]
+    token_weights: Option<PartialTokenWeights>,
+    #[serde(default)]
+    model_multiplier: IndexMap<String, f64>,
+}
+
+fn refuse_capacity<'de, D: Deserializer<'de>>(_: D) -> Result<Option<()>, D::Error> {
+    Err(D::Error::custom("capacity is per account; set it with routing set <provider> <account>"))
+}
+
+impl<'de> Deserialize<'de> for MeterOverride {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = RawMeterOverride::deserialize(d)?;
+        Ok(Self { token_weights: raw.token_weights, model_multiplier: raw.model_multiplier })
     }
 }
 
@@ -567,5 +607,30 @@ mod tests {
         let err =
             toml::from_str::<OperatorConfig>("[pipeline]\nbreak_behaviour = \"retry\"\n").unwrap_err().to_string();
         assert!(err.contains("unknown break behaviour \"retry\""), "{err}");
+    }
+
+    #[test]
+    fn meter_overrides() {
+        let c: OperatorConfig = toml::from_str(
+            "[provider.anthropic.meter.\"5-hour\"]\ntoken_weights = { output = 15.0 }\nmodel_multiplier = { \"claude-opus-*\" = 1.5 }\n",
+        )
+        .unwrap();
+        let m = &c.provider["anthropic"].meter["5-hour"];
+        let w = m.token_weights.expect("weights");
+        assert_eq!((w.input, w.output, w.cache_read, w.cache_write), (None, Some(15.0), None, None));
+        assert_eq!(m.model_multiplier["claude-opus-*"], 1.5);
+        let c: OperatorConfig = toml::from_str("[provider.anthropic.meter.\"weekly\"]\n").unwrap();
+        assert_eq!(c.provider["anthropic"].meter["weekly"], MeterOverride::default());
+        let err = toml::from_str::<OperatorConfig>("[provider.anthropic.meter.\"5-hour\"]\ncapacity = 12000000\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("capacity is per account; set it with routing set <provider> <account>"), "{err}");
+        let err = toml::from_str::<OperatorConfig>("[provider.anthropic.meter.\"5-hour\"]\nthinking = 2.0\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("thinking"), "{err}");
+        let bad = "[provider.anthropic.meter.\"5-hour\"]\ntoken_weights = { thinking = 2.0 }\n";
+        let err = toml::from_str::<OperatorConfig>(bad).unwrap_err().to_string();
+        assert!(err.contains("thinking"), "{err}");
     }
 }

@@ -20,8 +20,8 @@ use crate::fit::{self, FitVerdict};
 use crate::logo::{self, Logo};
 use crate::registry::{Registry, RuntimeSettings, UnifiedMember, UnifiedModel, token_clashes, token_path};
 use crate::schema::{
-    Decision, Model, ModelType, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings, RoutingSettings,
-    StyleFile,
+    Decision, MeterDecl, Model, ModelType, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings,
+    RoutingSettings, StyleFile, check_multiplier, check_weights_unit,
 };
 use crate::validate::gate::{parse, positioned};
 use crate::validate::{
@@ -666,6 +666,49 @@ pub(crate) struct ConfigOutcome {
     pub(crate) amortization_for: BTreeMap<String, Duration>,
 }
 
+/// `[provider.P.meter."<window>"]` against the plugin's own meters (spec 012, FR-019): the window
+/// must be one the plugin declares, token weights only on a `weighted_tokens` window, each weight
+/// and factor in range, and each multiplier glob one the plugin declares for that window.
+fn check_meter(
+    provider: &ProviderEntity,
+    token: &str,
+    s: &ProviderSettings,
+    err: &mut impl FnMut(FieldPath, String),
+) {
+    let declared: &[MeterDecl] = match &provider.routing {
+        Some(r) => &r.window,
+        None => &[],
+    };
+    for (window, o) in &s.meter {
+        let at = FieldPath::of("provider").key(token).key("meter").key(window.as_str());
+        let Some(m) = declared.iter().find(|m| m.name == *window) else {
+            err(at, format!("{} declares no window with that name", provider.id));
+            continue;
+        };
+        if let Some(w) = o.token_weights {
+            let classes = [
+                ("input", w.input),
+                ("output", w.output),
+                ("cache_read", w.cache_read),
+                ("cache_write", w.cache_write),
+            ];
+            if let Err(e) = check_weights_unit(m.unit) {
+                err(at.key("token_weights"), e);
+            } else if let Some((k, _)) = classes.iter().find(|(_, v)| v.is_some_and(|v| !v.is_finite() || v < 0.0)) {
+                err(at.key("token_weights"), format!("{k} must be 0 or more"));
+            }
+        }
+        for (glob, f) in &o.model_multiplier {
+            if !m.model_multiplier.contains_key(glob) {
+                let rule = format!("{} declares no glob {glob:?} for window {window}", provider.id);
+                err(at.key("model_multiplier"), rule);
+            } else if let Err(e) = check_multiplier(glob, *f) {
+                err(at.key("model_multiplier"), e);
+            }
+        }
+    }
+}
+
 /// Checks `config` against the candidate provider set `reg`. Startup and reload both
 /// call this. At startup (only), a unified model whose member names a skipped user
 /// plugin is dropped instead of failing the load.
@@ -763,6 +806,7 @@ pub(crate) fn validate_config(
     for (token, s) in &config.provider {
         match reg.index_of(token) {
             Some(p) => {
+                check_meter(&reg.providers[p], token, s, &mut err);
                 settings.insert(reg.providers[p].id.clone(), s.clone());
             }
             None if excused(token) => {}
