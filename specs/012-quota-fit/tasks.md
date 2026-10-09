@@ -139,15 +139,15 @@ priority").
 ### Tests for US4
 
 - [X] T039 [P] [US4] In `crates/nullrouter-engine/src/accounts.rs` tests, cover parsing and refusal of `window."<name>" = { token_weights = { output = 15.0 }, model_multiplier = { "claude-opus-*" = 1.5 } }`: refusals use the plugin gate's wording, a glob the plugin doesn't declare is refused, and token weights on a `requests` window are refused (Story 4 scenario 4)
-- [X] T040 [P] [US4] In `crates/nullrouter-registry/src/schema/config.rs` tests, cover `[provider.<id>.meter."<window>"]` with `token_weights` and `model_multiplier` accepted, and `capacity` refused with `capacity is per account; set it with routing set <provider> <account>` (contracts/state-files.md § config.toml)
+- [X] T040 [P] [US4] In `crates/nullrouter-registry/src/schema/config.rs` tests, cover `[provider.<id>.meter."<window>"]` with `token_weights` and `model_multiplier` accepted, and `capacity` refused with `capacity is per account; use routing set <provider> <account>` (contracts/state-files.md § config.toml)
 - [ ] T041 [P] [US4] In `crates/nullrouter-engine/tests/sim_week.rs`, override `weight.output` on the 3×-off mock before significance and after it. Routing uses the override both times, and the view shows `source: account_override` with the fit range. After removing the override, the fit (if significant) or the declaration is used. A multiplier override applies only to matching models. A plugin-level override applies to every account except one with its own account override (Story 4 scenarios 1–3, 5; FR-020)
 
 ### Implementation for US4
 
 - [X] T042 [US4] Extend `WindowOverride` in `crates/nullrouter-engine/src/accounts.rs` with `token_weights: Option<PartialTokenWeights>` (each class optional) and `model_multiplier: IndexMap<String, f64>`. Parse and write them in `[account.routing] window."<name>"`, and check them in `RoutingOverrides::problem` with the registry's weight and multiplier rules (export them from `crates/nullrouter-registry/src/schema/routing.rs` if needed)
 - [X] T043 [US4] Add `meter: BTreeMap<String, MeterOverride>` to `ProviderSettings` in `crates/nullrouter-registry/src/schema/config.rs`, with `MeterOverride { token_weights, model_multiplier }` and no capacity. Validate it against the plugin's declared windows and globs at load, and report errors as `config.toml:L:C provider.<id>.meter."<window>".<field>: <rule>`
-- [ ] T044 [US4] Pass plugin and account overrides into `in_effect` from `EngineState::rebuild_meters` (`crates/nullrouter-engine/src/state.rs`), and rebuild on reload, so the next placement uses a new override (Story 4 scenario 1)
-- [ ] T045 [US4] In `crates/nullrouter-cli/src/cmd/routing.rs`, accept `window.<name>.weight.<class>=V` and `window.<name>.multiplier.<glob>=V` in `routing set`/`unset`. Add `routing set-plugin <provider> KEY=VALUE…` and `routing unset-plugin <provider> KEY…`, which write `config.toml` through the existing config writer; `set-plugin … capacity` is refused with the contract's text (contracts/cli.md § Overrides)
+- [X] T044 [US4] Pass plugin and account overrides into `in_effect` from `EngineState::rebuild_meters` (`crates/nullrouter-engine/src/state.rs`), and rebuild on reload, so the next placement uses a new override (Story 4 scenario 1)
+- [X] T045 [US4] In `crates/nullrouter-cli/src/cmd/routing.rs`, accept `window.<name>.weight.<class>=V` and `window.<name>.multiplier.<glob>=V` in `routing set`/`unset`. Add `routing set-plugin <provider> KEY=VALUE…` and `routing unset-plugin <provider> KEY…`, which write `config.toml` through the existing config writer; `set-plugin … capacity` is refused with the contract's text (contracts/cli.md § Overrides)
 
 **Checkpoint**: Overrides at both levels win, and the fit keeps learning underneath.
 

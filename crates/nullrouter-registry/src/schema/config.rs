@@ -476,7 +476,7 @@ struct RawMeterOverride {
 }
 
 fn refuse_capacity<'de, D: Deserializer<'de>>(_: D) -> Result<Option<()>, D::Error> {
-    Err(D::Error::custom("capacity is per account; set it with routing set <provider> <account>"))
+    Err(D::Error::custom("capacity is per account; use routing set <provider> <account>"))
 }
 
 impl<'de> Deserialize<'de> for MeterOverride {
@@ -624,7 +624,7 @@ mod tests {
         let err = toml::from_str::<OperatorConfig>("[provider.anthropic.meter.\"5-hour\"]\ncapacity = 12000000\n")
             .unwrap_err()
             .to_string();
-        assert!(err.contains("capacity is per account; set it with routing set <provider> <account>"), "{err}");
+        assert!(err.contains("capacity is per account; use routing set <provider> <account>"), "{err}");
         let err = toml::from_str::<OperatorConfig>("[provider.anthropic.meter.\"5-hour\"]\nthinking = 2.0\n")
             .unwrap_err()
             .to_string();

@@ -159,11 +159,11 @@ impl RoutingOverrides {
             if w.token_weights.is_some()
                 && let Err(e) = check_weights_unit(d.unit)
             {
-                return Some(format!("window.{name}.token_weights: {e}"));
+                return Some(format!("routing.window.{name}.token_weights: {e}"));
             }
             if let Some(glob) = w.model_multiplier.keys().find(|g| !d.model_multiplier.contains_key(*g)) {
                 return Some(format!(
-                    "window.{name}.model_multiplier: {provider} declares no glob {glob:?} for window {name}"
+                    "routing.window.{name}.model_multiplier: {provider} declares no glob {glob:?} for window {name}"
                 ));
             }
         }
@@ -714,7 +714,7 @@ impl Accounts {
             }
             if let Some(problem) = a.routing.meter_problem(&a.provider, declared.windows) {
                 let who = format!("account {}/{}", a.provider, a.name);
-                return Err(FileError::invalid(&self.path, format!("{who}: routing.{problem}")));
+                return Err(FileError::invalid(&self.path, format!("{who}: {problem}")));
             }
         }
         Ok(())
@@ -1127,7 +1127,7 @@ window."5-hour" = { token_weights = { output = 15.0 }, model_multiplier = { "cla
         let r = &a.get("anthropic", "max").unwrap().routing;
         assert_eq!(
             r.meter_problem("anthropic", &declared).as_deref(),
-            Some("window.5-hour.model_multiplier: anthropic declares no glob \"claude-opus-*\" for window 5-hour"),
+            Some("routing.window.5-hour.model_multiplier: anthropic declares no glob \"claude-opus-*\" for window 5-hour"),
         );
 
         // Token weights on a requests window.
@@ -1137,7 +1137,7 @@ window."5-hour" = { token_weights = { output = 15.0 }, model_multiplier = { "cla
         let r = &b.get("anthropic", "max").unwrap().routing;
         assert_eq!(
             r.meter_problem("anthropic", &declared).as_deref(),
-            Some("window.per-minute.token_weights: only applies to unit \"weighted_tokens\""),
+            Some("routing.window.per-minute.token_weights: only applies to unit \"weighted_tokens\""),
         );
 
         // A declared glob on a weighted window is accepted.

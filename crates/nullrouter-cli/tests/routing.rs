@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use nullrouter_engine::accounts::{self, Accounts};
 use nullrouter_engine::testkit::{MockUpstream, Step};
-use nullrouter_registry::schema::OperatorConfig;
+use nullrouter_registry::schema::{OperatorConfig, PartialTokenWeights};
 use serde_json::{Value, json};
 
 const SECRET: &str = "sk-routing-SENTINEL-0050";
@@ -195,6 +195,96 @@ fn the_view_needs_a_server() {
     let o = nr(dir.path(), &["routing"]);
     assert_eq!(o.status.code(), Some(4), "{}", text(&o));
     assert!(text(&o).contains("no server is running"), "{}", text(&o));
+}
+
+/// A plugin whose `5-hour` window is weighted and declares the glob `claude-*`, and whose
+/// `per-minute` window counts requests.
+fn gamma(home: &Path) {
+    std::fs::create_dir_all(home.join("plugins")).unwrap();
+    std::fs::write(
+        home.join("plugins/gamma.toml"),
+        "schema = 2\nid = \"gamma\"\ncategory = \"apikey\"\n[auth]\nkind = \"apikey\"\n\
+         [endpoints.text]\nurl = \"https://gamma.example/v1/chat/completions\"\nwire = \"openai-chat\"\n\
+         [[models]]\nid = \"m1\"\n[[routing.window]]\nname = \"5-hour\"\nlength = \"5h\"\n\
+         unit = \"weighted_tokens\"\nmodel_multiplier = { \"claude-*\" = 2.0 }\n\
+         [[routing.window]]\nname = \"per-minute\"\nlength = \"1m\"\nunit = \"requests\"\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_weight_and_a_multiplier_round_trip_through_accounts_toml() {
+    let dir = tempfile::tempdir().unwrap();
+    gamma(dir.path());
+    ok(dir.path(), &["accounts", "add", "gamma", "key"]);
+    let out = ok(
+        dir.path(),
+        &["routing", "set", "gamma", "key", "window.5-hour.weight.output=15", "window.5-hour.multiplier.claude-*=1.5"],
+    );
+    assert!(out.contains("saved; applies at next start"), "{out}");
+    let r = load(dir.path()).get("gamma", "key").unwrap().routing.clone();
+    let w = &r.window["5-hour"];
+    assert_eq!(w.token_weights, Some(PartialTokenWeights { output: Some(15.0), ..Default::default() }));
+    assert_eq!(w.model_multiplier.get("claude-*"), Some(&1.5));
+
+    // Refusals say why and change nothing: a request window has no weights, a glob must be
+    // declared, and a class must be one of the four.
+    let before = std::fs::read(dir.path().join(accounts::FILE)).unwrap();
+    let msg = refused(dir.path(), &["routing", "set", "gamma", "key", "window.per-minute.weight.output=2"]);
+    assert!(msg.contains("only applies to unit \"weighted_tokens\""), "{msg}");
+    let msg = refused(dir.path(), &["routing", "set", "gamma", "key", "window.5-hour.multiplier.claude-opus-*=2"]);
+    assert!(msg.contains("declares no glob"), "{msg}");
+    let msg = refused(dir.path(), &["routing", "set", "gamma", "key", "window.5-hour.weight.thinking=2"]);
+    assert!(msg.contains("unknown weight class"), "{msg}");
+    assert_eq!(std::fs::read(dir.path().join(accounts::FILE)).unwrap(), before);
+
+    ok(dir.path(), &["routing", "unset", "gamma", "key", "window.5-hour.weight.output"]);
+    let r = load(dir.path()).get("gamma", "key").unwrap().routing.clone();
+    assert!(r.window["5-hour"].token_weights.is_none());
+    assert_eq!(r.window["5-hour"].model_multiplier.get("claude-*"), Some(&1.5));
+    ok(dir.path(), &["routing", "unset", "gamma", "key", "window.5-hour.multiplier.claude-*"]);
+    assert!(load(dir.path()).get("gamma", "key").unwrap().routing.is_empty());
+}
+
+#[test]
+fn set_plugin_writes_the_meter_table_and_unset_plugin_takes_it_out() {
+    let dir = home();
+    let out = ok(dir.path(), &["routing", "set-plugin", "anthropic", "window.5-hour.weight.output=15"]);
+    assert!(out.contains("saved; applies at next start"), "{out}");
+    let text = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert!(text.contains("[provider.anthropic.meter.\"5-hour\"]"), "{text}");
+    let c = config(dir.path());
+    let m = &c.provider["anthropic"].meter["5-hour"];
+    assert_eq!(m.token_weights, Some(PartialTokenWeights { output: Some(15.0), ..Default::default() }));
+
+    ok(dir.path(), &["routing", "unset-plugin", "anthropic", "window.5-hour.weight.output"]);
+    let text = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert!(!text.contains("meter"), "{text}");
+
+    // Capacity is per account: refused with the contract's text, and the file is left alone.
+    let msg = refused(dir.path(), &["routing", "set-plugin", "anthropic", "window.5-hour.capacity=12000000"]);
+    assert!(msg.contains("capacity is per account; use routing set <provider> <account>"), "{msg}");
+    assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), text);
+}
+
+#[test]
+fn set_plugin_takes_a_declared_multiplier_and_refuses_the_rest() {
+    let dir = tempfile::tempdir().unwrap();
+    gamma(dir.path());
+    ok(dir.path(), &["routing", "set-plugin", "gamma", "window.5-hour.multiplier.claude-*=1.5"]);
+    let text = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert!(text.contains("[provider.gamma.meter.\"5-hour\"]"), "{text}");
+    assert!(text.contains("model_multiplier = { \"claude-*\" = 1.5 }"), "{text}");
+
+    let msg = refused(dir.path(), &["routing", "set-plugin", "gamma", "window.5-hour.multiplier.claude-opus-*=1.5"]);
+    assert!(msg.contains("gamma declares no glob \"claude-opus-*\" for window 5-hour"), "{msg}");
+    let msg = refused(dir.path(), &["routing", "set-plugin", "gamma", "window.per-minute.weight.output=2"]);
+    assert!(msg.contains("only applies to unit \"weighted_tokens\""), "{msg}");
+    let msg = refused(dir.path(), &["routing", "set-plugin", "gamma", "window.nope.weight.output=2"]);
+    assert!(msg.contains("declares no window with that name"), "{msg}");
+    let msg = refused(dir.path(), &["routing", "set-plugin", "nobody", "window.5-hour.weight.output=2"]);
+    assert!(msg.contains("no provider \"nobody\""), "{msg}");
+    assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), text);
 }
 
 // ---- against a running server ----
