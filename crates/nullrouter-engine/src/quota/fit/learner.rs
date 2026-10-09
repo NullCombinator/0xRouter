@@ -23,6 +23,7 @@ use arc_swap::ArcSwap;
 use nullrouter_registry::schema::{MeterDecl, MeterUnit, QuotaUnit, TokenWeights, glob_match};
 
 use super::classify::{self, Inseparable, is_evidence, reclassify_epoch, separability};
+use super::outside;
 use super::model::{self, Fit, Kind, P, Spec, Theta};
 use super::rows::{Class, Row, rows_from};
 use super::split::{self, test_splits};
@@ -236,7 +237,7 @@ impl Learner {
         self.load_store(home, provider);
         let declared = entity.routing().windows;
         for meter in declared {
-            self.window(provider, meter, &accounts, tails, now);
+            self.window(home, provider, meter, &accounts, tails, now);
         }
         // A window the plugin no longer declares is forgotten.
         self.windows.retain(|(p, w), _| p != provider || declared.iter().any(|m| m.name == *w));
@@ -263,7 +264,7 @@ impl Learner {
     }
 
     /// One window: new rows, classification, refit, splits, number states, published numbers.
-    fn window(&mut self, provider: &str, meter: &MeterDecl, accounts: &[String], tails: &[(&str, &[Entry])], now: SystemTime) {
+    fn window(&mut self, home: &Path, provider: &str, meter: &MeterDecl, accounts: &[String], tails: &[(&str, &[Entry])], now: SystemTime) {
         let matches = |name: &str| name == meter.name || glob_match(&meter.name, name);
         // The unit the provider reports the window in, from the newest good entry.
         let unit = tails
@@ -322,6 +323,7 @@ impl Learner {
             return;
         }
         refit(win, &spec, meter, now);
+        list_steady_rates(win, home, provider, &spec, meter, unit, now);
     }
 
     /// A window seen for the first time in this run: restored from the store, restarted
@@ -411,6 +413,35 @@ fn start_theta(spec: &Spec, meter: &MeterDecl) -> Theta {
     }
     th.mu = meter.model_multiplier.values().map(|f| positive(*f)).collect();
     th
+}
+
+/// After a refit: appends a `steady` outside-use entry for each account's part-of-day rate that
+/// is clearly above 0 and new or changed since the last one listed (FR-021). Written for every
+/// polled account; alerts and log lines are the detector's business and need an exclusive-use
+/// declaration (FR-022). A rate is recorded in `alerted_rates` only once its line is written.
+fn list_steady_rates(win: &mut Win, home: &Path, provider: &str, spec: &Spec, meter: &MeterDecl, unit: QuotaUnit, now: SystemTime) {
+    let Some((_, fit)) = &win.last else { return };
+    for (a, account) in spec.accounts.iter().enumerate() {
+        for q in 0..model::PARTS {
+            let p = P::B(a, q);
+            if !fit.active.contains(&p) {
+                continue;
+            }
+            let Some(se) = fit.se(p) else { continue };
+            let est = fit.theta.get(p);
+            let Some((key, rate, line)) =
+                outside::steady_line(&win.base.alerted_rates, &meter.name, unit.as_str(), account, q, (est, se), win.epoch, now)
+            else {
+                continue;
+            };
+            match outside::append(home, provider, account, &[line]) {
+                Ok(()) => {
+                    win.base.alerted_rates.insert(key, rate);
+                }
+                Err(e) => tracing::warn!(provider, account = account.as_str(), "steady rate not listed: {e}"),
+            }
+        }
+    }
 }
 
 /// Refits the pool over the epoch's evidence, reclassifies, tests splits, then updates the

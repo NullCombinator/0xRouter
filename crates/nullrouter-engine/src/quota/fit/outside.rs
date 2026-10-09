@@ -8,7 +8,7 @@
 //! This module logs nothing: no `tracing` calls. Alerts and log lines are raised by the
 //! detector (T059), and only for accounts with an exclusive-use declaration (FR-021, FR-022).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
@@ -19,7 +19,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::clock;
 use crate::files::FileError;
+use crate::quota::extract::rfc3339_millis;
 use crate::quota::history;
+
+use super::model::PARTS;
+use super::test::boundary;
 
 /// The line format version.
 pub const VERSION: u32 = 1;
@@ -173,6 +177,73 @@ pub fn read(
     Ok(out)
 }
 
+/// The part of the day `q` as the entry names it: `08-12`.
+pub fn part_name(q: usize) -> String {
+    format!("{:02}-{:02}", q * 4, q * 4 + 4)
+}
+
+/// The key of a part's rate in `alerted_rates`: `outside use 08-12@<account>`.
+pub fn rate_key(account: &str, q: usize) -> String {
+    format!("outside use {}@{account}", part_name(q))
+}
+
+/// Whether `delta` (a rate, or a rate minus another, per hour, linear scale) with standard error
+/// `se` is clear of 0 on the positive or negative side under the always-valid test (R5),
+/// Bonferroni-split over the `PARTS` rates of the account: `|delta / se²| >= boundary(1/se², PARTS)`.
+fn clear_of_zero(delta: f64, se: f64) -> bool {
+    if !(se.is_finite() && se > 0.0 && delta.is_finite()) {
+        return false;
+    }
+    let v = 1.0 / (se * se);
+    (delta * v).abs() >= boundary(v, PARTS)
+}
+
+/// Whether the rate `est` is above 0 under the test. A rate at or below 0 never passes (true
+/// rates are not negative).
+pub fn rate_established(est: f64, se: f64) -> bool {
+    est > 0.0 && clear_of_zero(est, se)
+}
+
+/// The `steady` entry to append, if any, for account `account`'s part-of-day rate `est` (with
+/// standard error `se`) in `window`. `alerted` is `alerted_rates`: nothing is made while the
+/// rate stays, and a new entry follows when the test on `est - last` rejects. Returns the key and the new rate to record in
+/// `alerted_rates` once the line is written.
+#[allow(clippy::too_many_arguments)]
+pub fn steady_line(
+    alerted: &BTreeMap<String, f64>,
+    window: &str,
+    unit: &str,
+    account: &str,
+    q: usize,
+    (est, se): (f64, f64),
+    since: SystemTime,
+    now: SystemTime,
+) -> Option<(String, f64, Line)> {
+    if !rate_established(est, se) {
+        return None;
+    }
+    let key = rate_key(account, q);
+    if let Some(last) = alerted.get(&key)
+        && !clear_of_zero(est - last, se)
+    {
+        return None;
+    }
+    let entry = OutsideEntry {
+        v: VERSION,
+        id: ulid::Ulid::new().to_string(),
+        window: window.to_owned(),
+        ty: OutsideType::Steady,
+        start: rfc3339_millis(since),
+        end: None,
+        amount: None,
+        rate_per_hour: Some(est),
+        part: Some(part_name(q)),
+        unit: unit.to_owned(),
+        found_at: rfc3339_millis(now),
+    };
+    Some((key, est, Line::Entry(entry)))
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -287,6 +358,35 @@ mod tests {
         let path = outside_file(home, "anthropic", "max").unwrap();
         assert_eq!(path.file_name().unwrap(), "max.outside.jsonl");
         assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn a_steady_rate_is_listed_once_and_again_when_it_changes() {
+        let t0 = UNIX_EPOCH + Duration::from_secs(1000);
+        let now = UNIX_EPOCH + Duration::from_secs(9000);
+        let mut alerted = BTreeMap::new();
+        // 0.2 per hour with se 0.02 is far from 0.
+        let (k, r, line) = steady_line(&alerted, "weekly", "percent", "max", 2, (0.2, 0.02), t0, now).unwrap();
+        assert_eq!(k, "outside use 08-12@max");
+        let Line::Entry(e) = line else { panic!("entry") };
+        assert_eq!((e.ty, e.part.as_deref(), e.rate_per_hour), (OutsideType::Steady, Some("08-12"), Some(0.2)));
+        assert_eq!(e.start, at(1000));
+        alerted.insert(k, r);
+        // Same rate, a little noise: nothing.
+        assert!(steady_line(&alerted, "weekly", "percent", "max", 2, (0.21, 0.02), t0, now).is_none());
+        // Doubled: a new entry.
+        assert!(steady_line(&alerted, "weekly", "percent", "max", 2, (0.4, 0.02), t0, now).is_some());
+        // Another part is its own rate.
+        assert!(steady_line(&alerted, "weekly", "percent", "max", 3, (0.2, 0.02), t0, now).is_some());
+    }
+
+    #[test]
+    fn a_rate_that_is_not_clear_of_zero_is_not_listed() {
+        let t = UNIX_EPOCH;
+        let none = BTreeMap::new();
+        assert!(steady_line(&none, "w", "percent", "a", 0, (0.2, 0.2), t, t).is_none());
+        assert!(steady_line(&none, "w", "percent", "a", 0, (-0.5, 0.01), t, t).is_none());
+        assert!(steady_line(&none, "w", "percent", "a", 0, (0.0, 0.0), t, t).is_none());
     }
 
     #[test]
