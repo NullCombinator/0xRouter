@@ -95,8 +95,12 @@ pub struct StoredBreak {
 /// The estimate and information of rows pruned from inside the epoch (research R11).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Prior {
+    /// Rows starting before this time are folded in.
     pub through: String,
-    pub params: Vec<f64>,
+    /// Parameter names (`k@<account>`, `rho.<class>`, `w.<class>`, `mult.<glob>`,
+    /// `b@<account>.<part>`); `mean` and `information` follow this order. `mean` is in fit space:
+    /// the log for every parameter but the steady rates.
+    pub params: Vec<String>,
     pub mean: Vec<f64>,
     pub information: Vec<Vec<f64>>,
 }
@@ -292,7 +296,7 @@ mod tests {
             }],
             prior: Some(Prior {
                 through: "2026-10-06T00:00:00.000Z".into(),
-                params: vec![0.25, 1.5],
+                params: vec!["k@max".into(), "rho.output".into()],
                 mean: vec![0.25, 1.5],
                 information: vec![vec![2.0, 0.5], vec![0.5, 3.0]],
             }),

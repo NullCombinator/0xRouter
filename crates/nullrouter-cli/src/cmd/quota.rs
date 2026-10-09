@@ -174,6 +174,21 @@ pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<Ex
         Command::Prune { before, provider, name } => {
             let at = date(&before)?;
             checkpoint(&home)?;
+            // The rows about to go are folded into each window's prior first (research R11).
+            let list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
+            let reg = crate::open(Some(home.path().to_owned()))?.snapshot();
+            let windows = nullrouter_engine::quota::fit::learner::fold_prior(
+                home.path(),
+                &reg,
+                &list,
+                provider.as_deref(),
+                name.as_deref(),
+                at,
+            )
+            .map_err(fail)?;
+            if windows > 0 && !as_json {
+                eprintln!("folded the pruned rows into the fit of {windows} window(s)");
+            }
             let n = history::prune(home.path(), at, provider.as_deref(), name.as_deref()).map_err(fail)?;
             if as_json {
                 println!("{}", json!({"removed": n, "before": clock::rfc3339(at)}));

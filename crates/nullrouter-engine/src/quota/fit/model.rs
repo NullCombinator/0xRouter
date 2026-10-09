@@ -241,6 +241,67 @@ fn eval(spec: &Spec, th: &Theta, row: &MRow, active: &[P], grad: Option<&mut [f6
     scale * core + outside
 }
 
+/// The name a stored prior gives `p`: `k@<account>`, `b@<account>.<part>`, `rho.<class>`,
+/// `w.<class>`, `mult.<glob>`.
+pub fn param_name(spec: &Spec, p: P) -> String {
+    let acct = |a: usize| spec.accounts.get(a).map_or("?", String::as_str);
+    let class = |c: usize| TokenClass::ALL.get(c + 1).map_or("?", |t| t.as_str());
+    match p {
+        P::K(a) => format!("k@{}", acct(a)),
+        P::B(a, q) => format!("b@{}.{q}", acct(a)),
+        P::Rho(c) => format!("rho.{}", class(c)),
+        P::W(c) => format!("w.{}", TokenClass::ALL.get(c).map_or("?", |t| t.as_str())),
+        P::Mu(i) => format!("mult.{}", spec.globs.get(i).map_or("?", String::as_str)),
+    }
+}
+
+/// A parameter's value in the space the fit moves in: the log for log parameters.
+pub fn fit_space(p: P, v: f64) -> f64 {
+    if p.is_log() { v.ln() } else { v }
+}
+
+/// Rows pruned from inside the epoch, folded into one Gaussian term on the parameters (research
+/// R11): the objective gains `(u − mean)ᵀ · information · (u − mean)`, `u` in fit space.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PriorTerm {
+    /// Parameter names, as [`param_name`] gives them.
+    pub params: Vec<String>,
+    pub mean: Vec<f64>,
+    pub information: Vec<Vec<f64>>,
+}
+
+impl PriorTerm {
+    /// The term laid over `active`: its information matrix and mean, zero where `active` has no
+    /// matching parameter. `None` when a name isn't a parameter of this spec (the prior belongs
+    /// to another meter) or the shapes disagree.
+    fn lay_over(&self, spec: &Spec, probe: &[P], active: &[P]) -> Option<(Mat, Vec<f64>)> {
+        let n = self.params.len();
+        if self.mean.len() != n || self.information.len() != n || self.information.iter().any(|r| r.len() != n) {
+            return None;
+        }
+        let slots: Vec<Option<usize>> = self
+            .params
+            .iter()
+            .map(|name| {
+                let q = probe.iter().find(|q| param_name(spec, **q) == *name)?;
+                Some(active.iter().position(|a| a == q))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let mut pi = Mat::zeros(active.len(), active.len());
+        let mut pm = vec![0.0; active.len()];
+        for (j, sj) in slots.iter().enumerate() {
+            let Some(a) = sj else { continue };
+            pm[*a] = self.mean[j];
+            for (k, sk) in slots.iter().enumerate() {
+                if let Some(b) = sk {
+                    pi[(*a, *b)] += self.information[j][k];
+                }
+            }
+        }
+        (pi.data.iter().chain(&pm).all(|v| v.is_finite())).then_some((pi, pm))
+    }
+}
+
 /// The parameters the kind has at all, before dropping those no row informs.
 fn candidates(spec: &Spec, th: &Theta) -> Vec<P> {
     let mut out = Vec::new();
@@ -332,10 +393,16 @@ fn information(grads: &[Vec<f64>], p: usize) -> Mat {
     m
 }
 
-/// Fits the window from `start`, over `rows` (evidence only; the caller filters). `None` when
-/// no parameter is informed, there are no more rows than parameters, or the information is
-/// singular.
+/// [`fit_with_prior`] without a prior.
 pub fn fit(spec: &Spec, rows: &[MRow], start: &Theta) -> Option<Fit> {
+    fit_with_prior(spec, rows, start, None)
+}
+
+/// Fits the window from `start`, over `rows` (evidence only; the caller filters), with the
+/// folded `prior` of pruned rows as one more Gaussian term. A prior that names a parameter this
+/// spec lacks is ignored. `None` when no parameter is informed, there are no more rows than
+/// parameters, or the information is singular.
+pub fn fit_with_prior(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&PriorTerm>) -> Option<Fit> {
     let mut th = start.clone();
     // Keep the parameters some row informs.
     let probe = candidates(spec, &th);
@@ -346,7 +413,19 @@ pub fn fit(spec: &Spec, rows: &[MRow], start: &Theta) -> Option<Fit> {
     if p == 0 || rows.len() <= p {
         return None;
     }
-    let mut rss = rss_of(spec, &th, rows);
+    let (pi, pm) = prior
+        .and_then(|t| t.lay_over(spec, &probe, &active))
+        .unwrap_or_else(|| (Mat::zeros(p, p), vec![0.0; p]));
+    let has_prior = pi.data.iter().any(|v| *v != 0.0);
+    let penalty = |t: &Theta| -> f64 {
+        if !has_prior {
+            return 0.0;
+        }
+        let d: Vec<f64> = active.iter().zip(&pm).map(|(q, m)| fit_space(*q, t.get(*q)) - m).collect();
+        d.iter().zip(pi.mul_vec(&d)).map(|(a, b)| a * b).sum()
+    };
+    // The objective: the rows' squared error plus the prior's penalty.
+    let mut rss = rss_of(spec, &th, rows) + penalty(&th);
     let mut converged = false;
     for _ in 0..MAX_ITER {
         let grads = gradients(spec, &th, rows, &active);
@@ -356,6 +435,18 @@ pub fn fit(spec: &Spec, rows: &[MRow], start: &Theta) -> Option<Fit> {
             let r = row.y - eval(spec, &th, row, &[], None);
             for (gi, v) in g.iter_mut().zip(gr) {
                 *gi += v * r;
+            }
+        }
+        if has_prior {
+            let toward: Vec<f64> =
+                active.iter().zip(&pm).map(|(q, m)| m - fit_space(*q, th.get(*q))).collect();
+            for (gi, v) in g.iter_mut().zip(pi.mul_vec(&toward)) {
+                *gi += v;
+            }
+            for i in 0..p {
+                for j in 0..p {
+                    a[(i, j)] += pi[(i, j)];
+                }
             }
         }
         let ridge = 1e-10 * (0..p).map(|i| a[(i, i)]).sum::<f64>() / p as f64 + 1e-300;
@@ -370,7 +461,7 @@ pub fn fit(spec: &Spec, rows: &[MRow], start: &Theta) -> Option<Fit> {
             for (q, d) in active.iter().zip(&delta) {
                 next.step(*q, s * d);
             }
-            let r = rss_of(spec, &next, rows);
+            let r = rss_of(spec, &next, rows) + penalty(&next);
             if r.is_finite() && r <= rss {
                 let rel = (rss - r) / rss.max(1e-300);
                 th = next;
@@ -390,7 +481,13 @@ pub fn fit(spec: &Spec, rows: &[MRow], start: &Theta) -> Option<Fit> {
     }
     // Covariance at the solution: J⁻¹ (J_r + σ²_e J) J⁻¹.
     let grads = gradients(spec, &th, rows, &active);
-    let info = information(&grads, p);
+    let rss = rss_of(spec, &th, rows);
+    let mut info = information(&grads, p);
+    for i in 0..p {
+        for j in 0..p {
+            info[(i, j)] += pi[(i, j)];
+        }
+    }
     let mut ridged = info.clone();
     let ridge = 1e-10 * (0..p).map(|i| info[(i, i)]).sum::<f64>() / p as f64 + 1e-300;
     for i in 0..p {
@@ -412,7 +509,8 @@ pub fn fit(spec: &Spec, rows: &[MRow], start: &Theta) -> Option<Fit> {
     let sigma_e2 = (rss / (rows.len() - p) as f64 - ROW_VAR).max(0.0);
     for i in 0..p {
         for j in 0..p {
-            jr[(i, j)] += sigma_e2 * info[(i, j)];
+            // The pruned rows count as rows: their share of the sandwich's middle.
+            jr[(i, j)] += ROW_VAR * pi[(i, j)] + sigma_e2 * info[(i, j)];
         }
     }
     let cov = inv.mul(&jr).mul(&inv);

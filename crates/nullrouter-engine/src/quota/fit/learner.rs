@@ -22,18 +22,22 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::SystemTime;
 
 use arc_swap::ArcSwap;
+use nullrouter_registry::Registry;
 use nullrouter_registry::schema::{MeterDecl, MeterUnit, QuotaUnit, TokenWeights, glob_match};
 
 use super::breaks::{self, Break};
 use super::classify::{self, Inseparable, is_evidence, reclassify_epoch, separability};
 use super::outside;
-use super::model::{self, Fit, Kind, P, Spec, Theta};
+use super::linalg::Mat;
+use super::model::{self, Fit, Kind, P, PriorTerm, Spec, Theta};
 use super::rows::{Class, Row, SetAside, rows_from};
 use super::split::{self, test_splits};
-use super::store::{self, Loaded, Restart, SaveState, StoredFit, StoredNumber, StoredWindow};
+use super::store::{self, Loaded, Prior, Restart, SaveState, StoredFit, StoredNumber, StoredWindow};
 use super::test::rejects;
 use super::{Fits, MeterNumber, Meters, NumberState, Progress, TokenClass, WindowFit, WindowOverrides};
+use crate::accounts::Accounts;
 use crate::clock;
+use crate::files::FileError;
 use crate::quota::extract::rfc3339_millis;
 use crate::quota::history::{self, Entry};
 use crate::state::EngineState;
@@ -760,6 +764,8 @@ fn apply_breaks(win: &mut Win, found: &[Break], provider: &str) {
         win.epoch = at;
         win.rows.retain(|r| r.start >= at);
         win.splits.clear();
+        // What was pruned from the old epoch counts for nothing in the new one.
+        win.base.prior = None;
         for state in win.numbers.values_mut() {
             if matches!(state, NumberState::Fitted { .. }) {
                 *state = relearn(at);
@@ -802,7 +808,8 @@ fn settle(win: &mut Win, spec: &Spec, meter: &MeterDecl, now: SystemTime) -> boo
             Some((_, f)) => f.theta.clone(),
             None => start_theta(spec, meter),
         };
-        let Some(fit) = model::fit(spec, &pool, &start) else { return fitted };
+        let prior = win.base.prior.as_ref().map(prior_term);
+        let Some(fit) = model::fit_with_prior(spec, &pool, &start, prior.as_ref()) else { return fitted };
         let before: Vec<Class> = win.rows.iter().map(|r| r.class).collect();
         reclassify_epoch(&mut win.rows, spec, Some(&fit), STEP, now);
         win.last = Some((spec.clone(), fit));
@@ -812,6 +819,183 @@ fn settle(win: &mut Win, spec: &Spec, meter: &MeterDecl, now: SystemTime) -> boo
         }
     }
     fitted
+}
+
+fn prior_term(p: &Prior) -> PriorTerm {
+    PriorTerm { params: p.params.clone(), mean: p.mean.clone(), information: p.information.clone() }
+}
+
+/// The estimate and information of a fit over rows about to be pruned, as stored.
+fn prior_of(spec: &Spec, fit: &Fit, through: SystemTime) -> Prior {
+    let n = fit.active.len();
+    Prior {
+        through: rfc3339_millis(through),
+        params: fit.active.iter().map(|p| model::param_name(spec, *p)).collect(),
+        mean: fit.active.iter().map(|p| model::fit_space(*p, fit.theta.get(*p))).collect(),
+        information: (0..n).map(|i| (0..n).map(|j| fit.info[(i, j)]).collect()).collect(),
+    }
+}
+
+fn prior_shaped(p: &Prior) -> bool {
+    let n = p.params.len();
+    p.mean.len() == n && p.information.len() == n && p.information.iter().all(|r| r.len() == n)
+}
+
+/// Two priors as one: informations add, the mean is their information-weighted average over the
+/// union of the parameters. An `old` that is malformed, or a sum that is singular, leaves `new`.
+fn combine(old: &Prior, new: &Prior) -> Prior {
+    if !prior_shaped(old) || !prior_shaped(new) {
+        return new.clone();
+    }
+    let mut names = old.params.clone();
+    for n in &new.params {
+        if !names.contains(n) {
+            names.push(n.clone());
+        }
+    }
+    let m = names.len();
+    let mut info = Mat::zeros(m, m);
+    let mut rhs = vec![0.0; m];
+    for pr in [old, new] {
+        let idx: Vec<usize> = pr.params.iter().filter_map(|n| names.iter().position(|x| x == n)).collect();
+        for (j, &a) in idx.iter().enumerate() {
+            for (k, &b) in idx.iter().enumerate() {
+                info[(a, b)] += pr.information[j][k];
+                rhs[a] += pr.information[j][k] * pr.mean[k];
+            }
+        }
+    }
+    let mut ridged = info.clone();
+    let ridge = 1e-12 * (0..m).map(|i| info[(i, i)]).sum::<f64>() / m.max(1) as f64 + 1e-300;
+    for i in 0..m {
+        ridged[(i, i)] += ridge;
+    }
+    let Some(mean) = ridged.solve(&rhs).filter(|v| v.iter().all(|x| x.is_finite())) else { return new.clone() };
+    Prior {
+        through: new.through.clone(),
+        params: names,
+        mean,
+        information: (0..m).map(|i| (0..m).map(|j| info[(i, j)]).collect()).collect(),
+    }
+}
+
+/// Folds the rows `quota prune --before <before>` is about to delete into each window's prior
+/// (research R11): for every window of the matching providers, the evidence rows of the matching
+/// accounts that start before `before` (and after the window's epoch and any earlier fold) are
+/// fitted alone, and their estimate and information are combined with the stored prior and saved
+/// to `quota/fit/<provider>.json`. Run it before the prune; a repeat folds nothing twice, since
+/// a fold covers the rows starting before its `through`. Returns how many windows were updated.
+/// A window with too few rows to fit alone is not folded and is logged. A running server holds
+/// its own copy of the fit file and may save over this one: stop it, or prune and restart.
+pub fn fold_prior(
+    home: &Path,
+    registry: &Registry,
+    accounts: &Accounts,
+    provider: Option<&str>,
+    account: Option<&str>,
+    before: SystemTime,
+) -> Result<usize, FileError> {
+    let now = clock::now();
+    let mut folded = 0;
+    for entity in registry.providers() {
+        if provider.is_some_and(|p| p != entity.id) {
+            continue;
+        }
+        let declared = entity.routing().windows;
+        if declared.is_empty() {
+            continue;
+        }
+        let mut names: Vec<String> =
+            accounts.for_provider(&entity.id).filter(|a| super::is_fitted_account(entity, a)).map(|a| a.name.clone()).collect();
+        names.sort();
+        let mut tails: Vec<(String, Vec<Entry>)> = Vec::new();
+        for n in &names {
+            let t = history::read(home, &entity.id, n, None, None)?;
+            if !t.is_empty() {
+                tails.push((n.clone(), t));
+            }
+        }
+        if !tails.iter().any(|(n, _)| account.is_none_or(|a| a == n.as_str())) {
+            continue;
+        }
+        let mut stored = match store::load(home, &entity.id)? {
+            Loaded::Ok(f) => f,
+            Loaded::Missing | Loaded::Bad { .. } => StoredFit::default(),
+        };
+        let mut changed = false;
+        for meter in declared {
+            let matches = |name: &str| name == meter.name || glob_match(&meter.name, name);
+            let unit = tails
+                .iter()
+                .flat_map(|(_, t)| t.iter().rev().filter(|e| e.ok))
+                .find_map(|e| e.windows.iter().find(|w| matches(&w.name)).map(|w| w.unit));
+            let Some(unit) = unit else { continue };
+            let hash = store::meter_hash(meter);
+            let meter = &assumed_meter(declared, meter);
+            let kind = match (meter.unit, unit == QuotaUnit::Percent) {
+                (MeterUnit::WeightedTokens, true) => Kind::Percent,
+                (MeterUnit::WeightedTokens, false) => Kind::Counted,
+                (MeterUnit::Requests, true) => Kind::RequestsPercent,
+                (MeterUnit::Requests, false) => Kind::RequestsCounted,
+            };
+            let spec = Spec {
+                kind,
+                accounts: names.clone(),
+                globs: meter.model_multiplier.keys().cloned().collect(),
+                utc_offset_secs: 0,
+            };
+            let is_new = !stored.windows.contains_key(&meter.name);
+            let mut win = match stored.windows.get(&meter.name) {
+                Some(s) if s.meter_hash == hash => Win::restored(s, now),
+                // The learner restarts this window anyway.
+                Some(_) => continue,
+                None => {
+                    let first = tails.iter().filter_map(|(_, t)| t.iter().find_map(Entry::time)).min();
+                    Win::fresh(first.unwrap_or(now), &hash, None)
+                }
+            };
+            let old = win.base.prior.take();
+            let mut rows = Vec::new();
+            for (n, tail) in &tails {
+                if !account.is_none_or(|a| a == n.as_str()) {
+                    continue;
+                }
+                let floor = win.base.account_epochs.get(n).and_then(|e| parse(e)).map_or(win.epoch, |e| e.max(win.epoch));
+                let since = old.as_ref().and_then(|p| parse(&p.through)).map_or(floor, |t| t.max(floor));
+                rows.extend(rows_from(n, tail, meter, since).into_iter().filter(|r| r.start < before));
+            }
+            if rows.is_empty() {
+                if is_new {
+                    stored.windows.insert(meter.name.clone(), win.to_stored());
+                    changed = true;
+                }
+                continue;
+            }
+            for r in &mut rows {
+                r.class = classify::classify(r, &spec, None, STEP);
+            }
+            win.rows = rows;
+            if !settle(&mut win, &spec, meter, now) {
+                tracing::warn!(provider = entity.id, window = meter.name, "pruned rows too few to fold into the fit");
+                continue;
+            }
+            let Some((_, fit)) = &win.last else { continue };
+            let new = prior_of(&spec, fit, before);
+            let merged = match &old {
+                Some(o) => combine(o, &new),
+                None => new,
+            };
+            let mut sw = stored.windows.get(&meter.name).cloned().unwrap_or_else(|| win.to_stored());
+            sw.prior = Some(merged);
+            stored.windows.insert(meter.name.clone(), sw);
+            changed = true;
+            folded += 1;
+        }
+        if changed {
+            store::save(home, &entity.id, &stored)?;
+        }
+    }
+    Ok(folded)
 }
 
 /// One number of a window's meter.
@@ -1131,6 +1315,63 @@ mod outside_list_tests {
             hours: 1.0 / 6.0,
             class,
         }
+    }
+
+    fn synthetic(n: u64) -> Vec<Row> {
+        (0..n)
+            .map(|i| {
+                let (inp, out) = (5_000 + (i * 37 % 11) * 4_000, 1_000 + (i * 53 % 7) * 2_500);
+                let noise = ((i * 7_919) % 101) as f64 / 101.0 - 0.5;
+                let start = UNIX_EPOCH + Duration::from_secs(1_790_000_000 + i * 1_800);
+                Row {
+                    account: "a".into(),
+                    window: "weekly".into(),
+                    start,
+                    end: start + Duration::from_secs(600),
+                    y: 1e-3 * (inp as f64 + 3.0 * out as f64) + noise,
+                    x: BTreeMap::from([((Group::Plain, TokenClass::Input), inp), ((Group::Plain, TokenClass::Output), out)]),
+                    requests: 1,
+                    hours: 1.0 / 6.0,
+                    class: Class::Evidence,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_folded_prior_keeps_the_fit_within_one_standard_error() {
+        let spec = Spec { kind: Kind::Percent, accounts: vec!["a".into()], globs: vec![], utc_offset_secs: 0 };
+        let mut start = Theta::neutral(1, 0);
+        start.k = vec![1e-3];
+        let rows = synthetic(300);
+        let full = model::fit(&spec, &model::prepare(&spec, &rows), &start).expect("full fit");
+        let (pruned, kept) = rows.split_at(150);
+        let half = model::fit(&spec, &model::prepare(&spec, pruned), &start).expect("pruned fit");
+        let prior = prior_of(&spec, &half, UNIX_EPOCH);
+        let term = prior_term(&prior);
+        let after = model::fit_with_prior(&spec, &model::prepare(&spec, kept), &start, Some(&term)).expect("fit with prior");
+        let se = full.se(P::K(0)).expect("se");
+        let moved = (after.theta.k[0].ln() - full.theta.k[0].ln()).abs();
+        assert!(moved < se, "k moved {moved} against a standard error of {se}");
+        // A prior from another meter (an account that is gone) is ignored.
+        let other = PriorTerm { params: vec!["k@gone".into()], mean: vec![0.0], information: vec![vec![1e9]] };
+        let plain = model::fit(&spec, &model::prepare(&spec, kept), &start).expect("plain");
+        let ignored = model::fit_with_prior(&spec, &model::prepare(&spec, kept), &start, Some(&other)).expect("ignored");
+        assert_eq!(plain.theta, ignored.theta);
+    }
+
+    #[test]
+    fn combining_a_prior_with_itself_doubles_the_information_and_keeps_the_mean() {
+        let p = Prior {
+            through: "2026-10-06T00:00:00.000Z".into(),
+            params: vec!["k@a".into(), "rho.output".into()],
+            mean: vec![-6.0, 1.0],
+            information: vec![vec![4.0, 1.0], vec![1.0, 3.0]],
+        };
+        let both = combine(&p, &p);
+        assert_eq!(both.params, p.params);
+        assert!((both.information[0][0] - 8.0).abs() < 1e-9 && (both.information[0][1] - 2.0).abs() < 1e-9);
+        assert!(both.mean.iter().zip(&p.mean).all(|(a, b)| (a - b).abs() < 1e-6), "{:?}", both.mean);
     }
 
     fn win(rows: Vec<Row>, spec: &Spec) -> Win {
