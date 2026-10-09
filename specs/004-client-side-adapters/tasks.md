@@ -957,7 +957,7 @@ provider.
 
 ### Tests for User Story 5 ⚠️
 
-- [ ] T079 [US5] Oracle fixtures for Claude Code: extend `tools/gen-bundled/generate.mjs`.
+- [X] T079 [US5] Oracle fixtures for Claude Code: extend `tools/gen-bundled/generate.mjs`.
   - Import `normalizeClaudePassthrough` from
     `ref/9router/open-sse/translator/formats/claude.js`, and `dedupeTools` from where
     `chatCore.js:219` gets it.
