@@ -478,3 +478,170 @@ async fn a_factor_three_capacity_becomes_fitted_and_reaches_the_meters() {
     assert!((c2 / 333_333.0 - 1.0).abs() < 0.15, "replayed capacity {c2}");
     assert_eq!(again.number_states("keyco", "5-hour")["capacity@main"], states["capacity@main"]);
 }
+
+// ---- classification (T021, R6) ----
+
+use nullrouter_engine::quota::fit::classify::{classify, is_evidence, reclassify_epoch, upper};
+use nullrouter_engine::quota::fit::model::Fit;
+
+/// The spec and a fit of the noiseless synthetic window: busy rows are judged against it.
+fn fitted() -> (Spec, Fit) {
+    let spec = spec1();
+    let rows = model::prepare(&spec, &synthetic(600, false, 7));
+    let fit = model::fit(&spec, &rows, &start_theta()).expect("fit");
+    (spec, fit)
+}
+
+/// A row of 10 minutes with no traffic of 0router's.
+fn idle_row(start_min: u64, y: f64) -> Row {
+    Row {
+        account: "a".into(),
+        window: "w".into(),
+        start: t(start_min),
+        end: t(start_min + 10),
+        y,
+        x: BTreeMap::new(),
+        requests: 0,
+        hours: 10.0 / 60.0,
+        class: Class::Evidence,
+    }
+}
+
+/// A row of 10 minutes with traffic.
+fn busy_row(start_min: u64, y: f64) -> Row {
+    let mut x = BTreeMap::new();
+    x.insert((Group::Plain, TokenClass::Input), 20_000);
+    x.insert((Group::Plain, TokenClass::Output), 2_000);
+    Row { requests: 4, x, ..idle_row(start_min, y) }
+}
+
+/// A busy row whose reading is `excess` above the fit's upper range, plus one step.
+fn busy_above(spec: &Spec, fit: &Fit, start_min: u64, excess: f64) -> Row {
+    let mut row = busy_row(start_min, 0.0);
+    let m = model::prepare(spec, std::slice::from_ref(&row)).into_iter().next().expect("row");
+    row.y = upper(fit, spec, &m, 1.0) + excess;
+    row
+}
+
+#[test]
+fn idle_use_beyond_one_step_is_outside_use_and_excluded() {
+    let (spec, fit) = fitted();
+    let row = idle_row(0, 6.0);
+    assert_eq!(classify(&row, &spec, None, 1.0), Class::Outside);
+    assert_eq!(classify(&row, &spec, Some(&fit), 1.0), Class::Outside);
+    assert!(!is_evidence(Class::Outside));
+}
+
+#[test]
+fn idle_use_of_one_step_is_evidence() {
+    let (spec, fit) = fitted();
+    let row = idle_row(0, 1.0);
+    assert_eq!(classify(&row, &spec, Some(&fit), 1.0), Class::Idle);
+    assert!(is_evidence(Class::Idle));
+}
+
+#[test]
+fn busy_excess_is_provisional_for_six_rows_then_outside() {
+    let (spec, fit) = fitted();
+    let busy = busy_above(&spec, &fit, 0, 3.0);
+    let class = classify(&busy, &spec, Some(&fit), 1.0);
+    // The row ends at t(10); its settle span is six ten-minute rows, so it is final at t(70).
+    assert_eq!(class, Class::OutsideProvisional { until: t(70) });
+    let mut rows = vec![Row { class, ..busy }];
+    rows.extend((1..=6).map(|i| idle_row(10 * i, 0.0)));
+    // At the end of the fifth row after it (t(60)) it is still provisional.
+    reclassify_epoch(&mut rows, &spec, Some(&fit), 1.0, t(60));
+    assert_eq!(rows[0].class, Class::OutsideProvisional { until: t(70) });
+    // At the end of the sixth row after it (t(70)) it is outside use.
+    reclassify_epoch(&mut rows, &spec, Some(&fit), 1.0, t(70));
+    assert_eq!(rows[0].class, Class::Outside);
+}
+
+#[test]
+fn a_refit_that_narrows_the_range_reclassifies_an_earlier_busy_row() {
+    let (spec, narrow) = fitted();
+    // Before the refit the range was very wide, so the row was evidence.
+    let mut wide = narrow.clone();
+    wide.sigma_e2 = 1.0e6;
+    let busy = busy_above(&spec, &narrow, 0, 3.0);
+    let before = classify(&busy, &spec, Some(&wide), 1.0);
+    assert_eq!(before, Class::Evidence);
+    let mut rows = vec![Row { class: before, ..busy }];
+    // The refit narrows the range: the row moves to provisional outside use, with its own times.
+    reclassify_epoch(&mut rows, &spec, Some(&narrow), 1.0, t(10));
+    assert_eq!((rows[0].start, rows[0].end), (t(0), t(10)));
+    assert_eq!(rows[0].class, Class::OutsideProvisional { until: t(70) });
+}
+
+// ---- separability (T022, R7) ----
+
+/// The declared weights and the one multiplier glob, `big-*`, that no model on the history matches.
+const WEIGHTS_AND_MULTIPLIER: &str =
+    "token_weights = { input = 1.0, output = 5.0, cache_read = 0.1, cache_write = 1.25 }\nmodel_multiplier = { \"big-*\" = 2.0 }";
+
+/// `keyco_home` with `WEIGHTS_AND_MULTIPLIER` declared in its meter (T022).
+fn weighted_home() -> tempfile::TempDir {
+    let dir = keyco_home();
+    let path = dir.path().join("plugins/keyco.toml");
+    let plugin = std::fs::read_to_string(&path).unwrap();
+    let plugin = plugin.replace("capacity = 1000000\n", &format!("capacity = 1000000\n{WEIGHTS_AND_MULTIPLIER}\n"));
+    std::fs::write(&path, plugin).unwrap();
+    dir
+}
+
+/// Two hundred good polls ten minutes apart on `main`, all on model `m1`, with cache writes
+/// always a tenth of cache reads (T022). The readings are not rounded, and the window falls
+/// about 31 percent over the history, so it never reaches full.
+fn fixed_proportion_history(n: usize) -> Vec<Entry> {
+    let mut rng = Lcg(0x012_0022);
+    let k = 100.0 / 3_000_000.0;
+    let mut level = 5.0f64;
+    let mut out = vec![entry(0, true, Some(window(level, 3000)), &[])];
+    for i in 1..=n {
+        let input = 800 + (rng.next() * 3600.0) as u64;
+        let cache_write = (rng.next() * 2000.0) as u64;
+        let cache_read = 10 * cache_write;
+        level += k * (input as f64 + 0.1 * cache_read as f64 + 1.25 * cache_write as f64);
+        let tally = ModelTally { requests: 1, requests_usage_unreported: 0, input, output: 0, cache_read, cache_write };
+        out.push(entry(10 * i as u64, true, Some(window(level, 3000)), &[("m1", tally)]));
+    }
+    out
+}
+
+/// Runs the learner once over `entries` for `main` on the weighted home.
+fn learn_weighted(entries: &[Entry]) -> (tempfile::TempDir, Engine, Learner, Fits) {
+    let dir = weighted_home();
+    let (engine, _) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
+    let st = engine.snapshot();
+    let mut learner = Learner::default();
+    let mut fits = Fits::default();
+    fits.observe(&mut learner, dir.path(), &st, "keyco", "main", entries, t(2000));
+    (dir, engine, learner, fits)
+}
+
+#[test]
+fn cache_writes_in_fixed_proportion_to_cache_reads_are_not_separable() {
+    let (_dir, _engine, learner, fits) = learn_weighted(&fixed_proportion_history(200));
+    let states = learner.number_states("keyco", "5-hour");
+    assert_eq!(
+        states["weight.cache_write"],
+        NumberState::NotSeparable { partner: "weight.cache_read".to_owned() },
+        "{states:?}"
+    );
+    // A number that can't be separated is never fitted, so the declared weight is what applies.
+    assert!(!fits.window("keyco", "5-hour").weights.contains_key(&TokenClass::CacheWrite));
+    let declared = meter(WEIGHTS_AND_MULTIPLIER);
+    let (got, sources) = in_effect(&declared, None, None, &fits.window("keyco", "5-hour"), "main");
+    assert_eq!(got.token_weights.expect("weights").cache_write, 1.25);
+    assert!(!sources.contains_key(&MeterNumber::Weight(TokenClass::CacheWrite)));
+}
+
+#[test]
+fn a_multiplier_group_with_no_traffic_is_learning_with_no_intervals() {
+    let (_dir, _engine, learner, _fits) = learn_weighted(&fixed_proportion_history(200));
+    let states = learner.number_states("keyco", "5-hour");
+    match &states["multiplier.big-*"] {
+        NumberState::Learning { progress } => assert_eq!(progress.intervals, 0, "{states:?}"),
+        other => panic!("expected Learning with 0 intervals, got {other:?}"),
+    }
+}
