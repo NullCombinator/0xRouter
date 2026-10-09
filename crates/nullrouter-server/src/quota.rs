@@ -8,6 +8,7 @@
 //! | `{"op":"quota.outside","provider"?,"account"?,"since"?,"limit"?}` | `{"ok":true,"entries":[…]}`: each an `OutsideEntry` plus `provider` and `account` |
 //! | `{"op":"quota.alerts"}` | `{"ok":true,"alerts":[…]}`: every account's unacknowledged `Alert`s, each plus `provider` and `account` |
 //! | `{"op":"quota.ack","id"?,"provider"?,"account"?}` | `{"ok":true,"acknowledged":N}`: no `id` acknowledges every open alert (narrowed); an `id` or unique prefix one |
+//! | `{"op":"quota.prune","before","provider"?,"account"?}` | `{"ok":true,"removed":N,"folded":W}`: the in-epoch rows before `before` are folded into the fit's prior and saved, then the history is pruned |
 //!
 //! A poll is `{provider, account, at, windows, error?, retry}`; a failed one's `error` carries
 //! `class`, `status?`, a redacted `reason` and the CLI's `summary`. Tokens never cross.
@@ -187,6 +188,26 @@ pub async fn ack(engine: &Arc<Engine>, req: &Value) -> Value {
     .await;
     match done {
         Ok(Ok(n)) => json!({"ok": true, "acknowledged": n}),
+        Ok(Err(e)) => json!({"ok": false, "error": e.to_string()}),
+        Err(e) => json!({"ok": false, "error": e.to_string()}),
+    }
+}
+
+/// `quota.prune`: the server's learner folds the in-epoch rows before `before` out of its
+/// windows into their priors and saves, then the history is pruned (research R11). The server
+/// owns the fit file while it runs, so the CLI asks instead of folding itself.
+pub async fn prune(engine: &Arc<Engine>, req: &Value) -> Value {
+    let Some(before) = req.get("before").and_then(Value::as_str).and_then(clock::parse_rfc3339) else {
+        return json!({"ok": false, "error": "before must be an RFC 3339 time"});
+    };
+    let provider = req.get("provider").and_then(Value::as_str).map(str::to_owned);
+    let account = req.get("account").and_then(Value::as_str).map(str::to_owned);
+    // Queued poll entries first, so the prune sees every one on disk.
+    engine.checkpoint_tallies().await;
+    let learner = engine.fit_learner.clone();
+    let done = tokio::task::spawn_blocking(move || learner.prune(before, provider.as_deref(), account.as_deref())).await;
+    match done {
+        Ok(Ok((removed, folded))) => json!({"ok": true, "removed": removed, "folded": folded}),
         Ok(Err(e)) => json!({"ok": false, "error": e.to_string()}),
         Err(e) => json!({"ok": false, "error": e.to_string()}),
     }

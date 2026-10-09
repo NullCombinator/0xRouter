@@ -418,6 +418,18 @@ async fn outside_use_alerts_list_until_acknowledged() {
 }
 
 #[tokio::test]
+async fn quota_prune_goes_through_the_server_and_answers_counts() {
+    let q = setup().await;
+    let bad = q.op(json!({"op": "quota.prune", "before": "yesterday"})).await;
+    assert_eq!(bad["ok"], false, "{bad}");
+    let none = q.op(json!({"op": "quota.prune", "before": "2000-01-01T00:00:00Z", "provider": "anthropic"})).await;
+    assert_eq!(none["ok"], true, "{none}");
+    assert_eq!(none["folded"], 0, "{none}");
+    // Whatever polls the server already wrote are newer than 2000.
+    assert_eq!(none["removed"], 0, "{none}");
+}
+
+#[tokio::test]
 async fn an_account_at_zero_percent_is_a_last_resort_behind_pay_as_you_go() {
     let q = setup().await;
     q.set(

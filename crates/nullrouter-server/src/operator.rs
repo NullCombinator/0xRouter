@@ -19,7 +19,7 @@
 //! | `{"op":"proxy.fixed","name"}` | `{"ok":true,"reachable":true}` and the pause cleared, or `{"ok":true,"reachable":false,"reason"}`; an unknown name is `{"ok":false,"error"}` listing the known ones |
 //! | `{"op":"connection.view","provider"?}` | `{"ok":true,"providers":[{id,timeouts:{connect,headers,first_token,stall}:{ms\|null,source},models:[{id,timeouts}]}]}`: the effective timeouts and where each came from, and the models whose timeouts differ; an unknown provider is `{"ok":false,"error"}` listing the known ones |
 //! | `{"op":"quota.list"}`, `{"op":"quota.poll"}`, `{"op":"quota.checkpoint"}` | see [`crate::quota`] |
-//! | `{"op":"quota.outside","provider"?,"account"?,"since"?,"limit"?}`, `{"op":"quota.alerts"}`, `{"op":"quota.ack","id"?,"provider"?,"account"?}` | see [`crate::quota`] |
+//! | `{"op":"quota.outside","provider"?,"account"?,"since"?,"limit"?}`, `{"op":"quota.alerts"}`, `{"op":"quota.ack","id"?,"provider"?,"account"?}`, `{"op":"quota.prune","before","provider"?,"account"?}` | see [`crate::quota`] |
 //! | `{"op":"test.plan","target"?,"account"?,"all"?}` | `{"ok":true,"pairs":[{provider,account,model,type,skip?}],"calls":{"<type>":N}}` (spec 011); a combo target adds `"combo":NAME` and counts as 1 call of its kind |
 //! | `{"op":"test.run","target"?,"account"?,"all"?}` | streamed: one `{"event":"result","result":TestResult}` line per pair (a combo: one `{"event":"combo","result":ComboResult}`), then `{"ok":true,"done":{pass,broken,unknown,skipped}}`. Closing the connection cancels calls not yet sent |
 //! | `{"op":"verdicts.list","provider"?,"account"?,"model"?,"state"?}` | `{"ok":true,"verdicts":[{provider,account,model,…Verdict,"waiting"?}],"combos":[{combo,…,"waiting"?}]}`: `waiting` says why a due retest can't run yet |
@@ -374,6 +374,7 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         Some("quota.outside") => crate::quota::outside(engine, req).await,
         Some("quota.alerts") => crate::quota::alerts(engine).await,
         Some("quota.ack") => crate::quota::ack(engine, req).await,
+        Some("quota.prune") => crate::quota::prune(engine, req).await,
         Some("test.plan") => test_plan(engine, req),
         Some("test.run") => json!({"ok": false, "error": "test.run streams: send it on its own connection"}),
         Some("verdicts.list") => verdicts_list(engine, req),

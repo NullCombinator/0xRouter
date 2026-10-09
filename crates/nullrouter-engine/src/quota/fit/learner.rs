@@ -879,6 +879,67 @@ fn combine(old: &Prior, new: &Prior) -> Prior {
     }
 }
 
+/// The prior of `rows` about to be pruned from `template`'s window: they are classified without a
+/// fit, fitted alone (the template's splits apply) and their estimate and information taken.
+/// `None` when they cannot be fitted alone. Offline ([`fold_prior`]) and online
+/// ([`Shared::prune`]) share it, so both give the same prior.
+fn fold_rows(template: &Win, mut rows: Vec<Row>, spec: &Spec, meter: &MeterDecl, before: SystemTime, now: SystemTime) -> Option<Prior> {
+    for r in &mut rows {
+        r.class = classify::classify(r, spec, None, STEP);
+    }
+    let mut win = Win::fresh(template.epoch, &template.hash, None);
+    win.splits = template.splits.clone();
+    win.rows = rows;
+    if !settle(&mut win, spec, meter, now) {
+        return None;
+    }
+    let (_, fit) = win.last.as_ref()?;
+    Some(prior_of(spec, fit, before))
+}
+
+impl Learner {
+    /// The online fold of `quota.prune`: for each matching window, the evidence rows of the
+    /// matching accounts that start before `before` leave the window's rows and join its prior,
+    /// then the provider's fit state is saved. Returns how many windows got a prior.
+    fn fold_out(&mut self, home: &Path, st: &EngineState, provider: Option<&str>, account: Option<&str>, before: SystemTime, now: SystemTime) -> usize {
+        let mut folded = 0;
+        let mut touched: BTreeSet<String> = BTreeSet::new();
+        for ((p, wname), win) in &mut self.windows {
+            if provider.is_some_and(|x| x != p.as_str()) {
+                continue;
+            }
+            let Some(entity) = st.registry.providers().find(|e| e.id == *p) else { continue };
+            let declared = entity.routing().windows;
+            let Some(meter) = declared.iter().find(|m| m.name == *wname) else { continue };
+            let meter = assumed_meter(declared, meter);
+            let mine = |r: &Row| r.start < before && account.is_none_or(|a| a == r.account.as_str());
+            let rows: Vec<Row> = win.rows.iter().filter(|r| mine(r) && is_evidence(r.class)).cloned().collect();
+            win.rows.retain(|r| !mine(r));
+            touched.insert(p.clone());
+            let Some(spec) = win.last.as_ref().map(|(s, _)| s.clone()) else { continue };
+            if rows.is_empty() {
+                continue;
+            }
+            let Some(new) = fold_rows(win, rows, &spec, &meter, before, now) else {
+                tracing::warn!(provider = p.as_str(), window = wname.as_str(), "pruned rows too few to fold into the fit");
+                continue;
+            };
+            let merged = match &win.base.prior {
+                Some(o) => combine(o, &new),
+                None => new,
+            };
+            win.base.prior = Some(merged);
+            folded += 1;
+        }
+        for p in touched {
+            if let Some(entity) = st.registry.providers().find(|e| e.id == p) {
+                self.persist(home, &p, entity.routing().windows, now);
+            }
+        }
+        folded
+    }
+}
+
 /// Folds the rows `quota prune --before <before>` is about to delete into each window's prior
 /// (research R11): for every window of the matching providers, the evidence rows of the matching
 /// accounts that start before `before` (and after the window's epoch and any earlier fold) are
@@ -971,16 +1032,10 @@ pub fn fold_prior(
                 }
                 continue;
             }
-            for r in &mut rows {
-                r.class = classify::classify(r, &spec, None, STEP);
-            }
-            win.rows = rows;
-            if !settle(&mut win, &spec, meter, now) {
+            let Some(new) = fold_rows(&win, rows, &spec, meter, before, now) else {
                 tracing::warn!(provider = entity.id, window = meter.name, "pruned rows too few to fold into the fit");
                 continue;
-            }
-            let Some((_, fit)) = &win.last else { continue };
-            let new = prior_of(&spec, fit, before);
+            };
             let merged = match &old {
                 Some(o) => combine(o, &new),
                 None => new,
@@ -1250,6 +1305,17 @@ impl Shared {
     fn publish(&self, next: Fits) {
         self.fits.store(Arc::new(next));
         self.meters.rebuild(&self.state.load(), &self.fits.load());
+    }
+
+    /// `quota.prune` with a server running: folds the in-epoch rows before `before` out of the
+    /// in-memory windows into their priors, saves the fit state, and only then prunes the
+    /// history (the learner lock is released first: the history writer calls the observer while
+    /// it holds the file lock). Returns `(history entries removed, windows folded)`.
+    pub fn prune(&self, before: SystemTime, provider: Option<&str>, account: Option<&str>) -> Result<(usize, usize), FileError> {
+        let st = self.state.load_full();
+        let folded = lock(&self.learner).fold_out(&self.home, &st, provider, account, before, clock::now());
+        let removed = history::prune(&self.home, before, provider, account)?;
+        Ok((removed, folded))
     }
 
     /// Every window the learner holds, copied out under one brief lock (the view's read).
