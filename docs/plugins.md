@@ -6,7 +6,8 @@ reads the declarations and acts on them. A provider plugin cannot run code, make
 requests, read files, or hold secrets.
 
 This page covers provider plugins only. 0router's other plugin kind, the harness adapter,
-may be sandboxed code and has its own rules (constitution Principle I).
+may be sandboxed code and has its own rules (constitution Principle I). See
+[adapters/authoring.md](adapters/authoring.md) for writing one.
 
 Install a plugin with `nullrouter plugins install <id>` (community set) or by copying it
 into `$NULLROUTER_HOME/plugins/` (default `~/.0router/plugins/`). Only `*.toml` files at

@@ -566,7 +566,9 @@ regression blocks merge (Constitution gate).
 **Decision**: written as a normal third-party adapter at `adapters/community/claude-code/`
 against the kit, in anthropic-messages style. It is listed in the catalogue and goes through
 gate, build, review and decision with no special path (FR-027). Its selectors are:
-`thinking`, `output_config`, `model`, `messages[*].role`, `messages[*].content`, `tools`.
+`thinking`, `output_config`, `model`, `messages[*]`, `tools`. Whole messages, not their role
+and content apart: folding a system turn and dropping an emptied message replace and remove
+messages, which needs each message as one part.
 
 Behaviour follows `normalizeClaudePassthrough` (`open-sse/translator/formats/claude.js:204`)
 plus `dedupeTools`:

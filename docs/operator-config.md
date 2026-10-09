@@ -270,6 +270,12 @@ adapter, and binding an adapter leaves the tag alone.
 **Downgrading.** A `keys.toml` that holds a tagged key is refused by a binary from before the
 tag existed. Run `nullrouter keys tag <key> --clear` for each tagged key before going back.
 
+## Harness adapters
+
+A key bound to a harness runs that harness's adapter on its requests. Installing, reviewing,
+approving and removing adapters, their alerts, the catalogue and the `[adapters]` settings are
+covered in [adapters/operating.md](adapters/operating.md).
+
 ## The dashboard
 
 `serve` also serves a read-only web dashboard on its own port, `127.0.0.1:20130`. It shows the

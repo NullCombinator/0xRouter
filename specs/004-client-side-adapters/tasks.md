@@ -1097,7 +1097,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
     event.
   - If either target is missed, stop and report the numbers before optimising. The
     `optimize-perf` workflow is the route.
-- [ ] T093 [P] Parity audit: `/rust-parity-audit` on
+- [X] T093 [P] Parity audit: `/rust-parity-audit` on
   `crates/nullrouter-adapters/src/builtin/hermes.rs` and
   `adapters/community/claude-code/src/lib.rs`, judged on chatCore's request path. Fix any
   High findings, and record Low ones as accepted.
@@ -1109,7 +1109,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
 
   Focus on sandbox escape, gate bypass, path traversal, hash-check TOCTOU and secret flow.
   Fix Critical and High findings before the PR.
-- [ ] T095 [P] Docs.
+- [X] T095 [P] Docs.
   - `docs/adapters/authoring.md`: the kit API, `adapter.toml`, selectors, reason codes, the
     gate rules, and building locally with the builder.
   - `docs/adapters/operating.md`: install, review settings, approve, clear, alerts, the
