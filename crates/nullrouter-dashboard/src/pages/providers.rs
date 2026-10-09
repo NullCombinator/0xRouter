@@ -12,10 +12,11 @@ use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
 use crate::access::encode_component;
-use crate::components::{self, Tone, badge, disabled, disabled_switch, empty, icon, kv, modal, name, prose, slot, status};
+use crate::components::{self, Tone, badge, disabled, disabled_switch, empty, icon, kv, modal, name, prose, status};
 use crate::page::{ViewName, Want};
 
-pub const VIEWS: &[ViewName] = &[ViewName::Providers, ViewName::Accounts, ViewName::Plugins, ViewName::Model, ViewName::Check];
+pub const VIEWS: &[ViewName] =
+    &[ViewName::Providers, ViewName::Accounts, ViewName::Plugins, ViewName::Model, ViewName::Latency, ViewName::Check];
 
 /// The hints of research R15.
 pub const ADD_HINT: &str = "Not built yet. Add a provider with a plugin file; see docs/plugins.md.";
@@ -46,6 +47,7 @@ pub fn wants(req: &Req) -> Vec<Want> {
     ];
     if let Some(id) = &req.window {
         wants.push(Want::new(ViewName::Model, json!({"provider": id})));
+        wants.push(Want::new(ViewName::Latency, json!({})));
     }
     wants
 }
@@ -156,7 +158,8 @@ fn card(ctx: &Ctx<'_>, p: &Value, accounts: &[&Value]) -> Markup {
     let id = p["id"].as_str().unwrap_or_default();
     let alias = p["alias"].as_str().unwrap_or(id);
     let href = ctx.req.href(&format!("/providers/{}", encode_component(id)), &["kind"], &[]);
-    let class = if ctx.req.window.as_deref() == Some(id) { "provider-card provider-card--open" } else { "provider-card" };
+    let class =
+        if ctx.req.window.as_deref() == Some(id) { "provider-card provider-card--open" } else { "provider-card" };
     html! {
         a class=(class) href=(href) {
             span class="provider-card__logo" { (components::logo(ctx.logos.href(id), alias)) }
@@ -250,10 +253,32 @@ fn window(ctx: &Ctx<'_>, providers: &[Value], accounts: &[Value], token: &str) -
                     div class="provider-window__models" { @for m in &shown { (model_row(m)) } }
                 }
             }
-            (slot("Last response"))
+            section class="provider-window__section" {
+                h4 class="provider-window__heading" { "Last response" }
+                (last_response(ctx, id))
+            }
         }
     };
     Ok(modal(id, &req.close_href(), body))
+}
+
+/// The provider's last response in the last 24 hours (`latency`'s `last`): "resolved · <time>",
+/// "failed · <time> · <status>", or that there was none.
+pub const NO_RESPONSE: &str = "None in the last 24 hours";
+
+fn last_response(ctx: &Ctx<'_>, id: &str) -> Markup {
+    let row = rows(&ctx.json(ViewName::Latency)["providers"]).iter().find(|r| r["id"] == id);
+    let last = row.map(|r| &r["last"]).filter(|l| l["at"].is_string());
+    html! {
+        @if let Some(l) = last {
+            p {
+                (l["result"].as_str().unwrap_or_default()) " · " (ctx.time(l["at"].as_str().unwrap_or_default()))
+                @if let Some(status) = l["status"].as_u64() { " · " (status) }
+            }
+        } @else {
+            p class="provider-window__none" { (NO_RESPONSE) }
+        }
+    }
 }
 
 /// One account as `accounts list --long` shows it: the columns, then a sign-in account's email,

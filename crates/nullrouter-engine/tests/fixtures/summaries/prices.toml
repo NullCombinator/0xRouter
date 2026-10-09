@@ -1,0 +1,40 @@
+# What each serving account is priced by, per million tokens (USD). The tests build a `PriceSpec`
+# from each [[account]] as `route.rs` builds one from the registry and accounts.toml; an account
+# in `gone` is not in accounts.toml, so its records are unpriced `account_gone`.
+
+gone = [["delta", "ghost"]]
+
+# Time of day schedule: peak 08:00 to 20:00 UTC, else the default entry.
+[[account]]
+provider = "alpha"
+account = "main"
+[[account.price]]
+when = { from = "08:00", to = "20:00" }
+input = 4.0
+output = 20.0
+cache_read = 0.4
+cache_write = 5.0
+[[account.price]]
+input = 2.0
+output = 10.0
+cache_read = 0.2
+cache_write = 2.5
+
+# The operator's flat override: replaces the schedule. No cache rates, so cache tokens cost the
+# input rate.
+[[account]]
+provider = "alpha"
+account = "override"
+flat = { input = 1.0, output = 3.0 }
+
+# Declares no output rate: output tokens above 0 can't be priced.
+[[account]]
+provider = "beta"
+account = "main"
+[[account.price]]
+input = 3.0
+
+# No price anywhere (an account with no [[account.price]] and no flat).
+[[account]]
+provider = "gamma"
+account = "main"

@@ -1,0 +1,23 @@
+schema = 1
+
+[[key]]
+id = "ak_alice"
+name = "alice"
+digest = "sha256:00"
+last4 = "0000"
+created = "2026-09-01T00:00:00Z"
+
+[[key]]
+id = "ak_bob"
+name = "bob"
+digest = "sha256:00"
+last4 = "0000"
+created = "2026-09-01T00:00:00Z"
+
+[[key]]
+id = "ak_carol"
+name = "carol"
+digest = "sha256:00"
+last4 = "0000"
+created = "2026-09-01T00:00:00Z"
+revoked = "2026-10-06T00:00:00Z"

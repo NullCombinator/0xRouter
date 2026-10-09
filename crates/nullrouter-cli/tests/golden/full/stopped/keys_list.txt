@@ -1,5 +1,5 @@
 exit: 0
 --- stdout
-ak_fixture1  laptop               …L0P1    2026-10-01T08:00:00Z       -                          default     2026-10-03T14:22:00Z
-ak_fixture2  ci                   …C1C1    2026-10-01T08:30:00Z       2026-10-02T17:00:00Z       error_event 2026-10-02T09:00:00Z
+ak_fixture1  laptop               -              …L0P1    2026-10-01T08:00:00Z       -                          default     2026-10-03T14:22:00Z
+ak_fixture2  ci                   -              …C1C1    2026-10-01T08:30:00Z       2026-10-02T17:00:00Z       error_event 2026-10-02T09:00:00Z
 --- stderr

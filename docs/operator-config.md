@@ -242,12 +242,24 @@ characters, so a lost key can't be shown again: issue a new one.
 
 ```bash
 nullrouter keys issue claude-code-laptop      # prints the key (0r-…) once
-nullrouter keys list                          # id, name, …last4, created, revoked
+nullrouter keys list                          # id, name, harness, …last4, created, revoked
 nullrouter keys revoke claude-code-laptop     # by name or id
+nullrouter keys issue codex-ci --harness codex-cli   # issue with a harness tag
+nullrouter keys tag codex-ci claude-code      # set or replace the tag, by name or id
+nullrouter keys tag codex-ci --clear          # remove it
 ```
 
 The key's id is the agent's identity: provider session ids are derived from it, and
 records name it.
+
+The harness tag is a label for you: the dashboard shows it as a badge on the key and
+`keys list` shows it in the `HARNESS` column (`-` when none). It is 1 to 32 characters with no
+control characters, it changes nothing about routing, and a refused tag exits 1 and issues or
+changes nothing. `keys tag` works on revoked keys too, never touches the secret, and unknown
+keys exit 2.
+
+**Downgrading.** A `keys.toml` that holds a tagged key is refused by a binary from before the
+tag existed. Run `nullrouter keys tag <key> --clear` for each tagged key before going back.
 
 ## The dashboard
 
@@ -482,6 +494,38 @@ a record that never closed shows `interrupted`.
 `records forget --agent` also drops that agent's cache fingerprints, so its next request is
 cold. `prune` and `forget` take the journal lock and exit 1 if it isn't free within 10 s.
 Error bodies sent to clients carry the record id, so a failure can be looked up.
+
+### Usage and latency
+
+Two read-only commands summarise the records. Both ask a running server, or read the journal
+in their own process when none is running, and both give the same numbers.
+
+```bash
+nullrouter usage                      # today, local midnight to now
+nullrouter usage --period 7d          # today, 24h, 7d, 30d, 60d or all
+nullrouter latency                    # the last 24 hours, per agent and per provider
+```
+
+`usage` prints requests (with how many are in flight and how many reported no usage), input
+tokens (uncached), cached tokens, output tokens, an estimated cost, and requests per agent and
+per provider. Add `--json` for exact integers. The dashboard's Usage page shows the same
+figures for the same period.
+
+**Est. Cost** is an estimate, not billing. It prices each record with the prices declared today
+for its provider and account, at the rate in effect when the request arrived; earlier price
+changes are not tracked. Cached tokens are priced at the cache rate when one is declared, and at
+the input rate when none is. A request is left out of the cost, and counted under "not priced"
+with its reason, when its account has no price, when it has output tokens but the price has no
+output rate, or when it reported no usage.
+
+The per-agent rows can add up to less than the total: a request refused before a key matched
+counts in the total but belongs to no agent. A request that fell back counts once for each
+provider it tried, so the per-provider rows can add up to more.
+
+`latency` lists, for each agent, the router's own overhead and the time to first token, and for
+each provider its own wait for a first token (measured from the start of its attempt, so a
+fallback's earlier tries don't count), as p50 / p95, with the last response and, for a provider,
+requests by agent. `none` means no request in the window had that value; it is never `0 ms`.
 
 ### Durability
 

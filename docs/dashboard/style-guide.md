@@ -63,6 +63,16 @@ The status tokens above exist but 9router's badges do not use them. Badges use T
 
 **Navigation** (`Sidebar.js`): item `text-text-muted`, hover `bg-surface-2 text-text-main` and the icon turns primary (`group-hover:text-primary`), active `bg-primary/10 text-primary` with a filled icon. Logo tile 36 px, `rounded-[10px]`, brand gradient 500 to 700.
 
+**Agent palette** (`usage/components/ProviderBarChart.js:17`): `agent-1` to `agent-7`, `#6366f1 #14b8a6 #f59e0b #8b5cf6 #06b6d4 #10b981 #f97316`. 9router's eighth colour, red `#ef4444`, is left out because red means "failed" on the topology graph. An agent's colour is `agent-((position in keys list order) mod 7) + 1`, so it never changes when keys are added.
+
+**Gauge** (landscape on Endpoint & Key; zones after `docs/dashboard/mockups`): a half dial per hop with the needle at the median. Green to half scale, amber to 80%, red above, in the status colours (`green-500`, `yellow-500`, `red-500`). The p50, p95 and request count are always printed beside it, so neither the zone nor the needle carries a fact alone. Full scale is 40 ms for router overhead and 3 s for time to first token; a value beyond it pins the needle.
+
+**Pipe** (`ProviderTopology.js:294`, idle edge): a cubic Bézier in the border colour, one thin stroke per agent on a provider pipe in that agent's colour (`.pipe--agent-N`), dimmed to the idle opacity when it carries no traffic.
+
+**Topology graph** (`ProviderTopology.js:35` nodes, `:294` `edgeStyle`): the router in the centre, providers on an ellipse. Edge red `#ef4444`, width 2.5, opacity 0.9 when the provider's last response failed; amber `#f59e0b`, width 2, opacity 0.7 on the provider with the newest last response; otherwise the border colour, width 1, opacity 0.3. Nodes have a 2 px border (`border-2`). 9router's cyan in-flight edge and its ping animation are not used: the dashboard has no animation and no in-flight count.
+
+**Landscape** (`ProviderTopology.js:35`): agents left, the router centre, providers right, inline SVG. Hover or focus shows a card that repeats the printed numbers and the full name of a shortened node. Revoked keys are dimmed like their cards.
+
 **Empty state**: icon tile, a bold title, a muted one-line hint, centered in a card (seen on Combos and Quota).
 
 ## Status colors

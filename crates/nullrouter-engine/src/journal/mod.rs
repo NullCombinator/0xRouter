@@ -6,6 +6,7 @@
 mod index;
 pub mod records;
 pub mod state;
+pub mod summary;
 pub mod writer;
 
 pub use writer::{Ack, Health, JournalError, Options, Target, Writer as Journal};
