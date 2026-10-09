@@ -37,7 +37,10 @@ const DAYS: u64 = 30;
 fn build(home: &Path) -> String {
     let mut accounts = String::new();
     for n in 0..ACCOUNTS {
-        let _ = write!(accounts, "[[account]]\nprovider = \"anthropic\"\nname = \"acct-{n:02}\"\nsecret = \"sk-bench-{n:04}\"\norder = {n}\n\n");
+        let _ = write!(
+            accounts,
+            "[[account]]\nprovider = \"anthropic\"\nname = \"acct-{n:02}\"\nsecret = \"sk-bench-{n:04}\"\norder = {n}\n\n"
+        );
     }
     write_private(&home.join(nullrouter_engine::accounts::FILE), &accounts).unwrap();
     let mut config = String::from("schema = 1\n");
@@ -97,13 +100,23 @@ fn bench(c: &mut Criterion) {
     let http = reqwest::Client::builder().no_proxy().timeout(Duration::from_secs(30)).build().unwrap();
 
     let mut paths: Vec<String> = Id::ALL.iter().map(|id| id.path().to_owned()).collect();
-    paths.extend(["/providers/anthropic".into(), format!("/usage/records/{newest}"), "/quota?notices".into()]);
+    paths.extend([
+        "/providers/anthropic".into(),
+        format!("/usage/records/{newest}"),
+        "/quota?notices".into(),
+        "/usage?period=all".into(),
+    ]);
 
     let mut group = c.benchmark_group("pages");
     group.sample_size(10);
     for path in &paths {
         let load = || async {
-            let r = http.get(format!("http://{addr}{path}")).header(COOKIE, format!("nr_dashboard={TOKEN}")).send().await.unwrap();
+            let r = http
+                .get(format!("http://{addr}{path}"))
+                .header(COOKIE, format!("nr_dashboard={TOKEN}"))
+                .send()
+                .await
+                .unwrap();
             assert!(r.status().is_success(), "{path}: {}", r.status());
             r.bytes().await.unwrap()
         };

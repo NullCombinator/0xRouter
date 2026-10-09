@@ -122,3 +122,21 @@ async fn every_word_on_a_page_is_the_dashboards_own_or_in_its_views() {
     assert!(strays.is_empty(), "words in no declared view:\n{}", strays.join("\n"));
     assert!(checked > 0, "the fixture home's data words were found in the views");
 }
+
+/// The summaries and the landscape (spec 010, T046): the pages that show them declare the views
+/// they read, so the scan above covers their words.
+#[test]
+fn the_summary_pages_declare_the_views_they_read() {
+    let has = |id: Id, view: ViewName| id.views().contains(&view);
+    assert!(has(Id::Endpoint, ViewName::Latency) && has(Id::Endpoint, ViewName::Usage));
+    assert!(has(Id::Providers, ViewName::Latency));
+    assert!(has(Id::Usage, ViewName::Latency) && has(Id::Usage, ViewName::Usage));
+
+    let wants = |path: &str| {
+        let (route, query) = path.split_once('?').unwrap_or((path, ""));
+        pages::wants(&Req::parse(route, query).expect("a page route"))
+    };
+    let fetched = |path: &str, view: ViewName| wants(path).iter().any(|w| w.view == view);
+    assert!(fetched("/endpoint", ViewName::Latency) && fetched("/endpoint", ViewName::Usage));
+    assert!(fetched("/usage", ViewName::Latency) && fetched("/usage?period=all", ViewName::Usage));
+}

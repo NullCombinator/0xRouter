@@ -490,6 +490,9 @@ pub fn view_cases() -> Vec<(&'static str, &'static [&'static str], Value, Build)
         ("unified mixed", unified::NEEDS, json!({"name": "mixed"}), unified::build),
         ("behaviour", behaviour::NEEDS, json!({}), behaviour::build),
         ("unified unknown", unified::NEEDS, json!({"name": "nope"}), unified::build),
+        ("usage", usage::NEEDS, json!({"period": "all"}), usage::build),
+        ("usage today", usage::NEEDS, json!({"period": "today"}), usage::build),
+        ("latency", latency::NEEDS, json!({}), latency::build),
     ];
     for n in [1, 2, 5, 6] {
         v.push(("record", records::RECORD_NEEDS, json!({"id": r(n)}), records::record));
