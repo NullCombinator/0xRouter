@@ -122,3 +122,49 @@ fn wat_escape(s: &str) -> String {
         })
         .collect()
 }
+
+/// Writes an `in_review` version of `harness` (not active, no `decision`) with `lib_rs` as its
+/// `src/lib.rs`, at version `semver`. Its module is `wasm`. Another version of the harness, such
+/// as one from [`install_fixture`], keeps serving.
+pub fn install_in_review(
+    home: &Path,
+    harness: &str,
+    manifest: &str,
+    wasm: &[u8],
+    semver: (u64, u64, u64),
+    lib_rs: &str,
+) -> VersionId {
+    let store = Store::open(home).expect("the store opens");
+    let name = HarnessName::new(harness).expect("a valid harness name");
+    let files = [
+        ("adapter.toml".to_owned(), manifest.as_bytes().to_vec()),
+        ("src/lib.rs".to_owned(), lib_rs.as_bytes().to_vec()),
+    ];
+    let fp = fingerprint::of_files(&files);
+    let semver = semver::Version::new(semver.0, semver.1, semver.2);
+    let id = VersionId::new(&semver, &fp);
+    for (path, bytes) in &files {
+        store.write_version_file(&name, &id, &format!("source/{path}"), bytes).expect("source written");
+    }
+    store.write_version_file(&name, &id, "module.wasm", wasm).expect("module written");
+    let mut index = store.load_index().expect("the index reads");
+    let entry = VersionEntry {
+        id: id.clone(),
+        semver: semver.to_string(),
+        state: VersionState::Queued,
+        source_fp: fp,
+        wasm_hash: Some(wasm_hash(wasm)),
+        kit_abi: Some(1),
+        submitted: "2026-10-09T00:00:00Z".into(),
+        state_reason: String::new(),
+        rebuilding: false,
+        rebuild_failed: false,
+        origin: Origin::Local("testkit".into()),
+    };
+    index.submit(&name, entry).expect("a new version");
+    for to in [VersionState::Building, VersionState::InReview] {
+        index.transition(&name, &id, to, "").expect("an edge of the state machine");
+    }
+    store.save_index(&index).expect("the index saves");
+    id
+}

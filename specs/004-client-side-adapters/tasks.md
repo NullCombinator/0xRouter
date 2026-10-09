@@ -670,7 +670,7 @@ serves before approval, and an operator with no adapters needs none of it.
   - Assert no `//`, `/*`, `///` or `#[doc` remains.
   - Assert that kit and `std` names and string literals survive.
   - Assert the scrambled output still parses (SC-007).
-- [ ] T051 [P] [US2] Review tests in `crates/nullrouter-adapters/tests/review.rs`, against a
+- [X] T051 [P] [US2] Review tests in `crates/nullrouter-adapters/tests/review.rs`, against a
   mock provider via the engine testkit.
   - (a) With no `[review]`, the state is `quarantined` / `no_review_model`, and no request is
     made.
@@ -753,7 +753,7 @@ serves before approval, and an operator with no adapters needs none of it.
     adapter.
   - It is recorded with the given agent label.
   - The review uses it. It is not reachable from any HTTP route.
-- [ ] T059 [US2] Review in `crates/nullrouter-adapters/src/review.rs`.
+- [X] T059 [US2] Review in `crates/nullrouter-adapters/src/review.rs`.
   - Resolve `[review] model`.
   - Estimate the input with `nullrouter_wire::estimate`, and add `reserve_output`. Compare
     with `budget_tokens`, and quarantine with both numbers when it doesn't fit.

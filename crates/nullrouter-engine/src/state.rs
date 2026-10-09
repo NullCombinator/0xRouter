@@ -142,6 +142,8 @@ pub struct Engine {
     /// Where third-party adapters are loaded from. Set by `serve` through
     /// [`open_adapters`](Self::open_adapters); without it no third-party adapter runs.
     adapters: OnceLock<nullrouter_adapters::loader::Loader>,
+    /// The one-at-a-time adapter review worker (spec 004, T059).
+    pub(crate) reviews: crate::review_queue::ReviewQueue,
     /// Model verdicts per account (spec 011). Kept across reloads.
     pub verdicts: crate::verdict::Board,
     /// Model tests in flight, retests included (spec 011, R10).
@@ -363,6 +365,7 @@ impl Engine {
             generation: AtomicU64::new(1),
             runners: ArcSwap::from_pointee(BTreeMap::new()),
             adapters: OnceLock::new(),
+            reviews: Default::default(),
             reload: Mutex::new(()),
         };
         let st = engine.snapshot();

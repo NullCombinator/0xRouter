@@ -28,6 +28,7 @@ pub mod quota;
 pub mod records;
 pub mod redact;
 pub mod response_side;
+pub mod review_queue;
 pub mod route;
 pub mod routing;
 pub mod signin;
