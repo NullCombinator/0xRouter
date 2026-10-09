@@ -384,7 +384,6 @@ pub struct World {
     pub events: Vec<ResetEvent>,
     /// How a poll rounds a percent reading to whole steps; `None` reports the exact value (the
     /// default, so slice 006's checks see what they always saw).
-    #[allow(dead_code)]
     pub rounding: Option<Rounding>,
     /// Use the router didn't cause (spec 012, research R14).
     #[allow(dead_code)]

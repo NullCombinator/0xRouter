@@ -7,6 +7,8 @@
 //!
 //! `nice cargo test -p nullrouter-engine --release --test sim_week -j 2 -- --nocapture`
 
+#[path = "sim_week/fit.rs"]
+mod fit;
 #[path = "sim_week/router.rs"]
 mod router;
 #[path = "sim_week/world.rs"]
@@ -19,14 +21,17 @@ use std::time::Duration;
 
 use nullrouter_engine::journal::records;
 use nullrouter_engine::journal::state;
+use nullrouter_engine::quota::fit::{NumberState, TokenClass};
+use nullrouter_engine::routing::meter::cost_spent;
 use nullrouter_engine::routing::{
     CandidateKey, CandidateRow, Decision, DecisionKind, MovedBecause, PlacementReason, PriceSpec, Tier, WhyNot,
 };
-use nullrouter_registry::schema::{MeterUnit, RoutingDecl};
+use nullrouter_registry::schema::{MeterDecl, MeterUnit, RoutingDecl};
 use serde_json::Value;
 
-use router::{AccountDef, Defs, Sim, copy_dir, usage_of};
-use world::{DAY, HOUR, MIN, Req, Reset, Rng, TrueAccount, TrueWindow, WEEK_MS, World, at, plan};
+use fit::FitRun;
+use router::{AccountDef, Defs, Placed, Sim, copy_dir, usage_of};
+use world::{DAY, HOUR, MIN, Req, Reset, Rng, Rounding, TrueAccount, TrueWindow, WEEK_MS, World, at, plan};
 
 const SEED: u64 = 0x006_0000_5EED;
 /// Amortization windows with fewer cold requests than this are too thin for a 5% bound: one
@@ -715,4 +720,250 @@ fn a_power_loss_leaves_at_most_the_last_simulated_second_missing() {
     // The routing state still loads, and holds the work of every earlier second.
     let loaded = state::load(dir.path());
     assert!(!loaded.warm.is_empty() && !loaded.ledgers.is_empty());
+}
+
+// ---------------------------------------------------------------------------------------------
+// The quota fit over the week (spec 012, T017, T018; research R14)
+
+const FIT_PROVIDER: &str = "fitted";
+const FIT_ACCOUNT: &str = "acct";
+const FIT_WINDOW: &str = "5-hour";
+/// What the declaration says, and what a provider that charges the output and cache classes three
+/// times as much, relative to input, really does.
+const DECLARED_WEIGHTS: &str = WEIGHTS;
+const THREE_TIMES_WEIGHTS: &str = "token_weights = { input = 1.0, output = 15.0, cache_read = 0.3, cache_write = 3.75 }";
+/// `(output, cache_read, cache_write)` of each, as the fit names them: ratios to input (1.0).
+const DECLARED_RATIOS: [f64; 3] = [5.0, 0.1, 1.25];
+const THREE_TIMES_RATIOS: [f64; 3] = [15.0, 0.3, 3.75];
+/// The busiest five hours of the week use this share of the true capacity, so that no window runs out.
+const PEAK_SHARE: f64 = 0.55;
+
+/// One plugin with one subscription account, over two pay-as-you-go keys that catch overflow.
+struct Scenario {
+    declared_weights: &'static str,
+    true_weights: &'static str,
+    true_ratios: [f64; 3],
+    declared_capacity: f64,
+    true_capacity: f64,
+}
+
+fn five_hour(capacity: f64, weights: &str) -> MeterDecl {
+    let toml = format!(
+        "[[window]]\nname = \"{FIT_WINDOW}\"\nlength = \"5h\"\nunit = \"weighted_tokens\"\ncapacity = {capacity}\n{weights}\nreserve = \"10%\"\n"
+    );
+    decl(&toml).window.remove(0)
+}
+
+/// The most the week's traffic costs a 5-hour stretch of one account that never refuses it.
+fn peak_five_hours(reqs: &[Req], weights: &str) -> f64 {
+    let meter = five_hour(1.0e12, weights);
+    let mut world = World::new(vec![TrueAccount { windows: vec![TrueWindow::new(&meter, Reset::FirstUse, false, 0.0)] }]);
+    let mut costs: Vec<(u64, f64)> = Vec::with_capacity(reqs.len());
+    let mut swept = 0;
+    for r in reqs {
+        if r.at_ms / HOUR != swept {
+            swept = r.at_ms / HOUR;
+            world.sweep(r.at_ms);
+        }
+        let usage = world.serve(0, r, r.at_ms).expect("an account with no limit serves");
+        costs.push((r.at_ms, cost_spent(&meter, &usage.spent())));
+    }
+    let (mut lo, mut sum, mut peak) = (0, 0.0, 0.0f64);
+    for hi in 0..costs.len() {
+        sum += costs[hi].1;
+        while costs[hi].0 - costs[lo].0 >= 5 * HOUR {
+            sum -= costs[lo].1;
+            lo += 1;
+        }
+        peak = peak.max(sum);
+    }
+    peak
+}
+
+impl Scenario {
+    /// Output and cache weights 3x the declared ones relative to input, true capacity 0.6x declared.
+    fn three_times_off(reqs: &[Req]) -> Self {
+        let truth = (peak_five_hours(reqs, THREE_TIMES_WEIGHTS) / PEAK_SHARE).round();
+        Self {
+            declared_weights: DECLARED_WEIGHTS,
+            true_weights: THREE_TIMES_WEIGHTS,
+            true_ratios: THREE_TIMES_RATIOS,
+            declared_capacity: (truth / 0.6).round(),
+            true_capacity: truth,
+        }
+    }
+
+    /// The plugin declares what the provider does.
+    fn right(reqs: &[Req]) -> Self {
+        let truth = (peak_five_hours(reqs, DECLARED_WEIGHTS) / PEAK_SHARE).round();
+        Self {
+            declared_weights: DECLARED_WEIGHTS,
+            true_weights: DECLARED_WEIGHTS,
+            true_ratios: DECLARED_RATIOS,
+            declared_capacity: truth,
+            true_capacity: truth,
+        }
+    }
+
+    /// Right weights; the declared capacity is half the true one (true = 2x declared).
+    fn half_capacity(reqs: &[Req]) -> Self {
+        let truth = (peak_five_hours(reqs, DECLARED_WEIGHTS) / PEAK_SHARE).round();
+        Self {
+            declared_weights: DECLARED_WEIGHTS,
+            true_weights: DECLARED_WEIGHTS,
+            true_ratios: DECLARED_RATIOS,
+            declared_capacity: (truth / 2.0).round(),
+            true_capacity: truth,
+        }
+    }
+
+    /// The router's definitions and the provider's truth. Polls show whole percents, rounded half up.
+    fn week(&self) -> (Defs, World) {
+        let payg = |key: &str, order: i64, toml: &str| {
+            let (provider, account) = key.split_once('/').expect("provider/account");
+            AccountDef {
+                key: CandidateKey::new(provider, account, "m"),
+                order,
+                priority: 1.0,
+                meters: Vec::new(),
+                reported: false,
+                price: PriceSpec { schedule: decl(toml).price, flat: None },
+            }
+        };
+        let defs = Defs {
+            accounts: vec![
+                AccountDef {
+                    key: CandidateKey::new(FIT_PROVIDER, FIT_ACCOUNT, "m"),
+                    order: 0,
+                    priority: 1.0,
+                    meters: vec![five_hour(self.declared_capacity, self.declared_weights)],
+                    reported: true,
+                    price: PriceSpec::default(),
+                },
+                payg("openrouter/key", 1, "[[price]]\ninput = 1.5\n"),
+                payg("deepseek/key", 2, "[[price]]\ninput = 1.6\n"),
+            ],
+            target: "sonnet".into(),
+            amortization: Duration::from_secs(5 * 3600),
+        };
+        let truth = five_hour(self.true_capacity, self.true_weights);
+        let mut world = World::new(vec![
+            TrueAccount { windows: vec![TrueWindow::new(&truth, Reset::FirstUse, true, 0.0)] },
+            TrueAccount::default(),
+            TrueAccount::default(),
+        ]);
+        world.rounding = Some(Rounding::HalfUp);
+        (defs, world)
+    }
+}
+
+/// What a week left behind.
+struct Week {
+    placed: Vec<Placed>,
+    fit: Option<FitRun>,
+}
+
+fn run_week(scenario: &Scenario, reqs: &[Req], fitting: bool) -> Week {
+    let (defs, mut world) = scenario.week();
+    let dir = tempfile::tempdir().unwrap();
+    let mut sim = Sim::new(&defs, dir.path());
+    if fitting {
+        sim = sim.with_fit(FitRun::new(defs.accounts.len()));
+    }
+    for r in reqs {
+        sim.handle(&mut world, r);
+    }
+    sim.journal.flush_blocking();
+    assert!(sim.placed.iter().all(|p| p.served.is_some()), "every request was served");
+    Week { placed: std::mem::take(&mut sim.placed), fit: sim.fit.take() }
+}
+
+/// Capacity is `Fitted` within the week and within 10% of the truth; so is every other number the
+/// fit made significant; and every significant number's 95% range holds its truth (SC-001, US1
+/// scenarios 1 and 3). With `weights` the output weight must be significant as well.
+fn assert_fitted(fit: &FitRun, scenario: &Scenario, weights: bool) {
+    let states = fit.learner.number_states(FIT_PROVIDER, FIT_WINDOW);
+    let ranges = fit.learner.ranges(FIT_PROVIDER, FIT_WINDOW);
+    let published = fit.fits.window(FIT_PROVIDER, FIT_WINDOW);
+    let capacity = format!("capacity@{FIT_ACCOUNT}");
+    let [out, read, write] = scenario.true_ratios;
+    let truth = [
+        (capacity.as_str(), scenario.true_capacity),
+        ("weight.output", out),
+        ("weight.cache_read", read),
+        ("weight.cache_write", write),
+    ];
+    let mut required = vec![capacity.as_str()];
+    if weights {
+        required.push("weight.output");
+    }
+    for key in required {
+        match states.get(key) {
+            Some(NumberState::Fitted { since }) => assert!(*since <= at(WEEK_MS), "{key} fitted after the week"),
+            other => panic!("{key} is {other:?}, not fitted within the week"),
+        }
+    }
+    let value = |key: &str| match key {
+        "weight.output" => published.weights.get(&TokenClass::Output).copied(),
+        "weight.cache_read" => published.weights.get(&TokenClass::CacheRead).copied(),
+        "weight.cache_write" => published.weights.get(&TokenClass::CacheWrite).copied(),
+        _ => published.capacity.get(FIT_ACCOUNT).copied(),
+    };
+    for (key, want) in truth {
+        if !matches!(states.get(key), Some(NumberState::Fitted { .. })) {
+            continue;
+        }
+        let got = value(key).unwrap_or_else(|| panic!("{key} is fitted but not published"));
+        assert!((got / want - 1.0).abs() <= 0.10, "{key}: fitted {got}, true {want}");
+        let (_, lo, hi) = ranges.get(key).copied().unwrap_or_else(|| panic!("{key} has no range"));
+        assert!(lo <= want && want <= hi, "{key}: the 95% range {lo}..{hi} misses the truth {want}");
+    }
+    // FR-014: between polls, remaining quota is the last poll's fraction of the fitted capacity
+    // less our own traffic since, costed with the meter in effect, and nothing for outside use.
+    assert!(fit.audit_failures.is_empty(), "{} remaining-quota failures, first: {:?}", fit.audit_failures.len(), fit.audit_failures.first());
+    assert!(fit.audited > 100, "the remaining-quota check ran only {} times", fit.audited);
+}
+
+#[test]
+fn a_meter_three_times_off_is_fitted_within_the_week_and_placements_agree_until_then() {
+    let started = std::time::Instant::now();
+    let reqs = plan(SEED);
+    let scenario = Scenario::three_times_off(&reqs);
+    let fitted = run_week(&scenario, &reqs, true);
+    let baseline = run_week(&scenario, &reqs, false);
+    let fit = fitted.fit.as_ref().expect("a fit run");
+    assert_fitted(fit, &scenario, true);
+
+    // SC-005: until the fit first has a significant number, no placement differs from the baseline.
+    let first = fit.first_change.expect("the fit gained a significant number");
+    assert_eq!(fitted.placed[..first], baseline.placed[..first], "a placement before the first significance differs");
+    assert!(first > 0 && first < reqs.len(), "first significance at request {first} of {}", reqs.len());
+    println!(
+        "three times off: first significant number after {first} of {} requests (+{:.1}h); {:.1}s",
+        reqs.len(),
+        reqs[first.min(reqs.len() - 1)].at_ms as f64 / HOUR as f64,
+        started.elapsed().as_secs_f64()
+    );
+}
+
+#[test]
+fn a_right_plugin_places_exactly_as_with_the_fit_off() {
+    let reqs = plan(SEED);
+    let scenario = Scenario::right(&reqs);
+    let fitted = run_week(&scenario, &reqs, true);
+    let baseline = run_week(&scenario, &reqs, false);
+    let fit = fitted.fit.as_ref().expect("a fit run");
+    // US1 scenario 2: nothing is significant, so nothing changes.
+    assert!(fit.fits.windows.is_empty(), "a right declaration got a significant number: {:?}", fit.fits.windows);
+    assert_eq!(fit.first_change, None);
+    assert_eq!(fitted.placed, baseline.placed, "placements with the fit on differ from the baseline");
+}
+
+#[test]
+fn a_capacity_declared_at_half_the_truth_is_fitted_within_the_week() {
+    let reqs = plan(SEED);
+    let scenario = Scenario::half_capacity(&reqs);
+    let fitted = run_week(&scenario, &reqs, true);
+    // US1 scenario 3 as written: true capacity is twice the declared one. The weights are right.
+    assert_fitted(fitted.fit.as_ref().expect("a fit run"), &scenario, false);
 }

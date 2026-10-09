@@ -23,6 +23,7 @@ use nullrouter_engine::routing::{CacheSpec, Candidate, CandidateKey, Placement, 
 use nullrouter_registry::schema::{CacheMode, MeterDecl};
 use serde_json::{Value, json};
 
+use super::fit::FitRun;
 use super::world::{CACHE_MS, DAY, MIN, Req, Usage, World, at};
 
 /// How often every polled account is polled, in simulated time.
@@ -130,6 +131,9 @@ pub struct Sim<'a> {
     next_poll: u64,
     /// Synced every simulated second (the power-loss variant): the last second handled.
     pub sync_each_second: Option<u64>,
+    /// The quota fit (spec 012): `None` places with the declared meters, as slice 006 did. A fork
+    /// or restart does not carry it.
+    pub fit: Option<FitRun>,
 }
 
 fn clone_warm(w: &WarmStore) -> WarmStore {
@@ -160,7 +164,14 @@ impl<'a> Sim<'a> {
             placed: Vec::new(),
             next_poll: 0,
             sync_each_second: None,
+            fit: None,
         }
+    }
+
+    /// Places with the meters the fit makes significant.
+    pub fn with_fit(mut self, fit: FitRun) -> Self {
+        self.fit = Some(fit);
+        self
     }
 
     // -----------------------------------------------------------------------------------------
@@ -185,6 +196,7 @@ impl<'a> Sim<'a> {
             placed: self.placed.clone(),
             next_poll: self.next_poll,
             sync_each_second: self.sync_each_second,
+            fit: None,
         }
     }
 
@@ -277,6 +289,10 @@ impl<'a> Sim<'a> {
                 continue;
             }
             self.polls[i] = Some((w.polls(i, t), now));
+            if let Some(fit) = self.fit.as_mut() {
+                let windows = self.polls[i].as_ref().map_or(&[][..], |p| p.0.as_slice());
+                fit.observe_poll(self.defs, i, windows, &self.tallies[i].since_poll, now, self.placed.len());
+            }
             self.tallies[i].since_poll = Spent::default();
         }
         w.roll(t);
@@ -327,7 +343,7 @@ impl<'a> Sim<'a> {
                 let polled = self.polls[i].as_ref().map(|(w, at)| (w.as_slice(), *at));
                 let quota = quota_for(
                     &MeterInput {
-                        declared: &d.meters,
+                        declared: self.fit.as_ref().and_then(|f| f.meters(i)).unwrap_or(d.meters.as_slice()),
                         overrides: &overrides,
                         report_declared: d.reported,
                         polled,
@@ -369,6 +385,12 @@ impl<'a> Sim<'a> {
         let length = self.defs.amortization;
 
         let candidates = self.candidates(t);
+        if let Some(fit) = self.fit.as_mut() {
+            for (i, c) in candidates.iter().enumerate() {
+                let polled = self.polls[i].as_ref().map(|p| p.0.as_slice());
+                fit.audit(self.defs, i, &c.quota, polled, &self.tallies[i].since_poll);
+            }
+        }
         let chain = Chain {
             boundaries: req
                 .chain

@@ -68,6 +68,9 @@ struct Win {
     splits: BTreeMap<String, split::Split>,
     last: Option<(Spec, Fit)>,
     published: WindowFit,
+    /// Each informed number's `(estimate, low, high)` in natural units, keyed like `numbers`.
+    /// A weight on a percent window is the ratio to the input weight.
+    ranges: BTreeMap<String, (f64, f64, f64)>,
     /// What was stored for the window; fields the learner doesn't own yet pass through.
     base: StoredWindow,
 }
@@ -84,6 +87,7 @@ impl Win {
             splits: BTreeMap::new(),
             last: None,
             published: WindowFit::default(),
+            ranges: BTreeMap::new(),
             base: StoredWindow::default(),
         }
     }
@@ -191,6 +195,13 @@ impl Learner {
         self.windows.get(&(provider.to_owned(), window.to_owned())).map(|w| w.numbers.clone()).unwrap_or_default()
     }
 
+    /// The 95% range `(estimate, low, high)` of every informed number of one window, in natural
+    /// units and keyed like [`Learner::number_states`]. A weight on a percent window is the ratio
+    /// to the input weight.
+    pub fn ranges(&self, provider: &str, window: &str) -> BTreeMap<String, (f64, f64, f64)> {
+        self.windows.get(&(provider.to_owned(), window.to_owned())).map(|w| w.ranges.clone()).unwrap_or_default()
+    }
+
     /// The accounts split off from `window`'s pooled numbers, with their reasons.
     pub fn splits(&self, provider: &str, window: &str) -> BTreeMap<String, String> {
         self.windows
@@ -251,13 +262,43 @@ impl Learner {
         for a in unfitted {
             self.unfitted.insert((provider.to_owned(), a.name.clone()), "no quota reports (or pay-as-you-go)".to_owned());
         }
-        let mut accounts: Vec<String> = fitted.iter().map(|a| a.name.clone()).collect();
+        let accounts: Vec<String> = fitted.iter().map(|a| a.name.clone()).collect();
+        self.run_declared(fits, home, provider, entity.routing().windows, &accounts, tails, now)
+    }
+
+    /// [`Fits::observe`] without an engine snapshot: `declared` are the plugin's windows and
+    /// `accounts` its polled accounts. The simulated week drives the learner through this.
+    #[allow(clippy::too_many_arguments)]
+    pub fn observe_declared(
+        &mut self,
+        fits: &mut Fits,
+        home: &Path,
+        provider: &str,
+        declared: &[MeterDecl],
+        accounts: &[String],
+        tails: &[(&str, &[Entry])],
+        now: SystemTime,
+    ) -> bool {
+        self.run_declared(fits, home, provider, declared, accounts, tails, now)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_declared(
+        &mut self,
+        fits: &mut Fits,
+        home: &Path,
+        provider: &str,
+        declared: &[MeterDecl],
+        accounts: &[String],
+        tails: &[(&str, &[Entry])],
+        now: SystemTime,
+    ) -> bool {
+        let mut accounts = accounts.to_vec();
         accounts.sort();
         if !tails.iter().any(|(a, _)| accounts.iter().any(|x| x.as_str() == *a)) {
             return false;
         }
         self.load_store(home, provider);
-        let declared = entity.routing().windows;
         for meter in declared {
             self.window(home, provider, declared, meter, &accounts, tails, now);
         }
@@ -625,6 +666,7 @@ fn update_numbers(win: &mut Win, spec: &Spec, meter: &MeterDecl, now: SystemTime
         }
     }
     let mut states = BTreeMap::new();
+    let mut ranges = BTreeMap::new();
     let mut published = WindowFit { relative_to_input: spec.kind == Kind::Percent, ..WindowFit::default() };
     if spec.kind == Kind::Percent {
         states.insert(MeterNumber::Weight(TokenClass::Input).to_string(), NumberState::Yardstick);
@@ -674,8 +716,14 @@ fn update_numbers(win: &mut Win, spec: &Spec, meter: &MeterDecl, now: SystemTime
                 }
             }
         }
+        if informed && let Some((e, lo, hi)) = fit.range(n.p) {
+            // A capacity is `scale / k`: the range flips.
+            let range = n.scale.map_or((e, lo, hi), |s| (s / e, s / hi, s / lo));
+            ranges.insert(n.key.clone(), range);
+        }
         states.insert(n.key.clone(), state);
     }
+    win.ranges = ranges;
     win.numbers = states;
     win.published = published;
 }
