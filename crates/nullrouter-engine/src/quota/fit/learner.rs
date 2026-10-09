@@ -891,12 +891,14 @@ fn settle(win: &mut Win, spec: &Spec, meter: &MeterDecl, now: SystemTime) -> boo
     for _ in 0..SETTLE_ROUNDS {
         let rows = model::prepare(spec, &evidence(win));
         let pool = split::without(&rows, &split_indices(win, spec));
-        let start = match &win.last {
-            Some((_, f)) => f.theta.clone(),
-            None => start_theta(spec, meter),
-        };
+        // The last fit is a warm start; the declaration is the fresh one it must beat.
+        let mut starts = Vec::new();
+        if let Some((_, f)) = &win.last {
+            starts.push(f.theta.clone());
+        }
+        starts.push(start_theta(spec, meter));
         let prior = win.base.prior.as_ref().map(prior_term);
-        let Some(fit) = model::fit_with_prior(spec, &pool, &start, prior.as_ref()) else { return fitted };
+        let Some(fit) = model::fit_best(spec, &pool, &starts, prior.as_ref()) else { return fitted };
         let before: Vec<Class> = win.rows.iter().map(|r| r.class).collect();
         reclassify_epoch(&mut win.rows, spec, Some(&fit), STEP, now);
         win.last = Some((spec.clone(), fit));

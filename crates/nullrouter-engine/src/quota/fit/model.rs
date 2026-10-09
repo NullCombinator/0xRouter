@@ -403,6 +403,27 @@ pub fn fit(spec: &Spec, rows: &[MRow], start: &Theta) -> Option<Fit> {
 /// spec lacks is ignored. `None` when no parameter is informed, there are no more rows than
 /// parameters, or the information is singular.
 pub fn fit_with_prior(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&PriorTerm>) -> Option<Fit> {
+    fit_inner(spec, rows, start, prior).map(|(f, _)| f)
+}
+
+/// The best of the fits from each of `starts`, by the objective (squared error plus the prior's
+/// penalty). Gauss–Newton in log space cannot climb back from a parameter that earlier, thin
+/// evidence drove to nearly 0 (its gradient vanishes with it), so a warm start is always
+/// compared with a fresh one. `None` when no start gives a fit.
+pub fn fit_best(spec: &Spec, rows: &[MRow], starts: &[Theta], prior: Option<&PriorTerm>) -> Option<Fit> {
+    let mut best: Option<(Fit, f64)> = None;
+    for start in starts {
+        if let Some((f, obj)) = fit_inner(spec, rows, start, prior)
+            && obj.is_finite()
+            && best.as_ref().is_none_or(|(_, b)| obj < *b)
+        {
+            best = Some((f, obj));
+        }
+    }
+    best.map(|(f, _)| f)
+}
+
+fn fit_inner(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&PriorTerm>) -> Option<(Fit, f64)> {
     let mut th = start.clone();
     // Keep the parameters some row informs.
     let probe = candidates(spec, &th);
@@ -514,7 +535,8 @@ pub fn fit_with_prior(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&
         }
     }
     let cov = inv.mul(&jr).mul(&inv);
-    Some(Fit { theta: th, active, cov, info, rows: rows.len(), rss, sigma_e2, converged })
+    let objective = rss + penalty(&th);
+    Some((Fit { theta: th, active, cov, info, rows: rows.len(), rss, sigma_e2, converged }, objective))
 }
 
 /// The natural-unit values of every fitted parameter, keyed by parameter (for tests and views).
