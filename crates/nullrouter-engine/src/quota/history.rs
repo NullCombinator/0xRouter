@@ -346,6 +346,18 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Called with `(provider, account, entry)` after an entry is durably appended.
+pub type EntryObserver = Arc<dyn Fn(&str, &str, &Entry) + Send + Sync>;
+
+#[derive(Default)]
+struct Observers(Mutex<Vec<EntryObserver>>);
+
+impl std::fmt::Debug for Observers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Observers").field("len", &lock(&self.0).len()).finish()
+    }
+}
+
 /// The engine's poll history writer and running tallies.
 #[derive(Debug)]
 pub struct History {
@@ -357,6 +369,8 @@ pub struct History {
     /// Held by whoever writes files: one writer at a time, in queue order.
     writer: Mutex<()>,
     checkpoint_ms: AtomicU64,
+    /// Told of each entry once it is on disk (the quota fit learns from them, spec 012).
+    observers: Observers,
 }
 
 impl History {
@@ -369,6 +383,7 @@ impl History {
             queue: Mutex::default(),
             writer: Mutex::default(),
             checkpoint_ms: AtomicU64::new(CHECKPOINT_EVERY.as_millis() as u64),
+            observers: Observers::default(),
         };
         match accounts_on_disk(home, None, None) {
             Ok(list) => {
@@ -387,6 +402,12 @@ impl History {
 
     pub fn home(&self) -> &Path {
         &self.home
+    }
+
+    /// Registers `f` to run after each entry is durably appended, on the writing thread. It
+    /// must not call back into this history's writers.
+    pub fn on_entry(&self, f: EntryObserver) {
+        lock(&self.observers.0).push(f);
     }
 
     /// How often the server checkpoints (tests shorten it).
@@ -448,6 +469,10 @@ impl History {
             // The entry holds the taken tally; an old checkpoint is stale against it.
             tracing::warn!(provider = p, account = a, "tally checkpoint not written: {e}");
             self.tally.mark_dirty(p, a);
+        }
+        let observers: Vec<EntryObserver> = lock(&self.observers.0).clone();
+        for observe in observers {
+            observe(p, a, &entry);
         }
         Ok(entry)
     }

@@ -7,6 +7,7 @@
 
 pub mod breaks;
 pub mod classify;
+pub mod learner;
 pub mod linalg;
 pub mod model;
 pub mod outside;

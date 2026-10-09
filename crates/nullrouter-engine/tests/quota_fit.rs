@@ -353,3 +353,128 @@ fn fitted_ratios_follow_the_yardstick() {
     fit.weights.insert(TokenClass::Input, 9.0);
     assert_eq!(in_effect(&m, None, None, &fit, "a").0.token_weights.unwrap().input, 1.0);
 }
+
+// ---- the learner (T027, T028) ----
+
+use nullrouter_engine::quota::fit::learner::Learner;
+use nullrouter_engine::quota::fit::store::{self, Loaded};
+use nullrouter_engine::quota::fit::{Fits, Meters, NumberState};
+use nullrouter_engine::quota::history;
+use nullrouter_engine::state::Engine;
+use nullrouter_registry::OperatorHome;
+
+/// A home with provider `keyco` (one `5-hour` meter declared at 1,000,000 weighted tokens,
+/// reported in percent) and two accounts, `main` and `spare`.
+fn keyco_home() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("config.toml"), "allow_private_endpoints = true\n").unwrap();
+    std::fs::create_dir(dir.path().join("plugins")).unwrap();
+    let plugin = r#"schema = 2
+id = "keyco"
+category = "apikey"
+[auth]
+kind = "apikey"
+[endpoints.text]
+url = "http://127.0.0.1:9/keyco/chat/completions"
+wire = "openai-chat"
+[quota]
+accounts = "key"
+request = { url = "http://127.0.0.1:9/keyco/usage" }
+[[quota.window]]
+path = "usage.rolling"
+name = "5-hour"
+unit = "percent"
+used = "percent"
+[[routing.window]]
+name = "5-hour"
+length = "5h"
+unit = "weighted_tokens"
+capacity = 1000000
+[[models]]
+id = "m1"
+"#;
+    std::fs::write(dir.path().join("plugins/keyco.toml"), plugin).unwrap();
+    let mut accounts = String::from("schema = 2\n");
+    for (order, name) in ["main", "spare"].iter().enumerate() {
+        accounts += &format!(
+            "[[account]]\nprovider = \"keyco\"\nname = \"{name}\"\nsecret = \"sk-{name}\"\norder = {order}\n"
+        );
+    }
+    nullrouter_engine::files::write_private(&dir.path().join(nullrouter_engine::accounts::FILE), &accounts).unwrap();
+    nullrouter_engine::files::write_private(&nullrouter_engine::tokens::path(dir.path()), "schema = 1\n").unwrap();
+    dir
+}
+
+/// `n + 1` good polls ten minutes apart. The true capacity is a third of the declared one
+/// (333,333 input tokens per 100 percent), readings are rounded to whole percent points, and
+/// only input tokens are sent.
+fn third_capacity_history(n: usize) -> Vec<Entry> {
+    let mut rng = Lcg(0x012_7027);
+    let k = 100.0 / 333_333.0;
+    let mut level = 5.3f64;
+    let mut out = vec![entry(0, true, Some(window(level.round(), 3000)), &[])];
+    for i in 1..=n {
+        let input = 800 + (rng.next() * 3600.0) as u64;
+        level += k * input as f64;
+        out.push(entry(10 * i as u64, true, Some(window(level.round(), 3000)), &[("m1", model(1, 0, input, 0))]));
+    }
+    out
+}
+
+#[tokio::test]
+async fn a_factor_three_capacity_becomes_fitted_and_reaches_the_meters() {
+    let dir = keyco_home();
+    let (engine, _) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
+    let st = engine.snapshot();
+    let entries = third_capacity_history(100);
+
+    let mut learner = Learner::default();
+    let mut fits = Fits::default();
+    // Two rows are fewer than the parameters: nothing is published (FR-011).
+    assert!(!fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &entries[..3], t(20)));
+    assert!(fits.windows.is_empty());
+
+    let mut first_change = None;
+    for n in 4..=entries.len() {
+        let now = t(10 * (n as u64 - 1));
+        if fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &entries[..n], now) && first_change.is_none() {
+            first_change = Some(n);
+            let states = learner.number_states("keyco", "5-hour");
+            assert!(
+                matches!(states["capacity@main"], NumberState::Fitted { .. }),
+                "first publish must be the capacity becoming Fitted: {states:?}"
+            );
+            assert!(fits.window("keyco", "5-hour").capacity.contains_key("main"));
+        }
+    }
+    assert!(first_change.is_some_and(|n| n < entries.len()), "capacity never became significant");
+    let c = fits.window("keyco", "5-hour").capacity["main"];
+    assert!((c / 333_333.0 - 1.0).abs() < 0.15, "fitted capacity {c}");
+    assert!(fits.window("keyco", "5-hour").capacity.get("spare").is_none(), "spare has no evidence");
+    let states = learner.number_states("keyco", "5-hour");
+    assert!(matches!(states["capacity@main"], NumberState::Fitted { .. }), "{states:?}");
+
+    // The meter in effect carries it; an account with nothing replaced has no entry (FR-011).
+    let meters = Meters::default();
+    meters.rebuild(&st, &fits);
+    let m = meters.get("keyco", "main").expect("main's meter is replaced");
+    assert_eq!(m.windows[0].capacity, Some(c));
+    assert_eq!(m.sources["5-hour"][&nullrouter_engine::quota::fit::MeterNumber::Capacity], nullrouter_engine::quota::fit::Source::Fit);
+    assert!(meters.get("keyco", "spare").is_none());
+
+    // The state was saved, and a restart rebuilds the same fit by replaying the history.
+    let Loaded::Ok(saved) = store::load(dir.path(), "keyco").unwrap() else { panic!("fit state not saved") };
+    assert_eq!(saved.windows["5-hour"].numbers["capacity@main"].state, "fitted");
+    for e in &entries {
+        history::append(dir.path(), "keyco", "main", e).unwrap();
+    }
+    let mut again = Learner::default();
+    let since = again.since(dir.path(), "keyco", "main");
+    assert_eq!(since, Some(t(0)));
+    let tail = history::read(dir.path(), "keyco", "main", since, None).unwrap();
+    let mut replayed = Fits::default();
+    assert!(replayed.observe(&mut again, dir.path(), &st, "keyco", "main", &tail, t(1000)));
+    let c2 = replayed.window("keyco", "5-hour").capacity["main"];
+    assert!((c2 / 333_333.0 - 1.0).abs() < 0.15, "replayed capacity {c2}");
+    assert_eq!(again.number_states("keyco", "5-hour")["capacity@main"], states["capacity@main"]);
+}
