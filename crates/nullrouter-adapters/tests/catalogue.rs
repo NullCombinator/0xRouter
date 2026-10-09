@@ -192,7 +192,7 @@ fn index_text(source: &str, sha256: &str, fp: &str) -> String {
 
 // ---- tests ----
 
-fn opts(styles: &[&'static str]) -> InstallOptions<'_> {
+fn opts<'a>(styles: &'a [&'a str]) -> InstallOptions<'a> {
     InstallOptions {
         styles,
         // No builder: the install ends `queued` / `builder_not_installed`, deterministically.

@@ -191,11 +191,12 @@ fn strip_docs(stream: TokenStream) -> TokenStream {
     while let Some(tree) = trees.get(i) {
         if is_punct(Some(tree), '#') {
             let j = if is_punct(trees.get(i + 1), '!') { i + 2 } else { i + 1 };
-            if let Some(TokenTree::Group(g)) = trees.get(j) {
-                if g.delimiter() == Delimiter::Bracket && is_doc_attr(g.stream()) {
-                    i = j + 1;
-                    continue;
-                }
+            if let Some(TokenTree::Group(g)) = trees.get(j)
+                && g.delimiter() == Delimiter::Bracket
+                && is_doc_attr(g.stream())
+            {
+                i = j + 1;
+                continue;
             }
         }
         match tree {

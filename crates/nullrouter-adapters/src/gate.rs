@@ -528,12 +528,12 @@ impl Scan<'_> {
                         let mut nums = Vec::new();
                         let mut chars = String::new();
                         for inner in g.stream() {
-                            if let TokenTree::Literal(l) = inner {
-                                if let Ok(lit) = syn::parse2::<Lit>(TokenStream::from(TokenTree::Literal(l))) {
-                                    nums.push(lit_number(&lit));
-                                    if let Lit::Char(c) = &lit {
-                                        chars.push(c.value());
-                                    }
+                            if let TokenTree::Literal(l) = inner
+                                && let Ok(lit) = syn::parse2::<Lit>(TokenStream::from(TokenTree::Literal(l)))
+                            {
+                                nums.push(lit_number(&lit));
+                                if let Lit::Char(c) = &lit {
+                                    chars.push(c.value());
                                 }
                             }
                         }
