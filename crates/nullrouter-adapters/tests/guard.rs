@@ -22,6 +22,10 @@ use nullrouter_adapters::guard::{Verdict, check_event};
 use nullrouter_adapters::record::GuardrailRule as R;
 use nullrouter_wire::ir::{BlockKind, Event};
 
+fn common_style(id: &str) -> nullrouter_wire::codec::Style {
+    common::style(id)
+}
+
 fn start(id: &str, name: &str) -> Event {
     Event::BlockStart(BlockKind::ToolCall { id: id.into(), name: name.into() })
 }
@@ -59,9 +63,9 @@ fn a_changed_argument_fragment_is_a_violation() {
 }
 
 #[test]
-fn removing_a_tool_call_or_changing_text_passes() {
+fn removing_text_or_changing_it_passes() {
     let mut without = original();
-    without.truncate(3);
+    without.remove(1);
     assert_eq!(check_event(&original(), &without), Verdict::Ok);
 
     let mut reworded = original();
@@ -75,4 +79,30 @@ fn a_violation_names_at_most_sixteen_places() {
     after.extend((0..40).map(|n| start(&format!("x{n}"), "rm")));
     let Verdict::Violation { paths, .. } = check_event(&original(), &after) else { panic!("expected a violation") };
     assert_eq!(paths.len(), 16);
+}
+
+#[test]
+fn removing_an_argument_fragment_or_a_tool_call_start_is_a_violation() {
+    let mut blanked = original();
+    blanked.remove(4);
+    assert!(matches!(check_event(&original(), &blanked), Verdict::Violation { rule: R::ToolCallChanged, .. }));
+
+    let mut headless = original();
+    headless.remove(3);
+    assert!(matches!(check_event(&original(), &headless), Verdict::Violation { rule: R::ToolCallChanged, .. }));
+}
+
+#[test]
+fn moving_a_fragment_to_another_tool_ordinal_is_a_violation() {
+    use nullrouter_adapters::guard::check_event_frame;
+    let style = common_style("openai-chat");
+    let frame = |index: u64| {
+        serde_json::json!({"id": "x", "object": "chat.completion.chunk", "model": "m", "choices": [
+            {"index": 0, "delta": {"tool_calls": [{"index": index, "function": {"arguments": "{\"a\":1}"}}]}}]})
+    };
+    assert_eq!(check_event_frame(&style, &frame(0), &frame(0)), Verdict::Ok);
+    assert!(matches!(check_event_frame(&style, &frame(0), &frame(1)), Verdict::Violation { .. }));
+    let blank = serde_json::json!({"id": "x", "object": "chat.completion.chunk", "model": "m", "choices": [
+        {"index": 0, "delta": {"tool_calls": [{"index": 0, "function": {"arguments": ""}}]}}]});
+    assert!(matches!(check_event_frame(&style, &frame(0), &blank), Verdict::Violation { .. }));
 }

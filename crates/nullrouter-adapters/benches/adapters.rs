@@ -73,7 +73,7 @@ fn guard_request(c: &mut Criterion) {
             messages.pop();
         }
         group.bench_function(name, |b| {
-            b.iter(|| guard::check_request(&style, &before, black_box(&after)));
+            b.iter(|| guard::check_request(&style, &before, &body, black_box(&after)));
         });
     }
     group.finish();

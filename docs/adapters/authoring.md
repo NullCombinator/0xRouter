@@ -221,7 +221,7 @@ refused: <code> at <file>[:<line>]: <message>
 | `extern_crate` | `extern crate` of anything but `std`, `core`, `alloc` or the kit |
 | `abi_attribute` | `#[no_mangle]`, `#[export_name]` or `#[link_section]` |
 | `path_attribute` | `#[path]` |
-| `forbidden_macro` | `include!`, `include_str!`, `include_bytes!`, `env!`, `option_env!`, `asm!`, `global_asm!` or `concat_idents!` |
+| `forbidden_macro` | `include!`, `include_str!`, `include_bytes!`, `env!`, `option_env!`, `asm!`, `global_asm!` or `concat_idents!`. The names are refused anywhere, with or without `!`: as a path segment, in a `use` (renamed or not) or as a token in any macro input, so no alias or `macro_rules!` forwarding can reach them. A variable named `env` is refused too |
 | `opaque_blob` | A base64-like run over 256 characters, an integer array over 256 elements, or an integer array that encodes over 128 bytes |
 
 ## Building locally

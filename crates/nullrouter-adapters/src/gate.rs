@@ -511,14 +511,17 @@ impl Scan<'_> {
         for (i, t) in toks.iter().enumerate() {
             match t {
                 TokenTree::Ident(id) => {
-                    let s = id.to_string();
+                    let s = bare(&id.to_string()).to_owned();
                     let line = id.span().start().line;
                     if s == "unsafe" {
                         self.add("unsafe_code", line, "unsafe in macro input");
                     }
                     let bang = matches!(toks.get(i + 1), Some(TokenTree::Punct(p)) if p.as_char() == '!');
-                    if bang && FORBIDDEN_MACROS.contains(&s.as_str()) {
-                        self.add("forbidden_macro", line, format!("macro `{s}!`"));
+                    // Any mention, with or without a `!`: an alias or a macro_rules body can
+                    // supply the bang later.
+                    if FORBIDDEN_MACROS.contains(&s.as_str()) {
+                        let message = if bang { format!("macro `{s}!`") } else { format!("identifier `{s}`") };
+                        self.add("forbidden_macro", line, message);
                     }
                 }
                 TokenTree::Group(g) => {
@@ -552,6 +555,11 @@ impl Scan<'_> {
             }
         }
     }
+}
+
+/// An identifier without a raw-identifier prefix.
+fn bare(ident: &str) -> &str {
+    ident.strip_prefix("r#").unwrap_or(ident)
 }
 
 fn lit_number(lit: &Lit) -> Option<u128> {
@@ -624,14 +632,28 @@ impl<'ast> Visit<'ast> for Scan<'_> {
     }
 
     fn visit_macro(&mut self, i: &'ast syn::Macro) {
-        if let Some(last) = i.path.segments.last() {
-            let name = last.ident.to_string();
-            if FORBIDDEN_MACROS.contains(&name.as_str()) {
-                self.add("forbidden_macro", last.ident.span().start().line, format!("macro `{name}!`"));
+        let count = i.path.segments.len();
+        for (n, seg) in i.path.segments.iter().enumerate() {
+            if n + 1 == count {
+                let name = bare(&seg.ident.to_string()).to_owned();
+                if FORBIDDEN_MACROS.contains(&name.as_str()) {
+                    self.add("forbidden_macro", seg.ident.span().start().line, format!("macro `{name}!`"));
+                }
+            } else {
+                self.visit_path_segment(seg);
             }
         }
         self.tokens(i.tokens.clone(), 0);
-        visit::visit_macro(self, i);
+    }
+
+    /// Every identifier of the syntax tree: a path segment, a `use` tree name or its rename.
+    /// Together with the macro-input scan, no forbidden name can appear, so no alias
+    /// (`use core::include_str as t;`) or macro_rules forwarding can reach one.
+    fn visit_ident(&mut self, i: &'ast proc_macro2::Ident) {
+        let name = bare(&i.to_string()).to_owned();
+        if FORBIDDEN_MACROS.contains(&name.as_str()) {
+            self.add("forbidden_macro", i.span().start().line, format!("identifier `{name}`"));
+        }
     }
 
     fn visit_lit_str(&mut self, i: &'ast syn::LitStr) {

@@ -74,6 +74,28 @@ impl<'s> StreamReader<'s> {
         Ok(out)
     }
 
+    /// The indexes that place a frame's tool calls, as one string (`""` when it has none). The
+    /// IR events do not hold the ordinal, so a check that must tell two calls apart reads it here.
+    pub fn tool_ordinals(&self, frame: &Frame) -> String {
+        let Ok(data) = serde_json::from_str::<Value>(&frame.data) else { return String::new() };
+        let mut out = Vec::new();
+        for tpl in &self.t.events {
+            if !matches!(tpl.on, Some(StreamOn::BlockStartToolCall | StreamOn::ToolArguments)) {
+                continue;
+            }
+            for b in match_all(&tpl.matcher, &data) {
+                // Each style names the call its frame belongs to differently: openai-chat by tool
+                // ordinal, anthropic-messages by block index, openai-responses by output index.
+                for key in ["tool.ordinal", "block.index", "output.index"] {
+                    if let Some(o) = b.get(key) {
+                        out.push(format!("{key}={o}"));
+                    }
+                }
+            }
+        }
+        out.join(",")
+    }
+
     /// Closes a block left open when the provider's stream ends.
     pub fn finish(&mut self) -> Vec<Event> {
         let mut out = Vec::new();

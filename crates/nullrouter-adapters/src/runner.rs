@@ -399,7 +399,7 @@ impl Side {
     fn verdict(self, client: &Style, before: &Value, after: &Value) -> Verdict {
         match self {
             Side::Request => match request::decode(client, before) {
-                Ok(b) => guard::check_request(client, &b, after),
+                Ok(b) => guard::check_request(client, &b, before, after),
                 Err(_) => Verdict::Undecodable,
             },
             Side::Response => match response::decode(client, before) {

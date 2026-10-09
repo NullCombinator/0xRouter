@@ -69,18 +69,19 @@ pub fn original(id: &str) -> (Style, Value, Request) {
 
 /// The guardrail's verdict on the decoded conversation after `edit`, written back out.
 pub fn edited(id: &str, edit: impl FnOnce(&mut Request)) -> Verdict {
-    let (s, _, before) = original(id);
+    let (s, before_body, before) = original(id);
     let mut after = before.clone();
     edit(&mut after);
     let body = request::encode(&after, &s, id).unwrap_or_else(|e| panic!("encode the edit into {id}: {e}")).body;
-    guard::check_request(&s, &before, &body)
+    guard::check_request(&s, &before, &before_body, &body)
 }
 
 /// The verdict on the original body after `edit` changed its JSON.
 pub fn edited_json(id: &str, edit: impl FnOnce(&mut Value)) -> Verdict {
     let (s, mut body, before) = original(id);
+    let before_body = body.clone();
     edit(&mut body);
-    guard::check_request(&s, &before, &body)
+    guard::check_request(&s, &before, &before_body, &body)
 }
 
 /// Where each style keeps a message's content array, and a block no template of it reads.

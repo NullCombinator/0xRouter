@@ -6,12 +6,7 @@ use std::path::{Path, PathBuf};
 
 use nullrouter_adapters::gate::{Reason, check};
 
-const STYLES: [&str; 4] = [
-    "anthropic-messages",
-    "gemini",
-    "openai-chat",
-    "openai-responses",
-];
+const STYLES: [&str; 4] = ["anthropic-messages", "gemini", "openai-chat", "openai-responses"];
 
 /// Every code in the contract's "Gate rules and refusal messages" table.
 const CODES: [&str; 21] = [
@@ -39,9 +34,7 @@ const CODES: [&str; 21] = [
 ];
 
 fn corpus(relative: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/gate")
-        .join(relative)
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/gate").join(relative)
 }
 
 fn copy_dir(from: &Path, to: &Path) {
@@ -79,11 +72,7 @@ fn mutate(code: &str, dir: &Path) {
 }
 
 fn render(reasons: &[Reason]) -> String {
-    reasons
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("\n")
+    reasons.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n")
 }
 
 /// Copies `invalid/<case>` to a temporary directory, applies its mutation, and
@@ -100,10 +89,7 @@ fn refused_as(case: &str) -> String {
 }
 
 fn expected(case: &str) -> String {
-    fs::read_to_string(corpus(&format!("invalid/{case}.expected")))
-        .unwrap()
-        .trim()
-        .to_owned()
+    fs::read_to_string(corpus(&format!("invalid/{case}.expected"))).unwrap().trim().to_owned()
 }
 
 #[test]
@@ -118,14 +104,8 @@ fn the_noop_adapter_passes_the_gate() {
 #[test]
 fn every_refusal_code_has_a_case_and_a_golden_file() {
     for code in CODES.iter().copied().chain(["multi_reason"]) {
-        assert!(
-            corpus(&format!("invalid/{code}")).is_dir(),
-            "missing case directory for {code}"
-        );
-        assert!(
-            corpus(&format!("invalid/{code}.expected")).is_file(),
-            "missing golden file for {code}"
-        );
+        assert!(corpus(&format!("invalid/{code}")).is_dir(), "missing case directory for {code}");
+        assert!(corpus(&format!("invalid/{code}.expected")).is_file(), "missing golden file for {code}");
     }
 }
 
@@ -191,10 +171,7 @@ fn a_proc_macro_flag_is_refused() {
 
 #[test]
 fn a_profile_table_is_refused() {
-    assert_eq!(
-        refused_as("cargo_table_not_allowed"),
-        expected("cargo_table_not_allowed")
-    );
+    assert_eq!(refused_as("cargo_table_not_allowed"), expected("cargo_table_not_allowed"));
 }
 
 #[test]
@@ -240,4 +217,45 @@ fn a_base64_literal_over_256_characters_is_refused() {
 #[test]
 fn several_reasons_are_all_listed_in_one_refusal() {
     assert_eq!(refused_as("multi_reason"), expected("multi_reason"));
+}
+
+/// The noop package with `extra` appended to its `src/lib.rs`, and the gate's refusals of it.
+fn refused_with(extra: &str) -> Vec<Reason> {
+    let work = tempfile::tempdir().unwrap();
+    let dir = work.path().join("pkg");
+    copy_dir(&corpus("valid/noop"), &dir);
+    let lib = dir.join("src/lib.rs");
+    let mut text = fs::read_to_string(&lib).unwrap();
+    text.push_str(extra);
+    fs::write(&lib, text).unwrap();
+    match check(&dir, &STYLES) {
+        Ok(_) => panic!("accepted:\n{extra}"),
+        Err(reasons) => reasons,
+    }
+}
+
+#[test]
+fn a_forbidden_macro_behind_an_alias_is_refused() {
+    let reasons = refused_with("\nuse core::include_str as t;\nconst K: &str = t!(\"/etc/passwd\");\n");
+    assert!(reasons.iter().any(|r| r.code == "forbidden_macro"), "{reasons:?}");
+}
+
+#[test]
+fn a_forbidden_macro_forwarded_through_macro_rules_is_refused() {
+    let reasons =
+        refused_with("\nmacro_rules! m { ($x:ident) => { $x!(\"/x\") } }\nconst K: &str = m!(include_str);\n");
+    assert!(reasons.iter().any(|r| r.code == "forbidden_macro"), "{reasons:?}");
+}
+
+#[test]
+fn a_forbidden_name_in_a_path_or_use_tree_is_refused() {
+    for extra in [
+        "\nconst K: &str = ::core::include_str!(\"/x\");\n",
+        "\nuse core::{include_bytes, env as e};\n",
+        "\nuse core::env;\n",
+        "\nconst K: &str = r#include_str!(\"/x\");\n",
+    ] {
+        let reasons = refused_with(extra);
+        assert!(reasons.iter().any(|r| r.code == "forbidden_macro"), "{extra}: {reasons:?}");
+    }
 }

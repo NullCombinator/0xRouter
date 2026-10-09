@@ -50,12 +50,16 @@ struct Groups {
     results: Vec<Item>,
     opaque: Vec<Item>,
     unplaced: Vec<Item>,
+    /// The request's `tool_choice`: removing it forces no call, so it may go (the same
+    /// sub-multiset rule as the other groups), but it may not appear or change.
+    choice: Vec<Item>,
 }
 
-/// Checks the edited request body against the IR decoded from the original.
-pub fn check_request(style: &Style, before: &Request, after_body: &Value) -> Verdict {
+/// Checks the edited request body against the IR decoded from the original. The bodies are
+/// needed because an unplaced key is digested with its value, which the IR does not hold.
+pub fn check_request(style: &Style, before: &Request, before_body: &Value, after_body: &Value) -> Verdict {
     let Ok(after) = request::decode(style, after_body) else { return Verdict::Undecodable };
-    let (b, a) = (request_groups(before), request_groups(&after));
+    let (b, a) = (request_groups(before, before_body), request_groups(&after, after_body));
     use GuardrailRule as R;
     first_violation(&[
         check(&b.calls, &a.calls, R::ToolCallAdded, R::ToolCallChanged),
@@ -63,6 +67,7 @@ pub fn check_request(style: &Style, before: &Request, after_body: &Value) -> Ver
         check(&b.results, &a.results, R::ToolResultAdded, R::ToolResultChanged),
         check(&b.opaque, &a.opaque, R::OpaqueAdded, R::OpaqueAdded),
         check(&b.unplaced, &a.unplaced, R::UnplacedAdded, R::UnplacedAdded),
+        check(&b.choice, &a.choice, R::ToolCallAdded, R::ToolCallChanged),
     ])
 }
 
@@ -73,13 +78,22 @@ pub fn check_response(style: &Style, before: &Response, after_body: &Value) -> V
     first_violation(&[check(&b, &a, GuardrailRule::ToolCallAdded, GuardrailRule::ToolCallChanged)])
 }
 
-/// Checks the events an edited stream event decodes to against those of the original. A
-/// tool-call start or an argument fragment the original did not carry is a violation.
+/// Checks the events an edited stream event decodes to against those of the original. The
+/// tool-call starts and the argument fragments must be the same on both sides: one the original
+/// did not carry is a violation, and so is one it did carry that is gone (a stream reader drops
+/// an emptied fragment, so removal is a change). Text and thinking deltas may be removed.
 pub fn check_event(before: &[Event], after: &[Event]) -> Verdict {
-    let (b, a) = (event_items(before), event_items(after));
+    check_events_at(before, after, "", "")
+}
+
+fn check_events_at(before: &[Event], after: &[Event], before_ord: &str, after_ord: &str) -> Verdict {
+    use GuardrailRule::{ToolCallAdded as Added, ToolCallChanged as Changed};
+    let (b, a) = (event_items(before, before_ord), event_items(after, after_ord));
     first_violation(&[
-        check(&b.0, &a.0, GuardrailRule::ToolCallAdded, GuardrailRule::ToolCallAdded),
-        check(&b.1, &a.1, GuardrailRule::ToolCallChanged, GuardrailRule::ToolCallChanged),
+        check(&b.0, &a.0, Added, Added),
+        check(&a.0, &b.0, Changed, Changed),
+        check(&b.1, &a.1, Changed, Changed),
+        check(&a.1, &b.1, Changed, Changed),
     ])
 }
 
@@ -88,12 +102,14 @@ pub fn check_event(before: &[Event], after: &[Event]) -> Verdict {
 /// with no id and no name, the same on both sides, so only an added or changed start or
 /// fragment is a violation. Either event failing to read is [`Verdict::Undecodable`].
 pub fn check_event_frame(style: &Style, before: &Value, after: &Value) -> Verdict {
-    let read = |event: &Value| -> Option<Vec<Event>> {
+    let read = |event: &Value| -> Option<(Vec<Event>, String)> {
         let frame = Frame { event: None, data: event.to_string() };
-        StreamReader::new(style).ok()?.read(&frame).ok()
+        let mut reader = StreamReader::new(style).ok()?;
+        let events = reader.read(&frame).ok()?;
+        Some((events, reader.tool_ordinals(&frame)))
     };
     match (read(before), read(after)) {
-        (Some(b), Some(a)) => check_event(&b, &a),
+        (Some((b, bo)), Some((a, ao))) => check_events_at(&b, &a, &bo, &ao),
         _ => Verdict::Undecodable,
     }
 }
@@ -142,7 +158,7 @@ fn excess(
     Some((rule, extra.iter().take(MAX_PATHS).map(|i| i.at.clone()).collect()))
 }
 
-fn request_groups(r: &Request) -> Groups {
+fn request_groups(r: &Request, body: &Value) -> Groups {
     let mut g = Groups::default();
     for (i, p) in r.system.iter().enumerate() {
         part_items(p, &format!("system[{i}]"), &mut g);
@@ -159,9 +175,36 @@ fn request_groups(r: &Request) -> Groups {
         g.opaque.push(Item { name: o.at.clone(), digest: digest(&["opaque", &canon(&o.value)]), at: o.at.clone() });
     }
     for path in &r.unplaced {
-        g.unplaced.push(Item { name: path.clone(), digest: digest(&["unplaced", path]), at: path.clone() });
+        let value = resolve(body, path).map_or_else(|| "\u{0}unresolved".to_owned(), canon);
+        g.unplaced.push(Item { name: path.clone(), digest: digest(&["unplaced", path, &value]), at: path.clone() });
+    }
+    if let Some(c) = &r.tool_choice {
+        g.choice.push(Item {
+            name: "tool_choice".into(),
+            digest: digest(&["tool_choice", &format!("{c:?}")]),
+            at: "tool_choice".into(),
+        });
     }
     g
+}
+
+/// The value an unplaced-key locator (`key`, `a.b`, `messages[0].k`) names in `body`. Keys that
+/// themselves hold dots or brackets are tried whole before the path is split.
+fn resolve<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
+    if path.is_empty() {
+        return Some(v);
+    }
+    if let Some(rest) = path.strip_prefix('.') {
+        return resolve(v, rest);
+    }
+    if let Some(rest) = path.strip_prefix('[') {
+        let (idx, rest) = rest.split_once(']')?;
+        return resolve(v.as_array()?.get(idx.parse::<usize>().ok()?)?, rest);
+    }
+    v.as_object()?.iter().find_map(|(k, child)| {
+        let rest = path.strip_prefix(k.as_str())?;
+        if rest.is_empty() || rest.starts_with('.') || rest.starts_with('[') { resolve(child, rest) } else { None }
+    })
 }
 
 fn part_items(p: &Part, at: &str, g: &mut Groups) {
@@ -189,16 +232,24 @@ fn def_item(t: &Tool, at: String) -> Item {
     Item { name: t.name.clone(), digest: digest(&["tool", &t.name, description, &canon(&t.parameters)]), at }
 }
 
-/// The tool-call starts and the argument fragments of a run of events.
-fn event_items(events: &[Event]) -> (Vec<Item>, Vec<Item>) {
+/// The tool-call starts and the argument fragments of a run of events. `ordinal` is the
+/// provider's tool index the events were read from; it is part of every digest, so moving a
+/// fragment to another call is a change.
+fn event_items(events: &[Event], ordinal: &str) -> (Vec<Item>, Vec<Item>) {
     let (mut starts, mut args) = (Vec::new(), Vec::new());
     for (i, e) in events.iter().enumerate() {
         match e {
-            Event::BlockStart(BlockKind::ToolCall { id, name }) => {
-                starts.push(Item { name: id.clone(), digest: digest(&["start", id, name]), at: format!("events[{i}]") })
-            }
+            Event::BlockStart(BlockKind::ToolCall { id, name }) => starts.push(Item {
+                name: id.clone(),
+                digest: digest(&["start", ordinal, id, name]),
+                at: format!("events[{i}]"),
+            }),
             Event::ToolArguments(s) => {
-                args.push(Item { name: String::new(), digest: digest(&["arguments", s]), at: format!("events[{i}]") });
+                args.push(Item {
+                    name: String::new(),
+                    digest: digest(&["arguments", ordinal, s]),
+                    at: format!("events[{i}]"),
+                });
             }
             _ => {}
         }

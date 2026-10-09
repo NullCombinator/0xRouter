@@ -1101,7 +1101,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
   `crates/nullrouter-adapters/src/builtin/hermes.rs` and
   `adapters/community/claude-code/src/lib.rs`, judged on chatCore's request path. Fix any
   High findings, and record Low ones as accepted.
-- [ ] T094 [P] Security review: run the `security-auditor` agent over:
+- [X] T094 [P] Security review: run the `security-auditor` agent over:
   - `nullrouter-sandbox`;
   - `gate.rs`, `catalogue.rs`, `guard.rs` and `store.rs`;
   - `nullrouter-builder`;
