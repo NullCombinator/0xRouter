@@ -313,10 +313,18 @@ fn abi_supported(abi: u32) -> bool {
 /// server left unfinished, gets `rebuilding` set (and `rebuild_failed` cleared, so a failed one
 /// is tried again). The state does not change. Returns the versions flagged.
 pub fn flag_rebuilds(home: &Path) -> Result<Vec<(HarnessName, store::VersionId)>, InstallError> {
+    flag_rebuilds_for(home, None)
+}
+
+/// [`flag_rebuilds`], limited to the harness `only` when given.
+pub fn flag_rebuilds_for(
+    home: &Path,
+    only: Option<&HarnessName>,
+) -> Result<Vec<(HarnessName, store::VersionId)>, InstallError> {
     let store = store::Store::open(home)?;
     let mut index = store.load_index()?;
     let mut targets = Vec::new();
-    for h in &index.harnesses {
+    for h in index.harnesses.iter().filter(|h| only.is_none_or(|o| &h.name == o)) {
         for v in &h.versions {
             let stale = v.kit_abi.is_some_and(|a| !abi_supported(a));
             if v.state == store::VersionState::Approved && (v.rebuilding || stale) {
@@ -345,7 +353,17 @@ pub async fn startup_rebuilds(
     opts: &InstallOptions<'_>,
     reload: &(dyn Fn() + Sync),
 ) -> Result<Vec<(HarnessName, store::VersionId)>, InstallError> {
-    let targets = flag_rebuilds(home)?;
+    rebuilds_for(home, opts, reload, None).await
+}
+
+/// [`startup_rebuilds`], limited to the harness `only` when given (`adapters rebuild <H>`).
+pub async fn rebuilds_for(
+    home: &Path,
+    opts: &InstallOptions<'_>,
+    reload: &(dyn Fn() + Sync),
+    only: Option<&HarnessName>,
+) -> Result<Vec<(HarnessName, store::VersionId)>, InstallError> {
+    let targets = flag_rebuilds_for(home, only)?;
     if targets.is_empty() {
         return Ok(targets);
     }
@@ -522,4 +540,61 @@ pub fn reject(
     index.transition(harness, version, store::VersionState::Rejected, "rejected by the operator")?;
     store.save_index(&index)?;
     Ok(())
+}
+
+/// What [`remove`] took out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Removed {
+    /// The versions deleted from the index and from disk.
+    pub versions: Vec<store::VersionId>,
+}
+
+/// Removes one version of `harness`, or (`version` is `None`) all of them. The active version is
+/// refused without `force`. A harness left without versions stays in the index as an empty
+/// entry, so keys still bound to it are recorded `not_run{removed}` rather than
+/// `no_approved_version`; installing a version again fills it. The index is saved before any
+/// file is deleted. The caller reloads the engine afterwards.
+pub fn remove(
+    home: &Path,
+    harness: &HarnessName,
+    version: Option<&store::VersionId>,
+    force: bool,
+) -> Result<Removed, InstallError> {
+    let store = store::Store::open(home)?;
+    let mut index = store.load_index()?;
+    let entry = index.harness(harness).ok_or_else(|| store::StoreError::UnknownHarness(harness.to_string()))?;
+    let doomed: Vec<store::VersionId> = match version {
+        Some(v) => {
+            if index.version(harness, v).is_none() {
+                return Err(store::StoreError::UnknownVersion {
+                    harness: harness.to_string(),
+                    version: v.to_string(),
+                }
+                .into());
+            }
+            if entry.active.as_ref() == Some(v) && !force {
+                return Err(InstallError::Other(format!(
+                    "{harness} {v} is the active version; pass --force to remove it"
+                )));
+            }
+            vec![v.clone()]
+        }
+        None => entry.versions.iter().map(|e| e.id.clone()).collect(),
+    };
+    if let Some(h) = index.harnesses.iter_mut().find(|h| &h.name == harness) {
+        h.versions.retain(|e| !doomed.contains(&e.id));
+        if h.active.as_ref().is_some_and(|a| doomed.contains(a)) {
+            h.active = None;
+        }
+    }
+    store.save_index(&index)?;
+    for id in &doomed {
+        let dir = store.version_dir(harness, id);
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(io_err(&dir, e)),
+        }
+    }
+    Ok(Removed { versions: doomed })
 }

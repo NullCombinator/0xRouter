@@ -192,29 +192,66 @@ fn check(home: &OperatorHome, as_json: bool) -> Result<ExitCode, ExitCode> {
     let client = Client::new().map_err(|e| report(&e, as_json))?;
     let cat = runtime()?.block_on(client.fetch_index(&url)).map_err(|e| report(&e, as_json))?;
     let installed = read_index(home)?;
-    let mut rows: Vec<(String, Vec<String>)> = Vec::new();
+    let mut rows: Vec<CheckRow> = Vec::new();
     for h in &installed.harnesses {
         if h.versions.is_empty() {
             continue;
         }
         let versions: Vec<&str> = h.versions.iter().map(|v| v.semver.as_str()).collect();
-        let newer: Vec<String> = match cat.entry(h.name.as_str()) {
-            Some(entry) => newer_than_all(entry, &versions).iter().map(|v| v.semver.clone()).collect(),
+        let highest = versions
+            .iter()
+            .copied()
+            .max_by_key(|s| semver::Version::parse(s).ok())
+            .unwrap_or("-")
+            .to_owned();
+        let active = h
+            .active
+            .as_ref()
+            .and_then(|a| h.versions.iter().find(|v| &v.id == a))
+            .map_or_else(|| "-".to_owned(), |v| v.semver.clone());
+        let entry = cat.entry(h.name.as_str());
+        let newer: Vec<String> = match entry {
+            Some(e) => newer_than_all(e, &versions).iter().map(|v| v.semver.clone()).collect(),
             None => Vec::new(),
         };
-        rows.push((h.name.as_str().to_owned(), newer));
+        let newest = entry.and_then(|e| e.pick(None)).map_or_else(|| "-".to_owned(), |v| v.semver.clone());
+        rows.push(CheckRow { harness: h.name.as_str().to_owned(), installed: highest, active, newest, newer });
     }
     if as_json {
-        let out: Vec<Value> = rows.iter().map(|(h, n)| json!({"harness": h, "newer": n})).collect();
+        let out: Vec<Value> = rows
+            .iter()
+            .map(|r| {
+                json!({"harness": r.harness, "installed": r.installed, "active": r.active,
+                       "newest": r.newest, "newer": r.newer})
+            })
+            .collect();
         println!("{}", Value::Array(out));
     } else {
-        for (h, newer) in &rows {
-            if newer.is_empty() {
-                println!("{h}: no newer version");
-            } else {
-                println!("{h}: newer {}", newer.join(", "));
-            }
-        }
+        print_check(&rows);
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// One line of `catalogue check`.
+struct CheckRow {
+    harness: String,
+    installed: String,
+    active: String,
+    newest: String,
+    /// Catalogue versions above every installed one, newest first.
+    newer: Vec<String>,
+}
+
+/// The table of contracts/catalogue.md § check output: columns padded to the widest cell, and an
+/// update note on rows with a newer catalogue version.
+fn print_check(rows: &[CheckRow]) {
+    let width = |head: &str, cell: fn(&CheckRow) -> &str| rows.iter().map(|r| cell(r).len()).fold(head.len(), usize::max);
+    let (wh, wi, wa) = (width("harness", |r| &r.harness), width("installed", |r| &r.installed), width("active", |r| &r.active));
+    println!("{:<wh$}  {:<wi$}  {:<wa$}  catalogue newest", "harness", "installed", "active");
+    for r in rows {
+        let note = r.newer.first().map_or_else(String::new, |n| {
+            format!("   (update available: nullrouter catalogue install {} {n})", r.harness)
+        });
+        println!("{:<wh$}  {:<wi$}  {:<wa$}  {}{note}", r.harness, r.installed, r.active, r.newest);
+    }
 }

@@ -1215,11 +1215,13 @@ name = "nullrouter-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "nullrouter-adapters",
  "nullrouter-dashboard",
  "nullrouter-engine",
  "nullrouter-registry",
  "nullrouter-server",
  "reqwest",
+ "semver",
  "serde_json",
  "tempfile",
  "tokio",

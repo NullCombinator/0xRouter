@@ -164,9 +164,14 @@ impl Loader {
                 let active = h.active.as_ref()?;
                 h.versions.iter().find(|v| &v.id == active && v.state == crate::store::VersionState::Suspect)
             });
-            return match suspect {
-                Some(v) => WasmHandle::unavailable(name.as_str(), v.id.as_str(), NotRunReason::Suspect),
-                None => absent(),
+            if let Some(v) = suspect {
+                return WasmHandle::unavailable(name.as_str(), v.id.as_str(), NotRunReason::Suspect);
+            }
+            // An entry with no versions is what `remove` leaves behind.
+            return if index.harness(name).is_some_and(|h| h.versions.is_empty()) {
+                WasmHandle::unavailable(name.as_str(), "none", NotRunReason::Removed)
+            } else {
+                absent()
             };
         };
         let version = entry.id.as_str();

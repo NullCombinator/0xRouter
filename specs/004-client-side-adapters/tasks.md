@@ -914,7 +914,7 @@ the reviewed source.
   `crates/nullrouter-adapters/tests/catalogue.rs` (extend).
   - `catalogue check` against a mock index listing a newer version prints it.
   - The store is unchanged afterwards, byte for byte (US4-4).
-- [ ] T075 [P] [US4] Removal test in `crates/nullrouter-server/tests/adapter_remove.rs`.
+- [X] T075 [P] [US4] Removal test in `crates/nullrouter-server/tests/adapter_remove.rs`.
   - `adapters remove <H>` lists the bound keys and asks for confirmation.
   - Afterwards the keys are plain clients, with `not_run{removed}`.
   - Removing the active version without `--force` is refused.
@@ -935,7 +935,7 @@ the reviewed source.
   - On success, replace `module.wasm` and `build.json`, clear the flag, and reload.
   - On failure, set `rebuild_failed` and raise an alert.
   - Make T073 pass.
-- [ ] T078 [US4] CLI additions in `crates/nullrouter-cli/src/cmd/adapters.rs` and
+- [X] T078 [US4] CLI additions in `crates/nullrouter-cli/src/cmd/adapters.rs` and
   `catalogue.rs`.
   - `adapters rebuild [<H>]`: the same rebuild, run in the foreground before an upgrade.
   - `adapters remove <H> [<version>] [--force] [--yes]`.

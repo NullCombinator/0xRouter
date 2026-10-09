@@ -15,6 +15,7 @@ use nullrouter_adapters::loader::Manifest;
 use nullrouter_adapters::review::ReviewReport;
 use nullrouter_adapters::store::{Index, ReviewConfig, Store, VersionEntry, VersionId, VersionState};
 use nullrouter_adapters::{BUILD_TIMEOUT, BUILTIN, HarnessName, InstallError, InstallOptions, Installed};
+use nullrouter_engine::keys::{self, Keys};
 use nullrouter_engine::state::Engine;
 use nullrouter_registry::OperatorHome;
 use nullrouter_server::operator::{self, CallError};
@@ -79,9 +80,19 @@ pub(crate) enum Command {
         #[arg(long)]
         clear: bool,
     },
-    /// `remove` and `rebuild` arrive later.
-    #[command(external_subcommand)]
-    Other(Vec<String>),
+    /// Rebuild approved versions whose module was built for a kit the core no longer runs, from
+    /// their reviewed source, in the foreground (what `serve` does at startup).
+    Rebuild { harness: Option<String> },
+    /// Remove a version, or the whole harness. Keys bound to it become plain clients.
+    Remove {
+        harness: String,
+        version: Option<String>,
+        /// Allow removing the active version.
+        #[arg(long)]
+        force: bool,
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 fn fail(e: impl std::fmt::Display) -> ExitCode {
@@ -178,9 +189,13 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
         Command::ReviewSettings { model, budget, reserve_output, clear } => {
             review_settings(&home, model, budget, reserve_output, clear, as_json)
         }
-        Command::Other(args) => {
-            eprintln!("nullrouter adapters {}: not available yet", args.first().map_or("", String::as_str));
-            Err(ExitCode::from(1))
+        Command::Rebuild { harness } => {
+            let only = harness.as_deref().map(harness_of).transpose()?;
+            rebuild(&home, only.as_ref(), as_json)
+        }
+        Command::Remove { harness, version, force, yes } => {
+            let version = version.as_deref().map(VersionId::from_run);
+            remove(&home, &harness_of(&harness)?, version.as_ref(), force, yes, as_json)
         }
     }
 }
@@ -451,6 +466,110 @@ fn clear(
         as_json,
         &json!({"harness": harness, "version": version, "state": "approved", "status": status, "events": events}),
         &format!("{harness} {version}: approved: {status}"),
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+fn rebuild(home: &OperatorHome, only: Option<&HarnessName>, as_json: bool) -> Result<ExitCode, ExitCode> {
+    if let Some(h) = only
+        && read_index(home)?.harness(h).is_none()
+    {
+        return Err(fail(format!("no harness {h} in the index")));
+    }
+    let (engine, _) = Engine::open(home.clone()).map_err(|e| fail(format!("startup failed:\n{e}")))?;
+    let builder = engine.snapshot().settings().adapters.builder.clone();
+    let opts = InstallOptions {
+        styles: &[],
+        builder: builder.as_deref(),
+        origin: nullrouter_adapters::store::Origin::Local("kit-upgrade".into()),
+        build_timeout: BUILD_TIMEOUT,
+    };
+    // A reload that cannot reach a server is fine: the next start reads the store.
+    let reload_server = || {
+        let _ = reload(home);
+    };
+    let done = runtime()?
+        .block_on(nullrouter_adapters::rebuilds_for(home.path(), &opts, &reload_server, only))
+        .map_err(fail)?;
+    let index = read_index(home)?;
+    let failed: Vec<Value> = index
+        .harnesses
+        .iter()
+        .filter(|h| only.is_none_or(|o| &h.name == o))
+        .flat_map(|h| h.versions.iter().filter(|v| v.rebuild_failed).map(move |v| json!([h.name, v.id])))
+        .collect();
+    let rebuilt: Vec<Value> = done.iter().map(|(h, v)| json!([h, v])).collect();
+    if as_json {
+        println!("{:#}", json!({"rebuilt": rebuilt, "failed": failed}));
+    } else if rebuilt.is_empty() && failed.is_empty() {
+        println!("nothing to rebuild");
+    } else {
+        for (h, v) in &done {
+            println!("{h} {v}: rebuilt");
+        }
+        for f in &failed {
+            println!("{} {}: rebuild failed", f[0].as_str().unwrap_or(""), f[1].as_str().unwrap_or(""));
+        }
+    }
+    Ok(if failed.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
+}
+
+/// Names of the keys bound to `harness`, revoked ones included (they keep the binding).
+fn bound_keys(home: &OperatorHome, harness: &HarnessName) -> Result<Vec<String>, ExitCode> {
+    let keys = Keys::load(&home.path().join(keys::FILE)).map_err(fail)?;
+    Ok(keys.iter().filter(|k| k.adapter.as_ref() == Some(harness)).map(|k| k.name.clone()).collect())
+}
+
+/// Removes a version, or the whole harness. Lists the bound keys first, then asks unless `--yes`.
+/// The active version needs `--force`.
+fn remove(
+    home: &OperatorHome,
+    harness: &HarnessName,
+    version: Option<&VersionId>,
+    force: bool,
+    yes: bool,
+    as_json: bool,
+) -> Result<ExitCode, ExitCode> {
+    if as_json && !yes {
+        eprintln!("--json needs --yes");
+        return Err(ExitCode::from(2));
+    }
+    let index = read_index(home)?;
+    let entry = index.harness(harness).ok_or_else(|| fail(format!("no harness {harness} in the index")))?;
+    if let Some(v) = version {
+        if index.version(harness, v).is_none() {
+            return Err(fail(format!("no version {v} of {harness} in the index")));
+        }
+        if entry.active.as_ref() == Some(v) && !force {
+            return Err(fail(format!("{harness} {v} is the active version; pass --force to remove it")));
+        }
+    }
+    // Removing the last version leaves the keys with nothing to run, as removing the harness does.
+    let whole = version.is_none() || entry.versions.len() == 1;
+    let bound = if whole { bound_keys(home, harness)? } else { Vec::new() };
+    if !as_json {
+        for k in &bound {
+            println!("key {k} becomes a plain client");
+        }
+    }
+    if !yes {
+        let what = version.map_or_else(|| format!("{harness} and all its versions"), |v| format!("{harness} {v}"));
+        eprint!("remove {what} [y/N] ");
+        io::stderr().flush().map_err(fail)?;
+        let mut line = String::new();
+        io::stdin().read_line(&mut line).map_err(fail)?;
+        if !matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+            println!("not removed");
+            return Err(ExitCode::from(1));
+        }
+    }
+    let done = nullrouter_adapters::remove(home.path(), harness, version, force).map_err(fail)?;
+    let status = reload(home)?;
+    let removed: Vec<&str> = done.versions.iter().map(VersionId::as_str).collect();
+    emit(
+        as_json,
+        &json!({"harness": harness, "removed": removed, "keys": bound, "status": status}),
+        &format!("{harness}: removed {} version(s): {status}", removed.len()),
     );
     Ok(ExitCode::SUCCESS)
 }

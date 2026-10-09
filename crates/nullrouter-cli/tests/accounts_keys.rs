@@ -575,7 +575,7 @@ fn keys_bind_to_an_adapter_and_the_list_shows_it_only_when_one_is() {
 }
 
 #[test]
-fn adapters_list_shows_hermes_as_built_in_and_the_rest_are_not_available_yet() {
+fn adapters_list_shows_hermes_as_built_in_and_unknown_harnesses_fail() {
     let dir = tempfile::tempdir().unwrap();
     let h = dir.path();
     let out = nr(h, &["adapters", "list"], "");
@@ -587,7 +587,11 @@ fn adapters_list_shows_hermes_as_built_in_and_the_rest_are_not_available_yet() {
     assert_eq!(rows[0]["harness"], "hermes");
     assert_eq!(rows[0]["built_in"], true);
 
-    let out = nr(h, &["adapters", "rebuild", "acme"], "");
+    let out = nr(h, &["adapters", "rebuild", "nosuch"], "");
     assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("not available yet"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no harness nosuch"));
+
+    let out = nr(h, &["adapters", "remove", "nosuch", "--yes"], "");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no harness nosuch"));
 }
