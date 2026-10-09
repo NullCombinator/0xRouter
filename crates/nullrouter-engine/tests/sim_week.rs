@@ -21,6 +21,8 @@ use std::time::Duration;
 
 use nullrouter_engine::journal::records;
 use nullrouter_engine::journal::state;
+use nullrouter_engine::clock;
+use nullrouter_engine::quota::fit::outside::{self, OutsideType};
 use nullrouter_engine::quota::fit::{NumberState, TokenClass};
 use nullrouter_engine::routing::meter::cost_spent;
 use nullrouter_engine::routing::{
@@ -30,8 +32,8 @@ use nullrouter_registry::schema::{MeterDecl, MeterUnit, RoutingDecl};
 use serde_json::Value;
 
 use fit::FitRun;
-use router::{AccountDef, Defs, Placed, Sim, copy_dir, usage_of};
-use world::{DAY, HOUR, MIN, Req, Reset, Rng, Rounding, TrueAccount, TrueWindow, WEEK_MS, World, at, plan};
+use router::{AccountDef, Defs, POLL_MS, Placed, Sim, copy_dir, usage_of};
+use world::{DAY, HOUR, Injected, MIN, OutsideUse, Req, Reset, Rng, Rounding, TrueAccount, TrueWindow, WEEK_MS, World, at, plan};
 
 const SEED: u64 = 0x006_0000_5EED;
 /// Amortization windows with fewer cold requests than this are too thin for a 5% bound: one
@@ -1076,4 +1078,161 @@ fn an_account_with_twice_the_output_weight_is_split_off_and_leaves_the_pooled_fi
     // Without its rows the pooled output weight is the other accounts' 15, not a blend toward 30.
     assert_in_range(fit, "weight.output", THREE_TIMES_RATIOS[0]);
     assert!(fit.learner.pooled_note(FIT_PROVIDER, FIT_WINDOW).is_none(), "two accounts remain pooled");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Outside use (T020; US2 scenarios 2 and 5; SC-004; research R6, R10)
+
+/// A week with outside use injected on the fitted account: the run and the drops that were applied.
+fn run_outside(scenario: &Scenario, reqs: &[Req], outside: Vec<OutsideUse>) -> (Week, Vec<Injected>) {
+    let (defs, mut world) = scenario.week();
+    world.outside = outside;
+    let dir = tempfile::tempdir().unwrap();
+    let mut sim = Sim::new(&defs, dir.path()).with_fit(FitRun::new(defs.accounts.len()));
+    for r in reqs {
+        sim.handle(&mut world, r);
+    }
+    sim.journal.flush_blocking();
+    assert!(sim.placed.iter().all(|p| p.served.is_some()), "every request was served");
+    let injected: Vec<Injected> =
+        world.injected.iter().filter(|i| i.account == 0 && i.window == FIT_WINDOW).cloned().collect();
+    (Week { placed: std::mem::take(&mut sim.placed), fit: sim.fit.take() }, injected)
+}
+
+fn drop_at(at_ms: u64, pct: f64, busy: bool) -> OutsideUse {
+    OutsideUse::Drop { account: 0, window: FIT_WINDOW.into(), at_ms, pct, busy }
+}
+
+fn rate(pct_per_hour: f64, office: bool) -> OutsideUse {
+    OutsideUse::Rate { account: 0, window: FIT_WINDOW.into(), pct_per_hour, office }
+}
+
+/// The poll instants (from day 2 on) whose ten minutes saw no request at all.
+fn idle_polls(reqs: &[Req]) -> Vec<u64> {
+    (DAY / POLL_MS + 1..WEEK_MS / POLL_MS - 1)
+        .map(|k| k * POLL_MS)
+        .filter(|p| {
+            let from = reqs.partition_point(|r| r.at_ms <= p - POLL_MS - 1_000);
+            reqs.get(from).is_none_or(|r| r.at_ms > p + 1_000)
+        })
+        .collect()
+}
+
+/// `n` of `all`, spread over the week.
+fn spread(all: &[u64], n: usize) -> Vec<u64> {
+    if all.len() <= n {
+        return all.to_vec();
+    }
+    (0..n).map(|i| all[i * all.len() / n + all.len() / (2 * n)]).collect()
+}
+
+/// Of the injected drops, how many are listed as `idle` or `busy` outside use overlapping the
+/// instant they were applied, and the ones that are not.
+fn listed(fit: &FitRun, injected: &[Injected]) -> (usize, Vec<Injected>) {
+    let entries = outside::read(fit.home(), FIT_PROVIDER, FIT_ACCOUNT, None, None).expect("the outside-use file reads");
+    let spans: Vec<_> = entries
+        .iter()
+        .filter(|e| matches!(e.ty, OutsideType::Idle | OutsideType::Busy))
+        .filter_map(|e| {
+            let start = e.start_time()?;
+            let end = e.end.as_deref().and_then(clock::parse_rfc3339).unwrap_or(start);
+            Some((start, end))
+        })
+        .collect();
+    let (hit, missed): (Vec<_>, Vec<_>) =
+        injected.iter().cloned().partition(|i| spans.iter().any(|(s, e)| *s <= at(i.at_ms) && at(i.at_ms) <= *e));
+    (hit.len(), missed)
+}
+
+fn fitted_value(fit: &FitRun, key: &str) -> Option<f64> {
+    let published = fit.fits.window(FIT_PROVIDER, FIT_WINDOW);
+    match key {
+        "weight.output" => published.weights.get(&TokenClass::Output).copied(),
+        "weight.cache_read" => published.weights.get(&TokenClass::CacheRead).copied(),
+        "weight.cache_write" => published.weights.get(&TokenClass::CacheWrite).copied(),
+        _ => published.capacity.get(FIT_ACCOUNT).copied(),
+    }
+}
+
+/// SC-004: capacity and the output weight are fitted in the run with outside use, and every fitted
+/// value lies inside the 95% range of the clean run.
+fn assert_inside_clean_ranges(clean: &FitRun, run: &FitRun, what: &str) {
+    let states = run.learner.number_states(FIT_PROVIDER, FIT_WINDOW);
+    let clean_ranges = clean.learner.ranges(FIT_PROVIDER, FIT_WINDOW);
+    let capacity = format!("capacity@{FIT_ACCOUNT}");
+    for key in [capacity.as_str(), "weight.output"] {
+        assert!(matches!(states.get(key), Some(NumberState::Fitted { .. })), "{what}: {key} is {:?}, not fitted", states.get(key));
+    }
+    for key in [capacity.as_str(), "weight.output", "weight.cache_read", "weight.cache_write"] {
+        if !matches!(states.get(key), Some(NumberState::Fitted { .. })) {
+            continue;
+        }
+        let got = fitted_value(run, key).unwrap_or_else(|| panic!("{what}: {key} is fitted but not published"));
+        let (_, lo, hi) = clean_ranges.get(key).copied().unwrap_or_else(|| panic!("{what}: the clean run has no range for {key}"));
+        assert!(lo <= got && got <= hi, "{what}: {key} fitted {got} lies outside the clean run's 95% range {lo}..{hi}");
+    }
+}
+
+#[test]
+fn a_meter_three_times_off_is_fitted_inside_the_clean_range_with_outside_use() {
+    let reqs = plan(SEED);
+    let scenario = Scenario::three_times_off(&reqs);
+    let clean = run_week(&scenario, &reqs, true);
+    let clean_fit = clean.fit.as_ref().expect("a fit run");
+
+    // Idle bursts, bursts during traffic (Wednesday to Friday, late morning and afternoon), and a steady rate.
+    let idle = spread(&idle_polls(&reqs), 8);
+    assert!(idle.len() >= 3, "only {} idle polls in the week to inject into", idle.len());
+    let mut outside: Vec<OutsideUse> = idle.iter().map(|p| drop_at(p - 5 * MIN, 6.0, false)).collect();
+    for day in 2..5 {
+        for hour in [11, 15] {
+            outside.push(drop_at(day * DAY + hour * HOUR + 25 * MIN, 12.0, true));
+        }
+    }
+    outside.push(rate(1.5, false));
+    let expected = idle.len() + 6;
+    let (week, injected) = run_outside(&scenario, &reqs, outside);
+    let fit = week.fit.as_ref().expect("a fit run");
+    assert_eq!(injected.len(), expected, "every drop was applied");
+    assert_inside_clean_ranges(clean_fit, fit, "bursts and a steady rate");
+
+    let beyond: Vec<Injected> = injected.iter().filter(|i| i.pct.round() >= 2.0).cloned().collect();
+    let (hit, missed) = listed(fit, &beyond);
+    println!("outside use: {hit} of {} injected intervals listed ({} idle, {} busy)", beyond.len(), idle.len(), beyond.iter().filter(|i| i.busy).count());
+    assert!(hit * 10 >= beyond.len() * 9, "{hit} of {} listed (SC-004 asks 90%); missed: {missed:?}", beyond.len());
+
+    // The same, with a rate that follows the agents' daily rhythm.
+    let (week, _) = run_outside(&scenario, &reqs, vec![rate(2.0, true)]);
+    assert_inside_clean_ranges(clean_fit, week.fit.as_ref().expect("a fit run"), "an office-hours rate");
+}
+
+#[test]
+fn a_right_plugin_gets_no_number_from_outside_use_and_a_steady_rate_is_reported() {
+    let reqs = plan(SEED);
+    let scenario = Scenario::right(&reqs);
+    for (what, use_) in [("a steady rate", rate(1.5, false)), ("an office-hours rate", rate(2.0, true))] {
+        let (week, _) = run_outside(&scenario, &reqs, vec![use_]);
+        let fit = week.fit.as_ref().expect("a fit run");
+        // US2 scenario 2: outside use alone makes no meter number significant.
+        assert!(fit.fits.windows.is_empty(), "{what}: a right declaration got a significant number: {:?}", fit.fits.windows);
+        assert_eq!(fit.first_change, None, "{what}");
+        let entries = outside::read(fit.home(), FIT_PROVIDER, FIT_ACCOUNT, None, None).expect("the outside-use file reads");
+        assert!(entries.iter().any(|e| e.ty == OutsideType::Steady), "{what}: no steady rate was reported ({} entries)", entries.len());
+    }
+}
+
+#[test]
+fn an_idle_change_of_one_step_is_not_listed() {
+    let reqs = plan(SEED);
+    let scenario = Scenario::right(&reqs);
+    let idle = spread(&idle_polls(&reqs), 3);
+    assert!(!idle.is_empty(), "no idle polls in the week to inject into");
+    // One percent is one step of the polls' whole-percent readings: rounding noise (R6 rule 1).
+    let outside: Vec<OutsideUse> = idle.iter().map(|p| drop_at(p - 5 * MIN, 1.0, false)).collect();
+    let (week, injected) = run_outside(&scenario, &reqs, outside);
+    let fit = week.fit.as_ref().expect("a fit run");
+    assert_eq!(injected.len(), idle.len(), "every drop was applied");
+    let (hit, _) = listed(fit, &injected);
+    assert_eq!(hit, 0, "{hit} one-step changes were listed as outside use");
+    assert!(fit.fits.windows.is_empty(), "a right declaration got a significant number: {:?}", fit.fits.windows);
 }

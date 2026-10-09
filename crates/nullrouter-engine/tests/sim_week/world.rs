@@ -386,10 +386,8 @@ pub struct World {
     /// default, so slice 006's checks see what they always saw).
     pub rounding: Option<Rounding>,
     /// Use the router didn't cause (spec 012, research R14).
-    #[allow(dead_code)]
     pub outside: Vec<OutsideUse>,
     /// Every drop the injector applied, for SC-004 and SC-007.
-    #[allow(dead_code)]
     pub injected: Vec<Injected>,
     /// True capacity changes still to come: `(at_ms, account, window, capacity)`.
     capacity_at: Vec<(u64, usize, String, f64)>,
@@ -497,8 +495,6 @@ fn round_to(rounding: Option<Rounding>, x: f64) -> f64 {
 }
 
 /// Use of an account the router didn't send. Amounts are percent of the window's true capacity.
-// Used by the slice 012 runs (T017–T020, T046); allowed until they land.
-#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub enum OutsideUse {
     /// One drop at `at_ms`. `busy` only labels it: whether it falls in a stretch of traffic.
@@ -509,8 +505,6 @@ pub enum OutsideUse {
 }
 
 /// One drop the injector applied.
-// Used by the slice 012 runs (T017–T020, T046); allowed until they land.
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Injected {
     pub account: usize,
@@ -520,11 +514,11 @@ pub struct Injected {
     pub busy: bool,
 }
 
-// Used by the slice 012 runs (T017–T020, T046); allowed until they land.
-#[allow(dead_code)]
 impl World {
     /// The provider changes a window's capacity at `at_ms`. The percent already used stays put,
     /// as at a real provider: only what is charged from then on weighs differently.
+    // Used by the break run (T046); allowed until it lands.
+    #[allow(dead_code)]
     pub fn set_true_capacity(&mut self, at_ms: u64, account: usize, window: &str, value: f64) {
         self.capacity_at.push((at_ms, account, window.to_owned(), value));
         self.capacity_at.sort_by_key(|c| c.0);
@@ -579,7 +573,8 @@ impl World {
         if w.admission() {
             return;
         }
-        if w.start.is_none() {
+        // Outside use after the window ended starts the next one, as a first request would.
+        if w.start.is_none() || at_ms >= w.end {
             w.start = Some(at_ms);
             w.end = at_ms + w.len_ms;
             w.used = 0.0;
