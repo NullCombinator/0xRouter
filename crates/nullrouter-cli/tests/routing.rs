@@ -3,6 +3,8 @@
 //! `routing` view. Files are written atomically and checked with the registry gate's rules; the
 //! view needs a running server (exit 4 without one).
 
+#![recursion_limit = "256"]
+
 use std::io::Write;
 use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
