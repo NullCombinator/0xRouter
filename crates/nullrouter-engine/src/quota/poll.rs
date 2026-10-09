@@ -343,6 +343,11 @@ impl Engine {
         crate::upstream::check_ip_host(&url, allow_private)
             .map_err(|e| PollError::new(PollErrorClass::Invalid, e.to_string()))?;
         let timeout = self.quota.timing().timeout;
+        if let Some(proxy) = crate::connection::paused_for(&self.proxy_board, st, &entity.id, Some(account)) {
+            return Err(PollError::new(PollErrorClass::Withheld, format!("proxy {proxy} paused")));
+        }
+        let (client, _) = crate::connection::client_for(st, &entity.id, Some(account))
+            .map_err(|e| PollError::new(PollErrorClass::Invalid, redact(e.to_string())))?;
         let mut refreshed = false;
         loop {
             let released = accounts::release(account, entity, &st.tokens)
@@ -350,7 +355,7 @@ impl Engine {
             let headers = self.call_headers(st, entity, account, &released, &url, call.headers)?;
             let method = reqwest::Method::from_bytes(call.method.to_ascii_uppercase().as_bytes())
                 .map_err(|_| PollError::new(PollErrorClass::Invalid, format!("method {}", call.method)))?;
-            let req = st.http.request(method, url.clone()).headers(headers).body(call.body.clone());
+            let req = client.request(method, url.clone()).headers(headers).body(call.body.clone());
             let sent = tokio::time::timeout(timeout, async {
                 let resp = req.send().await?;
                 let status = resp.status().as_u16();

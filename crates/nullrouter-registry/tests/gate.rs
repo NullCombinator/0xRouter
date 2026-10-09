@@ -489,6 +489,24 @@ reset = "rolling"
     assert!(errors[0].to_string().contains("unreported windows"), "{}", errors[0]);
 }
 
+fn with_retry(retry: &str) -> String {
+    format!(
+        "schema = 2\nid = \"retrier\"\ncategory = \"apikey\"\n[auth]\nkind = \"apikey\"\n[endpoints.text]\nurl = \"https://example.com/v1/chat/completions\"\nwire = \"openai-chat\"\nretry = {retry}\n[[models]]\nid = \"m\"\n"
+    )
+}
+
+/// Spec 013 US6: a plugin's retry declaration is capped at 5 retries and 30 s, with the field named.
+#[test]
+fn a_plugin_retry_above_the_cap_fails_validation_naming_the_field() {
+    let path = Path::new("retrier.toml");
+    validate_user_plugin(&with_retry("{ \"503\" = { retries = 5, delay_ms = 30000 } }"), path).expect("the cap itself is allowed");
+    let errs = validate_user_plugin(&with_retry("{ \"503\" = { retries = 6 } }"), path).unwrap_err();
+    let text = format!("{errs:?}");
+    assert!(text.contains("retry") && text.contains("503") && text.contains("0-5"), "{text}");
+    let errs = validate_user_plugin(&with_retry("{ \"503\" = { retries = 1, delay_ms = 30001 } }"), path).unwrap_err();
+    assert!(format!("{errs:?}").contains("0-30000"));
+}
+
 /// Slice 011: `[[rejections]]` loads into the entity; 4xx other than 402, 408 and 429 only.
 #[test]
 fn rejections_load_into_the_entity() {

@@ -177,3 +177,35 @@ async fn a_disabled_account_is_skipped_without_a_call() {
     assert_eq!((r.state, r.skipped.as_deref()), (None, Some("account disabled")));
     assert!(s.mock.received().is_empty());
 }
+
+/// Spec 013 FR-025 and constitution VII: a test goes through the account's proxy, and a paused
+/// proxy skips it with the reason instead of judging the model.
+#[tokio::test]
+async fn a_test_goes_through_the_accounts_proxy_and_a_paused_one_skips_it() {
+    use nullrouter_engine::accounts::{self, Accounts};
+    use nullrouter_engine::connection::fingerprints;
+    use nullrouter_engine::testkit::MockProxy;
+
+    let s = media(&[("mediaco", "main")]).await;
+    let proxy = MockProxy::start().await;
+    let home = s._dir.path();
+    let proxies = format!("schema = 1\n\n[[proxy]]\nname = \"eu\"\nurl = \"http://{}\"\n", proxy.addr());
+    nullrouter_engine::files::write_private(&home.join("proxies.toml"), &proxies).unwrap();
+    let mut list = Accounts::load(&home.join(accounts::FILE)).unwrap();
+    list.set_proxy("mediaco", "main", Some("eu".into())).unwrap();
+    list.save().unwrap();
+    s.engine.reload().await.unwrap();
+
+    s.mock.on("/media/chat", [ok()]);
+    let r = tested(&s, "mediaco/m1", None).await;
+    assert_eq!(r.state, Some(State::Pass), "{r:?}");
+    assert_eq!(proxy.carried(), 1, "the test call went through the account's proxy");
+
+    let print = fingerprints(&s.engine.snapshot()).remove("eu").unwrap();
+    s.engine.proxy_board.pause("eu", "connect to proxy failed", &print);
+    let r = tested(&s, "mediaco/m1", None).await;
+    assert_eq!((r.state, r.skipped.as_deref()), (None, Some("proxy eu paused")), "{r:?}");
+    assert_eq!(proxy.carried(), 1, "nothing was sent");
+    let v = s.engine.verdicts.get(&Pair::new("mediaco", "main", "m1")).unwrap();
+    assert_eq!(v.state, State::Pass, "the skip leaves the verdict as it was");
+}

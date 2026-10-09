@@ -7,6 +7,7 @@ use serde::Deserialize;
 use serde::de::{Deserializer, Error as _};
 
 use super::duration::{de_duration, parse_duration};
+use super::endpoint::RetryOverride;
 use super::enums::ModelKind;
 use super::primitives::BreakBehaviour;
 use crate::validate::FieldPath;
@@ -35,6 +36,9 @@ pub struct OperatorConfig {
     pub routing: RoutingSettings,
     #[serde(default)]
     pub dashboard: DashboardSettings,
+    /// `[connection]`: settings for every provider (spec 013).
+    #[serde(default)]
+    pub connection: GlobalConnection,
     /// `[tests]` (spec 011): retest schedule, test timeouts and the test-call limit.
     #[serde(default)]
     pub tests: TestSettings,
@@ -199,6 +203,81 @@ impl TestSettings {
     }
 }
 
+/// The longest timeout an operator or a plugin may set: one hour.
+pub const MAX_TIMEOUT_MS: u64 = 3_600_000;
+
+/// The rule for a timeout: 1–3 600 000 ms, or 0 for a first-token timeout (off).
+pub fn check_timeout_ms(v: u64, allow_off: bool) -> Result<(), String> {
+    match v {
+        0 if allow_off => Ok(()),
+        1..=MAX_TIMEOUT_MS => Ok(()),
+        _ if allow_off => Err(format!("{v} ms is out of range; use 1-{MAX_TIMEOUT_MS}, or 0 for off")),
+        _ => Err(format!("{v} ms is out of range; use 1-{MAX_TIMEOUT_MS}")),
+    }
+}
+
+fn de_timeout<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
+    let v = Option::<u64>::deserialize(d)?;
+    v.map_or(Ok(()), |v| check_timeout_ms(v, false)).map_err(D::Error::custom)?;
+    Ok(v)
+}
+
+fn de_timeout_or_off<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
+    let v = Option::<u64>::deserialize(d)?;
+    v.map_or(Ok(()), |v| check_timeout_ms(v, true)).map_err(D::Error::custom)?;
+    Ok(v)
+}
+
+/// `[connection]`: only the proxy applies to every provider.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GlobalConnection {
+    /// A proxy name from `proxies.toml`, or `"none"`.
+    pub proxy: Option<String>,
+}
+
+/// `[provider.P.connection]`: how requests to one provider are sent (spec 013). Absent keys
+/// fall through to the plugin's declaration, then the built-in default.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectionSettings {
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub connect_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub header_timeout_ms: Option<u64>,
+    /// 0 = off.
+    #[serde(default, deserialize_with = "de_timeout_or_off")]
+    pub first_token_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub stall_timeout_ms: Option<u64>,
+    pub reuse: Option<bool>,
+    pub http2: Option<bool>,
+    /// A proxy name from `proxies.toml`, or `"none"`.
+    pub proxy: Option<String>,
+}
+
+/// `[provider.P.model."M".connection]`: timeouts only.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelConnection {
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub connect_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub header_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout_or_off")]
+    pub first_token_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub stall_timeout_ms: Option<u64>,
+}
+
+/// `[provider.P.model."M"]`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelSettings {
+    #[serde(default)]
+    pub connection: ModelConnection,
+}
+
 /// `[dashboard]` (spec 009): whether `serve` also serves the read-only dashboard, and where.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -341,16 +420,50 @@ pub struct MemberDecl {
 }
 
 /// Operator settings for one provider. Keyed by provider id, so they survive a replace.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderSettings {
     #[serde(default = "yes")]
     pub allow_uncatalogued_models: bool,
+    #[serde(default)]
+    pub connection: ConnectionSettings,
+    /// `[provider.P.retry]`: same-account retries (spec 013, US6).
+    #[serde(default)]
+    pub retry: RetrySettings,
+    /// Model id → that model's settings.
+    #[serde(default)]
+    pub model: BTreeMap<String, ModelSettings>,
 }
 
 impl Default for ProviderSettings {
     fn default() -> Self {
-        Self { allow_uncatalogued_models: true }
+        Self {
+            allow_uncatalogued_models: true,
+            connection: ConnectionSettings::default(),
+            retry: RetrySettings::default(),
+            model: BTreeMap::new(),
+        }
+    }
+}
+
+/// `[provider.P.retry]`: `all` for every status, and a 3-digit status key for one.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RetrySettings {
+    pub all: Option<RetryOverride>,
+    pub by_status: BTreeMap<String, RetryOverride>,
+}
+
+impl<'de> Deserialize<'de> for RetrySettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mut table = BTreeMap::<String, RetryOverride>::deserialize(d)?;
+        for (key, o) in &table {
+            if key != "all" && !(key.len() == 3 && key.bytes().all(|b| b.is_ascii_digit())) {
+                return Err(D::Error::custom(format!("{key:?}: a status key is a 3-digit HTTP status, or `all`")));
+            }
+            o.check().map_err(|e| D::Error::custom(format!("{key}: {e}")))?;
+        }
+        let all = table.remove("all");
+        Ok(Self { all, by_status: table })
     }
 }
 

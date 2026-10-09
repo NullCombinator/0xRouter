@@ -1,5 +1,5 @@
 exit: 0
 --- stdout
-rq_01M40XK6400000000000000005  2026-10-03 13:00:00  interrupted anthropic-messages   sonnet                   -
-rq_01M40FVQM00000000000000004  2026-10-03 09:00:00  succeeded  anthropic-messages   sonnet                   anthropic/main
+rq_01M40XK6400000000000000005  2026-10-03 13:00:00  interrupted anthropic-messages   sonnet                   -  not recorded
+rq_01M40FVQM00000000000000004  2026-10-03 09:00:00  succeeded  anthropic-messages   sonnet                   anthropic/main  not recorded
 --- stderr

@@ -20,6 +20,8 @@ pub struct Transport {
     pub url_suffix: Option<String>,
     pub timeout_ms: Option<u64>,
     pub stall_timeout_ms: Option<u64>,
+    /// Only `false` has an effect: the provider doesn't speak HTTP/2, so its requests use HTTP/1.1.
+    pub http2: Option<bool>,
     pub thinking_format: Option<String>,
     pub validate_url: Option<String>,
     pub models_url: Option<String>,

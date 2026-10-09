@@ -108,6 +108,9 @@ pub struct RuntimeSettings {
     pub routing: RoutingSettings,
     /// `[tests]` (spec 011).
     pub tests: TestSettings,
+    /// `[connection] proxy`: the proxy every provider uses unless it or its account says
+    /// otherwise (a name from `proxies.toml`, or `"none"`).
+    pub connection_proxy: Option<String>,
 }
 
 /// A lookup token claimed by two providers.
@@ -368,7 +371,7 @@ impl Registry {
 
     /// Operator settings for `provider_id`; the default when `config.toml` has none.
     pub fn settings(&self, provider_id: &str) -> ProviderSettings {
-        self.settings.get(provider_id).copied().unwrap_or_default()
+        self.settings.get(provider_id).cloned().unwrap_or_default()
     }
 
     /// Whether the bundled client secret for `provider_id` is released in this snapshot.

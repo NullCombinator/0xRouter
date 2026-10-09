@@ -22,6 +22,7 @@ exit: 0
   "total_ms": null,
   "usage": null,
   "job": null,
-  "decision": null
+  "decision": null,
+  "slowest": null
 }
 --- stderr

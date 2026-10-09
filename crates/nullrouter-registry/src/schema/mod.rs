@@ -24,21 +24,22 @@ mod transport;
 
 pub use capability::{CapabilitySection, ModelRoute, SectionEndpoint, SectionLimits, SectionModel};
 pub use config::{
-    BROKEN_RETEST_ON, ComboDecl, DashboardSettings, Decision, MemberDecl, OperatorConfig, PipelineSettings,
-    ProviderSettings, RoutingSettings, ServerSettings, TEST_TYPES, TestSettings, TestTimeouts, UnifiedModelDecl,
+    BROKEN_RETEST_ON, ComboDecl, ConnectionSettings, DashboardSettings, Decision, GlobalConnection, MAX_TIMEOUT_MS,
+    MemberDecl, ModelConnection, ModelSettings, OperatorConfig, PipelineSettings, ProviderSettings, RetrySettings,
+    RoutingSettings, ServerSettings, TEST_TYPES, TestSettings, TestTimeouts, UnifiedModelDecl, check_timeout_ms,
     parse_broken_retest,
 };
 pub use duration::parse_duration;
 pub use endpoint::{
     Continuation, Endpoint, EndpointAuth, Endpoints, ErrorRule, ErrorRules, ForceMap, ForcedParam, JobMapping,
-    JobState, RetryOverride, TokenCount,
+    JobState, MAX_RETRIES, MAX_RETRY_DELAY_MS, RetryOverride, TokenCount,
 };
 pub use enums::{
     AuthHook, AuthKind, AuthScheme, CapabilityKind, Category, ContentKind, ModelKind, Quirk, RejectionReason, WireFormat,
 };
 pub use forwarding::{ForwardHeader, Forwarding, ToClient, ToUpstream};
 pub use identity::{HeaderValue, IdentityDecl, Placeholder};
-pub use model::Model;
+pub use model::{Model, ModelTimeouts};
 pub use models_live::{LiveModelType, ModelsLiveDecl};
 pub(crate) use oauth::oauth_urls;
 pub use oauth::{OAuthDecl, ParamValue, host_set};

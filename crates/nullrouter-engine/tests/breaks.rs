@@ -328,3 +328,28 @@ async fn an_excluded_continuation_falls_through_to_the_restart() {
     let (_, _, r) = run(&s, "openai-chat", "alpha/m1", "ak_test", false).await;
     assert_eq!(r.break_handling, BreakHandling::Restarted);
 }
+
+/// Spec 013: a stream cut after output and continued by attempt 2. The first attempt ends in
+/// generation, the first token is the first attempt's, and the phases still add up.
+#[tokio::test]
+async fn a_cut_and_continued_answer_keeps_its_phases_consistent() {
+    use nullrouter_engine::phases::{self, Phase, PhaseValue};
+
+    let s = setup(|m| vec![("alpha", chat_plugin(m, "alpha", PREFILL))], &[("alpha", "main")], "").await;
+    s.mock.push([cut_after_deltas(5), answer("tail.")]);
+    let (_, _, r) = run(&s, "openai-chat", "alpha/m1", "ak_test", false).await;
+    assert_eq!(kinds(&r), [AttemptKind::Initial, AttemptKind::Continuation]);
+    let all = phases::of(&r);
+    assert_eq!(all[0].ended_in, Some(Phase::Generation), "the cut happened while the provider generated");
+    assert_eq!(all[0].value(Phase::Delivery), PhaseValue::NotApplicable);
+    assert_eq!(all[1].ended_in, None);
+    let sum: f64 = all.iter().map(|p| p.sum()).sum();
+    let total = r.total_ms.unwrap();
+    assert!((sum - total).abs() <= 1.0, "phases add up to {sum:.2} ms, total is {total:.2} ms");
+    // The request's first token is the first attempt's.
+    let up_to: f64 = [Phase::RouterOverhead, Phase::Connect, Phase::Headers, Phase::FirstToken]
+        .into_iter()
+        .filter_map(|ph| all[0].value(ph).ms())
+        .sum();
+    assert!((up_to - r.ttft_ms.unwrap()).abs() <= 1.0, "{up_to} vs {:?}", r.ttft_ms);
+}

@@ -31,6 +31,7 @@ ulid.workspace = true
 httpdate.workspace = true
 indexmap.workspace = true
 url.workspace = true
+tower.workspace = true
 nullrouter-wire.workspace = true
 nullrouter-registry.workspace = true
 axum = { workspace = true, optional = true }
@@ -41,6 +42,13 @@ tempfile.workspace = true
 criterion.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 nullrouter-engine = { path = ".", features = ["testkit"] }
+# The connect-attribution spike (tests/connect_attribution.rs): a local TLS server and CONNECT proxy.
+rustls = "0.23"
+tokio-rustls = "0.26"
+rcgen = "0.13"
+hyper = { version = "1", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1", "http2"] }
+http-body-util = "0.1"
 
 [[bench]]
 name = "engine"

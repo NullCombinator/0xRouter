@@ -85,6 +85,8 @@ exit: 1
     "anthropic/main is pay-as-you-go with no price in its plugin or account; it ranks as price 1 against other pay-as-you-go accounts",
     "anthropic/spare is pay-as-you-go with no price in its plugin or account; it ranks as price 1 against other pay-as-you-go accounts"
   ],
+  "paused_proxies": [],
+  "undefined_proxies": [],
   "notices": [
     {
       "level": "error",

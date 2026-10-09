@@ -100,8 +100,24 @@ style.
   `{secret.*}` and unknown names are rejected.
 - **`auth`** moves the secret's header for this endpoint only (`scheme = "bearer"` or
   `"raw"`).
-- **Timeouts and retries**: `timeout_ms` (to response headers), `stall_timeout_ms` (between
-  stream bytes), and `retry` per status, overriding the core's defaults.
+- **Timeouts and retries**: `connect_timeout_ms`, `timeout_ms` (to response headers),
+  `first_token_timeout_ms` (to the first model output, thinking included; `0` is off) and
+  `stall_timeout_ms` (with no data at all), each 1-3 600 000 ms, and `retry` per status,
+  overriding the core's defaults. A retry is `{ retries = 2, delay_ms = 2000 }`, with at most
+  5 retries and a wait of at most 30 000 ms; a plugin above either fails validation, naming the
+  field. The operator's own settings win over all of these. A model may declare its own:
+
+  ```toml
+  [[models]]
+  id = "slow-reasoner"
+  timeouts = { first_token_ms = 600000, stall_ms = 600000 }   # also connect_ms, headers_ms
+  ```
+- **`http2 = false`**: the provider doesn't speak HTTP/2, so 0router uses HTTP/1.1 for the whole
+  provider. It is the only value that has an effect, and the operator can override it. A
+  schema 1 plugin writes it in `[transport]`; a schema 2 plugin on the endpoint.
+- **No proxy**: `proxy`, `proxy_url`, `https_proxy` and `no_proxy` are refused at any depth
+  with `plugins can't declare a proxy; proxies are operator-only`. The operator assigns
+  proxies; see [operator-config.md](operator-config.md#proxies).
 - **`force_stream`**: the endpoint only streams; 0router collects the stream for a client
   that didn't ask for one.
 - **`[endpoints.<type>.errors]`**: where the provider puts an error's message and status,

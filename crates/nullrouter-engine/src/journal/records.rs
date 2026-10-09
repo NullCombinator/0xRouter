@@ -762,6 +762,7 @@ mod tests {
             forced: Vec::new(),
             placement: None,
             member: None,
+            timing: None,
         }
     }
 

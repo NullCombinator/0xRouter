@@ -206,12 +206,20 @@ That is a correctness failure with direct user impact and potential revenue cons
 
 Latency MUST be measured and surfaced — it is not a metric noticed retrospectively.
 The routing layer MUST instrument time-to-first-token (TTFT) and total request duration
-per provider, per unified model. These measurements feed the routing decision (cache-aware
-routing needs accurate latency history) and are surfaced in the dashboard.
+per provider, per unified model, from real traffic, and surface them to the operator.
+
+Latency measurements inform the operator; they MUST NOT change the routing decision by
+themselves. No provider, account, or unified-model member may be preferred, demoted,
+skipped, or reweighted because it was measured slow or fast. The operator acts on what
+latency shows through settings they control (priority, timeouts, and other connection
+settings). A request that exceeds a configured timeout is an attempt failure, classified
+and retried or failed over like any other failure (VI); that is not latency steering.
 
 **Rationale**: init.md lists "latency becomes something measured and visible, not something
-noticed" as a first-class goal. Observability is not a feature add-on; it is part of the
-routing contract.
+noticed" as a first-class goal. Observability is part of the routing contract, but routing
+stays predictable: the four properties in II decide where a request goes, and a latency
+signal that silently moved traffic would make that decision unexplainable and could undo
+warm-cache preference on noise. The operator, who knows why a provider is slow, decides.
 
 ---
 
@@ -272,7 +280,14 @@ guidance, PATCH for clarifications and wording fixes.
 or SSE streaming MUST reference the relevant principle(s) in its description. Reviewers
 MUST verify compliance before approving.
 
-**Version**: 3.1.0 | **Ratified**: 2026-09-26 | **Last Amended**: 2026-10-07
+**Version**: 4.0.0 | **Ratified**: 2026-09-26 | **Last Amended**: 2026-10-07
+
+**v4.0.0 changes (MAJOR)**: Redefined Latency Observability (VIII). Latency measurements
+no longer feed the routing decision: they inform the operator and MUST NOT prefer, demote,
+skip, or reweight anything by themselves. The operator acts through priority, timeouts,
+and other connection settings. A configured timeout remains an ordinary attempt failure.
+Measuring TTFT and total duration per provider and per unified model, from real traffic,
+is unchanged. The four Routing Fidelity properties (II) are unchanged.
 
 **v3.1.0 changes (MINOR)**: Expanded windowed amortization in Routing Fidelity (II). Polls
 now correct a plugin's declared quota parameters once the evidence is significant; the

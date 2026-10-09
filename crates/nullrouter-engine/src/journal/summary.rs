@@ -70,9 +70,19 @@ fn is_skipped(attempt: &Value) -> bool {
     attempt["kind"] == "skipped"
 }
 
-/// The first attempt that wasn't skipped: when it started is the router's overhead.
+/// The first attempt that wasn't skipped.
 pub fn first_attempt(record: &Value) -> Option<&Value> {
     record["attempts"].as_array()?.iter().find(|a| !is_skipped(a))
+}
+
+/// The router's overhead: the first attempt's router-overhead phase (`phases::of`), which is
+/// when it started less any sign-in refresh and retry wait before it. A record from before
+/// phase timing has neither, so its overhead stays when that attempt started.
+pub fn router_overhead(record: &Value) -> Option<f64> {
+    let a = first_attempt(record)?;
+    let t = &a["timing"];
+    let spent = t["refresh_ms"].as_f64().unwrap_or(0.0) + t["retry_wait_ms"].as_f64().unwrap_or(0.0);
+    Some((a["started"].as_f64()? - spent).max(0.0))
 }
 
 /// The attempt that was running when the first token reached the client: the last non-skipped
@@ -420,8 +430,8 @@ pub fn latency(home: &Path, w: &Window, live: &[Value], running: bool) -> Latenc
         let arrived = r["arrived"].as_str().unwrap_or_default();
         let a = agents.entry(agent.to_owned()).or_default();
         a.requests += 1;
-        if let Some(started) = first_attempt(r).and_then(|x| x["started"].as_f64()) {
-            a.overhead.push(started);
+        if let Some(overhead) = router_overhead(r) {
+            a.overhead.push(overhead);
         }
         if let Some(t) = r["ttft_ms"].as_f64() {
             a.ttft.push(t);
@@ -538,6 +548,14 @@ mod tests {
         assert_eq!(first_attempt(&r).unwrap()["n"], 1);
         assert!(first_attempt(&rec(0.0, json!([{"kind": "skipped", "started": 1.0}]))).is_none());
         assert!(first_attempt(&json!({})).is_none());
+    }
+
+    #[test]
+    fn router_overhead_leaves_out_a_refresh_and_a_retry_wait() {
+        let r = rec(0.0, json!([{"kind": "skipped", "started": 1.0}, {"kind": "initial", "started": 9.0}]));
+        assert_eq!(router_overhead(&r), Some(9.0));
+        let timed = json!([{"kind": "initial", "started": 9.0, "timing": {"refresh_ms": 3.0, "retry_wait_ms": 4.0}}]);
+        assert_eq!(router_overhead(&rec(0.0, timed)), Some(2.0));
     }
 
     #[test]
