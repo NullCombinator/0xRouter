@@ -31,7 +31,9 @@ through `crate::files`. None is ever sent anywhere or read by a plugin (FR-030, 
 
 - Per-account numbers are keyed `<number>@<account>`.
 - `prior`: `{"through": T, "params": [...], "mean": [...], "information": [[...]]}` for rows
-  pruned from inside the epoch (research R11).
+  pruned from inside the epoch (research R11). `params` are names (`k@<account>`, a weight or
+  multiplier key, `b@<account>.<part>`), so a prior whose names don't match the current meter is
+  dropped. The CLI folds before `quota prune` deletes the rows.
 - **Load**: a missing file starts every window at the first poll. A window whose declared meter
   hashes differently restarts (FR-017). A file that doesn't parse is renamed to
   `<provider>.json.bad-<time>`, the fit restarts, and `check` warns. It is never silently
