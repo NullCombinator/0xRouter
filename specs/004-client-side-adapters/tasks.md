@@ -462,7 +462,7 @@ foundation here, not a later story.
     for a type implementing `Adapter`.
   - A `log!` macro calling the `nr.log` import, capped at 512 bytes.
   - Document that `#[no_mangle]` appears only inside `export!`.
-  - Done, not yet run in CI. The macro writes `#[unsafe(no_mangle)]` and `#[unsafe(link_section)]` (edition
+  - Done (green in CI #152). The macro writes `#[unsafe(no_mangle)]` and `#[unsafe(link_section)]` (edition
     2024). The `nr.abi` section is gated to `wasm32`. `run_bytes` holds the logic with no raw
     pointers, so host tests cover it. Whether `-F unsafe_code` ignores the macro's expansion in
     an author's crate is checked by the builder test (T037), which needs the wasm32 target.
