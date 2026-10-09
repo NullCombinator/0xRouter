@@ -42,9 +42,14 @@ jobs:
         run: CLAUDE_PROJECT_DIR=$PWD tools/cloud/session-start.sh
       - name: Test
         run: cargo test --workspace --no-fail-fast 2>&1 | tee test.log
+      - name: Sim suite
+        run: set -o pipefail; cargo test -p nullrouter-engine --release --test sim_suite -- --ignored 2>&1 | tee sim_suite.log
       - name: Clippy
         if: ${{ !cancelled() }}
         run: cargo clippy --workspace --all-targets --message-format=short -- -D warnings 2>&1 | tee clippy.log
       - name: Annotate failures
         if: failure()
         run: tools/ci/annotate.sh test.log clippy.log
+      - name: Annotate sim suite failures
+        if: failure()
+        run: tools/ci/annotate.sh sim_suite.log
