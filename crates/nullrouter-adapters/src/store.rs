@@ -270,6 +270,20 @@ impl Index {
         Ok(())
     }
 
+    /// Sets the kit-upgrade flags of a version (FR-032) without moving its state.
+    pub fn set_rebuild_flags(
+        &mut self,
+        name: &HarnessName,
+        id: &VersionId,
+        rebuilding: bool,
+        rebuild_failed: bool,
+    ) -> Result<(), StoreError> {
+        let v = self.version_mut(name, id)?;
+        v.rebuilding = rebuilding;
+        v.rebuild_failed = rebuild_failed;
+        Ok(())
+    }
+
     /// The operator's approval of a `reported` version: it becomes `active`, and the version that
     /// was active (if any) becomes `superseded`. Requests already running on that one finish on it.
     pub fn approve(&mut self, name: &HarnessName, id: &VersionId) -> Result<(), StoreError> {

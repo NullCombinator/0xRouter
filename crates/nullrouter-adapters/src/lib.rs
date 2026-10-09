@@ -301,6 +301,133 @@ pub async fn build(
     Ok(done(VersionState::InReview, ""))
 }
 
+/// Whether this core's sandbox runs a module built for `abi`: the current major and the one
+/// before it (the same rule as the sandbox's load gate).
+fn abi_supported(abi: u32) -> bool {
+    let current = nullrouter_adapter_kit::KIT_ABI;
+    abi == current || (current > 1 && abi == current - 1)
+}
+
+/// The kit-upgrade step that runs before the adapters load (FR-032): every `approved` version
+/// whose module was built for an ABI the sandbox no longer runs, or whose rebuild a stopped
+/// server left unfinished, gets `rebuilding` set (and `rebuild_failed` cleared, so a failed one
+/// is tried again). The state does not change. Returns the versions flagged.
+pub fn flag_rebuilds(home: &Path) -> Result<Vec<(HarnessName, store::VersionId)>, InstallError> {
+    let store = store::Store::open(home)?;
+    let mut index = store.load_index()?;
+    let mut targets = Vec::new();
+    for h in &index.harnesses {
+        for v in &h.versions {
+            let stale = v.kit_abi.is_some_and(|a| !abi_supported(a));
+            if v.state == store::VersionState::Approved && (v.rebuilding || stale) {
+                targets.push((h.name.clone(), v.id.clone()));
+            }
+        }
+    }
+    for (name, id) in &targets {
+        index.set_rebuild_flags(name, id, true, false)?;
+    }
+    if !targets.is_empty() {
+        store.save_index(&index)?;
+    }
+    Ok(targets)
+}
+
+/// Rebuilds the approved versions built for an ABI that is no longer supported, from their
+/// stored, reviewed source (FR-032, SC-013). Flags them first (see [`flag_rebuilds`]) and calls
+/// `reload` so the flags take effect, then rebuilds one at a time through the builder, calling
+/// `reload` after each. A rebuild must report the source's fingerprint: success replaces
+/// `module.wasm` and `build.json` and clears the flag, with no state change and no review; any
+/// failure sets `rebuild_failed` and raises a `rebuild_failed` alert, and the harness runs as a
+/// plain client. Returns the versions that were rebuilt.
+pub async fn startup_rebuilds(
+    home: &Path,
+    opts: &InstallOptions<'_>,
+    reload: &(dyn Fn() + Sync),
+) -> Result<Vec<(HarnessName, store::VersionId)>, InstallError> {
+    let targets = flag_rebuilds(home)?;
+    if targets.is_empty() {
+        return Ok(targets);
+    }
+    reload();
+    let store = store::Store::open(home)?;
+    let log = alerts::AlertLog::open(&store);
+    let mut rebuilt = Vec::new();
+    for (name, id) in targets {
+        match rebuild_one(home, &store, &name, &id, opts).await {
+            Ok(()) => rebuilt.push((name, id)),
+            Err(codes) => {
+                tracing::warn!("adapter {name} {id} not rebuilt for the new kit: {codes:?}");
+                let mut index = store.load_index()?;
+                index.set_rebuild_flags(&name, &id, false, true)?;
+                store.save_index(&index)?;
+                let alert = alerts::NewAlert {
+                    kind: alerts::AlertKind::RebuildFailed,
+                    harness: name.clone(),
+                    version: id.clone(),
+                    record: None,
+                    message: "the rebuild for the new kit failed",
+                    codes,
+                };
+                log.raise(alert, jiff::Timestamp::now())?;
+            }
+        }
+        reload();
+    }
+    Ok(rebuilt)
+}
+
+/// One kit-upgrade rebuild. `Err` carries the alert codes.
+async fn rebuild_one(
+    home: &Path,
+    store: &store::Store,
+    name: &HarnessName,
+    id: &store::VersionId,
+    opts: &InstallOptions<'_>,
+) -> Result<(), &'static [&'static str]> {
+    const FAILED: &[&str] = &["rebuild_error"];
+    let fail = |what: &str, e: &dyn fmt::Display| {
+        tracing::error!("adapter {name} {id} rebuild: {what}: {e}");
+        FAILED
+    };
+    let index = store.load_index().map_err(|e| fail("index", &e))?;
+    let entry = index.version(name, id).ok_or(FAILED)?;
+    // Only the stored, reviewed source is compiled: it must still be what was approved.
+    if store.verify(name, entry).is_err() {
+        return Err(&["source_mismatch"]);
+    }
+    let fp = entry.source_fp.clone();
+    let source = store.version_dir(name, id).join("source");
+    let text = std::fs::read_to_string(source.join("adapter.toml")).map_err(|e| fail("manifest", &e))?;
+    let manifest = loader::Manifest::parse(&text).map_err(|e| fail("manifest", &e))?;
+    let out = tempfile::tempdir().map_err(|e| fail("output directory", &e))?;
+    let job = builder_client::Job {
+        source_dir: source,
+        out_dir: out.path().to_owned(),
+        kit: manifest.kit,
+        abi: nullrouter_adapter_kit::KIT_ABI,
+    };
+    let outcome = builder_client::run_builder(opts.builder, home, &job, fp.as_str(), opts.build_timeout).await;
+    let builder_client::BuildOutcome::Built { wasm_hash, kit_abi, .. } = &outcome else {
+        return Err(refusal_alert(&outcome).1);
+    };
+    if !abi_supported(*kit_abi) {
+        return Err(&["kit_abi_unsupported"]);
+    }
+    let read = |file: &str| std::fs::read(out.path().join(file)).map_err(|e| fail(file, &e));
+    let (wasm, build_json) = (read("module.wasm")?, read("build.json")?);
+    if &nullrouter_sandbox::wasm_hash(&wasm) != wasm_hash {
+        return Err(&["module_hash_mismatch"]);
+    }
+    store.write_version_file(name, id, "module.wasm", &wasm).map_err(|e| fail("module.wasm", &e))?;
+    store.write_version_file(name, id, "build.json", &build_json).map_err(|e| fail("build.json", &e))?;
+    let mut index = store.load_index().map_err(|e| fail("index", &e))?;
+    index.set_built(name, id, wasm_hash, *kit_abi).map_err(|e| fail("index", &e))?;
+    index.set_rebuild_flags(name, id, false, false).map_err(|e| fail("index", &e))?;
+    store.save_index(&index).map_err(|e| fail("index", &e))?;
+    Ok(())
+}
+
 /// The harness and package version a package names, read leniently, so a refused package can
 /// still be recorded. `None`: it names neither validly.
 fn identity(files: &unpack::Files) -> Option<(HarnessName, semver::Version)> {

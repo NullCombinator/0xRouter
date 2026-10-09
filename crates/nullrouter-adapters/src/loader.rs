@@ -170,6 +170,14 @@ impl Loader {
             };
         };
         let version = entry.id.as_str();
+        // A kit-upgrade rebuild is under way, or failed: the old module is not loaded (the
+        // sandbox would refuse its ABI), and the harness runs as a plain client.
+        if entry.rebuilding {
+            return WasmHandle::unavailable(name.as_str(), version, NotRunReason::Rebuilding);
+        }
+        if entry.rebuild_failed {
+            return WasmHandle::unavailable(name.as_str(), version, NotRunReason::RebuildFailed);
+        }
         if let Err(e) = self.store.verify(name, entry) {
             return match e {
                 StoreError::SourceMismatch { .. } => {

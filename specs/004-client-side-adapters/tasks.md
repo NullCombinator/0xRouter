@@ -902,7 +902,7 @@ the reviewed source.
   - Assert 0 failed requests.
   - Every request before the approval is served by v1, every request whose attempt starts
     after it by v2, and in-flight streams finish on v1 (SC-006, US4-1 to US4-3).
-- [ ] T073 [P] [US4] Kit upgrade test in `crates/nullrouter-adapters/tests/kit_upgrade.rs`.
+- [X] T073 [P] [US4] Kit upgrade test in `crates/nullrouter-adapters/tests/kit_upgrade.rs`.
   - Store an approved version whose `build.json` has `kit_abi` = current − 2.
   - At startup it never loads, since the sandbox refuses the ABI. It is flagged
     `rebuilding`, and records show `not_run{rebuilding}`.
@@ -928,7 +928,7 @@ the reviewed source.
   - The runner is captured per request at its start from the `ArcSwap` snapshot, so in-flight
     requests keep their version.
   - Make T072 pass.
-- [ ] T077 [US4] Kit-upgrade rebuild in `crates/nullrouter-adapters/src/lib.rs`
+- [X] T077 [US4] Kit-upgrade rebuild in `crates/nullrouter-adapters/src/lib.rs`
   (`startup_rebuilds()`), called from `serve`.
   - Find approved versions whose `kit_abi` is not supported, and set `rebuilding`.
   - Rebuild in the background through `builder_client`, and require an equal `source_fp`.

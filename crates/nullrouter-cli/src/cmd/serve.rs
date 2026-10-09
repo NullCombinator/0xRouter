@@ -29,6 +29,11 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
     for a in &report.unused_accounts {
         tracing::warn!("account {a} names a provider that isn't loaded");
     }
+    // Versions built for a kit ABI the sandbox no longer runs are flagged `rebuilding` before the
+    // adapters load, so they load as plain clients instead of failing the load gate (FR-032).
+    if let Err(e) = nullrouter_adapters::flag_rebuilds(engine.home().path()) {
+        tracing::warn!("adapter kit-upgrade check failed: {e}");
+    }
     // An `adapters/` other users can enter is refused here, before anything listens.
     engine.open_adapters().map_err(|e| {
         eprintln!("startup failed: {e}");
@@ -63,6 +68,21 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
         })?;
         // Reviews a stopped server left `in_review` start again now: queuing needs the runtime.
         engine.resume_reviews();
+        // Kit-upgrade rebuilds run in the background; the server serves meanwhile.
+        let rebuilder = engine.clone();
+        tokio::spawn(async move {
+            let builder = rebuilder.snapshot().settings().adapters.builder.clone();
+            let opts = nullrouter_adapters::InstallOptions {
+                styles: &[],
+                builder: builder.as_deref(),
+                origin: nullrouter_adapters::store::Origin::Local("kit-upgrade".into()),
+                build_timeout: nullrouter_adapters::BUILD_TIMEOUT,
+            };
+            let reload = || rebuilder.refresh_adapters();
+            if let Err(e) = nullrouter_adapters::startup_rebuilds(rebuilder.home().path(), &opts, &reload).await {
+                tracing::warn!("adapter kit-upgrade rebuild failed: {e}");
+            }
+        });
         let (stop, stopped) = tokio::sync::watch::channel(false);
         let until_stopped = |mut stopped: tokio::sync::watch::Receiver<bool>| async move {
             let _ = stopped.wait_for(|s| *s).await;
