@@ -876,3 +876,163 @@ async fn model_tests_keep_no_secret_prompt_or_output() {
     let leaks = leaks_of(&places, &[TEST_KEY, key.as_str(), "OUTPUT-SENTINEL-T051", "\"content\":\"hi\""]);
     assert!(leaks.is_empty(), "{}", leaks.join("\n"));
 }
+
+// ---- quota fit (spec 012 T065, SC-010, FR-030, FR-031) -----------------------------------
+
+const FIT_SECRET: &str = "sk-fit-SENTINEL-T065";
+
+/// `n + 1` good polls ten minutes apart from `base`, then one more that shows an 8-point rise
+/// with no traffic of ours (idle outside use). The true capacity is a third of the declared one.
+fn fit_history(base: SystemTime, n: usize) -> Vec<nullrouter_engine::quota::history::Entry> {
+    use nullrouter_engine::quota::QuotaWindow;
+    use nullrouter_engine::quota::extract::rfc3339_millis;
+    use nullrouter_engine::quota::history::{Entry, VERSION};
+    use nullrouter_engine::quota::tally::ModelTally;
+    use nullrouter_registry::schema::QuotaUnit;
+
+    let min = |m: u64| base + Duration::from_secs(m * 60);
+    let reset = min(3000);
+    let entry = |m: u64, level: f64, tally: Option<ModelTally>| Entry {
+        v: VERSION,
+        at: rfc3339_millis(min(m)),
+        ok: true,
+        error: None,
+        windows: vec![QuotaWindow {
+            name: "5-hour".into(),
+            unit: QuotaUnit::Percent,
+            used: Some(level),
+            limit: Some(100.0),
+            remaining: Some(100.0 - level),
+            resets_at: Some(reset),
+        }],
+        tally: tally.into_iter().map(|t| ("m1".to_owned(), t)).collect(),
+    };
+    let mut seed = 0x012_7027u64;
+    let mut next = move || {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (seed >> 33) as f64 / (1u64 << 31) as f64
+    };
+    let k = 100.0 / 333_333.0;
+    let mut level = 5.3f64;
+    let mut out = vec![entry(0, level.round(), None)];
+    for i in 1..=n {
+        let input = 800 + (next() * 3600.0) as u64;
+        level += k * input as f64;
+        let tally = ModelTally { requests: 1, requests_usage_unreported: 0, input, output: 0, cache_read: 0, cache_write: 0 };
+        out.push(entry(10 * i as u64, level.round(), Some(tally)));
+    }
+    out.push(entry(10 * (n as u64 + 1), level.round() + 8.0, None));
+    out
+}
+
+/// Nothing the fit produced reaches an operator-visible file, answer or log with a secret in it,
+/// and nothing it produced reaches a provider (it is not in a request, and the request a
+/// published fit sees is byte-identical to the one sent before any fit existed). Plugins are TOML
+/// data the registry never receives fit values for, so the upstream byte comparison is the check.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_fit_and_its_alerts_keep_no_secret_and_reach_no_provider() {
+    use nullrouter_engine::quota::history;
+
+    let logs = logs();
+    let base = SystemTime::now() - Duration::from_secs(20 * 3600);
+    let exclusive = nullrouter_engine::clock::rfc3339(base - Duration::from_secs(3600));
+    let accounts = format!(
+        "schema = 2\n[[account]]\nprovider = \"keyco\"\nname = \"main\"\nsecret = \"{FIT_SECRET}\"\nexclusive_use = \"{exclusive}\"\n"
+    );
+    let s = common::server_custom(
+        |m| {
+            let plugin = format!(
+                "schema = 2\nid = \"keyco\"\ncategory = \"apikey\"\n[auth]\nkind = \"apikey\"\n[endpoints.text]\nurl = \"{}\"\nwire = \"openai-chat\"\n\
+                 [quota]\naccounts = \"key\"\nrequest = {{ url = \"{}\" }}\n\
+                 [[quota.window]]\npath = \"usage.rolling\"\nname = \"5-hour\"\nunit = \"percent\"\nused = \"percent\"\n\
+                 [[routing.window]]\nname = \"5-hour\"\nlength = \"5h\"\nunit = \"weighted_tokens\"\ncapacity = 1000000\n\
+                 [[models]]\nid = \"m1\"\n",
+                m.url("/keyco/chat/completions"),
+                m.url("/keyco/usage"),
+            );
+            vec![("keyco", plugin)]
+        },
+        &accounts,
+        "[[unified_model]]\nname = \"u\"\nmembers = [{ provider = \"keyco\", model = \"m1\" }]\n",
+    )
+    .await;
+    s.mock.respond(|_| chat_stream());
+
+    let c = reqwest::Client::new();
+    let send = || {
+        c.post(format!("{}/v1/chat/completions", s.base))
+            .bearer_auth(&s.key)
+            .body(json!({"model": "u", "stream": true, "messages": [{"role": "user", "content": "hello"}]}).to_string())
+            .send()
+    };
+    let mut seen = Vec::new();
+
+    // A request before any fit exists.
+    let r = send().await.unwrap();
+    seen.push(format!("{} {:?}\n{}", r.status(), r.headers(), r.text().await.unwrap()));
+    assert!(s.engine.fits.load().window("keyco", "5-hour").capacity.is_empty(), "a fit exists before any history");
+    let before = s.mock.received().len();
+    assert_eq!(before, 1, "one upstream request before the fit");
+
+    // The history of a week's polls, then the fit is rebuilt from it (as at start).
+    for e in fit_history(base, 100) {
+        history::append(s.home(), "keyco", "main", &e).unwrap();
+    }
+    let engine = s.engine.clone();
+    tokio::task::spawn_blocking(move || engine.fit_learner.replay()).await.unwrap();
+    let capacity = s.engine.fits.load().window("keyco", "5-hour").capacity.get("main").copied().expect("a fitted capacity");
+
+    // The same request with the fit published.
+    let r = send().await.unwrap();
+    seen.push(format!("{} {:?}\n{}", r.status(), r.headers(), r.text().await.unwrap()));
+
+    // The alert and the outside-use entry exist.
+    let alerts = nullrouter_engine::quota::fit::outside::alerts(s.home(), "keyco", "main");
+    assert!(!alerts.is_empty(), "the idle rise raised no alert");
+    let ids: Vec<String> = alerts.iter().flat_map(|a| [a.id.clone(), a.entry.clone()]).collect();
+    assert!(logs.text().contains("unexplained use"), "no quota.alert line was logged");
+
+    // Where the secret could show: files, socket answers, logs, client responses.
+    let mut places: Vec<(&str, String)> = Vec::new();
+    let quota_dir = files_under(&s.home().join("quota"));
+    assert!(quota_dir.iter().any(|(p, _)| p.contains("fit") && p.ends_with(".json")), "no fit file: {quota_dir:?}");
+    assert!(quota_dir.iter().any(|(p, _)| p.ends_with(".outside.jsonl")), "no outside-use file: {quota_dir:?}");
+    let disk = quota_dir.iter().map(|(p, t)| format!("{p}\n{t}")).collect::<Vec<_>>().join("\n");
+    let mut socket = Vec::new();
+    for op in ["routing.view", "quota.outside", "quota.alerts"] {
+        let answer = operator::handle(&s.engine, &json!({"op": op})).await;
+        assert_eq!(answer["ok"], true, "{op}: {answer:#}");
+        socket.push(answer.to_string());
+    }
+    places.push(("quota files", disk));
+    places.push(("operator answers", socket.join("\n")));
+    places.push(("logs", logs.text()));
+    places.push(("client responses", seen.join("\n")));
+    let key = s.key.clone();
+    let leaks = leaks_of(&places, &[FIT_SECRET, key.as_str()]);
+    assert!(leaks.is_empty(), "{}", leaks.join("\n"));
+
+    // No fitted value, interval or alert reaches the provider, and the body is what it was.
+    let got = s.mock.received();
+    assert_eq!(got.len(), 2, "one upstream request each side of the fit");
+    let dump = |r: &Received| {
+        let mut h: Vec<String> = r.headers.iter().map(|(k, v)| format!("{k}: {}", v.to_str().unwrap_or_default())).collect();
+        h.sort();
+        format!("{}\n{}", h.join("\n"), String::from_utf8_lossy(&r.body)).to_lowercase()
+    };
+    let mut banned: Vec<String> = ids.iter().map(|i| i.to_lowercase()).collect();
+    banned.extend(["outside", "quota.fit", "quota.alert", &format!("{capacity}"), &format!("{capacity:.0}")].map(str::to_owned));
+    for r in &got {
+        let text = dump(r);
+        for b in &banned {
+            assert!(!text.contains(b.as_str()), "{b:?} reached the provider:\n{text}");
+        }
+    }
+    assert_eq!(got[0].body, got[1].body, "the upstream body changed once a fit was published");
+    let names = |r: &Received| {
+        let mut n: Vec<String> = r.headers.keys().map(|k| k.as_str().to_owned()).collect();
+        n.sort();
+        n
+    };
+    assert_eq!(names(&got[0]), names(&got[1]), "the upstream headers changed once a fit was published");
+}

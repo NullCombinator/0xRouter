@@ -208,7 +208,7 @@ priority").
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T065 [P] Extend the secret scan (`crates/nullrouter-engine/tests/no_cloaking.rs`, or the redaction test that covers records and logs) to `quota/fit/*.json`, `*.outside.jsonl`, the view's JSON and the `quota.fit`/`quota.alert` log lines. Assert no account secret or token appears, and that no fitted value, interval or alert reaches a provider request or plugin input (SC-010, FR-030, FR-031)
+- [X] T065 [P] Extend the secret scan (`crates/nullrouter-engine/tests/no_cloaking.rs`, or the redaction test that covers records and logs) to `quota/fit/*.json`, `*.outside.jsonl`, the view's JSON and the `quota.fit`/`quota.alert` log lines. Assert no account secret or token appears, and that no fitted value, interval or alert reaches a provider request or plugin input (SC-010, FR-030, FR-031)
 - [X] T066 [P] Add `live_fit_progress` to `crates/nullrouter-engine/tests/live.rs` (opt-in `NR_LIVE=1`). It reads `NULLROUTER_HOME`'s history, runs the fit offline, and prints state and progress for every number of every polled account. It **fails** when `NULLROUTER_HOME` is unset or no polled account exists (SC-012, research R16; lesson of 2026-10-05)
 - [X] T067 [P] Add a placement case with meters in effect to `crates/nullrouter-engine/benches/engine.rs`, compared against the `slice-006` baseline locally only (SC-011)
 - [X] T068 [P] Add a CI step in `.github/workflows/ci.yml` after the workspace tests: `cargo test -p nullrouter-engine --release --test sim_suite -- --ignored 2>&1 | tee sim_suite.log`, and pass its log to `tools/ci/annotate.sh`
