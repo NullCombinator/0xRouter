@@ -894,7 +894,7 @@ the reviewed source.
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T072 [P] [US4] Lifecycle under load in
+- [X] T072 [P] [US4] Lifecycle under load in
   `crates/nullrouter-server/tests/adapter_lifecycle.rs`.
   - 20 concurrent streaming clients on a key bound to `fixture-v1`, which is approved.
   - Move v2 through `queued`, `in_review`, `quarantined`, `rejected`, and then a second v2
