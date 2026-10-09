@@ -64,7 +64,10 @@ impl Dash {
         engine.status.set_client_listen(client_addr.to_string());
         let app = App::new(engine.clone()).unwrap();
         let (client_stop, client_stopped) = oneshot::channel::<()>();
-        tokio::spawn(serve::run(app, client, async {
+        // Recover before serving, as `nullrouter serve` does: a recovery still running when a
+        // test appends open records would close them as interrupted under it.
+        serve::recover_journal(&engine).await;
+        tokio::spawn(serve::serve_recovered(app, client, async {
             let _ = client_stopped.await;
         }));
 
