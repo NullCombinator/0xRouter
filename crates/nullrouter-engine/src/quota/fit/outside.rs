@@ -5,8 +5,9 @@
 //! reclassification. It sits beside the account's history, is written through the history
 //! file's lock so it interleaves safely with `quota prune`, and is 0600 in 0700 directories.
 //!
-//! This module logs nothing: no `tracing` calls. Alerts and log lines are raised by the
-//! detector (T059), and only for accounts with an exclusive-use declaration (FR-021, FR-022).
+//! This module builds the alert lines and their text, and the `quota.alert` log line. The
+//! learner decides when to raise them, and only for accounts with an exclusive-use declaration
+//! at the entry's start (FR-022, FR-024).
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{File, OpenOptions};
@@ -81,6 +82,9 @@ pub enum Line {
         /// The outside-use entry's id.
         entry: String,
         raised_at: String,
+        /// What the alert says. Lines written before the detector existed have none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
     },
     Ack {
         v: u32,
@@ -186,7 +190,7 @@ pub struct Alert {
     /// The outside-use entry that raised it.
     pub entry: String,
     pub raised_at: String,
-    /// What the alert says. `None` until the detector (T059) writes it.
+    /// What the alert says. `None` for a line written without text.
     pub text: Option<String>,
 }
 
@@ -208,7 +212,7 @@ fn unacknowledged(path: &Path) -> Result<Vec<Alert>, FileError> {
     let mut acked: HashSet<String> = HashSet::new();
     for line in text.lines() {
         match serde_json::from_str::<Line>(line) {
-            Ok(Line::Alert { v, id, entry, raised_at }) => raised.push(Alert { v, id, entry, raised_at, text: None }),
+            Ok(Line::Alert { v, id, entry, raised_at, text }) => raised.push(Alert { v, id, entry, raised_at, text }),
             Ok(Line::Ack { alert, .. }) => {
                 acked.insert(alert);
             }
@@ -354,6 +358,94 @@ pub fn interval_line(
     (id, Line::Entry(entry))
 }
 
+/// Whether the account was exclusive-use at `start`: declared at or before it.
+pub fn exclusive_at(since: Option<SystemTime>, start: SystemTime) -> bool {
+    since.is_some_and(|s| s <= start)
+}
+
+/// `n` with at most two decimals and no trailing zeros: `4`, `0.2`, `12`.
+fn num(n: f64) -> String {
+    let s = if n.abs() >= 10.0 { format!("{n:.0}") } else { format!("{n:.2}") };
+    if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_owned() } else { s }
+}
+
+/// `4%` for percent, else `4 credits`.
+fn amount_text(n: f64, unit: &str) -> String {
+    if unit == "percent" { format!("{}%", num(n)) } else { format!("{} {unit}", num(n)) }
+}
+
+/// `HH:MM` in UTC.
+fn hhmm(t: SystemTime) -> String {
+    let secs = t.duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    format!("{:02}:{:02}", secs % 86_400 / 3600, secs % 3600 / 60)
+}
+
+/// The weekday in UTC, like `Wed`.
+fn weekday(t: SystemTime) -> &'static str {
+    let days = t.duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs() / 86_400);
+    // 1970-01-01 was a Thursday.
+    ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"][(days % 7) as usize]
+}
+
+/// What an alert for `entry` says (FR-025): facts only, UTC times, no cause named. `None` when
+/// the entry's times don't parse.
+pub fn alert_text(provider: &str, account: &str, entry: &OutsideEntry) -> Option<String> {
+    let start = entry.start_time()?;
+    let who = format!("{provider}/{account}");
+    let window = &entry.window;
+    if entry.ty == OutsideType::Steady {
+        let rate = entry.rate_per_hour?;
+        let per_hour = if entry.unit == "percent" { format!("{}%/h", num(rate)) } else { format!("{} {}/h", num(rate), entry.unit) };
+        let part = entry.part.as_deref().unwrap_or("all day");
+        return Some(format!(
+            "{who}: about {per_hour} of {window} used {part} since {} {} with no traffic from 0router",
+            weekday(start),
+            hhmm(start)
+        ));
+    }
+    let end = clock::parse_rfc3339(entry.end.as_deref()?)?;
+    let amount = amount_text(entry.amount?, &entry.unit);
+    let range = format!("{}\u{2013}{}", hhmm(start), hhmm(end));
+    let day = weekday(start);
+    Some(match entry.ty {
+        OutsideType::Idle => format!("{who}: {amount} of {window} used {range} {day} with no traffic from 0router"),
+        _ => format!("{who}: {amount} of {window} used {range} {day} beyond what 0router's traffic explains"),
+    })
+}
+
+/// The `alert` line for `entry`, with a new id and its text. `None` when the text can't be built.
+pub fn alert_line(provider: &str, account: &str, entry: &OutsideEntry, now: SystemTime) -> Option<Line> {
+    let text = alert_text(provider, account, entry)?;
+    Some(Line::Alert {
+        v: VERSION,
+        id: ulid::Ulid::new().to_string(),
+        entry: entry.id.clone(),
+        raised_at: rfc3339_millis(now),
+        text: Some(text),
+    })
+}
+
+/// Logs `WARN quota.alert: unexplained use …` for `entry`, once its alert is written (FR-024).
+pub fn log_alert(provider: &str, account: &str, entry: &OutsideEntry) {
+    let unit = entry.unit.as_str();
+    let amount = match (entry.amount, entry.rate_per_hour) {
+        (Some(a), _) => amount_text(a, unit),
+        (None, Some(r)) => format!("{}/h", amount_text(r, unit)),
+        (None, None) => String::new(),
+    };
+    tracing::warn!(
+        target: "quota.alert",
+        provider,
+        account,
+        window = entry.window.as_str(),
+        start = entry.start.as_str(),
+        end = entry.end.as_deref().unwrap_or(""),
+        amount = amount.as_str(),
+        idle = entry.ty == OutsideType::Idle,
+        "unexplained use"
+    );
+}
+
 /// The line that withdraws entry `entry` because its row counts as evidence again.
 pub fn reclassified_line(entry: &str, reason: &str, now: SystemTime) -> Line {
     Line::Reclassified { v: VERSION, entry: entry.to_owned(), at: rfc3339_millis(now), reason: reason.to_owned() }
@@ -447,7 +539,7 @@ mod tests {
     fn alert_and_ack_lines_parse_and_are_skipped_by_read() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
-        let alert = Line::Alert { v: VERSION, id: "01JBD".to_owned(), entry: "01JBE".to_owned(), raised_at: at(1500) };
+        let alert = Line::Alert { v: VERSION, id: "01JBD".to_owned(), entry: "01JBE".to_owned(), raised_at: at(1500), text: None };
         let ack = Line::Ack { v: VERSION, alert: "01JBD".to_owned(), at: at(1600) };
         let lines = [Line::Entry(entry("01JBE", OutsideType::Busy, 1000)), alert, ack];
         append(home, "anthropic", "max", &lines).unwrap();
@@ -516,7 +608,7 @@ mod tests {
     }
 
     fn alert_line(id: &str, entry: &str, secs: u64) -> Line {
-        Line::Alert { v: VERSION, id: id.to_owned(), entry: entry.to_owned(), raised_at: at(secs) }
+        Line::Alert { v: VERSION, id: id.to_owned(), entry: entry.to_owned(), raised_at: at(secs), text: None }
     }
 
     fn alert_ids(home: &Path) -> Vec<String> {
@@ -608,5 +700,61 @@ mod tests {
         ack(home, "anthropic", "max", AckTarget::Id("01JQA1"), when(1700)).unwrap();
         assert!(alert_ids(home).is_empty());
         assert_eq!(ids(&read(home, "anthropic", "max", None, None).unwrap()), ["01JQE1"]);
+    }
+
+    fn text_entry(ty: OutsideType) -> OutsideEntry {
+        // 2026-10-07 is a Wednesday.
+        let mut e = entry("01JTX", ty, 0);
+        e.start = "2026-10-07T02:10:00.000Z".to_owned();
+        e.end = Some("2026-10-07T02:30:00.000Z".to_owned());
+        e
+    }
+
+    #[test]
+    fn alert_texts_state_facts_in_utc_and_never_name_a_cause() {
+        let idle = alert_text("anthropic", "max", &text_entry(OutsideType::Idle)).unwrap();
+        assert_eq!(idle, "anthropic/max: 4% of weekly used 02:10\u{2013}02:30 Wed with no traffic from 0router");
+        let busy = alert_text("anthropic", "max", &text_entry(OutsideType::Busy)).unwrap();
+        assert_eq!(busy, "anthropic/max: 4% of weekly used 02:10\u{2013}02:30 Wed beyond what 0router's traffic explains");
+        let mut steady = text_entry(OutsideType::Steady);
+        steady.amount = None;
+        steady.end = None;
+        steady.rate_per_hour = Some(0.2);
+        steady.part = Some("08-12".to_owned());
+        let text = alert_text("anthropic", "max", &steady).unwrap();
+        assert_eq!(text, "anthropic/max: about 0.2%/h of weekly used 08-12 since Wed 02:10 with no traffic from 0router");
+        for t in [idle, busy, text] {
+            assert!(!t.to_lowercase().contains("leak") && !t.to_lowercase().contains("key"), "{t}");
+        }
+        let mut credits = text_entry(OutsideType::Idle);
+        credits.unit = "credits".to_owned();
+        credits.amount = Some(12.5);
+        assert!(alert_text("p", "a", &credits).unwrap().starts_with("p/a: 12.5 credits of weekly"));
+    }
+
+    #[test]
+    fn exclusive_use_counts_from_its_declaration() {
+        let t = |s| UNIX_EPOCH + Duration::from_secs(s);
+        assert!(exclusive_at(Some(t(100)), t(100)));
+        assert!(exclusive_at(Some(t(100)), t(200)));
+        assert!(!exclusive_at(Some(t(100)), t(99)));
+        assert!(!exclusive_at(None, t(200)));
+    }
+
+    #[test]
+    fn an_alert_line_keeps_its_text_and_an_old_line_without_text_still_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let e = text_entry(OutsideType::Idle);
+        let line = super::alert_line("anthropic", "max", &e, UNIX_EPOCH).unwrap();
+        append(home, "anthropic", "max", &[Line::Entry(e), line, alert_line_plain("01JZOLD", "01JTX")]).unwrap();
+        let got = alerts(home, "anthropic", "max");
+        assert_eq!(got.len(), 2);
+        assert!(got.iter().any(|a| a.text.as_deref().is_some_and(|t| t.contains("with no traffic from 0router"))));
+        assert!(got.iter().any(|a| a.id == "01JZOLD" && a.text.is_none()));
+    }
+
+    fn alert_line_plain(id: &str, entry: &str) -> Line {
+        Line::Alert { v: VERSION, id: id.to_owned(), entry: entry.to_owned(), raised_at: at(1500), text: None }
     }
 }

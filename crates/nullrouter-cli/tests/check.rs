@@ -312,5 +312,18 @@ fn unacknowledged_alerts_are_warnings_and_leave_the_exit_status_alone() {
         text.contains(&format!("warn  opencode-go/main: usage alert {ALERT} (nullrouter quota ack {ALERT})")),
         "{text}"
     );
+
+    // A line with text shows that text (T059).
+    const TEXTED: &str = "01JB9AAAAAAAAAAAAAAAAAAAAA";
+    const WORDS: &str = "opencode-go/main: 4% of weekly used 02:10\u{2013}02:30 Wed with no traffic from 0router";
+    let texted = format!(
+        r#"{{"v":1,"kind":"alert","id":"{TEXTED}","entry":"{ENTRY}","raised_at":"2026-10-07T02:32:00.000Z","text":"{WORDS}"}}"#
+    );
+    write_private(&q.join("main.outside.jsonl"), &format!("{entry}\n{alert}\n{texted}\n")).unwrap();
+    let out = nr(h, &["check"]);
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(0), "warnings only: {text}");
+    assert!(text.contains(&format!("warn  {WORDS} (nullrouter quota ack {TEXTED})")), "{text}");
+    assert!(text.contains(&format!("usage alert {ALERT}")), "old line keeps the fallback: {text}");
     assert_no_token(&text);
 }

@@ -216,6 +216,17 @@ pub struct Learner {
     /// Providers whose stored state was edited in place and must be saved though the windows
     /// held in memory are unchanged.
     resave: BTreeSet<String>,
+    /// Per `(provider, account)`, since when the account is used only through 0router (FR-023).
+    /// Set from the engine snapshot at each observation; only these accounts raise alerts.
+    exclusive: BTreeMap<(String, String), SystemTime>,
+}
+
+/// What the alert detector needs of the window being listed: who is exclusive-use since when,
+/// and how many windows the account has (`m` of the test, research R10).
+#[derive(Debug, Clone, Default)]
+struct Alerting {
+    exclusive: BTreeMap<String, SystemTime>,
+    windows: usize,
 }
 
 impl Fits {
@@ -253,6 +264,21 @@ impl Learner {
             return epochs?.into_iter().min();
         }
         mine.iter().map(|w| w.cursors.get(account).copied().unwrap_or(w.epoch)).min()
+    }
+
+    /// Declares `account` exclusive-use since `since` (`None`: not), for observations that come
+    /// without an engine snapshot ([`Learner::observe_declared`]). A snapshot observation
+    /// replaces what is set here.
+    pub fn set_exclusive(&mut self, provider: &str, account: &str, since: Option<SystemTime>) {
+        let key = (provider.to_owned(), account.to_owned());
+        match since {
+            Some(t) => {
+                self.exclusive.insert(key, t);
+            }
+            None => {
+                self.exclusive.remove(&key);
+            }
+        }
     }
 
     /// The state of every number of one window, keyed like the store.
@@ -358,6 +384,12 @@ impl Learner {
             self.unfitted.insert((provider.to_owned(), a.name.clone()), note.to_owned());
         }
         let accounts: Vec<String> = fitted.iter().map(|a| a.name.clone()).collect();
+        self.exclusive.retain(|(p, _), _| p != provider);
+        for a in &fitted {
+            if let Some(t) = a.exclusive_use {
+                self.exclusive.insert((provider.to_owned(), a.name.clone()), t);
+            }
+        }
         let ov = super::window_overrides(st, provider);
         self.run_declared(fits, home, provider, entity.routing().windows, &accounts, &ov, tails, now)
     }
@@ -450,6 +482,10 @@ impl Learner {
             let win = self.make_win(provider, meter, &hash, tails, now, changed);
             self.windows.insert(key.clone(), win);
         }
+        let alerting = Alerting {
+            exclusive: self.exclusive.iter().filter(|((p, _), _)| p == provider).map(|((_, a), t)| (a.clone(), *t)).collect(),
+            windows: declared.len(),
+        };
         let Some(win) = self.windows.get_mut(&key) else { return };
 
         let percent = unit == QuotaUnit::Percent;
@@ -495,8 +531,8 @@ impl Learner {
             return;
         }
         refit(win, &spec, meter, ov, provider, now);
-        list_outside_rows(win, home, provider, &spec, meter, unit, now);
-        list_steady_rates(win, home, provider, &spec, meter, unit, now);
+        list_outside_rows(win, home, provider, &spec, meter, unit, now, &alerting);
+        list_steady_rates(win, home, provider, &spec, meter, unit, now, &alerting);
     }
 
     /// A window seen for the first time in this run: restored from the store, restarted
@@ -613,8 +649,15 @@ fn start_theta(spec: &Spec, meter: &MeterDecl) -> Theta {
 /// account's file is read the first time, and rows whose `(account, start)` it holds are skipped.
 /// A listed row that counts as evidence again gets a `reclassified` line and may be listed anew
 /// if it turns outside again. An account whose file can't be read or written is left for the
-/// next refit. Raises no alerts and logs no outside use (FR-022).
-fn list_outside_rows(win: &mut Win, home: &Path, provider: &str, spec: &Spec, meter: &MeterDecl, unit: QuotaUnit, now: SystemTime) {
+/// next refit.
+///
+/// Alerts (FR-024, R10) only for an account that was exclusive-use at the row's start: an idle row
+/// at once, a busy row (final by now) when its excess passes the always-valid test against 0 at
+/// the row's predictive standard error, `m` being the account's windows. The `alert` line goes
+/// into the same write as its entry, and `WARN quota.alert` follows once it is written. Without
+/// an exclusive-use declaration nothing is alerted or logged (FR-022).
+#[allow(clippy::too_many_arguments)]
+fn list_outside_rows(win: &mut Win, home: &Path, provider: &str, spec: &Spec, meter: &MeterDecl, unit: QuotaUnit, now: SystemTime, alerting: &Alerting) {
     let Some((_, fit)) = &win.last else { return };
     for account in &spec.accounts {
         if !win.listed_read.contains(account) {
@@ -636,20 +679,34 @@ fn list_outside_rows(win: &mut Win, home: &Path, provider: &str, spec: &Spec, me
         let mut lines = Vec::new();
         let mut added: Vec<((String, String), String)> = Vec::new();
         let mut withdrawn: Vec<(String, String)> = Vec::new();
+        let mut alerted: Vec<outside::OutsideEntry> = Vec::new();
+        let since = alerting.exclusive.get(account).copied();
         for row in win.rows.iter().filter(|r| r.account == *account) {
             let key = (account.clone(), rfc3339_millis(row.start));
             if row.class == Class::Outside {
                 if win.listed.contains_key(&key) {
                     continue;
                 }
-                let (ty, amount) = if row.has_traffic() {
+                let (ty, amount, loud) = if row.has_traffic() {
                     let Some(m) = model::prepare(spec, std::slice::from_ref(row)).into_iter().next() else { continue };
-                    (outside::OutsideType::Busy, (row.y - classify::upper(fit, spec, &m, STEP)).max(0.0))
+                    let excess = (row.y - classify::upper(fit, spec, &m, STEP)).max(0.0);
+                    let se = (fit.predict(spec, &m).1 + fit.row_noise()).sqrt();
+                    (outside::OutsideType::Busy, excess, rejects(excess, 0.0, se, alerting.windows))
                 } else {
-                    (outside::OutsideType::Idle, row.y)
+                    (outside::OutsideType::Idle, row.y, true)
                 };
                 let (id, line) = outside::interval_line(&meter.name, unit.as_str(), ty, (row.start, row.end), amount, now);
-                lines.push(line);
+                if loud
+                    && outside::exclusive_at(since, row.start)
+                    && let outside::Line::Entry(e) = &line
+                    && let Some(alert) = outside::alert_line(provider, account, e, now)
+                {
+                    alerted.push(e.clone());
+                    lines.push(line);
+                    lines.push(alert);
+                } else {
+                    lines.push(line);
+                }
                 added.push((key, id));
             } else if let Some(id) = win.listed.get(&key) {
                 lines.push(outside::reclassified_line(id, "counts as evidence again", now));
@@ -662,6 +719,9 @@ fn list_outside_rows(win: &mut Win, home: &Path, provider: &str, spec: &Spec, me
                     win.listed.remove(&key);
                 }
                 win.listed.extend(added);
+                for e in &alerted {
+                    outside::log_alert(provider, account, e);
+                }
             }
             Err(e) => tracing::warn!(provider, account = account.as_str(), "outside use not listed: {e}"),
         }
@@ -672,7 +732,11 @@ fn list_outside_rows(win: &mut Win, home: &Path, provider: &str, spec: &Spec, me
 /// is clearly above 0 and new or changed since the last one listed (FR-021). Written for every
 /// polled account; alerts and log lines are the detector's business and need an exclusive-use
 /// declaration (FR-022). A rate is recorded in `alerted_rates` only once its line is written.
-fn list_steady_rates(win: &mut Win, home: &Path, provider: &str, spec: &Spec, meter: &MeterDecl, unit: QuotaUnit, now: SystemTime) {
+///
+/// A new or changed established rate also raises one alert (so once per established rate), when
+/// the account was exclusive-use at the entry's start (the window's epoch).
+#[allow(clippy::too_many_arguments)]
+fn list_steady_rates(win: &mut Win, home: &Path, provider: &str, spec: &Spec, meter: &MeterDecl, unit: QuotaUnit, now: SystemTime, alerting: &Alerting) {
     let Some((_, fit)) = &win.last else { return };
     for (a, account) in spec.accounts.iter().enumerate() {
         for q in 0..model::PARTS {
@@ -687,9 +751,22 @@ fn list_steady_rates(win: &mut Win, home: &Path, provider: &str, spec: &Spec, me
             else {
                 continue;
             };
-            match outside::append(home, provider, account, &[line]) {
+            let alert = match &line {
+                outside::Line::Entry(e) if outside::exclusive_at(alerting.exclusive.get(account).copied(), now) => {
+                    outside::alert_line(provider, account, e, now).map(|a| (e.clone(), a))
+                }
+                _ => None,
+            };
+            let mut lines = vec![line];
+            if let Some((_, a)) = &alert {
+                lines.push(a.clone());
+            }
+            match outside::append(home, provider, account, &lines) {
                 Ok(()) => {
                     win.base.alerted_rates.insert(key, rate);
+                    if let Some((e, _)) = &alert {
+                        outside::log_alert(provider, account, e);
+                    }
                 }
                 Err(e) => tracing::warn!(provider, account = account.as_str(), "steady rate not listed: {e}"),
             }
@@ -1717,7 +1794,7 @@ mod outside_list_tests {
         let mut w = win(rows, &spec);
         // The busy row is provisional: only the idle row is listed, however often we refit.
         for _ in 0..3 {
-            list_outside_rows(&mut w, home, "p", &spec, &m, QuotaUnit::Percent, now);
+            list_outside_rows(&mut w, home, "p", &spec, &m, QuotaUnit::Percent, now, &Alerting::default());
         }
         let got = count();
         assert_eq!(got.len(), 1);
@@ -1726,7 +1803,7 @@ mod outside_list_tests {
         // It turns final: now it is listed, once.
         w.rows[1].class = Class::Outside;
         for _ in 0..3 {
-            list_outside_rows(&mut w, home, "p", &spec, &m, QuotaUnit::Percent, now);
+            list_outside_rows(&mut w, home, "p", &spec, &m, QuotaUnit::Percent, now, &Alerting::default());
         }
         let got = count();
         assert_eq!(got.len(), 2);
@@ -1736,8 +1813,112 @@ mod outside_list_tests {
         // A fresh learner replaying the same history lists nothing more.
         let mut again = win(w.rows.clone(), &spec);
         for _ in 0..2 {
-            list_outside_rows(&mut again, home, "p", &spec, &m, QuotaUnit::Percent, now);
+            list_outside_rows(&mut again, home, "p", &spec, &m, QuotaUnit::Percent, now, &Alerting::default());
         }
         assert_eq!(count().len(), 2);
+    }
+
+    fn exclusive_since(secs: u64) -> Alerting {
+        Alerting { exclusive: BTreeMap::from([("a".to_owned(), UNIX_EPOCH + Duration::from_secs(secs))]), windows: 1 }
+    }
+
+    fn alert_texts(home: &Path) -> Vec<String> {
+        outside::alerts(home, "p", "a").into_iter().filter_map(|a| a.text).collect()
+    }
+
+    #[test]
+    fn an_idle_alert_needs_exclusive_use_at_the_rows_start() {
+        let spec = Spec { kind: Kind::Percent, accounts: vec!["a".into()], globs: vec![], utc_offset_secs: 0 };
+        let m = meter();
+        let now = UNIX_EPOCH + Duration::from_secs(100_000);
+        // Declared after the row started: listed, no alert.
+        let dir = tempfile::tempdir().unwrap();
+        let mut w = win(vec![row(1000, false, 4.0, Class::Outside)], &spec);
+        list_outside_rows(&mut w, dir.path(), "p", &spec, &m, QuotaUnit::Percent, now, &exclusive_since(2000));
+        assert_eq!(outside::read(dir.path(), "p", "a", None, None).unwrap().len(), 1);
+        assert!(alert_texts(dir.path()).is_empty());
+        // No declaration at all: same.
+        let dir = tempfile::tempdir().unwrap();
+        let mut w = win(vec![row(1000, false, 4.0, Class::Outside)], &spec);
+        list_outside_rows(&mut w, dir.path(), "p", &spec, &m, QuotaUnit::Percent, now, &Alerting::default());
+        assert!(alert_texts(dir.path()).is_empty());
+        // Declared before: one alert at once, however often we refit.
+        let dir = tempfile::tempdir().unwrap();
+        let mut w = win(vec![row(1000, false, 4.0, Class::Outside)], &spec);
+        for _ in 0..3 {
+            list_outside_rows(&mut w, dir.path(), "p", &spec, &m, QuotaUnit::Percent, now, &exclusive_since(500));
+        }
+        let texts = alert_texts(dir.path());
+        assert_eq!(texts.len(), 1, "{texts:?}");
+        assert_eq!(texts[0], "p/a: 4% of weekly used 00:16\u{2013}00:26 Thu with no traffic from 0router");
+    }
+
+    #[test]
+    fn a_busy_alert_waits_for_the_row_to_be_final() {
+        let spec = Spec { kind: Kind::Percent, accounts: vec!["a".into()], globs: vec![], utc_offset_secs: 0 };
+        let m = meter();
+        let now = UNIX_EPOCH + Duration::from_secs(100_000);
+        let until = UNIX_EPOCH + Duration::from_secs(50_000);
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let mut w = win(vec![row(2000, true, 500.0, Class::OutsideProvisional { until })], &spec);
+        list_outside_rows(&mut w, home, "p", &spec, &m, QuotaUnit::Percent, now, &exclusive_since(0));
+        assert!(outside::read(home, "p", "a", None, None).unwrap().is_empty());
+        assert!(alert_texts(home).is_empty());
+        w.rows[0].class = Class::Outside;
+        for _ in 0..2 {
+            list_outside_rows(&mut w, home, "p", &spec, &m, QuotaUnit::Percent, now, &exclusive_since(0));
+        }
+        let texts = alert_texts(home);
+        assert_eq!(texts.len(), 1, "{texts:?}");
+        assert!(texts[0].contains("beyond what 0router's traffic explains"), "{texts:?}");
+    }
+
+    #[test]
+    fn a_steady_alert_is_raised_once_per_established_rate() {
+        let spec = Spec { kind: Kind::Percent, accounts: vec!["a".into()], globs: vec![], utc_offset_secs: 0 };
+        let m = meter();
+        let now = UNIX_EPOCH + Duration::from_secs(100_000);
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let mut w = win(Vec::new(), &spec);
+        let mut theta = Theta::neutral(1, 0);
+        theta.set(P::B(0, 2), 1.0);
+        let mut cov = Mat::identity(2);
+        cov[(1, 1)] = 1e-4;
+        w.last = Some((
+            spec.clone(),
+            Fit {
+                theta,
+                active: vec![P::K(0), P::B(0, 2)],
+                cov,
+                info: Mat::identity(2),
+                rows: 10,
+                rss: 0.0,
+                sigma_e2: 0.0,
+                converged: true,
+            },
+        ));
+        for _ in 0..3 {
+            list_steady_rates(&mut w, home, "p", &spec, &m, QuotaUnit::Percent, now, &exclusive_since(0));
+        }
+        let texts = alert_texts(home);
+        assert_eq!(texts.len(), 1, "{texts:?}");
+        assert!(texts[0].starts_with("p/a: about 1%/h of weekly used 08-12 since Thu 00:00"), "{texts:?}");
+        assert!(!texts[0].contains("leak"));
+        // Declared after the epoch but before the rate was established: alerts.
+        let dir = tempfile::tempdir().unwrap();
+        let mut w3 = w.clone();
+        w3.epoch = UNIX_EPOCH + Duration::from_secs(1000);
+        w3.base.alerted_rates.clear();
+        list_steady_rates(&mut w3, dir.path(), "p", &spec, &m, QuotaUnit::Percent, now, &exclusive_since(5000));
+        assert_eq!(alert_texts(dir.path()).len(), 1);
+        // Declared after it was established: the entry, no alert.
+        let dir = tempfile::tempdir().unwrap();
+        let mut w2 = w.clone();
+        w2.base.alerted_rates.clear();
+        list_steady_rates(&mut w2, dir.path(), "p", &spec, &m, QuotaUnit::Percent, now, &exclusive_since(200_000));
+        assert_eq!(outside::read(dir.path(), "p", "a", None, None).unwrap().len(), 1);
+        assert!(alert_texts(dir.path()).is_empty());
     }
 }
