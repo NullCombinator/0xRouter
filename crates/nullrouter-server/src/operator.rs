@@ -12,7 +12,7 @@
 //! | `{"op":"latency.summary","from":"<RFC 3339>","to":"<RFC 3339>"}` | `{"ok":true,"latency":{agents,providers}}`: per agent key and per provider, router overhead and time to first token as p50/p95 (nearest rank), the provider's own wait, requests and the last response, for arrivals in `[from, to)`, from the journal and the requests still in memory; never cached |
 //! | `{"op":"records.forget","account"?:"P/N","agent"?:KEY}` | `{"ok":true,"fingerprints":N}`: the agent's fingerprints (or the account's fingerprints and ledger entries) leave memory and `routing/warm.jsonl`, and the live ring; the CLI then rewrites the record segments |
 //! | `{"op":"accounts.state"}` | `{"ok":true,"accounts":[…]}`: per account `kind`, `state`, `state_since`, `state_reason`, `expires_at`, cooldowns |
-//! | `{"op":"routing.view","target"?}` | `{"ok":true,"amortization":{start,length},"journal":{…},"targets":[…],"warnings":[…]}`: per target and account the pace, share, deficit, priority, cache lifetime, quota source and each window's remaining amount, unit, reset and reserve |
+//! | `{"op":"routing.view","target"?}` | `{"ok":true,"amortization":{start,length},"journal":{…},"targets":[…],"warnings":[…]}`: per target and account the pace, share, deficit, priority, cache lifetime, quota source, each window's remaining amount, unit, reset and reserve, and the fit's `meter`, `outside_use` and `fit_note`; warnings add the fit's break, failed save and unacknowledged usage alerts |
 //! | `{"op":"routing.health"}` | `{"ok":true,"journal":{kept,since,unkept_requests,held_lines,last_sync,last_sync_age_s}}` |
 //! | `{"op":"server.status"}` | `{"ok":true,"client_listen":"…"\|null,"dashboard":{enabled,listen,serving,error}}`: the address `serve` bound for clients, and the dashboard listener's state |
 //! | `{"op":"live.snapshot"}` | `{"ok":true,"as_of":…,"paused_proxies":[…],"in_flight":[…]}`: what is in flight now, each request in its current phase |
@@ -24,6 +24,7 @@
 //! | `{"op":"verdicts.list","provider"?,"account"?,"model"?,"state"?}` | `{"ok":true,"verdicts":[{provider,account,model,…Verdict,"waiting"?}],"combos":[{combo,…,"waiting"?}]}`: `waiting` says why a due retest can't run yet |
 //! | `{"op":"verdicts.set","provider","account","model","state":"broken"\|"clear","note"?}` | `{"ok":true}`, or `{"ok":false,"error":"no verdict for …"}` on clearing an untested pair |
 
+use std::collections::BTreeSet;
 use std::future::Future;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
@@ -33,7 +34,8 @@ use std::time::Duration;
 
 use nullrouter_engine::journal::{records, summary};
 use nullrouter_engine::records::Query;
-use nullrouter_engine::state::Engine;
+use nullrouter_engine::routing::view::TargetView;
+use nullrouter_engine::state::{Engine, EngineState};
 use nullrouter_engine::tests::{self as model_tests, Planned};
 use nullrouter_engine::verdict::{Source, State};
 use nullrouter_registry::OperatorHome;
@@ -663,12 +665,51 @@ fn journal_health(engine: &Engine) -> Value {
     })
 }
 
+/// The fit's warnings for the routing view (spec 012, FR-016, FR-027, FR-028): a save that
+/// failed per provider, a break per relearning number, and each account's unacknowledged usage
+/// alerts. An account serving several targets is named once.
+fn fit_warnings(engine: &Engine, st: &EngineState, targets: &[TargetView]) -> Vec<String> {
+    let mut out: Vec<String> =
+        st.registry.providers().filter_map(|p| engine.fit_learner.save_warning(&p.id)).collect();
+    let mut seen: BTreeSet<(&str, &str)> = BTreeSet::new();
+    for a in targets.iter().flat_map(|t| &t.accounts) {
+        if !seen.insert((a.provider.as_str(), a.account.as_str())) {
+            continue;
+        }
+        let who = format!("{}/{}", a.provider, a.account);
+        for w in &a.meter {
+            for n in w.numbers.iter().filter(|n| n.state == "relearning") {
+                if let Some(since) = n.since {
+                    let when = weekday_time(since);
+                    let text = format!("{who}: provider rules changed around {when} on {} {}, relearning", w.window, n.number);
+                    out.push(text);
+                }
+            }
+        }
+        let alerts = a.outside_use.alerts.len();
+        if alerts > 0 {
+            out.push(format!("{who}: {alerts} unacknowledged usage alerts (nullrouter quota alerts)"));
+        }
+    }
+    out
+}
+
+/// `Tue 14:00`, in the system's time zone; the RFC 3339 text when it does not parse.
+fn weekday_time(t: std::time::SystemTime) -> String {
+    let rfc = nullrouter_engine::clock::rfc3339(t);
+    match rfc.parse::<jiff::Timestamp>() {
+        Ok(ts) => ts.to_zoned(jiff::tz::TimeZone::system()).strftime("%a %H:%M").to_string(),
+        Err(_) => rfc,
+    }
+}
+
 /// `routing.view`: every target's accounts as the next cold decision sees them.
 fn routing_view(engine: &Engine, target: Option<&str>) -> Value {
     let st = engine.snapshot();
     let now = nullrouter_engine::clock::now();
     let targets = nullrouter_engine::route::view_all(engine, &st, target, now);
     let mut warnings: Vec<String> = targets.iter().flat_map(nullrouter_engine::routing::view::warnings).collect();
+    warnings.extend(fit_warnings(engine, &st, &targets));
     warnings.dedup();
     let health = journal_health(engine);
     if health["kept"] == false {
