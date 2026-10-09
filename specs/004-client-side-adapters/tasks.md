@@ -1052,7 +1052,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
   - `records show --json` fields.
   - `adapters list` states and alert counts.
   - `alerts list` and `alerts ack <id>|--all`.
-- [ ] T086 [P] [US6] No-content sentinel in
+- [X] T086 [P] [US6] No-content sentinel in
   `crates/nullrouter-server/tests/records_no_content.rs`.
   - Run hermes, the `legit_removal` fixture and the Claude Code fixture over bodies that hold
     unique sentinels in every removed or converted value.
