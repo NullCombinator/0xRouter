@@ -213,6 +213,9 @@ pub struct Learner {
     pub saves: BTreeMap<String, SaveState>,
     /// Accounts the fit leaves alone, with the reason (FR-029).
     unfitted: BTreeMap<(String, String), String>,
+    /// Providers whose stored state was edited in place and must be saved though the windows
+    /// held in memory are unchanged.
+    resave: BTreeSet<String>,
 }
 
 impl Fits {
@@ -398,6 +401,14 @@ impl Learner {
         }
         // A window the plugin no longer declares is forgotten.
         self.windows.retain(|(p, w), _| p != provider || declared.iter().any(|m| m.name == *w));
+        let changed = self.publish_provider(fits, provider);
+        self.persist(home, provider, declared, now);
+        changed
+    }
+
+    /// Copies the significant numbers of `provider`'s windows into `fits`. Returns whether
+    /// `fits` changed.
+    fn publish_provider(&self, fits: &mut Fits, provider: &str) -> bool {
         let mut out: BTreeMap<String, WindowFit> = BTreeMap::new();
         for ((p, w), win) in &self.windows {
             if p == provider
@@ -408,16 +419,14 @@ impl Learner {
                 out.insert(w.clone(), win.published.clone());
             }
         }
-        let changed = if out.is_empty() {
+        if out.is_empty() {
             fits.windows.remove(provider).is_some()
         } else if fits.windows.get(provider) != Some(&out) {
             fits.windows.insert(provider.to_owned(), out);
             true
         } else {
             false
-        };
-        self.persist(home, provider, declared, now);
-        changed
+        }
     }
 
     /// One window: new rows, classification, refit, splits, number states, published numbers.
@@ -528,7 +537,7 @@ impl Learner {
                 windows.insert(w.clone(), win.to_stored());
             }
         }
-        if stored.windows == windows {
+        if stored.windows == windows && !self.resave.remove(provider) {
             return;
         }
         let next = StoredFit { v: store::VERSION, windows };
@@ -1053,6 +1062,220 @@ pub fn fold_prior(
     Ok(folded)
 }
 
+/// `p` without the parameters of `account` (`k@<account>`, `b@<account>.*`), marginalised: the
+/// information of the rest is its Schur complement, so what the account's rows said about the
+/// pooled weights and multipliers stays, and what they said about the account's own capacity
+/// goes. `None` when nothing is left or `p` is malformed.
+fn drop_account_params(p: &Prior, account: &str) -> Option<Prior> {
+    if !prior_shaped(p) {
+        return None;
+    }
+    let k = format!("k@{account}");
+    let b = format!("b@{account}.");
+    let gone = |n: &str| n == k || n.starts_with(&b);
+    let drop: Vec<usize> = (0..p.params.len()).filter(|&i| gone(&p.params[i])).collect();
+    if drop.is_empty() {
+        return Some(p.clone());
+    }
+    let keep: Vec<usize> = (0..p.params.len()).filter(|i| !drop.contains(i)).collect();
+    if keep.is_empty() {
+        return None;
+    }
+    let mut dd = Mat::zeros(drop.len(), drop.len());
+    for (i, &a) in drop.iter().enumerate() {
+        for (j, &c) in drop.iter().enumerate() {
+            dd[(i, j)] = p.information[a][c];
+        }
+    }
+    let inv = dd.inverse();
+    let information = keep
+        .iter()
+        .map(|&a| {
+            keep.iter()
+                .map(|&c| {
+                    let mut v = p.information[a][c];
+                    if let Some(inv) = &inv {
+                        for (i, &di) in drop.iter().enumerate() {
+                            for (j, &dj) in drop.iter().enumerate() {
+                                v -= p.information[a][di] * inv[(i, j)] * p.information[dj][c];
+                            }
+                        }
+                    }
+                    v
+                })
+                .collect()
+        })
+        .collect();
+    Some(Prior {
+        through: p.through.clone(),
+        params: keep.iter().map(|&i| p.params[i].clone()).collect(),
+        mean: keep.iter().map(|&i| p.mean[i]).collect(),
+        information,
+    })
+}
+
+/// A window's stored state with everything of `account` removed: its capacity number, split,
+/// epoch and its own parameters in the prior.
+fn scrub_account(w: &mut StoredWindow, account: &str) {
+    w.numbers.remove(&format!("capacity@{account}"));
+    w.splits.remove(account);
+    w.account_epochs.remove(account);
+    w.prior = w.prior.take().and_then(|p| drop_account_params(&p, account));
+}
+
+fn has_capacity(numbers: &BTreeMap<String, StoredNumber>) -> bool {
+    numbers.keys().any(|k| k.starts_with("capacity@"))
+}
+
+impl Learner {
+    /// An account was removed (research R11): its in-epoch rows are folded into each window's
+    /// prior, its own parameters are dropped from the prior, its capacity leaves the published
+    /// fits, and the fit state is saved. Returns whether `fits` changed.
+    pub fn account_removed(&mut self, fits: &mut Fits, home: &Path, st: &EngineState, provider: &str, account: &str, now: SystemTime) -> bool {
+        self.load_store(home, provider);
+        let Some(entity) = st.registry.providers().find(|e| e.id == provider) else { return false };
+        let declared = entity.routing().windows;
+        let own = format!("capacity@{account}");
+        for ((_, wname), win) in self.windows.iter_mut().filter(|((p, _), _)| p == provider) {
+            let rows: Vec<Row> = win.rows.iter().filter(|r| r.account == account && is_evidence(r.class)).cloned().collect();
+            win.rows.retain(|r| r.account != account);
+            if !rows.is_empty()
+                && let Some((spec, _)) = win.last.clone()
+                && let Some(meter) = declared.iter().find(|m| m.name == *wname)
+            {
+                let meter = assumed_meter(declared, meter);
+                match fold_rows(win, rows, &spec, &meter, now, now) {
+                    Some(new) => {
+                        // Its rows fold in, but the prior's `through` keeps covering only what it did.
+                        let through = win.base.prior.as_ref().map_or_else(|| rfc3339_millis(win.epoch), |o| o.through.clone());
+                        let mut merged = match &win.base.prior {
+                            Some(o) => combine(o, &new),
+                            None => new,
+                        };
+                        merged.through = through;
+                        win.base.prior = Some(merged);
+                    }
+                    None => tracing::warn!(provider, window = wname.as_str(), "removed account's rows too few to fold into the fit"),
+                }
+            }
+            scrub_account(&mut win.base, account);
+            win.cursors.remove(account);
+            win.splits.remove(account);
+            win.numbers.remove(&own);
+            win.ranges.remove(&own);
+            win.published.capacity.remove(account);
+            win.listed.retain(|(a, _), _| a != account);
+            win.listed_read.remove(account);
+            // Kept until the next poll, which drops it with the changed account set; it only
+            // tells `account_added` what kind the window is.
+        }
+        if let Some(stored) = self.stored.get_mut(provider) {
+            for (name, sw) in &mut stored.windows {
+                if !self.windows.contains_key(&(provider.to_owned(), name.clone())) {
+                    scrub_account(sw, account);
+                }
+            }
+        }
+        self.resave.insert(provider.to_owned());
+        let changed = self.publish_provider(fits, provider);
+        self.persist(home, provider, declared, now);
+        changed
+    }
+
+    /// An account was added or added again: rows before `now` count for nothing, and a window
+    /// that fits capacities shows the account's as `Learning` with no intervals. Saves the fit
+    /// state.
+    pub fn account_added(&mut self, home: &Path, st: &EngineState, provider: &str, account: &str, now: SystemTime) {
+        self.load_store(home, provider);
+        let Some(entity) = st.registry.providers().find(|e| e.id == provider) else { return };
+        let declared = entity.routing().windows;
+        let epoch = rfc3339_millis(now);
+        for win in self.windows.iter_mut().filter(|((p, _), _)| p == provider).map(|(_, w)| w) {
+            let percent = win.last.as_ref().is_some_and(|(s, _)| matches!(s.kind, Kind::Percent | Kind::RequestsPercent))
+                || win.numbers.keys().any(|k| k.starts_with("capacity@"))
+                || has_capacity(&win.base.numbers);
+            win.base.account_epochs.insert(account.to_owned(), epoch.clone());
+            win.cursors.remove(account);
+            // The fit so far knew an earlier incarnation of the account.
+            win.last = None;
+            if percent {
+                win.numbers.insert(
+                    format!("capacity@{account}"),
+                    NumberState::Learning { progress: Progress { intervals: 0, half_width: WIDE } },
+                );
+            }
+        }
+        if let Some(stored) = self.stored.get_mut(provider) {
+            for (name, sw) in &mut stored.windows {
+                if !self.windows.contains_key(&(provider.to_owned(), name.clone())) {
+                    sw.account_epochs.insert(account.to_owned(), epoch.clone());
+                }
+            }
+        }
+        self.resave.insert(provider.to_owned());
+        self.persist(home, provider, declared, now);
+    }
+}
+
+/// `quota/<provider>/<account>.outside.jsonl` renamed to `<account>.outside.jsonl.removed-<time>`
+/// (`<time>` as `20261009T024500Z`), so a removed account's outside-use record is kept but a
+/// later account of the same name starts with none. Returns the new path; `None` when there was
+/// no file.
+pub fn set_aside_outside(home: &Path, provider: &str, account: &str, now: SystemTime) -> Result<Option<PathBuf>, FileError> {
+    let path = outside::outside_file(home, provider, account)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let stamp: String = clock::rfc3339(now).chars().filter(|c| *c != '-' && *c != ':').collect();
+    let to = path.with_file_name(format!("{account}.outside.jsonl.removed-{stamp}"));
+    std::fs::rename(&path, &to).map_err(history::io_err(&path))?;
+    Ok(Some(to))
+}
+
+/// `accounts remove` with no server running. `accounts` must still hold the removed account
+/// (it supplies the provider's fit scope); only its rows are folded. Folds its rows into the
+/// priors ([`fold_prior`]), drops its capacity fit and its own prior parameters from the stored
+/// fit, and sets its outside-use file aside. With a server running the reload does this
+/// ([`Shared::account_removed`]); the server owns the fit file, so do not call this then.
+pub fn account_removed(home: &Path, registry: &Registry, accounts: &Accounts, provider: &str, account: &str) -> Result<(), FileError> {
+    let now = clock::now();
+    let through = |f: &StoredFit| -> BTreeMap<String, String> {
+        f.windows.iter().map(|(n, w)| (n.clone(), w.prior.as_ref().map_or_else(|| w.epoch.clone(), |p| p.through.clone()))).collect()
+    };
+    let before = match store::load(home, provider)? {
+        Loaded::Ok(f) => through(&f),
+        Loaded::Missing | Loaded::Bad { .. } => BTreeMap::new(),
+    };
+    fold_prior(home, registry, accounts, Some(provider), Some(account), now)?;
+    if let Loaded::Ok(mut f) = store::load(home, provider)? {
+        for (name, w) in &mut f.windows {
+            if let (Some(p), Some(t)) = (w.prior.as_mut(), before.get(name)) {
+                p.through.clone_from(t);
+            }
+            scrub_account(w, account);
+        }
+        store::save(home, provider, &f)?;
+    }
+    set_aside_outside(home, provider, account, now)?;
+    Ok(())
+}
+
+/// `accounts add` with no server running: sets the account's epoch in every stored window of
+/// the provider to now, so history rows from an earlier account of the same name count for
+/// nothing.
+pub fn account_added(home: &Path, provider: &str, account: &str) -> Result<(), FileError> {
+    if let Loaded::Ok(mut f) = store::load(home, provider)? {
+        let epoch = rfc3339_millis(clock::now());
+        for w in f.windows.values_mut() {
+            w.account_epochs.insert(account.to_owned(), epoch.clone());
+        }
+        if !f.windows.is_empty() {
+            store::save(home, provider, &f)?;
+        }
+    }
+    Ok(())
+}
+
 /// One number of a window's meter.
 struct Num {
     /// The store's key.
@@ -1316,6 +1539,29 @@ impl Shared {
         let folded = lock(&self.learner).fold_out(&self.home, &st, provider, account, before, clock::now());
         let removed = history::prune(&self.home, before, provider, account)?;
         Ok((removed, folded))
+    }
+
+    /// A reload dropped `account`: see [`Learner::account_removed`]. Its outside-use file is
+    /// set aside after the learner lock is released.
+    pub fn account_removed(&self, provider: &str, account: &str) {
+        let st = self.state.load_full();
+        let now = clock::now();
+        {
+            let mut learner = lock(&self.learner);
+            let mut next = (*self.fits.load_full()).clone();
+            if learner.account_removed(&mut next, &self.home, &st, provider, account, now) {
+                self.publish(next);
+            }
+        }
+        if let Err(e) = set_aside_outside(&self.home, provider, account, now) {
+            tracing::warn!(provider, account, "outside-use record of the removed account not set aside: {e}");
+        }
+    }
+
+    /// A reload gained `account`: see [`Learner::account_added`].
+    pub fn account_added(&self, provider: &str, account: &str) {
+        let st = self.state.load_full();
+        lock(&self.learner).account_added(&self.home, &st, provider, account, clock::now());
     }
 
     /// Every window the learner holds, copied out under one brief lock (the view's read).

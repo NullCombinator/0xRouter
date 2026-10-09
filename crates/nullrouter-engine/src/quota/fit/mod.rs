@@ -16,6 +16,8 @@ pub mod split;
 pub mod store;
 pub mod test;
 
+pub use learner::{account_added, account_removed, set_aside_outside};
+
 use std::fmt;
 use std::str::FromStr;
 

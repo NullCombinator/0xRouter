@@ -143,6 +143,15 @@ fn sign_in(
         });
         job.run(&mut input, &mut out, &cancel).await
     });
+    // A new account (not a re-sign-in) starts its quota history now; a running server's reload
+    // does this itself.
+    if let Ok(done) = &result
+        && done.replaced.is_none()
+        && done.status != "applied"
+        && let Err(e) = nullrouter_engine::quota::fit::account_added(home.path(), &done.provider, &done.name)
+    {
+        eprintln!("note: the quota fit of {}/{} could not be updated: {e}", done.provider, done.name);
+    }
     match result {
         Ok(done) if as_json => {
             println!(
@@ -182,6 +191,8 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     // What the command did beyond `accounts.toml`, for its line.
     let mut note = None;
     let mut removed = false;
+    let mut gone: Option<Accounts> = None;
+    let mut added = false;
     let (provider, name) = match cmd {
         Command::List { .. } => unreachable!("handled above"),
         Command::Signin { provider, name, paste, no_browser, accept_terms_risk } => {
@@ -213,6 +224,7 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
                 .unwrap_or_else(|| list.iter().filter(|a| a.provider == provider).map(|a| a.order).max().unwrap_or(0));
             let account = Account::key(provider.clone(), name.clone(), source, secret, order, hosts);
             list.add(account).map_err(fail)?;
+            added = true;
             (provider, name)
         }
         Command::Priority { provider, name, priority } => {
@@ -223,8 +235,12 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
             (provider, name)
         }
         Command::Remove { provider, name } => {
-            list.remove(&provider, &name).map_err(fail)?;
+            let account = list.remove(&provider, &name).map_err(fail)?;
             removed = true;
+            // Kept for the quota fit, which needs the account's provider scope.
+            let mut only = Accounts::default();
+            only.add(account).map_err(fail)?;
+            gone = Some(only);
             // Its tokens go too, under the writers' lock; its quota history stays
             // (`quota forget` deletes it).
             if tokens::remove(home.path(), &provider, &name).map_err(fail)? {
@@ -272,6 +288,20 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
         && let Err(e) = nullrouter_engine::journal::state::forget_account(home.path(), &format!("{provider}/{name}"))
     {
         eprintln!("note: the routing state of {provider}/{name} could not be cleaned: {e}");
+    }
+    // A running server's reload settles the quota fit; with none running, it is settled here.
+    if status != "applied" {
+        let fit = if let Some(only) = &gone {
+            crate::open(Some(home.path().to_owned()))
+                .map(|r| nullrouter_engine::quota::fit::account_removed(home.path(), &r.snapshot(), only, &provider, &name))
+        } else if added {
+            Ok(nullrouter_engine::quota::fit::account_added(home.path(), &provider, &name))
+        } else {
+            Ok(Ok(()))
+        };
+        if let Ok(Err(e)) = fit {
+            eprintln!("note: the quota fit of {provider}/{name} could not be updated: {e}");
+        }
     }
     if as_json {
         println!("{}", json!({"provider": provider, "name": name, "note": note, "status": status}));

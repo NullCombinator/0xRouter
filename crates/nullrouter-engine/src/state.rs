@@ -420,6 +420,14 @@ impl Engine {
         }
         let state = Arc::new(state);
         self.state.store(state.clone());
+        // A removed account's quota fit is folded into the priors and dropped; an added one
+        // (new, or added again) starts its own history now (spec 012, research R11).
+        for (provider, name) in &removed {
+            self.fit_learner.account_removed(provider, name);
+        }
+        for a in state.accounts.iter().filter(|a| old.accounts.get(&a.provider, &a.name).is_none()) {
+            self.fit_learner.account_added(&a.provider, &a.name);
+        }
         self.rebuild_meters();
         self.recheck_verdicts(&state);
         self.changed.notify_one();

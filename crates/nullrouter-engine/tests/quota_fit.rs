@@ -916,3 +916,54 @@ fn an_outside_use_burst_against_a_fitted_model_raises_no_break() {
     let Loaded::Ok(saved) = store::load(dir.path(), "keyco").unwrap() else { panic!("fit state not saved") };
     assert!(saved.windows["5-hour"].breaks.is_empty(), "{:?}", saved.windows["5-hour"].breaks);
 }
+
+// ---- account epochs (T054, Story 5) ----
+
+#[test]
+fn a_removed_and_added_again_account_starts_learning_with_no_outside_record() {
+    use nullrouter_engine::quota::fit::outside;
+
+    let dir = keyco_home();
+    let (engine, _) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
+    let st = engine.snapshot();
+    let entries = third_capacity_history(100);
+    let mut learner = Learner::default();
+    let mut fits = Fits::default();
+    for n in 4..=entries.len() {
+        fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &entries[..n], t(10 * (n as u64 - 1)));
+    }
+    let before = learner.number_states("keyco", "5-hour");
+    assert!(matches!(before["capacity@main"], NumberState::Fitted { .. }), "{before:?}");
+    assert!(fits.window("keyco", "5-hour").capacity.contains_key("main"));
+
+    // The account has an outside-use record.
+    let file = outside::outside_file(dir.path(), "keyco", "main").unwrap();
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "{\"kept\":true}\n").unwrap();
+
+    // Removed: its capacity fit is gone and its record is set aside under a portable name.
+    let removed_at = t(1100);
+    assert!(learner.account_removed(&mut fits, dir.path(), &st, "keyco", "main", removed_at));
+    assert!(!fits.window("keyco", "5-hour").capacity.contains_key("main"));
+    let moved = nullrouter_engine::quota::fit::set_aside_outside(dir.path(), "keyco", "main", removed_at).unwrap().expect("a file to set aside");
+    assert_eq!(moved.file_name().unwrap().to_string_lossy(), "main.outside.jsonl.removed-20270116T022000Z");
+    assert!(moved.exists());
+    assert!(!file.exists());
+
+    // Added again: earlier history counts for nothing.
+    learner.account_added(dir.path(), &st, "keyco", "main", t(1200));
+    fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &entries, t(1300));
+    let states = learner.number_states("keyco", "5-hour");
+    match &states["capacity@main"] {
+        NumberState::Learning { progress } => assert_eq!(progress.intervals, 0, "{states:?}"),
+        other => panic!("expected Learning with 0 intervals, got {other:?}"),
+    }
+    assert!(!fits.window("keyco", "5-hour").capacity.contains_key("main"));
+    assert!(outside::read(dir.path(), "keyco", "main", None, None).unwrap().is_empty());
+    assert!(!file.exists());
+
+    let Loaded::Ok(saved) = store::load(dir.path(), "keyco").unwrap() else { panic!("fit state not saved") };
+    let w = &saved.windows["5-hour"];
+    assert_eq!(w.account_epochs["main"], nullrouter_engine::quota::extract::rfc3339_millis(t(1200)));
+    assert!(w.prior.as_ref().is_none_or(|p| p.params.iter().all(|n| !n.ends_with("@main") && !n.starts_with("b@main"))), "{:?}", w.prior);
+}
