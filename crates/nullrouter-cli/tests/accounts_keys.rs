@@ -531,3 +531,23 @@ fn keys_carry_a_harness_tag_set_changed_cleared_and_refused() {
     assert!(Keys::load(&file).unwrap().lookup(&secret).is_some(), "the secret issued with a tag still matches");
     assert_eq!(mode(&file), 0o600);
 }
+
+/// T057 (FR-023): `accounts exclusive on` refuses an account whose provider reports no quota
+/// (xai declares no `[quota]`): exit 2, the reason on stderr, and the accounts file unchanged.
+#[test]
+fn exclusive_use_is_refused_where_the_provider_reports_no_quota() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    assert!(nr(h, &["accounts", "add", "xai", "main"], &format!("{SECRET}\n")).status.success());
+    let file = h.join(accounts::FILE);
+    let before = std::fs::read_to_string(&file).unwrap();
+
+    let out = nr(h, &["accounts", "exclusive", "xai", "main", "on"], "");
+    assert_eq!(out.status.code(), Some(2), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "account xai/main: exclusive use needs quota polls; xai reports no quota for this account\n"
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), before, "a refused declaration writes nothing");
+    assert!(Accounts::load(&file).unwrap().get("xai", "main").unwrap().exclusive_use.is_none());
+}

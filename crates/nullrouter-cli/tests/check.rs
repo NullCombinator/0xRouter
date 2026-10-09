@@ -276,3 +276,41 @@ fn bundled_plugins_raise_no_routing_warning() {
     let json: serde_json::Value = serde_json::from_slice(&nr(dir.path(), &["--json", "check"]).stdout).unwrap();
     assert_eq!(json["routing_warnings"], serde_json::json!([]));
 }
+
+/// T057: an unacknowledged usage alert is a `warn` line naming its whole id, and the exit
+/// status is 0 with or without it. Alerts are read per account in `accounts.toml`.
+#[test]
+fn unacknowledged_alerts_are_warnings_and_leave_the_exit_status_alone() {
+    const ENTRY: &str = "01JB7AAAAAAAAAAAAAAAAAAAAA";
+    const ALERT: &str = "01JB8AAAAAAAAAAAAAAAAAAAAA";
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    write_private(
+        &h.join("accounts.toml"),
+        "schema = 2\n[[account]]\nprovider = \"opencode-go\"\nname = \"main\"\nsecret = \"sk-go-SENTINEL-T057\"\n",
+    )
+    .unwrap();
+    let out = nr(h, &["check"]);
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(0), "{text}");
+    assert!(!text.contains("warn  "), "no alert, no warning: {text}");
+
+    let entry = format!(
+        r#"{{"v":1,"kind":"entry","id":"{ENTRY}","window":"weekly","type":"idle","start":"2026-10-07T02:10:00.000Z","end":"2026-10-07T02:30:00.000Z","amount":4.0,"unit":"percent","found_at":"2026-10-07T02:31:00.000Z"}}"#
+    );
+    let alert = format!(r#"{{"v":1,"kind":"alert","id":"{ALERT}","entry":"{ENTRY}","raised_at":"2026-10-07T02:31:00.000Z"}}"#);
+    let q = h.join("quota/opencode-go");
+    fs::create_dir_all(&q).unwrap();
+    chmod(&h.join("quota"), 0o700);
+    chmod(&q, 0o700);
+    write_private(&q.join("main.outside.jsonl"), &format!("{entry}\n{alert}\n")).unwrap();
+
+    let out = nr(h, &["check"]);
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(0), "warnings only: {text}");
+    assert!(
+        text.contains(&format!("warn  opencode-go/main: usage alert {ALERT} (nullrouter quota ack {ALERT})")),
+        "{text}"
+    );
+    assert_no_token(&text);
+}

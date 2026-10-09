@@ -241,3 +241,31 @@ fn quota_prune_and_forget_edit_the_files() {
     let o = nr(dir.path(), &["quota", "prune", "--before", "yesterday"]);
     assert_eq!(o.status.code(), Some(1));
 }
+
+/// T057 (Story 6 scenario 6): `quota ack` takes an alert off `quota alerts` and keeps its
+/// entry in `quota outside`. opencode-go reports quota for its key accounts, so its outside-use
+/// list is read; the fixture is written as the state file's JSON lines.
+#[test]
+fn acknowledging_an_alert_takes_it_off_the_list_and_keeps_the_entry() {
+    const ENTRY: &str = "01JB7AAAAAAAAAAAAAAAAAAAAA";
+    const ALERT: &str = "01JB8AAAAAAAAAAAAAAAAAAAAA";
+    let dir = home();
+    let file = dir.path().join("quota/opencode-go/main.outside.jsonl");
+    let entry = json!({"v":1,"kind":"entry","id":ENTRY,"window":"weekly","type":"idle",
+        "start":"2026-10-07T02:10:00.000Z","end":"2026-10-07T02:30:00.000Z","amount":4.0,"unit":"percent",
+        "found_at":"2026-10-07T02:31:00.000Z"});
+    let alert = json!({"v":1,"kind":"alert","id":ALERT,"entry":ENTRY,"raised_at":"2026-10-07T02:31:00.000Z"});
+    nullrouter_engine::files::write_private(&file, &format!("{entry}\n{alert}\n")).unwrap();
+
+    let o = nr(dir.path(), &["quota", "alerts"]);
+    assert!(o.status.success(), "{:?}", text(&o));
+    assert!(text(&o).0.contains(ALERT), "{:?}", text(&o));
+
+    let o = nr(dir.path(), &["quota", "ack", &ALERT[..8]]);
+    assert!(o.status.success(), "{:?}", text(&o));
+    assert_eq!(text(&o).0, "acknowledged 1\n");
+    assert_eq!(text(&nr(dir.path(), &["quota", "alerts"])).0, "", "an acknowledged alert leaves the list");
+
+    let o = nr(dir.path(), &["quota", "outside"]);
+    assert!(text(&o).0.lines().any(|l| l.starts_with("opencode-go/main") && l.contains("idle")), "{:?}", text(&o));
+}
