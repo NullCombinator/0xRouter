@@ -11,12 +11,14 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Args as ClapArgs, Subcommand};
 use nullrouter_cli::quota_text;
-use nullrouter_engine::accounts::{self, Accounts};
+use nullrouter_engine::accounts::{self, Account, Accounts};
 use nullrouter_engine::clock;
+use nullrouter_engine::quota::fit::is_fitted_account;
+use nullrouter_engine::quota::fit::outside::{self, AckTarget, Alert, OutsideEntry, OutsideType};
 use nullrouter_engine::quota::history;
 use nullrouter_registry::OperatorHome;
 use nullrouter_registry::schema::parse_duration;
@@ -61,6 +63,30 @@ pub(crate) enum Command {
     },
     /// Delete one account's history.
     Forget { provider: String, name: String },
+    /// Outside use: traffic on an account's quota that 0router did not send.
+    Outside {
+        /// Only this provider's accounts.
+        provider: Option<String>,
+        /// Only this account.
+        account: Option<String>,
+        /// Only entries starting at or after this RFC 3339 time.
+        #[arg(long, value_name = "TIME")]
+        since: Option<String>,
+        /// At most this many entries per account.
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+    /// Unacknowledged usage alerts.
+    Alerts,
+    /// Acknowledge an alert by its id or a unique prefix of it, or every alert with `all`.
+    Ack {
+        /// An alert id, a unique prefix of one, or `all`.
+        id: String,
+        /// Only this provider's accounts.
+        provider: Option<String>,
+        /// Only this account.
+        account: Option<String>,
+    },
 }
 
 fn fail(e: impl std::fmt::Display) -> ExitCode {
@@ -167,8 +193,168 @@ pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<Ex
                 println!("{provider}/{name}: no poll history");
             }
         }
+        Command::Outside { provider, account, since, limit } => {
+            let since = since_arg(since)?;
+            let list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
+            let reg = crate::open(Some(home.path().to_owned()))?.snapshot();
+            let mut rows = Vec::new();
+            let mut lines = Vec::new();
+            for a in list.iter().filter(|a| narrows(a, provider.as_deref(), account.as_deref())) {
+                let label = format!("{}/{}", a.provider, a.name);
+                if !reg.provider(&a.provider).is_ok_and(|p| is_fitted_account(p, a)) {
+                    if !as_json {
+                        lines.push(format!("{label:<24} not polled: no outside-use detection"));
+                    }
+                    continue;
+                }
+                for e in outside::read(home.path(), &a.provider, &a.name, since, limit).map_err(fail)? {
+                    if as_json {
+                        rows.push(tagged(serde_json::to_value(&e).unwrap_or(Value::Null), &a.provider, &a.name));
+                    } else {
+                        lines.push(outside_line(&label, &e));
+                    }
+                }
+            }
+            if as_json {
+                println!("{:#}", Value::Array(rows));
+            } else {
+                for l in lines {
+                    println!("{l}");
+                }
+            }
+        }
+        Command::Alerts => {
+            let list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
+            let mut rows = Vec::new();
+            let mut lines = Vec::new();
+            for a in list.iter() {
+                for al in outside::alerts(home.path(), &a.provider, &a.name) {
+                    if as_json {
+                        rows.push(tagged(serde_json::to_value(&al).unwrap_or(Value::Null), &a.provider, &a.name));
+                    } else {
+                        lines.push(alert_line(&a.provider, &a.name, &al));
+                    }
+                }
+            }
+            if as_json {
+                println!("{:#}", Value::Array(rows));
+            } else {
+                for l in lines {
+                    println!("{l}");
+                }
+            }
+        }
+        Command::Ack { id, provider, account } => {
+            // `all` names every open alert: the server reads a missing `id` that way.
+            let prefix = (id != "all").then_some(id.as_str());
+            let req = json!({"op": "quota.ack", "id": prefix, "provider": provider, "account": account});
+            let acknowledged = match ask(&home, &req)? {
+                Some(answer) => answer["acknowledged"].as_u64().unwrap_or(0) as usize,
+                None => {
+                    // No server: the files are all there is.
+                    let target = prefix.map_or(AckTarget::All, AckTarget::Id);
+                    let list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
+                    let now = clock::now();
+                    let mut n = 0;
+                    for a in list.iter().filter(|a| narrows(a, provider.as_deref(), account.as_deref())) {
+                        n += outside::ack(home.path(), &a.provider, &a.name, target, now).map_err(fail)?.len();
+                    }
+                    n
+                }
+            };
+            if as_json {
+                println!("{}", json!({"acknowledged": acknowledged}));
+            } else {
+                println!("acknowledged {acknowledged}");
+            }
+        }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// `--since`: an RFC 3339 time, or none. A bad time is a refused input (exit 2).
+fn since_arg(since: Option<String>) -> Result<Option<SystemTime>, ExitCode> {
+    let Some(s) = since else { return Ok(None) };
+    match clock::parse_rfc3339(&s) {
+        Some(t) => Ok(Some(t)),
+        None => {
+            eprintln!("{s:?}: --since takes an RFC 3339 time, such as 2026-10-08T00:00:00Z");
+            Err(ExitCode::from(2))
+        }
+    }
+}
+
+/// Whether `a` is one of the accounts `provider` and `account` (when given) narrow to.
+fn narrows(a: &Account, provider: Option<&str>, account: Option<&str>) -> bool {
+    provider.is_none_or(|p| a.provider == p) && account.is_none_or(|n| a.name == n)
+}
+
+/// `value` (a JSON object) with `provider` and `account` added.
+fn tagged(mut value: Value, provider: &str, account: &str) -> Value {
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("provider".into(), json!(provider));
+        obj.insert("account".into(), json!(account));
+    }
+    value
+}
+
+const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/// `Wed 02:20`, in UTC.
+fn weekday_hm(t: SystemTime) -> String {
+    let days = t.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() / 86_400);
+    // 1970-01-01 was a Thursday.
+    let hm = clock::rfc3339(t).get(11..16).unwrap_or("??:??").to_owned();
+    format!("{} {hm}", DAYS[((days + 4) % 7) as usize])
+}
+
+/// `Wed 02:20` for an RFC 3339 time, `??` when it doesn't parse.
+fn when_text(s: &str) -> String {
+    clock::parse_rfc3339(s).map_or_else(|| "??".to_owned(), weekday_hm)
+}
+
+/// The amount with its unit: `4%`, `1200 tokens`.
+fn quantity(x: f64, unit: &str) -> String {
+    if unit == "percent" { format!("{x:.0}%") } else { format!("{x:.0} {unit}") }
+}
+
+/// One outside-use entry as the list shows it, the account's label first:
+/// `anthropic/max            weekly   idle   Wed 02:10–02:30   4%`.
+fn outside_line(label: &str, e: &OutsideEntry) -> String {
+    let (kind, when, amount) = match e.ty {
+        OutsideType::Idle | OutsideType::Busy => {
+            let kind = if e.ty == OutsideType::Idle { "idle" } else { "busy" };
+            let start = e.start_time().map_or_else(|| "??".to_owned(), weekday_hm);
+            let end = e.end.as_deref().and_then(clock::parse_rfc3339).map_or_else(String::new, |t| {
+                let hm = clock::rfc3339(t).get(11..16).unwrap_or("??:??").to_owned();
+                format!("–{hm}")
+            });
+            let mut amount = quantity(e.amount.unwrap_or(0.0), &e.unit);
+            if e.ty == OutsideType::Busy {
+                amount.push_str(" beyond explained use");
+            }
+            (kind, format!("{start}{end}"), amount)
+        }
+        OutsideType::Steady => {
+            let part = e.part.as_deref().unwrap_or("??").replace('-', "–");
+            let since = e.start_time().map_or_else(|| "??".to_owned(), weekday_hm);
+            let rate = e.rate_per_hour.unwrap_or(0.0);
+            let amount = if e.unit == "percent" {
+                format!("{rate:.1}%/h")
+            } else {
+                format!("{rate:.1} {}/h", e.unit)
+            };
+            ("steady", format!("{part} since {since}"), amount)
+        }
+    };
+    let window = &e.window;
+    format!("{label:<24} {window:<8} {kind:<6} {when}   {amount}")
+}
+
+/// One alert: `01JB7… anthropic/max  Wed 02:20  4% of weekly used …`. The id is printed whole.
+fn alert_line(provider: &str, account: &str, al: &Alert) -> String {
+    let text = al.text.as_deref().unwrap_or("");
+    format!("{} {provider}/{account}  {}  {text}", al.id, when_text(&al.raised_at)).trim_end().to_owned()
 }
 
 fn date(s: &str) -> Result<SystemTime, ExitCode> {
