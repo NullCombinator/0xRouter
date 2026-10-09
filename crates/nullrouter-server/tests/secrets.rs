@@ -969,7 +969,8 @@ async fn the_fit_and_its_alerts_keep_no_secret_and_reach_no_provider() {
 
     // A request before any fit exists.
     let r = send().await.unwrap();
-    seen.push(format!("{} {:?}\n{}", r.status(), r.headers(), r.text().await.unwrap()));
+    let head = format!("{} {:?}", r.status(), r.headers());
+    seen.push(format!("{head}\n{}", r.text().await.unwrap()));
     assert!(s.engine.fits.load().window("keyco", "5-hour").capacity.is_empty(), "a fit exists before any history");
     let before = s.mock.received().len();
     assert_eq!(before, 1, "one upstream request before the fit");
@@ -984,7 +985,8 @@ async fn the_fit_and_its_alerts_keep_no_secret_and_reach_no_provider() {
 
     // The same request with the fit published.
     let r = send().await.unwrap();
-    seen.push(format!("{} {:?}\n{}", r.status(), r.headers(), r.text().await.unwrap()));
+    let head = format!("{} {:?}", r.status(), r.headers());
+    seen.push(format!("{head}\n{}", r.text().await.unwrap()));
 
     // The alert and the outside-use entry exist.
     let alerts = nullrouter_engine::quota::fit::outside::alerts(s.home(), "keyco", "main");

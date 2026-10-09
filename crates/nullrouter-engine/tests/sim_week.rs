@@ -1492,7 +1492,7 @@ fn a_halved_capacity_is_a_break_found_within_a_day_and_relearned_from_the_rows_a
     let fit = sim.fit.as_ref().expect("a fit run");
     let known = known_at.expect("the halving was never reported as a break");
     assert!(after > 0);
-    assert!(known >= HALVE_AT && known <= HALVE_AT + DAY, "the break was reported at +{:.1}h, the halving was at +{:.1}h", known as f64 / HOUR as f64, HALVE_AT as f64 / HOUR as f64);
+    assert!((HALVE_AT..=HALVE_AT + DAY).contains(&known), "the break was reported at +{:.1}h, the halving was at +{:.1}h", known as f64 / HOUR as f64, HALVE_AT as f64 / HOUR as f64);
 
     let Loaded::Ok(stored) = store::load(fit.home(), FIT_PROVIDER).expect("the fit state reads") else { panic!("no fit state saved") };
     let breaks = &stored.windows.get(FIT_WINDOW).expect("the window is stored").breaks;
