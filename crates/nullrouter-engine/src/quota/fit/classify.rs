@@ -14,6 +14,10 @@ pub const SETTLE_ROWS: u32 = 6;
 /// A number is not separable above this variance inflation factor, or this partner correlation.
 pub const VIF_LIMIT: f64 = 50.0;
 pub const CORR_LIMIT: f64 = 0.98;
+/// Added to the correlation matrix diagonal so an exactly collinear pair still inverts.
+const RIDGE: f64 = 1e-9;
+/// Partial correlations closer than this are a tie.
+const TIE: f64 = 1e-9;
 /// The two-sided 95% normal quantile of the predictive range.
 const Z95: f64 = 1.96;
 
@@ -89,8 +93,11 @@ pub struct Inseparable {
 
 /// After a refit: the meter numbers (not the outside rates) that are not separable (R7). A
 /// number is not separable when its variance inflation factor exceeds [`VIF_LIMIT`], or its
-/// partial correlation with another parameter exceeds [`CORR_LIMIT`] in absolute value. A fit
-/// whose information can't be inverted calls every number not separable.
+/// partial correlation with another parameter exceeds [`CORR_LIMIT`] in absolute value. The
+/// correlation matrix is regularised by [`RIDGE`] on its diagonal, so an exactly collinear pair
+/// (singular matrix) gets a huge VIF and a partial correlation near 1 with each other, while the
+/// other numbers are judged as usual. Only a fit whose information is not finite calls every
+/// number not separable. Ties between partners go to the lower-indexed parameter.
 pub fn separability(fit: &Fit) -> Vec<Inseparable> {
     let n = fit.active.len();
     let numbers = || fit.active.iter().enumerate().filter(|(_, p)| !matches!(p, P::B(..)));
@@ -102,7 +109,11 @@ pub fn separability(fit: &Fit) -> Vec<Inseparable> {
             r[(i, j)] = if d > 0.0 { fit.info[(i, j)] / d } else { 0.0 };
         }
     }
-    let Some(inv) = r.inverse() else {
+    for i in 0..n {
+        r[(i, i)] += RIDGE;
+    }
+    let inv = if r.data.iter().all(|x| x.is_finite()) { r.inverse() } else { None };
+    let Some(inv) = inv.filter(|m| m.data.iter().all(|x| x.is_finite())) else {
         return numbers().map(|(_, p)| Inseparable { number: *p, partner: None, vif: f64::INFINITY }).collect();
     };
     let mut out = Vec::new();
@@ -111,7 +122,7 @@ pub fn separability(fit: &Fit) -> Vec<Inseparable> {
         let (mut best, mut partner) = (0.0f64, None);
         for j in (0..n).filter(|j| *j != i) {
             let partial = (-inv[(i, j)] / (inv[(i, i)] * inv[(j, j)]).sqrt()).abs();
-            if partial > best {
+            if partial > best + TIE {
                 best = partial;
                 partner = Some(fit.active[j]);
             }
@@ -121,4 +132,36 @@ pub fn separability(fit: &Fit) -> Vec<Inseparable> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exactly_collinear_pair_is_flagged_and_the_independent_number_is_not() {
+        // Columns of J: c0 independent, c1, and c2 = 0.1 * c1 (writes always a tenth of reads).
+        let c0 = [1.0, 0.0, 0.0, 1.0];
+        let c1 = [0.0, 1.0, 2.0, 0.0];
+        let rows: Vec<[f64; 3]> = (0..4).map(|k| [c0[k], c1[k], 0.1 * c1[k]]).collect();
+        let j = Mat::from_rows(&rows.iter().map(|r| &r[..]).collect::<Vec<_>>());
+        let info = j.transpose().mul(&j);
+        let fit = Fit {
+            theta: model::Theta::neutral(1, 0),
+            active: vec![P::K(0), P::W(2), P::W(3)],
+            cov: Mat::identity(3),
+            info,
+            rows: 4,
+            rss: 0.0,
+            sigma_e2: 0.0,
+            converged: true,
+        };
+        let out = separability(&fit);
+        assert_eq!(out.len(), 2, "{out:?}");
+        let read = out.iter().find(|i| i.number == P::W(2)).expect("cache read flagged");
+        let write = out.iter().find(|i| i.number == P::W(3)).expect("cache write flagged");
+        assert_eq!(read.partner, Some(P::W(3)));
+        assert_eq!(write.partner, Some(P::W(2)));
+        assert!(out.iter().all(|i| i.number != P::K(0)));
+    }
 }
