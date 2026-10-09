@@ -722,6 +722,18 @@ impl Accounts {
         Ok(())
     }
 
+    /// Sets (`Some`) or clears (`None`) the account's exclusive-use start.
+    pub fn set_exclusive_use(
+        &mut self,
+        provider: &str,
+        name: &str,
+        since: Option<SystemTime>,
+    ) -> Result<(), AccountError> {
+        let at = self.position(provider, name)?;
+        self.list[at].exclusive_use = since;
+        Ok(())
+    }
+
     /// Replaces the account's routing overrides.
     pub fn set_routing(&mut self, provider: &str, name: &str, routing: RoutingOverrides) -> Result<(), AccountError> {
         let at = self.position(provider, name)?;

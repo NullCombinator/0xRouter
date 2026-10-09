@@ -3,10 +3,12 @@
 use std::io::{IsTerminal, Read};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::SystemTime;
 
 use clap::Subcommand;
 use nullrouter_cli::signin::{self, SignIn};
 use nullrouter_engine::accounts::{self, Account, Accounts, SecretSource};
+use nullrouter_engine::clock;
 use nullrouter_engine::signin::SignInHttp;
 use nullrouter_engine::tokens;
 use nullrouter_registry::{OperatorHome, SecretString};
@@ -64,6 +66,15 @@ pub(crate) enum Command {
     Enable {
         provider: String,
         name: String,
+    },
+    /// Declare an account in exclusive use (FR-023): used only through 0router. `on` keeps an
+    /// earlier declaration's start.
+    Exclusive {
+        provider: String,
+        name: String,
+        /// `on` or `off`.
+        #[arg(value_parser = ["on", "off"])]
+        state: String,
     },
 }
 
@@ -163,7 +174,8 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     if let Command::List { provider, long } = &cmd {
         let args = json!({ "provider": provider });
         let view = super::read(&home, views::accounts::NEEDS, &args, views::accounts::build)?;
-        print_list(&view, *long, as_json);
+        let list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
+        print_list(&view, &list, *long, as_json);
         return Ok(ExitCode::SUCCESS);
     }
     let mut list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
@@ -232,6 +244,24 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
             }
             (provider, name)
         }
+        Command::Exclusive { provider, name, state } => {
+            let Some(current) = list.get(&provider, &name) else {
+                return Err(fail(accounts::AccountError::NotFound { provider, name }));
+            };
+            let since = if state == "on" {
+                let reg = crate::open(Some(home.path().to_owned()))?.snapshot();
+                let entity = reg.provider(&provider).map_err(fail)?;
+                if let Some(problem) = current.exclusive_use_problem(entity) {
+                    eprintln!("{problem}");
+                    return Err(ExitCode::from(2));
+                }
+                Some(current.exclusive_use.unwrap_or_else(clock::now))
+            } else {
+                None
+            };
+            list.set_exclusive_use(&provider, &name, since).map_err(fail)?;
+            (provider, name)
+        }
     };
     list.save().map_err(fail)?;
     let status = super::apply(&home).map_err(fail)?;
@@ -274,19 +304,37 @@ pub(crate) fn table(rows: &[Vec<String>]) -> Vec<String> {
         .collect()
 }
 
-fn print_list(view: &View, long: bool, as_json: bool) {
+/// The declared exclusive-use time of a listed account (FR-023), or `None`.
+fn exclusive_of(list: &Accounts, r: &Value) -> Option<SystemTime> {
+    list.get(r["provider"].as_str()?, r["name"].as_str()?)?.exclusive_use
+}
+
+fn print_list(view: &View, list: &Accounts, long: bool, as_json: bool) {
     // A token file that doesn't load is a warning, in either output.
     for w in view.extra["warnings"].as_array().into_iter().flatten().filter_map(Value::as_str) {
         eprintln!("{w}");
     }
     let rows: &[Value] = view.json.as_array().map_or(&[], Vec::as_slice);
     if as_json {
-        println!("{:#}", view.json);
+        let mut json = view.json.clone();
+        for r in json.as_array_mut().into_iter().flatten() {
+            r["exclusive_use"] = exclusive_of(list, r).map_or(Value::Null, |t| json!(clock::rfc3339(t)));
+        }
+        println!("{:#}", json);
         return;
     }
     let text = |r: &Value, k: &str| r[k].as_str().unwrap_or("-").to_owned();
-    let mut cells =
-        vec![["provider", "name", "kind", "order", "priority", "secret", "proxy", "state"].map(str::to_owned).to_vec()];
+    // `since <date>` (UTC, YYYY-MM-DD) or blank.
+    let since = |r: &Value| {
+        exclusive_of(list, r).map_or_else(String::new, |t| {
+            format!("since {}", clock::rfc3339(t).split('T').next().unwrap_or(""))
+        })
+    };
+    let mut cells = vec![
+        ["provider", "name", "kind", "order", "priority", "secret", "proxy", "exclusive", "state"]
+            .map(str::to_owned)
+            .to_vec(),
+    ];
     cells.extend(rows.iter().map(|r| {
         vec![
             text(r, "provider"),
@@ -299,6 +347,7 @@ fn print_list(view: &View, long: bool, as_json: bool) {
                 (Some(name), Some(level)) => format!("{name} ({level})"),
                 _ => "—".to_owned(),
             },
+            since(r),
             text(r, "state_text"),
         ]
     }));
