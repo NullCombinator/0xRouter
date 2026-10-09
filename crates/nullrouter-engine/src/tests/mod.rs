@@ -242,8 +242,8 @@ fn pairs(
 
 /// Why `pair` can't be called now, if it can't: no call is made (spec edge cases).
 pub fn skip_reason(engine: &Engine, st: &EngineState, pair: &Pair) -> Option<String> {
-    let name = match pair.account.as_str() {
-        NO_ACCOUNT => "",
+    let (name, account) = match pair.account.as_str() {
+        NO_ACCOUNT => ("", None),
         n => {
             let Some(a) = st.accounts.get(&pair.provider, n) else {
                 return Some(format!("no account {n} for {}", pair.provider));
@@ -254,9 +254,13 @@ pub fn skip_reason(engine: &Engine, st: &EngineState, pair: &Pair) -> Option<Str
             if let Some(w) = crate::accounts::out_of_service(a, &st.tokens) {
                 return Some(w.to_string());
             }
-            n
+            (n, Some(a))
         }
     };
+    // A paused proxy says nothing about the model: the call would never leave (constitution VII).
+    if let Some(proxy) = crate::connection::paused_for(&engine.proxy_board, st, &pair.provider, account) {
+        return Some(format!("proxy {proxy} paused"));
+    }
     let until = engine.cooldowns.rate_limited(&pair.provider, name, &pair.model)?;
     let left = until.saturating_duration_since(tokio::time::Instant::now());
     let at = crate::clock::rfc3339(SystemTime::now() + left);

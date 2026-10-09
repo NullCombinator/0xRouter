@@ -16,6 +16,7 @@ use std::time::Duration;
 use axum::body::Bytes;
 use common::server;
 use futures_util::StreamExt;
+use nullrouter_engine::journal::summary;
 use nullrouter_engine::phases::{self, Phase, PhaseValue};
 use nullrouter_engine::records::{AttemptKind, Connection, RequestRecord};
 use nullrouter_engine::testkit::{Step, read_slowly};
@@ -305,9 +306,10 @@ async fn router_overhead_and_ttft_keep_slice_010s_definitions() {
     let s = server().await;
     s.mock.push([phased(Duration::ZERO, Duration::from_millis(50), EVERY, frames(0))]);
     let rec = run(&s, chat(&s, true)).await;
-    let first = rec.attempts.iter().find(|a| a.kind != AttemptKind::Skipped).unwrap();
-    let refresh = first.timing.as_ref().and_then(|t| t.refresh_ms).unwrap_or(0.0);
+    // `nullrouter latency` reads the journal's JSON form of the record.
+    let json = serde_json::to_value(&rec).unwrap();
     let p = &phases::of(&rec)[0];
-    assert!((ms(p, Phase::RouterOverhead) - (first.started - refresh)).abs() < 0.01);
+    assert!((ms(p, Phase::RouterOverhead) - summary::router_overhead(&json).unwrap()).abs() < 0.01);
+    assert_eq!(json["ttft_ms"].as_f64(), rec.ttft_ms);
     ttft_matches(&rec);
 }

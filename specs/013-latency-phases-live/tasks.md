@@ -346,6 +346,7 @@ same-account retry with a 500 ms `retry wait` before falling over (spec US6).
   - Done: `http2 = false` is documented on the schema-2 endpoint as well as `[transport]`
 - [X] T069 Coordination note in `specs/013-latency-phases-live/plan.md` § Coordination: list the exact edits slice 010 needs on rebase (`journal/summary.rs` router overhead → `phases::of`; SC-003's test switches from the copied definitions to 010's functions) and slice 011's (`clients.for_account` in model tests; a paused proxy makes the test skip). FR-025's model-test leg is verified by whichever slice merges second, with a test that a model test goes through the account's proxy. Save the note to agentmemory (both instances)
   - Done: the note is in plan.md § Coordination; the agentmemory save follows in this session.
+  - Applied on merging main (010, 011) on 2026-10-08: `summary::router_overhead` is the router-overhead phase and `nullrouter latency` uses it; SC-003's test calls it on the record's JSON; `tests::skip_reason` skips a test whose proxy is paused (`proxy NAME paused`, no verdict change); `model_test.rs::a_test_goes_through_the_accounts_proxy_and_a_paused_one_skips_it` covers FR-025's model-test leg. No `st.http` uses remained.
 - [ ] T070 Run quickstart.md §1–5 against a real provider with the user (only with their OK; `serve` needs a local build, which the no-local-cargo rule forbids unless the user allows it for this run), and record the outcome in `specs/013-latency-phases-live/quickstart.md`
 
 ---
