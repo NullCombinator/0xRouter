@@ -1115,7 +1115,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
   - `docs/adapters/operating.md`: install, review settings, approve, clear, alerts, the
     catalogue, and kit upgrades with `adapters rebuild`.
   - Link both from `docs/`.
-- [ ] T096 [P] Update `CLAUDE.md`.
+- [X] T096 [P] Update `CLAUDE.md`.
   - Add rows to the layout table for the four crates, `adapters/community/` and
     `catalogue/`.
   - Update the "Plugin safety invariant" paragraph to point to the kit and builder paths.
