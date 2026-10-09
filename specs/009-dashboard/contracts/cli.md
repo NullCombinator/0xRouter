@@ -21,6 +21,13 @@ applied
   The token appears only in this output.
 - `[dashboard] enabled = false`: the token is still issued, and the output adds
   `The dashboard is off (config.toml [dashboard] enabled = false).`
+- A running server whose dashboard didn't bind: the second line is
+  `This is shown once. The dashboard is not listening (<error>); don't open <url>.` The address
+  may belong to another program, which would collect the token (security-review.md L2).
+- A running server that refuses the reload: the token is still printed (it is saved and works
+  from the next good reload on), the status line adds
+  `; the previous token still works there until a reload succeeds`, and the exit code is 1
+  (security-review.md L1).
 
 ## `nullrouter dashboard status` (new)
 

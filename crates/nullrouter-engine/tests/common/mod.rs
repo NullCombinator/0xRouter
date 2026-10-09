@@ -197,6 +197,8 @@ pub fn request(
         cancel,
         media: None,
         count: false,
+        pin: None,
+        test: None,
     }
 }
 

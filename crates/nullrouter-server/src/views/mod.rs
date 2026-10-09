@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 pub mod accounts;
 pub mod behaviour;
 pub mod check;
+pub mod combos;
 pub mod dashboard;
 pub mod keys;
 pub mod latency;
@@ -27,6 +28,7 @@ pub mod resolve;
 pub mod routing;
 pub mod unified;
 pub mod usage;
+pub mod verdicts;
 
 use crate::operator::{self, CallError};
 
@@ -110,6 +112,7 @@ pub fn request(op: &str, args: &Value) -> Value {
         "records.get" => &["id"],
         "routing.view" => &["target"],
         "quota.list" => &["provider", "name"],
+        "verdicts.list" => &["provider", "account", "model", "state"],
         _ => &[],
     };
     let mut req = json!({ "op": op });

@@ -256,11 +256,13 @@ fn window(home: &OperatorHome, args: &[String]) -> Result<ExitCode, ExitCode> {
 }
 
 /// `text` with `key` in the table `header` set to `value` (a TOML value), or removed when `value`
-/// is `None`. Every other line is kept as written. A target key is written quoted.
-fn edit_key(text: &str, header: &str, key: &str, value: Option<&str>) -> String {
+/// is `None`. Every other line is kept as written. A target key is written quoted; a key of
+/// `[routing]` or a `[tests…]` table bare.
+pub(crate) fn edit_key(text: &str, header: &str, key: &str, value: Option<&str>) -> String {
     let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
     let is_header = |l: &str| l.trim_start().starts_with('[');
-    let written = if header == "[routing]" { key.to_owned() } else { format!("\"{key}\"") };
+    let bare = header == "[routing]" || header.starts_with("[tests");
+    let written = if bare { key.to_owned() } else { format!("\"{key}\"") };
     let Some(start) = lines.iter().position(|l| l.trim() == header) else {
         let Some(v) = value else { return text.to_owned() };
         let mut out = text.to_owned();

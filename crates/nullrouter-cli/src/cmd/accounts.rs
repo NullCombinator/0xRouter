@@ -255,7 +255,7 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
 
 /// Columns padded to their widest cell (header included), two spaces apart; the last
 /// column isn't padded.
-fn table(rows: &[Vec<String>]) -> Vec<String> {
+pub(crate) fn table(rows: &[Vec<String>]) -> Vec<String> {
     let cols = rows.first().map_or(0, Vec::len);
     let widths: Vec<usize> = (0..cols).map(|i| rows.iter().map(|r| r[i].chars().count()).max().unwrap_or(0)).collect();
     rows.iter()

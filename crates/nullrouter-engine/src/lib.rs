@@ -28,8 +28,10 @@ pub mod routing;
 pub mod signin;
 pub mod state;
 pub mod status;
+pub mod tests;
 pub mod tokens;
 pub mod upstream;
+pub mod verdict;
 
 #[cfg(feature = "testkit")]
 pub mod testkit;

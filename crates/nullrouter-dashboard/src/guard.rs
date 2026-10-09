@@ -2,8 +2,11 @@
 //! and is then told to reload, each build has ten seconds, and each runs in its own task so a
 //! panic is that page's error and nothing else's.
 //!
-//! A timed-out build is aborted at its next await. Reads that already moved to the blocking pool
-//! (`views::run_in_process`) finish there; they hold no permit, and the pool bounds them.
+//! A timed-out build's page is told at once, but the build keeps its permit until it ends: its
+//! reads run on the blocking pool (`views::run_in_process`), where an abort can't stop them, so
+//! freeing the permit early let slow reads pile up past two (security-review.md M1). A build
+//! still running at [`BACKSTOP`] times its limit is aborted, so one that never ends can't hold a
+//! permit forever.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -16,6 +19,8 @@ use tokio::sync::Semaphore;
 const PERMITS: usize = 2;
 const WAIT: Duration = Duration::from_secs(5);
 const LIMIT: Duration = Duration::from_secs(10);
+/// How many limits a timed-out build may go on running before it is aborted.
+pub const BACKSTOP: u32 = 6;
 
 /// Why a page was not built.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,7 +99,12 @@ impl Guard {
             Ok(Ok(page)) => Ok(page),
             Ok(Err(e)) => Err(BuildError::Panicked(panic_text(e))),
             Err(_) => {
-                task.abort();
+                let backstop = self.limit * BACKSTOP;
+                tokio::spawn(async move {
+                    if tokio::time::timeout(backstop, &mut task).await.is_err() {
+                        task.abort();
+                    }
+                });
                 Err(BuildError::TimedOut(self.limit))
             }
         }
@@ -163,11 +173,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_build_past_its_limit_is_cut_off_and_frees_its_permit() {
+    async fn a_build_past_its_limit_is_told_at_once_and_keeps_its_permit_until_it_ends() {
         let guard = Guard::with_limits(1, Duration::from_millis(100), Duration::from_millis(40));
-        let r = guard.run(|| async { tokio::time::sleep(Duration::from_secs(30)).await }).await;
+        let r = guard.run(|| async { tokio::time::sleep(Duration::from_millis(400)).await }).await;
         assert_eq!(r, Err(BuildError::TimedOut(Duration::from_millis(40))));
-        assert_eq!(guard.run(|| async { 3 }).await, Ok(3));
+        assert_eq!(guard.run(|| async { 3 }).await, Err(BuildError::Busy), "the slow build still holds it");
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert_eq!(guard.run(|| async { 3 }).await, Ok(3), "and frees it when it ends");
+    }
+
+    #[tokio::test]
+    async fn a_build_that_never_ends_is_aborted_at_the_backstop() {
+        let guard = Guard::with_limits(1, Duration::from_millis(50), Duration::from_millis(20));
+        let r = guard.run(|| async { tokio::time::sleep(Duration::from_secs(30)).await }).await;
+        assert_eq!(r, Err(BuildError::TimedOut(Duration::from_millis(20))));
+        tokio::time::sleep(Duration::from_millis(20) * BACKSTOP + Duration::from_millis(100)).await;
+        assert_eq!(guard.run(|| async { 4 }).await, Ok(4));
     }
 
     #[tokio::test]

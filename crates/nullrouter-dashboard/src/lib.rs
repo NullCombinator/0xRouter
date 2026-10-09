@@ -100,6 +100,14 @@ pub async fn spawn(
         }
     };
     let addr = listener.local_addr().ok();
+    // `listen` passed the loopback check by name (`localhost`); what it resolved to must be one.
+    if let Some(a) = addr.filter(|a| !a.ip().is_loopback()) {
+        let error = format!("{}: resolved to {a}, not a loopback address", settings.listen);
+        tracing::warn!("the dashboard is not listening on {error}");
+        status.error = Some(error);
+        engine.status.set_dashboard(status.clone());
+        return DashboardHandle { status, addr: None, task: None };
+    }
     let port = addr.map_or(0, |a| a.port());
     let host = settings.listen.rsplit_once(':').map_or(settings.listen.as_str(), |(h, _)| h);
     let shared = Arc::new(Shared {
@@ -163,12 +171,12 @@ async fn page(shared: Arc<Shared>, req: pages::Req) -> Response {
         .run(move || async move {
             let tz = time::local_zone();
             let logos = logos::Index::of(&engine);
-            match page::build(&engine, &pages::wants(&r)).await {
+            match read(&engine, &r).await {
                 Ok(p) => frame::render(&r, &p, &version, &tz, &logos),
                 // A window whose id doesn't exist: the page under it, and the CLI's message.
                 Err(page::PageError::View(e)) if r.window.is_some() => {
                     let base = pages::Req { window: None, ..r.clone() };
-                    match page::build(&engine, &pages::wants(&base)).await {
+                    match read(&engine, &base).await {
                         Ok(p) => frame::render_missing_window(&r, &p, &version, &tz, &logos, &e.message),
                         Err(e) => frame::render_error(
                             Some(&r),
@@ -185,4 +193,13 @@ async fn page(shared: Arc<Shared>, req: pages::Req) -> Response {
         })
         .await;
     built.unwrap_or_else(|e| frame::render_error(Some(&req), &shared.version, e.status(), &e.text()))
+}
+
+/// The views `req` needs, or the CLI's "no record <id>" for a record id no record can have,
+/// without reading the journal for it.
+async fn read(engine: &Arc<Engine>, req: &pages::Req) -> Result<page::Page, page::PageError> {
+    match req.impossible_record() {
+        Some(id) => Err(page::PageError::View(nullrouter_server::views::ViewError::failed(format!("no record {id}")))),
+        None => page::build(engine, &pages::wants(req)).await,
+    }
 }

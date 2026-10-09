@@ -9,9 +9,11 @@ use nullrouter_registry::schema::{Endpoint, ModelType, ProviderEntity};
 use nullrouter_registry::{NotFound, Registry, Resolution};
 
 use crate::accounts::{self, Account, Accounts};
+use crate::attempt::Pin;
 use crate::models_live::LiveModels;
 use crate::records::ErrorClass;
 use crate::tokens::TokenCells;
+use crate::verdict::{self, Verdicts};
 
 #[derive(Debug, Clone)]
 pub struct Candidate<'s> {
@@ -67,6 +69,9 @@ pub enum PlanError {
     /// FR-012: the route's type isn't the model's declared kind.
     #[error("{target} is a {model} model, and this route takes {route} models")]
     TypeMismatch { target: String, model: ModelType, route: ModelType },
+    /// A combo has no plan of its own: each unified model it walks is planned in its turn.
+    #[error("{name} is a combo")]
+    Combo { name: String },
 }
 
 impl PlanError {
@@ -75,7 +80,7 @@ impl PlanError {
         match self {
             Self::NotFound(_) | Self::NoEndpoint { .. } => 404,
             Self::NoAccount { .. } => 503,
-            Self::TypeMismatch { .. } => 400,
+            Self::TypeMismatch { .. } | Self::Combo { .. } => 400,
         }
     }
 }
@@ -109,6 +114,18 @@ pub fn endpoints<'p>(
     out
 }
 
+/// The live state a plan reads besides the registry and the accounts.
+#[derive(Clone, Copy)]
+pub struct Live<'a> {
+    pub tokens: &'a TokenCells,
+    pub live: &'a LiveModels,
+    /// BROKEN pairs become skips (spec 011, research R11).
+    pub verdicts: &'a Verdicts,
+    /// A model test's one account: every other step is left out, and a BROKEN verdict doesn't
+    /// skip it, since the test is what can settle it again.
+    pub pin: Option<&'a Pin>,
+}
+
 /// What every member of one request is planned for.
 #[derive(Clone, Copy)]
 struct Ask<'a> {
@@ -116,6 +133,20 @@ struct Ask<'a> {
     client_style: &'a str,
     tokens: &'a TokenCells,
     live: &'a LiveModels,
+    verdicts: &'a Verdicts,
+    pinned: bool,
+}
+
+/// The skip for a pair a test or the operator found BROKEN.
+fn broken_skip(verdicts: &Verdicts, provider: &str, account: &str, model: &str) -> Option<Skip> {
+    let v = verdicts.get(provider, account, model).filter(|v| v.state == verdict::State::Broken)?;
+    Some(Skip {
+        provider: provider.to_owned(),
+        account: (account != verdict::NO_ACCOUNT).then(|| account.to_owned()),
+        model: model.to_owned(),
+        reason: format!("BROKEN since {}: {}", crate::clock::rfc3339(v.at), v.reason),
+        class: Some(ErrorClass::Broken),
+    })
 }
 
 /// One member's steps: its enabled accounts in operator order, or one skip.
@@ -131,7 +162,7 @@ fn member<'s>(
     upstream_id: String,
     ask: &Ask,
 ) -> Result<Vec<Step<'s>>, PlanError> {
-    let Ask { ty, client_style, tokens, live } = *ask;
+    let Ask { ty, client_style, tokens, live, verdicts, pinned } = *ask;
     let model = registry.model(&provider.id, requested).ok().and_then(|m| m.model);
     if model.is_none() && provider.models_live.is_some() {
         match live.find(&provider.id, requested) {
@@ -163,8 +194,12 @@ fn member<'s>(
             upstream_id: upstream_id.clone(),
         })
     };
+    let broken = |account: &str| match pinned {
+        true => None,
+        false => broken_skip(verdicts, &provider.id, account, &upstream_id).map(Step::Skip),
+    };
     if provider.auth.as_ref().is_some_and(|a| a.no_auth) {
-        return Ok(vec![candidate(None)]);
+        return Ok(vec![broken(verdict::NO_ACCOUNT).unwrap_or_else(|| candidate(None))]);
     }
     let mine: Vec<&Account> = accounts.for_provider(&provider.id).collect();
     if mine.is_empty() {
@@ -173,7 +208,7 @@ fn member<'s>(
     Ok(mine
         .into_iter()
         .map(|a| match accounts::out_of_service(a, tokens) {
-            None => candidate(Some(a)),
+            None => broken(&a.name).unwrap_or_else(|| candidate(Some(a))),
             Some(w) => Step::Skip(Skip {
                 provider: provider.id.clone(),
                 account: Some(a.name.clone()),
@@ -190,22 +225,45 @@ fn member<'s>(
 /// installed, has no endpoint for the type or has no account is a skip, and so is an account
 /// that is out of service. Which one is tried first is the placement's decision
 /// (`routing::place`), not this list's. `live` holds the providers' live model lists, which
-/// resolve beside the static catalog.
+/// resolve beside the static catalog. A BROKEN pair is a skip of class `broken`; with `pin`
+/// set, only the pinned account's steps are kept.
 pub fn plan<'s>(
     registry: &'s Registry,
     accounts: &'s Accounts,
-    tokens: &TokenCells,
-    live: &LiveModels,
+    state: Live<'_>,
     target: &'s str,
     ty: ModelType,
     client_style: &str,
 ) -> Result<RequestPlan<'s>, PlanError> {
+    let mut plan = plan_all(registry, accounts, state, target, ty, client_style)?;
+    if let Some(pin) = state.pin {
+        plan.steps.retain(|s| {
+            let (provider, account) = match s {
+                Step::Try(c) => (c.provider.id.as_str(), c.account.map_or(verdict::NO_ACCOUNT, |a| a.name.as_str())),
+                Step::Skip(k) => (k.provider.as_str(), k.account.as_deref().unwrap_or(verdict::NO_ACCOUNT)),
+            };
+            provider == pin.provider && account == pin.account
+        });
+    }
+    Ok(plan)
+}
+
+fn plan_all<'s>(
+    registry: &'s Registry,
+    accounts: &'s Accounts,
+    state: Live<'_>,
+    target: &'s str,
+    ty: ModelType,
+    client_style: &str,
+) -> Result<RequestPlan<'s>, PlanError> {
+    let Live { tokens, live, verdicts, pin } = state;
     let resolution = registry.resolve_with(target, |p, m| live.has(p, m))?;
     let declared = match &resolution {
         Resolution::Direct { provider, requested, .. } => {
             registry.model(&provider.id, requested).ok().and_then(|m| m.kind)
         }
         Resolution::Unified(u) => u.kind,
+        Resolution::Combo(c) => return Err(PlanError::Combo { name: c.name.clone() }),
     };
     // An undeclared kind passes: the endpoint list decides.
     if let Some(model) = declared.and_then(ModelType::from_capability)
@@ -213,7 +271,7 @@ pub fn plan<'s>(
     {
         return Err(PlanError::TypeMismatch { target: target.to_owned(), model, route: ty });
     }
-    let ask = Ask { ty, client_style, tokens, live };
+    let ask = Ask { ty, client_style, tokens, live, verdicts, pinned: pin.is_some() };
     match resolution {
         Resolution::Direct { provider, requested, upstream_id, .. } => {
             let steps = member(registry, accounts, provider, requested, upstream_id, &ask)?;
@@ -242,6 +300,7 @@ pub fn plan<'s>(
             }
             Ok(RequestPlan { steps, unified: Some(u.name.clone()) })
         }
+        Resolution::Combo(c) => Err(PlanError::Combo { name: c.name.clone() }),
     }
 }
 

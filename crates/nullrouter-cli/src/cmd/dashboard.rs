@@ -39,24 +39,38 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
 /// Writes the new digest, tells a running server, then prints the token: the only time it exists.
 /// Stdout carries just the token, as `keys issue` does; the rest goes to stderr. The state is
 /// read first, so a `config.toml` that doesn't load stops the command before anything is written.
+///
+/// The token is printed even when the running server refuses the reload: it is saved, and is the
+/// one that works from the next good reload on. The output then says the previous token still
+/// works on the running server, and the command fails (security-review.md L1).
 fn token(home: &OperatorHome, as_json: bool) -> Result<ExitCode, ExitCode> {
     let before = state(home)?;
     let (token, record) = DashboardToken::issue();
     record.save(home.path()).map_err(fail)?;
-    let status = super::apply(home).map_err(fail)?;
+    let applied = super::apply(home);
+    let status = match &applied {
+        Ok(s) => (*s).to_owned(),
+        Err(e) => format!("{e}; the previous token still works there until a reload succeeds"),
+    };
     let url = format!("http://{}", before["listen"].as_str().unwrap_or_default());
+    // A running server whose dashboard didn't bind: the address may be someone else's.
+    let not_listening = (before["server"] == "running" && before["enabled"] == true && before["serving"] != true)
+        .then(|| before["error"].as_str().unwrap_or_default().to_owned());
     if as_json {
         println!("{}", json!({"token": token, "issued": record.issued, "url": url, "status": status}));
     } else {
         println!("{token}");
-        eprintln!("This is shown once. Open {url} and enter it.");
+        match &not_listening {
+            None => eprintln!("This is shown once. Open {url} and enter it."),
+            Some(error) => eprintln!("This is shown once. The dashboard is not listening ({error}); don't open {url}."),
+        }
         eprintln!("Browsers signed in with the previous token must enter this one.");
         if before["enabled"] == false {
             eprintln!("The dashboard is off (config.toml [dashboard] enabled = false).");
         }
         eprintln!("{status}");
     }
-    Ok(ExitCode::SUCCESS)
+    Ok(if applied.is_ok() { ExitCode::SUCCESS } else { ExitCode::from(1) })
 }
 
 /// The first line of `status` (contracts/cli.md's table).

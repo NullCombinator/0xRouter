@@ -58,6 +58,8 @@ pub async fn count(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_>, 
         cancel: cancel.clone(),
         media: None,
         count: true,
+        pin: None,
+        test: None,
     };
     let _guard = cancel.drop_guard();
     let (n, estimated) = match engine.text(st, req).await {

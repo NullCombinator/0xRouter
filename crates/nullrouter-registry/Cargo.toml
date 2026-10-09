@@ -16,6 +16,7 @@ arc-swap.workspace = true
 url.workspace = true
 regex-lite.workspace = true
 indexmap.workspace = true
+sha2.workspace = true
 
 [features]
 # `parity_set()`: bundled + community with the fit check off, for slice 002's parity tests.

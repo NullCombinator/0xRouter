@@ -1,0 +1,7 @@
+# expect: rejections[0].status: 402, 408 and 429 are never a rejection
+id = "x"
+category = "apikey"
+
+[[rejections]]
+status = [402, 404]
+reason = "model_not_available"

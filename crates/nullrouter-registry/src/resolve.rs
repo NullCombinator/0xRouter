@@ -1,6 +1,7 @@
 //! Target classification (FR-014a, FR-016, FR-017): `provider/model` is direct, a bare
-//! name is a unified model. A provider is never inferred from a bare name.
+//! name is a unified model or a combo (spec 011). A provider is never inferred from a bare name.
 
+use crate::combos::Combo;
 use crate::registry::{Registry, UnifiedModel};
 use crate::schema::ProviderEntity;
 
@@ -28,6 +29,7 @@ pub enum Resolution<'a> {
         catalogued: bool,
     },
     Unified(&'a UnifiedModel),
+    Combo(&'a Combo),
 }
 
 impl Registry {
@@ -50,7 +52,11 @@ impl Registry {
             return Err(NotFound::EmptyTarget);
         }
         let Some((token, model)) = target.split_once('/') else {
-            return self.unified_model(target).map(Resolution::Unified);
+            // Names are unique across both, so the common case is looked up first.
+            return match self.unified_model(target) {
+                Ok(u) => Ok(Resolution::Unified(u)),
+                Err(e) => self.combo(target).map(Resolution::Combo).ok_or(e),
+            };
         };
         if token.is_empty() || model.is_empty() {
             return Err(NotFound::EmptyTarget);

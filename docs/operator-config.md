@@ -4,7 +4,7 @@ The operator's state lives in one directory, `$NULLROUTER_HOME` (default `~/.0ro
 
 ```text
 $NULLROUTER_HOME
-├── config.toml     # unified models, per-provider settings, plugin decisions, server settings
+├── config.toml     # unified models, combos, test settings, per-provider settings, plugin decisions, server settings
 ├── accounts.toml   # provider accounts and their secrets (mode 0600)
 ├── tokens.toml     # signed-in accounts' tokens and states (mode 0600)
 ├── tokens.lock     # lock for tokens.toml writers (mode 0600)
@@ -529,8 +529,9 @@ requests by agent. `none` means no request in the window had that value; it is n
 
 ### Durability
 
-The routing state (which account each agent is warm on, and the deficits) is kept in
-`routing/` next to the records, so both survive a restart.
+The routing state (which account each agent is warm on, and the deficits) and the model
+verdicts (`routing/verdicts.jsonl`, see [Model tests](#model-tests)) are kept in `routing/` next
+to the records, so all of them survive a restart.
 
 | Event | Records | Warm state and deficits |
 |---|---|---|
@@ -545,7 +546,8 @@ A client gets the last byte of its answer only after the record's final line is 
 and written when space returns (retried every 5 s); records beyond that are not kept, only
 counted. The server logs a warning when writing first fails, every minute while it fails, and
 when it resumes. `nullrouter routing` and `nullrouter check` show
-`records not kept since T (disk full): N requests`.
+`records not kept since T (disk full): N requests`; `check` adds `verdicts not being kept since
+T`, as verdict changes go through the same writer and are held and retried the same way.
 
 Files under `records/` and `routing/` are mode 0600, the directories 0700, and `check` warns
 about any other mode.
@@ -607,6 +609,130 @@ Each member's upstream id is resolved once, at load. Rules:
 - a provider appears at most once per unified model;
 - typed members must agree on `kind` (untyped members never conflict).
 
+## Combos
+
+A combo is an ordered fallback chain of unified models or other combos. Clients ask for it by
+name, as for a unified model, and it is listed next to unified models in every style's model
+list. Only `config.toml` declares combos; a plugin can't.
+
+```toml
+[[combo]]
+name = "coder"                         # non-empty, no "/", unique among unified models and combos
+members = ["sonnet", "fallback-chain"] # unified models or combos, tried in order
+
+[[combo]]
+name = "fallback-chain"
+members = ["gpt", "glm"]
+```
+
+A request for `coder` tries `sonnet` with its own retries, accounts and fallbacks, and moves to
+the next member only once those are used up. It never moves on once the client has received
+part of an answer, and a request error that doesn't fall back (a bad parameter, say) ends the
+whole combo. A unified model reached twice through nested combos is tried once. The request's
+record names the combo, and each attempt its path (`coder › fallback-chain › gpt`).
+
+At load a combo may not clash with a unified model's or another combo's name, contain itself,
+be empty, name an unknown member, or mix members of different kinds. These are errors like
+unified-model errors. A combo that needs a unified model dropped at startup is dropped too.
+
+```bash
+nullrouter combos               # every combo with its members, then `dropped combo …` lines
+nullrouter combos coder         # one, nested combos expanded; exit 2 if it isn't loaded
+nullrouter resolve coder        # the same tree
+```
+
+## Model tests
+
+A test proves that a model works on one account: one real, minimal call through 0router (a
+two-letter prompt for text; the smallest request of the model's type for embedding, speech,
+transcription, image and video). It is billed, recorded, counted against quota and paced like
+any call. Tests run only when you ask, and need a running server.
+
+```bash
+nullrouter test anthropic/claude-sonnet-4-5               # every account that has the model
+nullrouter test anthropic/claude-sonnet-4-5 --account max
+nullrouter test sonnet                                     # each member on each account that serves it
+nullrouter test coder                                      # one call through the combo
+nullrouter test --all                                      # every pair a unified model or combo reaches
+```
+
+Before more than one call it prints the count by type and asks `Continue? [y/N]`; `--yes`
+skips the question. Each pair prints one line as it finishes:
+
+```text
+PASS     anthropic/max        claude-sonnet-4-5          1.8 s (first output 0.9 s)
+BROKEN   anthropic/max        claude-opus-4-1            model not available: 403: …
+UNKNOWN  openrouter/main      anthropic/claude-sonnet-4.5  503: upstream overloaded; retest in 1 min
+SKIPPED  xai/main             grok-4                     account needs sign-in: …
+```
+
+Ctrl-C stops the calls not yet sent; finished results stay saved. A combo test makes one call
+through the combo as a client would and prints which member answered and every member it
+tried, nested under its combo. Its attempts that answered or were definitively rejected update
+their pairs; any other failure is shown as `(not saved)`.
+
+### Verdicts
+
+- **PASS**: the provider returned a usable result of the model's type.
+- **BROKEN**: a definitive rejection: the model doesn't exist, isn't available to this account,
+  or doesn't support the request type (0router's own list, plus a plugin's `[[rejections]]`).
+  Routing skips the model on that account only, and a request whose every pair is BROKEN fails
+  at once, naming them. Model lists still show it.
+- **UNKNOWN**: anything else: rate limits, server errors, timeouts, broken connections, empty
+  or malformed answers. Routing is unchanged.
+
+An untested model routes normally. A rejected key or an expired sign-in marks the account (see
+[Account states](#account-states)), never its models. A verdict returns to untested when the
+account's key or sign-in changes, its plugin changes, or the account or provider is removed;
+that is checked at start, at every reload and when a token is replaced.
+
+```bash
+nullrouter verdicts                                      # every verdict, then the combo results
+nullrouter verdicts --provider anthropic --state broken  # also --account, --model
+nullrouter verdicts mark anthropic max claude-opus-4-1 --note "not on our plan"
+nullrouter verdicts clear anthropic max claude-opus-4-1  # back to untested
+```
+
+`mark` sets BROKEN with source `operator`; it is never retested. Both go through the running
+server, or, with none, are written to `routing/verdicts.jsonl` and apply at the next start.
+`unified NAME` shows each member's verdicts per account, and `records list --test` / `--no-test`
+picks test calls; a test record carries no agent, no prompt and no output.
+
+### Retests
+
+An UNKNOWN verdict is retested on its own, by default after about 1 minute, 5 minutes, 30
+minutes and then every 6 hours, until it gives PASS or BROKEN. A BROKEN from a test is retested
+only when `broken_retest` is on. A retest waits while its account can't serve (disabled, needs
+sign-in, rate-limited) or a quota window is at its reserve floor; `verdicts` shows why in the
+`next` column. An UNKNOWN combo result is retested the same way, waiting while no account of
+its first unified model can serve. A combo's result never steers routing, and it is cleared
+when the combo's members change.
+
+### `[tests]`
+
+```toml
+[tests]
+retest = ["1m", "5m", "30m", "6h"]     # after an UNKNOWN; 1–10 steps, each ≥ 30s, never shorter; the last repeats
+broken_retest = "off"                  # "on" (every 24h) or an interval ≥ 1h
+concurrency = 4                        # test calls at once, retests included (1–32)
+
+[tests.timeout]                        # each 5s–30m
+text = "30s"
+embedding = "30s"
+tts = "30s"
+stt = "30s"
+image = "5m"
+video = "5m"
+```
+
+```bash
+nullrouter verdicts settings                       # each value beside its default
+nullrouter verdicts settings retest 2m,10m         # or `default`
+nullrouter verdicts settings broken-retest on      # or `off`, or an interval
+nullrouter verdicts settings timeout image 10m
+nullrouter verdicts settings concurrency 2
+```
+
 ## Per-provider settings
 
 ```toml
@@ -646,7 +772,7 @@ config.toml:4:1 unified_model[0].members[1].provider: unknown provider "xx"
   - any error rejects the reload, and the previous state keeps serving;
   - in-flight requests keep the snapshot they started with;
   - nothing watches the files. Each mutating command (`accounts`, `keys`, `behaviour`,
-    `quota interval`, `routing set`/`unset`/`window`, `plugins install`/`uninstall`) writes its file atomically and then asks the running
+    `quota interval`, `routing set`/`unset`/`window`, `verdicts settings`, `plugins install`/`uninstall`) writes its file atomically and then asks the running
     server to reload over the operator socket. It prints `applied` when the server
     acknowledged, or `saved; applies at next start` when no server is running. A hand
     edit applies at the next start or the next such reload. If the reload loads a unified
@@ -657,7 +783,7 @@ config.toml:4:1 unified_model[0].members[1].provider: unknown provider "xx"
 - pending and declined conflicts;
 - withheld credentials;
 - skipped plugins;
-- dropped unified models;
+- dropped unified models and combos, and combo load errors;
 - notes for unified models whose members differ in `context_length` or `max_output_tokens`
   (`note: unified model sonnet: members differ in context_length: kiro 200000, openrouter 128000`;
   the model still loads, and `resolve` prints the same note);
@@ -666,7 +792,7 @@ config.toml:4:1 unified_model[0].members[1].provider: unknown provider "xx"
 - pay-as-you-go accounts with no price, and an `explicit` cache mode on a provider none of whose
   endpoints speaks a style with cache markers;
 - file modes of the sign-in, quota, record and routing files;
-- with a server running, whether records are being kept (disk full).
+- with a server running, whether records and verdicts are being kept (disk full).
 
 A note or warning doesn't change the exit code; a skipped plugin, a dropped unified model or a
 file `serve` refuses to start with exits 1.
@@ -688,6 +814,7 @@ NR_LIVE=1 cargo test -p nullrouter-engine --test live -- signin_anthropic signin
 NR_LIVE=1 cargo test -p nullrouter-engine --test live -- token_lifetimes --nocapture
 NR_LIVE=1 cargo test -p nullrouter-engine --test live -- quota --nocapture
 NR_LIVE=1 cargo test -p nullrouter-engine --test live -- live_routing_matches_polls --nocapture
+NR_LIVE=1 cargo test -p nullrouter-engine --test live -- model_tests --nocapture   # NR_LIVE_VIDEO=1 adds video
 ```
 
 | Check | Sends | Prints |
@@ -695,6 +822,7 @@ NR_LIVE=1 cargo test -p nullrouter-engine --test live -- live_routing_matches_po
 | `signin_anthropic` (L1) | one Messages request, `max_tokens` 5, per anthropic sign-in account | `SERVED` with the answer and usage, or `REFUSED` with the status and the provider's text for `[[signin.refused]]`. Note whether sign-in showed the code page ("paste the code") or fell back to loopback: the token store doesn't record it. |
 | `signin_grok_cli` (L3) | three streamed Responses requests through one grok-cli account: (a) every `[identity]` header, (b) the fixed-value headers only, (c) every header and a body with an `item_reference` and foreign item ids | `PASSED`/`FAILED` per variant, with the identity header names sent and the error text |
 | `token_lifetimes` (L4) | one refresh per sign-in account, saved like any refresh | the stored and the fresh `expires_in`, whether the refresh token `ROTATED`, and a hint when the lifetime is under 2 × `refresh_lead` |
+| `model_tests` (spec 011) | one model test per type you hold an account for (text, embeddings, image, speech, transcription; video with `NR_LIVE_VIDEO=1`), on the first account that can serve it, kept like any test's verdict | one line per test: `PASS`, `BROKEN` or `UNKNOWN` with the reason. It fails on a BROKEN, or when nothing passed; an UNKNOWN is for you to recognise (a rate limit, an overloaded provider). |
 | `live_routing_matches_polls` (L7) | per polled account: one quota poll, one tiny request, a second poll | for each window, the routing view's `remaining_now` beside the poll's figure, and how far it fell after the request beside the cost its meter charged. Any window where the provider charged more than 1% of capacity differently is listed under `METER CORRECTIONS NEEDED`, for a dated fix to the bundled plugin's `[[routing.window]]`. |
 | `quota` (L2, L5) | one quota read per account with `[quota]` (the fallback only when the primary yields no window), and `GET api.x.ai/v1/models` per xai account kind | the raw answer (truncated) next to the extracted windows, and the `x-ratelimit-*` headers xai returned |
 

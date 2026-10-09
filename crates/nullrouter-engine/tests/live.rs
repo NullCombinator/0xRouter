@@ -16,6 +16,12 @@
 //! `-- token_lifetimes` (L4) and `-- quota` (L2, L5) use the sign-in accounts the operator
 //! signed in with `nullrouter accounts signin` into the same home; they print findings
 //! and run one at a time. See `docs/operator-config.md` § Live checks.
+//!
+//! Slice 011 (T053, SC-010): `-- model_tests` tests one real model of each type the operator
+//! holds an account for, as `nullrouter test` would, on the first account that can serve it.
+//! Video runs only with `NR_LIVE_VIDEO=1`. Every result must be PASS or an UNKNOWN, whose
+//! reason is printed for the operator to recognise; a BROKEN fails the check. The verdicts are
+//! kept in the home's `routing/verdicts.jsonl`, as any test's are.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -86,6 +92,8 @@ async fn send(engine: &Arc<Engine>, client: &str, target: &str, body: Value) -> 
         cancel: CancellationToken::new(),
         media: None,
         count: false,
+        pin: None,
+        test: None,
     };
     let text = match engine.text(st.clone(), req).await {
         Ok(Answer::Whole { status, raw, answer, .. }) => {
@@ -196,6 +204,8 @@ async fn try_prefill(engine: &Arc<Engine>, target: &str) -> Result<String, Strin
         cancel: CancellationToken::new(),
         media: None,
         count: false,
+        pin: None,
+        test: None,
     };
     match engine.text(st, req).await {
         Ok(Answer::Events { rx, .. }) => {
@@ -288,6 +298,8 @@ async fn send_media(engine: &Arc<Engine>, ty: ModelType, target: &str, body: Val
         cancel: CancellationToken::new(),
         media: Some(Media { ty, codec, variant: None, input, voice: None, job }),
         count: false,
+        pin: None,
+        test: None,
     };
     let got = match engine.text(st, req).await {
         Ok(Answer::Media(MediaAnswer::Value(v))) => Got::Value(v),
@@ -406,6 +418,71 @@ async fn types() {
         ran += 1;
     }
     assert!(ran > 0, "no non-text provider had an account under {}", engine.home().path().display());
+}
+
+/// One model per type for the slice 011 check, in the order they run.
+const TEST_MODELS: &[(ModelType, &str)] = &[
+    (ModelType::Text, "anthropic/claude-sonnet-4-20250514"),
+    (ModelType::Text, "openrouter/openai/gpt-4o-mini"),
+    (ModelType::Embeddings, "openrouter/openai/text-embedding-3-small"),
+    (ModelType::Image, "openrouter/openai/gpt-image-1"),
+    (ModelType::Tts, "openrouter/openai/gpt-4o-mini-tts"),
+    (ModelType::Tts, "elevenlabs/eleven_flash_v2_5"),
+    (ModelType::Stt, "elevenlabs/scribe_v2"),
+    (ModelType::Video, "openrouter/google/veo-3.1"),
+];
+
+#[tokio::test]
+async fn model_tests() {
+    use nullrouter_engine::tests;
+    use nullrouter_engine::verdict::{Source, State};
+    use tokio_util::sync::CancellationToken;
+
+    if !live() {
+        eprintln!("skipped: set NR_LIVE=1 to run the live checks");
+        return;
+    }
+    let (engine, report) = Engine::open(OperatorHome::resolve()).unwrap();
+    assert!(report.registry.diagnostics.is_empty(), "{:#?}", report.registry.diagnostics);
+    let engine = Arc::new(engine);
+    let video = std::env::var("NR_LIVE_VIDEO").is_ok_and(|v| v == "1");
+    let run = tests::run_id();
+    let mut done: Vec<ModelType> = Vec::new();
+    let mut broken = Vec::new();
+    for &(ty, target) in TEST_MODELS {
+        if done.contains(&ty) || (ty == ModelType::Video && !video) {
+            continue;
+        }
+        let st = engine.snapshot();
+        let planned = match tests::expand(&engine, &st, Some(target), None) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("{target}: skipped, {e}");
+                continue;
+            }
+        };
+        // One account per model: the first that can serve. The type is the one asked for, as
+        // a model the plugin leaves untyped would otherwise be tested as text.
+        let Some(mut p) = planned.into_iter().find(|p| p.skip.is_none()) else {
+            eprintln!("{target}: skipped, no account can serve it now");
+            continue;
+        };
+        p.ty = ty;
+        let r = tests::run_pair(&engine, &p, Source::Test, &run, &CancellationToken::new()).await.unwrap();
+        let label = r.state.map_or("SKIPPED", State::label);
+        eprintln!("{label:<8} {:<10} {} {} ms; {}", ty.to_string(), r.pair, r.ms, r.reason);
+        match r.state {
+            Some(State::Pass) => done.push(ty),
+            Some(State::Broken) => broken.push(format!("{}: {}", r.pair, r.reason)),
+            // An UNKNOWN or a skip is for the operator to read; the next model of the type runs.
+            _ => {}
+        }
+    }
+    let engine2 = engine.clone();
+    tokio::task::spawn_blocking(move || engine2.journal.flush_blocking()).await.unwrap();
+    eprintln!("passed: {done:?}");
+    assert!(broken.is_empty(), "BROKEN models in the live check:\n{}", broken.join("\n"));
+    assert!(!done.is_empty(), "no model passed under {}", engine.home().path().display());
 }
 
 // ---------------------------------------------------------------------------------------

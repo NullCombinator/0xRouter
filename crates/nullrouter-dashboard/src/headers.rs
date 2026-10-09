@@ -48,11 +48,15 @@ pub fn method_allowed(method: &Method, path: &str) -> bool {
 
 /// Sets the security headers on `headers`. `Cache-Control` is `no-store` unless the handler set
 /// one (assets).
+///
+/// `Referrer-Policy` is `same-origin`, not `no-referrer`: under `no-referrer` a browser's form
+/// post carries `Origin: null` (Fetch, "append a request Origin header"), which the sign-in
+/// check refuses, so no browser could sign in. Other sites still get no referrer.
 pub fn apply(headers: &mut HeaderMap) {
     let fixed: [(HeaderName, &'static str); 5] = [
         (header::CONTENT_SECURITY_POLICY, CSP),
         (header::X_FRAME_OPTIONS, "DENY"),
-        (header::REFERRER_POLICY, "no-referrer"),
+        (header::REFERRER_POLICY, "same-origin"),
         (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
         (HeaderName::from_static("cross-origin-resource-policy"), "same-origin"),
     ];
@@ -139,7 +143,7 @@ mod tests {
         assert_eq!(h[header::CONTENT_SECURITY_POLICY], CSP);
         assert!(!CSP.contains("script-src") && CSP.starts_with("default-src 'none'"));
         assert_eq!(h[header::X_FRAME_OPTIONS], "DENY");
-        assert_eq!(h[header::REFERRER_POLICY], "no-referrer");
+        assert_eq!(h[header::REFERRER_POLICY], "same-origin");
         assert_eq!(h[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
         assert_eq!(h["cross-origin-resource-policy"], "same-origin");
         assert_eq!(h[header::CACHE_CONTROL], "no-store");
