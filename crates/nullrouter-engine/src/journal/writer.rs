@@ -43,6 +43,8 @@ pub enum Target {
     Warm,
     /// `routing/ledger.jsonl`.
     Ledger,
+    /// `routing/verdicts.jsonl` (spec 011).
+    Verdicts,
 }
 
 impl Target {
@@ -56,6 +58,7 @@ impl Target {
             Self::Records { day } => home.join("records").join(format!("{day}.jsonl")),
             Self::Warm => home.join("routing").join("warm.jsonl"),
             Self::Ledger => home.join("routing").join("ledger.jsonl"),
+            Self::Verdicts => home.join("routing").join(crate::verdict::store::FILE),
         }
     }
 

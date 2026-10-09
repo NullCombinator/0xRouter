@@ -694,3 +694,91 @@ async fn views_show_no_secret_beyond_its_last_four() {
     stop.send(()).unwrap();
     task.await.unwrap();
 }
+
+// ---- model tests (spec 011 T051, SC-008) -------------------------------------------------
+
+const TEST_KEY: &str = "sk-test-SENTINEL-T051";
+const OUTPUT: &str = "OUTPUT-SENTINEL-T051 the model's answer is never kept";
+
+/// A combo test answered with a sentinel output, then a pair test refused with the key quoted:
+/// neither the key, the test prompt nor the output shows in the logs, the test's records, what
+/// `test.plan`, `test.run` and `verdicts.list` answer, or `routing/verdicts.jsonl`.
+#[tokio::test]
+async fn model_tests_keep_no_secret_prompt_or_output() {
+    use std::sync::atomic::AtomicUsize;
+
+    use nullrouter_engine::tests as model_tests;
+    use nullrouter_engine::verdict::{Source, State};
+
+    let logs = logs();
+    let accounts = format!("schema = 2\n[[account]]\nprovider = \"alpha\"\nname = \"a\"\nsecret = \"{TEST_KEY}\"\n");
+    let s = common::server_custom(
+        |m| vec![("alpha", routed_plugin(m, "alpha", ""))],
+        &accounts,
+        "[[unified_model]]\nname = \"u\"\nmembers = [{ provider = \"alpha\", model = \"m1\" }]\n\
+         [[combo]]\nname = \"c\"\nmembers = [\"u\"]\n",
+    )
+    .await;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let n = calls.clone();
+    s.mock.respond(move |r| match n.fetch_add(1, Ordering::SeqCst) {
+        0 => Step::json(
+            200,
+            json!({"id": "x", "object": "chat.completion", "model": "m1", "choices": [{"index": 0, "message": {"role": "assistant", "content": OUTPUT}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 3, "completion_tokens": 9}}),
+        ),
+        _ => {
+            let auth = r.headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+            let message = format!("The model m1 does not exist for {auth}");
+            Step::Reply {
+                status: 404,
+                headers: vec![("content-type".into(), "application/json".into()), ("x-debug-auth".into(), auth)],
+                body: Bytes::from(json!({"error": {"message": message}}).to_string()),
+            }
+        }
+    });
+
+    let mut socket = Vec::new();
+    for target in ["alpha/m1", "c"] {
+        socket.push(operator::handle(&s.engine, &json!({"op": "test.plan", "target": target})).await.to_string());
+    }
+    let st = s.engine.snapshot();
+    let planned = model_tests::expand(&s.engine, &st, Some("alpha/m1"), None).unwrap();
+    let stop = CancellationToken::new();
+    let combo = model_tests::combo::run_combo(&s.engine, "c", Source::Test, "tr_s", &stop).await.unwrap().unwrap();
+    assert_eq!(combo.state, State::Pass, "{combo:?}");
+    let pair = model_tests::run_pair(&s.engine, &planned[0], Source::Test, "tr_s", &stop).await.unwrap();
+    assert_eq!(pair.state, Some(State::Broken), "{pair:?}");
+    // What `test.run` streams.
+    socket.push(json!({"event": "result", "result": pair}).to_string());
+    socket.push(json!({"event": "combo", "result": combo}).to_string());
+    let list = operator::handle(&s.engine, &json!({"op": "verdicts.list"})).await;
+    assert_eq!(list["combos"][0]["combo"], "c", "{list}");
+    socket.push(list.to_string());
+
+    let mut records = Vec::new();
+    for r in s.engine.records.query(&Query::default()) {
+        assert!(r.test.is_some(), "every call here was a test: {r:?}");
+        records.push(operator::handle(&s.engine, &json!({"op": "records.get", "id": r.id})).await.to_string());
+    }
+    assert_eq!(records.len(), 2);
+    let journal = s.engine.journal.clone();
+    tokio::task::spawn_blocking(move || journal.flush_blocking()).await.unwrap();
+    let verdicts = std::fs::read_to_string(s.home().join("routing/verdicts.jsonl")).unwrap();
+    assert!(verdicts.contains("\"combo\":\"c\""), "{verdicts}");
+    let mut on_disk = files_under(&s.home().join("records"));
+    on_disk.push(("routing/verdicts.jsonl".into(), verdicts));
+    let key = s.key.clone();
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    drop(s);
+
+    let disk = on_disk.iter().map(|(p, t)| format!("{p}\n{t}")).collect::<Vec<_>>().join("\n");
+    let places: Vec<(&str, String)> = vec![
+        ("logs", logs.text()),
+        ("test.plan, test.run and verdicts.list answers", socket.join("\n")),
+        ("test records", records.join("\n")),
+        ("records/ and routing/verdicts.jsonl", disk),
+    ];
+    // The test prompt is the request body's `"hi"` (research R2).
+    let leaks = leaks_of(&places, &[TEST_KEY, key.as_str(), "OUTPUT-SENTINEL-T051", "\"content\":\"hi\""]);
+    assert!(leaks.is_empty(), "{}", leaks.join("\n"));
+}

@@ -1,0 +1,8 @@
+# expect: rejections[0].status: only 400–499 can be a rejection
+id = "x"
+category = "apikey"
+
+[[rejections]]
+status = 503
+body_contains = "model is gone"
+reason = "model_not_found"
