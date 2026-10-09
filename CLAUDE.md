@@ -109,7 +109,7 @@ Project-scoped agents in `.claude/agents/` — invokable as subagents from workf
 
 ## Model and effort policy
 
-Defaults live in `~/.claude-0router/settings.json` (main session: Opus 5.5 @ `high`; ad-hoc subagents: Sonnet 5.5). Agent `model:`/`effort:` frontmatter is the per-role policy and wins over the `CLAUDE_CODE_SUBAGENT_MODEL` default — never set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, which silently discards every agent pin.
+Defaults live in `~/.claude-0router/settings.json` (main session: Opus 5.5 @ `high`; ad-hoc subagents without a pin, such as general-purpose and Plan: Haiku 5.5). Agent `model:`/`effort:` frontmatter is the per-role policy and wins over the `CLAUDE_CODE_SUBAGENT_MODEL` default — never set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, which silently discards every agent pin.
 
 | Tier | Agents |
 |---|---|
