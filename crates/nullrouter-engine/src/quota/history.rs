@@ -242,6 +242,10 @@ fn accounts_on_disk(
         }
         for f in fs::read_dir(d.path()).map_err(io_err(&d.path()))?.flatten() {
             let name = f.file_name().to_string_lossy().into_owned();
+            // The outside-use file sits beside the history but is not one.
+            if name.ends_with(".outside.jsonl") {
+                continue;
+            }
             let Some(a) = name.strip_suffix(".jsonl").or_else(|| name.strip_suffix(".tally.json")) else {
                 continue;
             };
@@ -259,7 +263,8 @@ fn accounts_on_disk(
 }
 
 /// Deletes entries before `before` from every history (of `provider`, and `account`, when
-/// given). Returns how many were deleted. Unreadable lines are kept.
+/// given). Returns how many were deleted. Unreadable lines are kept. The account's outside-use
+/// file is pruned too, under the same lock: see [`prune_outside`]. The count is history entries only.
 pub fn prune(
     home: &Path,
     before: SystemTime,
@@ -292,18 +297,89 @@ pub fn prune(
             files::write_private(&path, &kept)?;
             removed += dropped;
         }
+        // `f` still holds the history lock, which the outside-use writer takes too.
+        prune_outside(home, &p, &a, before)?;
     }
     Ok(removed)
 }
 
-/// Deletes the account's history and checkpoint. `false`: there was none.
+/// Drops the outside-use lines whose `start` is before `before`, except unacknowledged alerts
+/// and their entries. An acknowledged alert, an `ack` and a `reclassified` line go with the entry
+/// or alert they name; unreadable lines are kept. The caller holds the history lock.
+fn prune_outside(home: &Path, provider: &str, account: &str, before: SystemTime) -> Result<(), FileError> {
+    use super::fit::outside::{Line, outside_file};
+    use std::collections::HashSet;
+
+    let path = outside_file(home, provider, account)?;
+    let Some(text) = files::read_private(&path)? else { return Ok(()) };
+    let lines: Vec<(&str, Option<Line>)> =
+        text.lines().filter(|l| !l.is_empty()).map(|l| (l, serde_json::from_str::<Line>(l).ok())).collect();
+    let acked: HashSet<&str> = lines
+        .iter()
+        .filter_map(|(_, l)| match l {
+            Some(Line::Ack { alert, .. }) => Some(alert.as_str()),
+            _ => None,
+        })
+        .collect();
+    // Entries an unacknowledged alert names stay.
+    let pinned: HashSet<&str> = lines
+        .iter()
+        .filter_map(|(_, l)| match l {
+            Some(Line::Alert { id, entry, .. }) if !acked.contains(id.as_str()) => Some(entry.as_str()),
+            _ => None,
+        })
+        .collect();
+    let old: HashSet<&str> = lines
+        .iter()
+        .filter_map(|(_, l)| match l {
+            Some(Line::Entry(e)) if !pinned.contains(e.id.as_str()) && e.start_time().is_some_and(|t| t < before) => {
+                Some(e.id.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    // Alerts that go: acknowledged ones whose entry goes.
+    let gone_alerts: HashSet<&str> = lines
+        .iter()
+        .filter_map(|(_, l)| match l {
+            Some(Line::Alert { id, entry, .. }) if acked.contains(id.as_str()) && old.contains(entry.as_str()) => {
+                Some(id.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    let mut kept = String::with_capacity(text.len());
+    let mut dropped = false;
+    for (raw, line) in &lines {
+        let drop = match line {
+            Some(Line::Entry(e)) => old.contains(e.id.as_str()),
+            Some(Line::Alert { id, .. }) => gone_alerts.contains(id.as_str()),
+            Some(Line::Ack { alert, .. }) => gone_alerts.contains(alert.as_str()),
+            Some(Line::Reclassified { entry, .. }) => old.contains(entry.as_str()),
+            None => false,
+        };
+        if drop {
+            dropped = true;
+        } else {
+            kept.push_str(raw);
+            kept.push('\n');
+        }
+    }
+    if dropped {
+        files::write_private(&path, &kept)?;
+    }
+    Ok(())
+}
+
+/// Deletes the account's history, checkpoint and outside-use file. `false`: there was none.
 pub fn forget(home: &Path, provider: &str, account: &str) -> Result<bool, FileError> {
     let mut found = false;
     let history = history_file(home, provider, account)?;
     if let Ok(f) = File::open(&history) {
         f.lock().map_err(io_err(&history))?;
     }
-    for path in [history, tally_file(home, provider, account)?] {
+    let outside = super::fit::outside::outside_file(home, provider, account)?;
+    for path in [history, tally_file(home, provider, account)?, outside] {
         match fs::remove_file(&path) {
             Ok(()) => found = true,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
