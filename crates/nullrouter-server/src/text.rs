@@ -107,6 +107,8 @@ pub async fn generate(engine: &Arc<Engine>, st: Arc<EngineState>, m: &Matched<'_
         cancel: cancel.clone(),
         media: None,
         count: false,
+        pin: None,
+        test: None,
     };
     // Until the body is handed to the client, dropping this handler cancels the request.
     let guard = cancel.clone().drop_guard();

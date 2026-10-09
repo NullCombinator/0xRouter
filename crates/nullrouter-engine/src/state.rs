@@ -129,6 +129,10 @@ pub struct Engine {
     pub meters: crate::quota::fit::Meters,
     /// Live model lists, shared with every snapshot.
     pub live_models: Arc<LiveModels>,
+    /// Model verdicts per account (spec 011). Kept across reloads.
+    pub verdicts: crate::verdict::Board,
+    /// Model tests in flight, retests included (spec 011, R10).
+    pub test_gate: crate::tests::Gate,
     /// The listeners `serve` bound, for the operator socket's `server.status`.
     pub status: crate::status::ServerStatus,
     /// Wakes the maintenance task after a reload or a token change.
@@ -209,6 +213,10 @@ impl Engine {
             crate::journal::Journal::start(registry.home().path(), Default::default())
                 .map_err(|e| StateError::Journal(e.to_string()))?,
         );
+        let (verdicts, replay) = crate::verdict::Board::open(registry.home().path(), journal.clone());
+        if replay.malformed > 0 {
+            tracing::warn!("routing/verdicts.jsonl: {} malformed lines skipped", replay.malformed);
+        }
         let live_models = Arc::new(LiveModels::default());
         let shared_redactor = Arc::new(SharedRedactor::new(Redactor::for_state(&accounts, &tokens)));
         let (state, report) = assemble(
@@ -239,6 +247,8 @@ impl Engine {
             fits: ArcSwap::from_pointee(Default::default()),
             meters: Default::default(),
             live_models,
+            verdicts,
+            test_gate: Default::default(),
             changed: tokio::sync::Notify::new(),
             status: Default::default(),
             install_id: OnceLock::new(),
@@ -249,6 +259,7 @@ impl Engine {
         engine.rebuild_meters();
         let restored = crate::route::restore(&engine, &st, crate::clock::now());
         tracing::info!("routing state restored: {} fingerprints, {} ledgers", restored.fingerprints, restored.ledgers);
+        engine.recheck_verdicts(&st);
         Ok((engine, report))
     }
 
@@ -354,8 +365,10 @@ impl Engine {
         for (provider, name) in &removed {
             crate::route::drop_account(self, &state, provider, name, SystemTime::now());
         }
-        self.state.store(Arc::new(state));
+        let state = Arc::new(state);
+        self.state.store(state.clone());
         self.rebuild_meters();
+        self.recheck_verdicts(&state);
         self.changed.notify_one();
         Ok(report)
     }
@@ -367,7 +380,17 @@ impl Engine {
         let _guard = self.reload.lock().unwrap_or_else(|e| e.into_inner());
         let st = self.snapshot();
         self.swap_redactor(self.build_redactor(&st.accounts, std::iter::empty()));
+        self.recheck_verdicts(&st);
         self.changed.notify_one();
+    }
+
+    /// Returns to untested every verdict whose account, sign-in or plugin changed, or whose
+    /// account or provider is gone (research R7).
+    fn recheck_verdicts(&self, st: &EngineState) {
+        let cleared = crate::verdict::recheck(self, st, crate::clock::now());
+        if cleared > 0 {
+            tracing::info!("{cleared} model verdicts back to untested: their account or plugin changed");
+        }
     }
 
     /// Adds `secrets` to the redactor before they go into a token cell (security review

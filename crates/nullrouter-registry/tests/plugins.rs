@@ -212,3 +212,22 @@ fn dashboard_listen_must_be_loopback() {
         "{msg}"
     );
 }
+
+/// Slice 011 (research R7): a plugin's digest changes with its bytes and nothing else.
+#[test]
+fn plugin_digest_follows_the_source_bytes() {
+    let home = Home::new();
+    home.plugin("extra.toml", EXTRA);
+    let handle = home.open().unwrap();
+    let first = handle.snapshot().plugin_digest("extra").unwrap().to_owned();
+    assert!(first.starts_with("sha256:") && first.len() == 7 + 64, "{first}");
+    assert!(handle.snapshot().plugin_digest("anthropic").is_some_and(|d| d != first));
+    assert!(handle.snapshot().plugin_digest("nope").is_none());
+
+    handle.reload().unwrap();
+    assert_eq!(handle.snapshot().plugin_digest("extra"), Some(first.as_str()));
+
+    home.plugin("extra.toml", &EXTRA.replace("e-1", "e-2"));
+    handle.reload().unwrap();
+    assert_ne!(handle.snapshot().plugin_digest("extra"), Some(first.as_str()));
+}

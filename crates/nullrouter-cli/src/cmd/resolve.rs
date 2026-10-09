@@ -37,6 +37,7 @@ pub(crate) fn run(home: Option<PathBuf>, target: &str, as_json: bool) -> Result<
                     println!("note: {n}");
                 }
             }
+            Some("combo") => super::combos::print_tree(out),
             _ => eprintln!("not found: {}", out["error"].as_str().unwrap_or_default()),
         }
     }

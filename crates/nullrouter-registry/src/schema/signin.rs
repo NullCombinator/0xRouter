@@ -110,7 +110,7 @@ impl RefusedRule {
     }
 }
 
-fn de_statuses<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u16>, D::Error> {
+pub(super) fn de_statuses<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u16>, D::Error> {
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum OneOrMany {

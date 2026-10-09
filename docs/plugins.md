@@ -239,6 +239,25 @@ items and the system prompt are never changed, for any provider: no renamed or d
 tools, no injected text, no invented ids. Any other key is refused:
 `force: tools can't be forced`.
 
+## Rejections
+
+0router knows the usual ways a provider says a model doesn't exist, isn't available to the
+account, or doesn't support the request type. A provider that says it differently declares its
+own signals; a test that meets one gives BROKEN (see [Model tests](operator-config.md#model-tests)).
+
+```toml
+[[rejections]]
+status = [400, 404]                # required; each 400–499, never 402, 408 or 429
+body_contains = "model_retired"    # case-sensitive; required when status lists 400 or 422
+reason = "model_not_found"         # model_not_found | model_not_available | type_not_supported
+```
+
+A rule matches when the status is listed and the body contains the text, if one is given. Rules
+are tried before 0router's own list. A rate limit, a server error, a timeout or an account out of
+credit can never be a rejection, so the gate refuses 402, 408, 429 and anything outside 400–499.
+A 400 or 422 is as often the request's fault as the model's, so a rule listing either needs
+`body_contains`.
+
 ## Sign-in, identity, quota and live models (bundled plugins only)
 
 Four sections describe subscription accounts, as data:
@@ -555,7 +574,10 @@ acme.toml:9:13 transport.headers.Authorization: credential-bearing header not al
   - a duplicate model id;
   - `[[transports]]` without `[transport]`;
   - a `default_region` that is not a key of `regions`;
-  - `auth.credential_fallback` naming an unknown provider.
+  - `auth.credential_fallback` naming an unknown provider;
+  - a `[[rejections]]` status of 402, 408, 429 or outside 400–499, a 400 or 422 without
+    `body_contains`, or an unknown reason;
+  - a `combo` table (only `config.toml` declares combos).
 
 ## Community plugins and the fit check
 

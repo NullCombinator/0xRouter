@@ -3,7 +3,7 @@
 //! is per model, as in its `modelLock_<model>`. Times are `tokio::time::Instant`, so tests
 //! run on paused time. Held in memory only.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -17,6 +17,8 @@ type Account = (String, String);
 #[derive(Default)]
 struct Inner {
     until: HashMap<Model, Instant>,
+    /// The rests a rate limit set: the only ones a model test waits for (spec 011).
+    rate_limited: HashSet<Model>,
     level: HashMap<Account, u8>,
 }
 
@@ -40,6 +42,16 @@ impl Cooldowns {
         self.lock().until.get(&key(provider, account, model)).copied().filter(|u| *u > now)
     }
 
+    /// [`cooling`](Self::cooling), for a rest a rate limit set only.
+    pub fn rate_limited(&self, provider: &str, account: &str, model: &str) -> Option<Instant> {
+        let k = key(provider, account, model);
+        let g = self.lock();
+        if !g.rate_limited.contains(&k) {
+            return None;
+        }
+        g.until.get(&k).copied().filter(|u| *u > Instant::now())
+    }
+
     /// Records a failure; returns the rest period it set (zero when the verdict sets none).
     pub fn fail(&self, provider: &str, account: &str, model: &str, verdict: &Verdict) -> Duration {
         let mut g = self.lock();
@@ -51,7 +63,12 @@ impl Cooldowns {
         }
         g.level.insert(acct, next);
         let d = Duration::from_millis(ms);
-        g.until.insert(key(provider, account, model), Instant::now() + d);
+        let k = key(provider, account, model);
+        match verdict.class {
+            crate::records::ErrorClass::RateLimited => g.rate_limited.insert(k.clone()),
+            _ => g.rate_limited.remove(&k),
+        };
+        g.until.insert(k, Instant::now() + d);
         d
     }
 
@@ -62,6 +79,8 @@ impl Cooldowns {
         let mut g = self.lock();
         g.until.remove(&key(provider, account, model));
         g.until.retain(|_, u| *u > now);
+        let Inner { until, rate_limited, .. } = &mut *g;
+        rate_limited.retain(|k| until.contains_key(k));
         if !g.until.keys().any(|(p, a, _)| p == provider && a == account) {
             g.level.remove(&(provider.to_owned(), account.to_owned()));
         }
@@ -126,5 +145,17 @@ mod tests {
         let now = Instant::now();
         assert_eq!(c.earliest_end([("p", "a", "m"), ("p", "b", "m")]), Some(now + Duration::from_secs(30)));
         assert_eq!(c.earliest_end([("p", "c", "m")]), None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn only_a_rate_limit_rest_holds_a_test() {
+        let c = Cooldowns::default();
+        c.fail("p", "a", "m", &classify::upstream(404, "model not found"));
+        assert!(c.cooling("p", "a", "m").is_some());
+        assert!(c.rate_limited("p", "a", "m").is_none());
+        c.fail("p", "a", "m", &classify::upstream(429, "slow down"));
+        assert!(c.rate_limited("p", "a", "m").is_some());
+        c.fail("p", "a", "m", &classify::upstream(500, "boom"));
+        assert!(c.rate_limited("p", "a", "m").is_none(), "the latest rest decides");
     }
 }

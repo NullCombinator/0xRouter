@@ -1,6 +1,7 @@
 pub(crate) mod accounts;
 pub(crate) mod behaviour;
 pub(crate) mod check;
+pub(crate) mod combos;
 pub(crate) mod dashboard;
 pub(crate) mod keys;
 pub(crate) mod model;
@@ -11,8 +12,10 @@ pub(crate) mod records;
 pub(crate) mod resolve;
 pub(crate) mod routing;
 pub(crate) mod serve;
+pub(crate) mod test;
 pub(crate) mod unified;
 pub(crate) mod validate;
+pub(crate) mod verdicts;
 
 use std::process::ExitCode;
 
