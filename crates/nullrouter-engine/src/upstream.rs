@@ -84,13 +84,17 @@ pub fn client(allow_private: bool) -> reqwest::Client {
 }
 
 /// The settings every upstream client shares: no redirects, the pool and keepalive times, the
-/// connect limit, the checked resolver and the connect-timing layer (spec 013).
+/// checked resolver and the connect-timing layer (spec 013).
+///
+/// The client sets no connect timeout of its own. The layer bounds every connect: by the
+/// attempt's effective connect timeout (operator, plugin, `FETCH_CONNECT_TIMEOUT_MS`, default)
+/// inside an attempt, and by [`crate::timing::DEFAULT_CONNECT_TIMEOUT`] outside one. A client-level
+/// limit would silently cut an operator's longer value to the env default.
 pub fn builder(allow_private: bool) -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .pool_idle_timeout(POOL_IDLE)
         .tcp_keepalive(TCP_KEEPALIVE)
-        .connect_timeout(Duration::from_millis(env_ms("FETCH_CONNECT_TIMEOUT_MS", DEFAULT_TIMEOUT_MS)))
         .dns_resolver(Arc::new(CheckedResolver { allow_private }))
         .connector_layer(crate::connection::clients::ConnectClock)
 }

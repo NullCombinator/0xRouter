@@ -102,6 +102,15 @@ The same layer enforces the **per-attempt connect timeout**. It reads the timeou
 `AttemptClock` and falls back to the built-in default outside a scope. So connect timeouts
 don't need one client each (R5).
 
+Decided 2026-10-08, after implementation: the shared client builder sets no reqwest
+`connect_timeout`. Before this, it kept `FETCH_CONNECT_TIMEOUT_MS` (60 s by default) as a
+client-level limit, which silently cut an operator's longer connect timeout to 60 s even
+though validation allows up to one hour. The layer alone bounds every connect.
+
+Also decided 2026-10-08: FR-034 stays as specified. Settings for an unknown provider load, and
+`check` notes them as unused; they don't stop a start. Uninstalling a plugin must not stop the
+router from starting because `config.toml` still has settings for it.
+
 The response's HTTP version comes from `Response::version()`.
 
 **Verified** (spike `crates/nullrouter-engine/tests/connect_attribution.rs`, CI run 48 on
