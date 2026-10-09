@@ -199,7 +199,7 @@ priority").
 - [ ] T061 [US6] Add the `quota.outside`, `quota.alerts` and `quota.ack` ops in `crates/nullrouter-server/src/quota.rs` and `crates/nullrouter-server/src/operator.rs`, with shapes as in contracts/operator-socket.md
 - [ ] T062 [US6] Add `quota outside [provider [account]] [--since T] [--limit N]`, `quota alerts` and `quota ack <id>|all [provider [account]]` to `crates/nullrouter-cli/src/cmd/quota.rs`. Read the files offline, and use the socket for `ack` when a server runs. Text formats as in contracts/cli.md
 - [ ] T063 [US6] Add `accounts exclusive <provider> <account> on|off` and the `exclusive` column of `accounts list` in `crates/nullrouter-cli/src/cmd/accounts.rs`
-- [ ] T064 [US6] In `crates/nullrouter-cli/src/cmd/check.rs`, list each unacknowledged alert as `warn  <text> (nullrouter quota ack <id>)`, as a warning that leaves the exit status alone (contracts/cli.md § check, FR-026)
+- [X] T064 [US6] In `crates/nullrouter-cli/src/cmd/check.rs`, list each unacknowledged alert as `warn  <text> (nullrouter quota ack <id>)`, as a warning that leaves the exit status alone (contracts/cli.md § check, FR-026)
 
 **Checkpoint**: All six stories work.
 

@@ -82,6 +82,9 @@ xai/main                 not polled: no outside-use detection
 01JB8… anthropic/max  Wed 16:00  3% of 5-hour used 15:40–15:50 beyond what 0router's traffic explains
 ```
 
+`01JB7…` above elides the id: the CLI prints alert ids whole (26-character ULIDs), because ULIDs
+raised minutes apart share their first characters. `quota ack` also takes any unique prefix.
+
 `quota outside`, `quota alerts` and `quota ack` read and write files and work without a server.
 With a server running, `ack` goes through the operator socket, so the server's view updates at
 once.
