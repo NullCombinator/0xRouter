@@ -453,7 +453,7 @@ foundation here, not a later story.
 
 ### Implementation
 
-- [ ] T038 [P] Kit ABI in `crates/nullrouter-adapter-kit/src/abi.rs`, the file allowed
+- [X] T038 [P] Kit ABI in `crates/nullrouter-adapter-kit/src/abi.rs`, the file allowed
   `unsafe`.
   - `zr_alloc`, and input decode from `(ptr, len)`.
   - The output is packed as `(ptr << 32) | len`, and `0` means no edits.
@@ -462,6 +462,10 @@ foundation here, not a later story.
     for a type implementing `Adapter`.
   - A `log!` macro calling the `nr.log` import, capped at 512 bytes.
   - Document that `#[no_mangle]` appears only inside `export!`.
+  - Done, not yet run in CI. The macro writes `#[unsafe(no_mangle)]` and `#[unsafe(link_section)]` (edition
+    2024). The `nr.abi` section is gated to `wasm32`. `run_bytes` holds the logic with no raw
+    pointers, so host tests cover it. Whether `-F unsafe_code` ignores the macro's expansion in
+    an author's crate is checked by the builder test (T037), which needs the wasm32 target.
 - [X] T039 [P] Sandbox engine in `crates/nullrouter-sandbox/src/engine.rs`.
   - One process-wide `Engine`, with `epoch_interruption(true)`, `async_support(true)`,
     `consume_fuel(false)`, and threads, relaxed SIMD and multi-memory off.
