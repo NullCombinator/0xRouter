@@ -109,7 +109,7 @@ pub async fn call(
         return Err(CallError::InputTooLarge);
     }
     let end = Instant::now() + deadline;
-    let mut store = Store::new(engine.engine(), State::new(redact));
+    let mut store = Store::new(engine.engine(), State::new(redact, engine.enter()));
     store.limiter(|state| state);
     store.set_epoch_deadline(1);
     // Yielding with a new deadline alone would never stop a loop; this stops it at `end`.

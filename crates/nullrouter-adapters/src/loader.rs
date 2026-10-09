@@ -87,6 +87,9 @@ pub struct Loader {
     redact: Redactor,
     /// Compiled modules by `wasm_hash`.
     cache: Mutex<HashMap<String, Arc<LoadedModule>>>,
+    /// What new handles get as request/answer and event deadlines. The constants unless a test
+    /// has set them: no manifest or setting reaches this (contracts/adapter-kit.md, Limits).
+    deadlines: Mutex<(Duration, Duration)>,
 }
 
 /// Why the loader could not be set up.
@@ -111,6 +114,17 @@ impl Loader {
         Ok(Self::new(store, alerts, Arc::new(sandbox), redact))
     }
 
+    /// Calls that hold a sandbox instance right now.
+    pub fn live_instances(&self) -> usize {
+        self.sandbox.live_instances()
+    }
+
+    /// Sets the request/answer and event deadlines for handles made from now on. Tests only.
+    #[cfg(feature = "testkit")]
+    pub fn override_deadlines(&self, request: Duration, event: Duration) {
+        *self.deadlines.lock().unwrap_or_else(|e| e.into_inner()) = (request, event);
+    }
+
     /// The harnesses the index names.
     pub fn harnesses(&self) -> Vec<HarnessName> {
         match self.store.load_index() {
@@ -123,7 +137,14 @@ impl Loader {
     }
 
     pub fn new(store: Store, alerts: Arc<AlertLog>, sandbox: Arc<SandboxEngine>, redact: Redactor) -> Self {
-        Self { store, alerts, sandbox, redact, cache: Mutex::new(HashMap::new()) }
+        Self {
+            store,
+            alerts,
+            sandbox,
+            redact,
+            cache: Mutex::new(HashMap::new()),
+            deadlines: Mutex::new((REQUEST_DEADLINE, EVENT_DEADLINE)),
+        }
     }
 
     /// The handle for `name`: its serving version loaded, or a handle that records why nothing
@@ -198,15 +219,16 @@ impl Loader {
                 loaded
             }
         };
+        let (request_deadline, event_deadline) = *self.deadlines.lock().unwrap_or_else(|e| e.into_inner());
         Ok(WasmModule {
             sandbox: self.sandbox.clone(),
             module,
             request_selectors,
-            request_deadline: REQUEST_DEADLINE,
+            request_deadline,
             response_selectors,
             events: manifest.response.events,
-            response_deadline: REQUEST_DEADLINE,
-            event_deadline: EVENT_DEADLINE,
+            response_deadline: request_deadline,
+            event_deadline,
             redact: self.redact.clone(),
         })
     }

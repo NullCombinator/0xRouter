@@ -242,6 +242,21 @@ impl Engine {
         Ok(())
     }
 
+    /// Calls that hold an adapter sandbox instance right now (0 without an adapter store).
+    pub fn adapter_live_instances(&self) -> usize {
+        self.adapters.get().map_or(0, nullrouter_adapters::loader::Loader::live_instances)
+    }
+
+    /// Sets the third-party adapter deadlines and loads the handles again so they take them.
+    /// Tests only: nothing an operator or an adapter writes reaches the deadlines.
+    #[cfg(feature = "testkit")]
+    pub fn override_adapter_deadlines(&self, request: std::time::Duration, event: std::time::Duration) {
+        if let Some(loader) = self.adapters.get() {
+            loader.override_deadlines(request, event);
+            self.refresh_adapters();
+        }
+    }
+
     /// Loads the serving version of every harness in the adapter store again, and drops the
     /// runners of harnesses it no longer names. Blocking: it hashes files.
     pub fn refresh_adapters(&self) {

@@ -1,19 +1,22 @@
-//! A client that goes away while a third-party adapter is on its stream (spec 004, US3, T068):
-//! the provider sees its connection close within a second, and the record says `cancelled`.
+//! A client that goes away while a third-party adapter is on its path (spec 004, US3, T068).
 //!
-//! The adapter spins in `zr_on_event`. The event deadline is a 2 ms constant, so the spin ends in
-//! `failed{deadline}` long before the drop; this test therefore covers the adapter being on the
-//! path, not a drop during a running sandbox call. The pool count is not checked: the sandbox
-//! has no accessor for live instances.
+//! Two cases. With the adapter on a stream, the provider sees its connection close within a
+//! second and the record says `cancelled`. With the adapter spinning in its request call (the
+//! request deadline raised to 30 s through the test-only override, since the real one is a
+//! constant), the call is dropped with the attempt: the provider is never asked, the record says
+//! `cancelled` rather than `failed{deadline}`, and no sandbox instance is left.
+//!
+//! In the first case the adapter spins in `zr_on_event`, but the event deadline (2 ms) ends the
+//! spin as `failed{deadline}` before the drop; that case covers the adapter being on the path.
 
 mod common;
 
 use std::time::{Duration, Instant};
 
 use common::server;
-use nullrouter_adapters::testkit::install_fixture;
+use nullrouter_adapters::testkit::{Behaviour, install_fixture, wat_adapter};
 use nullrouter_engine::keys::{HarnessName, Keys};
-use nullrouter_engine::records::Outcome;
+use nullrouter_engine::records::{Outcome, Query};
 use nullrouter_engine::testkit::Step;
 use nullrouter_server::relay::REQUEST_ID;
 use serde_json::json;
@@ -62,7 +65,9 @@ async fn a_client_drop_with_an_adapter_on_the_stream_closes_the_upstream_within_
         .post(format!("{}/v1/chat/completions", s.base))
         .bearer_auth(&s.key)
         .header("content-type", "application/json")
-        .body(json!({"model": "mockco/m1", "stream": true, "messages": [{"role": "user", "content": "hi"}]}).to_string())
+        .body(
+            json!({"model": "mockco/m1", "stream": true, "messages": [{"role": "user", "content": "hi"}]}).to_string(),
+        )
         .send()
         .await
         .unwrap();
@@ -75,6 +80,7 @@ async fn a_client_drop_with_an_adapter_on_the_stream_closes_the_upstream_within_
     let dropped = Instant::now();
     while dropped.elapsed() < Duration::from_secs(1) {
         if !s.mock.disconnects().is_empty() && s.engine.records.get(&id).unwrap().outcome == Outcome::Cancelled {
+            assert_eq!(s.engine.adapter_live_instances(), 0, "no sandbox instance outlives the stream");
             return;
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
@@ -83,5 +89,61 @@ async fn a_client_drop_with_an_adapter_on_the_stream_closes_the_upstream_within_
         "after 1 s: record {:?}; upstream disconnects {}",
         s.engine.records.get(&id).unwrap().outcome,
         s.mock.disconnects().len()
+    );
+}
+
+const REQUEST_ONLY: &str = r#"
+harness = "acme"
+style = "openai-chat"
+kit = "1"
+
+[request]
+selectors = ["model"]
+"#;
+
+#[tokio::test]
+async fn a_client_drop_during_a_spinning_request_call_drops_the_call_and_never_reaches_the_provider() {
+    let s = server().await;
+    install_fixture(s.home(), "acme", REQUEST_ONLY, &wat_adapter(Behaviour::Loop));
+    s.engine.open_adapters().unwrap();
+    s.engine.override_adapter_deadlines(Duration::from_secs(30), Duration::from_secs(30));
+    let mut keys = Keys::load(&s.home().join("keys.toml")).unwrap();
+    keys.set_adapter("laptop", Some(HarnessName::new("acme").unwrap())).unwrap();
+    keys.save().unwrap();
+    s.engine.reload_blocking().unwrap();
+
+    let sent = tokio::spawn(
+        reqwest::Client::new()
+            .post(format!("{}/v1/chat/completions", s.base))
+            .bearer_auth(&s.key)
+            .header("content-type", "application/json")
+            .body(json!({"model": "mockco/m1", "messages": [{"role": "user", "content": "hi"}]}).to_string())
+            .send(),
+    );
+    // Drop the client only once the call holds its sandbox instance, so the test can't pass
+    // before the adapter ever ran.
+    let started = Instant::now();
+    while s.engine.adapter_live_instances() == 0 {
+        assert!(started.elapsed() < Duration::from_secs(5), "the adapter call never started");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    sent.abort();
+
+    let dropped = Instant::now();
+    while dropped.elapsed() < Duration::from_secs(1) {
+        let records = s.engine.records.query(&Query::default());
+        // The one record says cancelled, never `failed{deadline}` or a success.
+        let ended = records.len() == 1 && records[0].outcome == Outcome::Cancelled;
+        if ended && s.engine.adapter_live_instances() == 0 {
+            assert!(s.mock.received().is_empty(), "the provider was never asked");
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!(
+        "after 1 s: live instances {}; outcomes {:?}; upstream requests {}",
+        s.engine.adapter_live_instances(),
+        s.engine.records.query(&Query::default()).iter().map(|r| r.outcome).collect::<Vec<_>>(),
+        s.mock.received().len()
     );
 }

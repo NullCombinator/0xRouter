@@ -40,11 +40,13 @@ pub struct State {
     pub(crate) memory_exceeded: bool,
     logs: u32,
     redact: Redactor,
+    /// Counts this call's store while it exists.
+    _live: crate::engine::LiveGuard,
 }
 
 impl State {
-    pub(crate) fn new(redact: Redactor) -> Self {
-        Self { memory_exceeded: false, logs: 0, redact }
+    pub(crate) fn new(redact: Redactor, live: crate::engine::LiveGuard) -> Self {
+        Self { memory_exceeded: false, logs: 0, redact, _live: live }
     }
 }
 

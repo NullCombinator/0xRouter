@@ -1,7 +1,7 @@
 //! The process-wide wasmtime engine and the ticker that drives its epoch.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use wasmtime::{Config, Engine, InstanceAllocationStrategy, PoolingAllocationConfig};
@@ -21,6 +21,19 @@ pub struct EngineError(String);
 pub struct SandboxEngine {
     engine: Engine,
     stop: Arc<AtomicBool>,
+    /// Calls whose store exists right now; see [`SandboxEngine::live_instances`].
+    live: Arc<AtomicUsize>,
+}
+
+/// Counts one call's store in [`SandboxEngine::live_instances`] for as long as it lives. It sits
+/// in the store's state, so a call future dropped mid-run gives its count back with the store.
+#[derive(Debug)]
+pub(crate) struct LiveGuard(Arc<AtomicUsize>);
+
+impl Drop for LiveGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl SandboxEngine {
@@ -57,11 +70,22 @@ impl SandboxEngine {
                 }
             })
             .map_err(|e| EngineError(e.to_string()))?;
-        Ok(Self { engine, stop })
+        Ok(Self { engine, stop, live: Arc::new(AtomicUsize::new(0)) })
     }
 
     pub fn engine(&self) -> &Engine {
         &self.engine
+    }
+
+    /// How many calls hold a store right now. It returns to 0 when every call has finished or
+    /// been dropped: nothing outlives its call.
+    pub fn live_instances(&self) -> usize {
+        self.live.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn enter(&self) -> LiveGuard {
+        self.live.fetch_add(1, Ordering::SeqCst);
+        LiveGuard(self.live.clone())
     }
 }
 

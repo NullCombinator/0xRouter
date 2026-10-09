@@ -863,7 +863,7 @@ until cleared, and every request completes.
     (US3-6).
   - A mid-stream violation: events before it went out edited, and events after it go out
     unedited. No event is recalled.
-- [ ] T068 [P] [US3] Cancellation test in `crates/nullrouter-server/tests/adapter_cancel.rs`.
+- [X] T068 [P] [US3] Cancellation test in `crates/nullrouter-server/tests/adapter_cancel.rs`.
   - A client disconnect during a slow (`loop`) adapter call stops the upstream request
     within 1 s.
   - The sandbox call is dropped and no instance leaks: the pool count returns to 0.

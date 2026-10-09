@@ -946,7 +946,10 @@ impl Run {
                 &counted
             }
         };
-        self.adapt(st, c).await;
+        if !self.adapt(st, c).await {
+            self.end_request(Outcome::Cancelled, None);
+            return Err(Failure::new(499, "0router: the client went away"));
+        }
         let outbound = match (&self.req.media, &wire) {
             (Some(m), wire) => match media_body(&self.req, m, c, wire.as_deref()) {
                 Ok(o) => o,
@@ -2074,12 +2077,13 @@ impl Run {
 
     /// Runs the key's harness adapter on the client-style request for candidate `c`, before the
     /// upstream body is built (research R2). A fallback or resume runs it again against the
-    /// original body. Edits that no longer decode are dropped, and the run says so.
-    async fn adapt(&mut self, st: &EngineState, c: &Candidate<'_>) {
+    /// original body. Edits that no longer decode are dropped, and the run says so. `false`: the
+    /// client went away during the call, which is dropped (and its sandbox instance with it).
+    async fn adapt(&mut self, st: &EngineState, c: &Candidate<'_>) -> bool {
         self.adapted = None;
         self.adapter_run = None;
         self.response = None;
-        let Some(runner) = self.engine.runner_for(st, &self.req.agent.key) else { return };
+        let Some(runner) = self.engine.runner_for(st, &self.req.agent.key) else { return true };
         let runner = runner.with_client(self.req.client.clone());
         let ctx = nullrouter_adapter_kit::Context {
             direction: nullrouter_adapter_kit::Direction::Request,
@@ -2100,7 +2104,7 @@ impl Run {
         let mut run = if self.req.media.is_some() {
             runner.not_run(&self.req.body, NotRunReason::MediaRequest).run
         } else {
-            let out = runner.run_request(&ctx, &self.req.body).await;
+            let Some(out) = self.wait(runner.run_request(&ctx, &self.req.body)).await else { return false };
             let mut run = out.run;
             if let std::borrow::Cow::Owned(body) = out.body {
                 let ir = if ctx.same_style {
@@ -2123,6 +2127,7 @@ impl Run {
         run.clean_with(|s| st.redactor.redact(&crate::records::plain(s)).into_owned());
         self.engine.settle_adapter_run(&run, &self.req.id).await;
         self.adapter_run = Some(run);
+        true
     }
 
     /// Runs the adapter's response side on a whole client-style answer and records it. An
