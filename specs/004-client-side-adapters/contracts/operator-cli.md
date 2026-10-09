@@ -37,7 +37,7 @@ for `keys.toml`.
 | `nullrouter adapters review <H> <version> [--retry]` | Shows the report. `--retry` requeues a quarantined review |
 | `nullrouter adapters build <H> <version> --retry` | Requeues a build (for example once the builder has been installed) |
 | `nullrouter adapters approve <H> <version> [--note T]` | Only from `reported`. The version becomes active from the next request |
-| `nullrouter adapters reject <H> <version> [--note T]` | From `reported` or `quarantined` |
+| `nullrouter adapters reject <H> <version> [--note T]` | Only from `reported` (data-model state machine). A `quarantined` version is retried with `review --retry` or removed with `remove` |
 | `nullrouter adapters clear <H> <version>` | `suspect` → `approved`. It asks for confirmation and shows the guardrail events first |
 | `nullrouter adapters remove <H> [<version>] [--force]` | Removes a version, or the whole harness. The active version needs `--force` |
 | `nullrouter adapters rebuild [<H>]` | Rebuilds approved versions against the current kit (R9). Run it before upgrading to avoid the plain-client window |

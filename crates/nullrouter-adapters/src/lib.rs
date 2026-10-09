@@ -15,9 +15,9 @@ pub mod runner;
 pub mod scramble;
 pub mod selector;
 pub mod store;
-pub mod unpack;
 #[cfg(feature = "testkit")]
 pub mod testkit;
+pub mod unpack;
 
 use std::fmt;
 use std::path::Path;
@@ -207,6 +207,38 @@ pub async fn install(home: &Path, input: &Path, opts: &InstallOptions<'_>) -> Re
     };
     index.submit(&name, entry)?;
 
+    store.save_index(&index)?;
+    build(home, &name, &id, opts).await
+}
+
+/// Builds a stored `queued` version: builder check, `building`, the build, the hash check, the
+/// module stored, `in_review`. `install` ends here; `adapters build --retry` calls it once a
+/// missing builder is installed. Only a `queued` version can be built.
+pub async fn build(
+    home: &Path,
+    name: &HarnessName,
+    id: &store::VersionId,
+    opts: &InstallOptions<'_>,
+) -> Result<Installed, InstallError> {
+    use alerts::{AlertLog, NewAlert};
+    use store::{Store, VersionState};
+
+    let store = Store::open(home)?;
+    let log = AlertLog::open(&store);
+    let mut index = store.load_index()?;
+    let entry = index
+        .version(name, id)
+        .ok_or_else(|| store::StoreError::UnknownVersion { harness: name.to_string(), version: id.to_string() })?;
+    if entry.state != VersionState::Queued {
+        return Err(store::StoreError::Transition { from: entry.state, to: VersionState::Building }.into());
+    }
+    let fp = entry.source_fp.clone();
+    let source = store.version_dir(name, id).join("source");
+    let manifest_path = source.join("adapter.toml");
+    let text = std::fs::read_to_string(&manifest_path).map_err(|e| io_err(&manifest_path, e))?;
+    let manifest = loader::Manifest::parse(&text).map_err(InstallError::Other)?;
+    let (name, id) = (name.clone(), id.clone());
+
     let done = |state, reason: &str| Installed {
         harness: name.clone(),
         version: id.clone(),
@@ -223,9 +255,9 @@ pub async fn install(home: &Path, input: &Path, opts: &InstallOptions<'_>) -> Re
 
     let out = tempfile::tempdir().map_err(|e| io_err(Path::new("build output"), e))?;
     let job = builder_client::Job {
-        source_dir: store.version_dir(&name, &id).join("source"),
+        source_dir: source,
         out_dir: out.path().to_owned(),
-        kit: gated.manifest.kit.clone(),
+        kit: manifest.kit,
         abi: nullrouter_adapter_kit::KIT_ABI,
     };
     let outcome = builder_client::run_builder(opts.builder, home, &job, fp.as_str(), opts.build_timeout).await;
@@ -318,9 +350,10 @@ pub fn approve(
     let store = store::Store::open(home)?;
     let mut index = store.load_index()?;
     // Fail on a wrong state before anything is written.
-    let entry = index
-        .version(harness, version)
-        .ok_or_else(|| store::StoreError::UnknownVersion { harness: harness.to_string(), version: version.to_string() })?;
+    let entry = index.version(harness, version).ok_or_else(|| store::StoreError::UnknownVersion {
+        harness: harness.to_string(),
+        version: version.to_string(),
+    })?;
     if !entry.state.can_become(store::VersionState::Approved) {
         return Err(store::StoreError::Transition { from: entry.state, to: store::VersionState::Approved }.into());
     }
@@ -332,6 +365,34 @@ pub fn approve(
     let bytes = serde_json::to_vec_pretty(&decision).map_err(|e| InstallError::Other(e.to_string()))?;
     store.write_version_file(harness, version, "decision.json", &bytes)?;
     index.approve(harness, version)?;
+    store.save_index(&index)?;
+    Ok(())
+}
+
+/// The operator's rejection of a `reported` version: writes `decision.json` and moves it to
+/// `rejected`. The caller reloads the engine afterwards.
+pub fn reject(
+    home: &Path,
+    harness: &HarnessName,
+    version: &store::VersionId,
+    note: Option<&str>,
+) -> Result<(), InstallError> {
+    let store = store::Store::open(home)?;
+    let mut index = store.load_index()?;
+    let entry = index.version(harness, version).ok_or_else(|| store::StoreError::UnknownVersion {
+        harness: harness.to_string(),
+        version: version.to_string(),
+    })?;
+    if !entry.state.can_become(store::VersionState::Rejected) {
+        return Err(store::StoreError::Transition { from: entry.state, to: store::VersionState::Rejected }.into());
+    }
+    let mut decision = serde_json::json!({"decision": "reject", "at": jiff::Timestamp::now().to_string()});
+    if let Some(note) = note {
+        decision["note"] = note.into();
+    }
+    let bytes = serde_json::to_vec_pretty(&decision).map_err(|e| InstallError::Other(e.to_string()))?;
+    store.write_version_file(harness, version, "decision.json", &bytes)?;
+    index.transition(harness, version, store::VersionState::Rejected, "rejected by the operator")?;
     store.save_index(&index)?;
     Ok(())
 }

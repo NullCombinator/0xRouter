@@ -76,19 +76,35 @@ enum WireResult {
 /// What running the builder came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuildOutcome {
-    Built { source_fp: String, wasm_hash: String, kit_abi: u32, toolchain: String },
+    Built {
+        source_fp: String,
+        wasm_hash: String,
+        kit_abi: u32,
+        toolchain: String,
+    },
     /// The builder ran and refused the job.
-    Refused { code: Refusal, detail: Option<String> },
+    Refused {
+        code: Refusal,
+        detail: Option<String>,
+    },
     /// No builder binary at the configured path (`builder_not_installed`).
     NotInstalled,
     /// The wall-clock limit passed; the child was killed.
     TimedOut,
     /// Non-zero exit: the builder itself failed.
-    BuilderFailed { status: Option<i32>, stderr_tail: String },
+    BuilderFailed {
+        status: Option<i32>,
+        stderr_tail: String,
+    },
     /// Exit 0 but stdout was not a result.
-    BadOutput { detail: String },
+    BadOutput {
+        detail: String,
+    },
     /// Built, but for different source than the one that was gated.
-    SourceMismatch { expected: String, got: String },
+    SourceMismatch {
+        expected: String,
+        got: String,
+    },
 }
 
 impl BuildOutcome {

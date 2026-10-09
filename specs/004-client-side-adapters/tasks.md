@@ -789,7 +789,7 @@ serves before approval, and an operator with no adapters needs none of it.
     and `crates/nullrouter-engine/src` and fails on any `catalogue::` path. (Module visibility
     can't do this: the CLI and the server use the same crate.) T055 is the runtime check.
   - Make T052 and T055 pass.
-- [ ] T062 [US2] `adapters` CLI in `crates/nullrouter-cli/src/cmd/adapters.rs`: `install`,
+- [X] T062 [US2] `adapters` CLI in `crates/nullrouter-cli/src/cmd/adapters.rs`: `install`,
   `show`, `review [--retry]`, `build --retry`, `approve [--note]`, `reject [--note]` and
   `review-settings --model --budget [--reserve-output] | --clear`.
   - Exit codes per [contracts/operator-cli.md](contracts/operator-cli.md#commands). A gate

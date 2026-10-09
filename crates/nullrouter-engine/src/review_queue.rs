@@ -76,6 +76,21 @@ impl Engine {
         input: &Path,
         builder: Option<&str>,
     ) -> Result<Installed, InstallError> {
+        let done = self.install_adapter_only(input, builder).await?;
+        if done.state == VersionState::InReview {
+            self.enqueue_review(done.harness.clone(), done.version.clone());
+        }
+        Ok(done)
+    }
+
+    /// [`install_adapter`](Self::install_adapter) without starting the review: for the CLI, whose
+    /// process would drop the queue at exit. The server picks an `in_review` version up through
+    /// `adapters.review` or, at start, [`resume_reviews`](Self::resume_reviews).
+    pub async fn install_adapter_only(
+        self: &Arc<Self>,
+        input: &Path,
+        builder: Option<&str>,
+    ) -> Result<Installed, InstallError> {
         let st = self.snapshot();
         let styles: Vec<&str> = st.styles.keys().map(String::as_str).collect();
         let opts = InstallOptions {
@@ -88,9 +103,6 @@ impl Engine {
         // A new harness shows in the index at once: keys bound to it are plain clients until approval.
         let engine = self.clone();
         let _ = tokio::task::spawn_blocking(move || engine.refresh_adapters()).await;
-        if done.state == VersionState::InReview {
-            self.enqueue_review(done.harness.clone(), done.version.clone());
-        }
         Ok(done)
     }
 

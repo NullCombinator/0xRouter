@@ -211,10 +211,10 @@ where
     Fut: Future<Output = Result<ReviewReply, String>>,
 {
     let mut index = store.load_index()?;
-    let entry = index.version(harness, id).cloned().ok_or_else(|| StoreError::UnknownVersion {
-        harness: harness.to_string(),
-        version: id.to_string(),
-    })?;
+    let entry = index
+        .version(harness, id)
+        .cloned()
+        .ok_or_else(|| StoreError::UnknownVersion { harness: harness.to_string(), version: id.to_string() })?;
     match entry.state {
         VersionState::InReview => {}
         VersionState::Quarantined => {

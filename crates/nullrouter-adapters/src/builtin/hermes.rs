@@ -28,8 +28,7 @@ const ECHOED: &[&str] = &["reasoning_content", "reasoning", "reasoning_details"]
 ///
 /// Seeded from 9router's `paramSupport.js` (groq, mistral, cerebras). The chosen providers are
 /// added by the live check (T031) and only if they returned a 400 naming the field.
-pub const REJECTS_ECHOED_REASONING: &[(&str, &[&str])] =
-    &[("groq", ECHOED), ("mistral", ECHOED), ("cerebras", ECHOED)];
+pub const REJECTS_ECHOED_REASONING: &[(&str, &[&str])] = &[("groq", ECHOED), ("mistral", ECHOED), ("cerebras", ECHOED)];
 
 const IMAGE_FIELD: &str = "images";
 const ATTACHMENT_FIELDS: [&str; 2] = ["attachments", "experimental_attachments"];

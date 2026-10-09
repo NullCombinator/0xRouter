@@ -4,7 +4,7 @@ use nullrouter_adapter_kit::{Edit, Edits, Kind, Op, Path, Reason, Seg};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::selector::{covers, Selector};
+use crate::selector::{Selector, covers};
 
 pub const MAX_EDITS: usize = 1024;
 pub const MAX_VALUE_BYTES: usize = 4 * 1024 * 1024;

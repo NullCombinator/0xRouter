@@ -27,10 +27,51 @@ const KEEP_ROOTS: &[&str] = &["std", "core", "alloc", "nullrouter_adapter_kit", 
 
 /// Names that are never renamed: keywords and prelude constructors.
 const KEEP_NAMES: &[&str] = &[
-    "_", "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
-    "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move",
-    "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super", "trait", "true",
-    "type", "unsafe", "use", "where", "while", "union", "macro_rules", "None", "Some", "Ok", "Err",
+    "_",
+    "as",
+    "async",
+    "await",
+    "break",
+    "const",
+    "continue",
+    "crate",
+    "dyn",
+    "else",
+    "enum",
+    "extern",
+    "false",
+    "fn",
+    "for",
+    "if",
+    "impl",
+    "in",
+    "let",
+    "loop",
+    "match",
+    "mod",
+    "move",
+    "mut",
+    "pub",
+    "ref",
+    "return",
+    "self",
+    "Self",
+    "static",
+    "struct",
+    "super",
+    "trait",
+    "true",
+    "type",
+    "unsafe",
+    "use",
+    "where",
+    "while",
+    "union",
+    "macro_rules",
+    "None",
+    "Some",
+    "Ok",
+    "Err",
 ];
 
 /// Keywords whose next identifier, inside a macro body, is a new name.
@@ -112,10 +153,8 @@ fn line_map(file: &syn::File, whole: &str, starts: &[u32]) -> Vec<LineMapEntry> 
         let Some(found) = rest.find(piece) else { continue };
         let at = cursor + found;
         let line = whole.get(..at).map_or(0, |s| s.matches('\n').count()) + 1;
-        entries.push(LineMapEntry {
-            scrambled_line: u32::try_from(line).unwrap_or(u32::MAX),
-            original_line: *original,
-        });
+        entries
+            .push(LineMapEntry { scrambled_line: u32::try_from(line).unwrap_or(u32::MAX), original_line: *original });
         cursor = at + piece.len();
     }
     entries
@@ -536,4 +575,3 @@ impl VisitMut for Renamer {
         m.tokens = self.tokens(std::mem::take(&mut m.tokens));
     }
 }
-

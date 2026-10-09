@@ -137,7 +137,9 @@ fn clean<R: Read>(entry: &tar::Entry<'_, R>, shown: &str) -> Result<Option<Strin
     for c in path.components() {
         match c {
             Component::CurDir => {}
-            Component::Normal(p) => parts.push(p.to_str().ok_or_else(|| UnpackError::BadPath(shown.to_owned()))?.to_owned()),
+            Component::Normal(p) => {
+                parts.push(p.to_str().ok_or_else(|| UnpackError::BadPath(shown.to_owned()))?.to_owned())
+            }
             _ => return Err(UnpackError::BadPath(shown.to_owned())),
         }
     }

@@ -28,16 +28,8 @@ const MAX_ARRAY: usize = 256;
 const MAX_BYTES: usize = 128;
 const MAX_SELECTORS: usize = 32;
 const MAX_SEGMENTS: usize = 8;
-const FORBIDDEN_MACROS: [&str; 8] = [
-    "include",
-    "include_str",
-    "include_bytes",
-    "env",
-    "option_env",
-    "asm",
-    "global_asm",
-    "concat_idents",
-];
+const FORBIDDEN_MACROS: [&str; 8] =
+    ["include", "include_str", "include_bytes", "env", "option_env", "asm", "global_asm", "concat_idents"];
 
 /// One reason the gate refuses a package.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,14 +141,7 @@ struct Found {
     len: u64,
 }
 
-fn walk(
-    dir: &Path,
-    rel: &str,
-    depth: usize,
-    found: &mut Vec<Found>,
-    exceeded: &mut bool,
-    out: &mut Vec<Reason>,
-) {
+fn walk(dir: &Path, rel: &str, depth: usize, found: &mut Vec<Found>, exceeded: &mut bool, out: &mut Vec<Reason>) {
     let shown = if rel.is_empty() { "." } else { rel };
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
@@ -241,12 +226,7 @@ fn check_cargo(text: &str, out: &mut Vec<Reason>) -> Option<(String, String)> {
                     if key == "dependencies" && name == KIT {
                         check_kit_dependency(value, out);
                     } else {
-                        out.push(reason(
-                            "foreign_dependency",
-                            F,
-                            None,
-                            format!("dependency {name:?} is not the kit"),
-                        ));
+                        out.push(reason("foreign_dependency", F, None, format!("dependency {name:?} is not the kit")));
                     }
                 }
             }
@@ -319,7 +299,8 @@ fn check_cargo(text: &str, out: &mut Vec<Reason>) -> Option<(String, String)> {
                         out.push(reason("proc_macro", F, None, format!("key {k:?} is not allowed")));
                     }
                 }
-                let shown = if matches!(value, toml::Value::Array(_)) { format!("[[{key}]]") } else { format!("[{key}]") };
+                let shown =
+                    if matches!(value, toml::Value::Array(_)) { format!("[[{key}]]") } else { format!("[{key}]") };
                 out.push(reason("cargo_table_not_allowed", F, None, format!("table {shown} is not allowed")));
             }
         }
@@ -332,7 +313,12 @@ fn check_kit_dependency(value: &toml::Value, out: &mut Vec<Reason>) {
     match value {
         toml::Value::String(req) => {
             if semver::VersionReq::parse(req).is_err() {
-                out.push(reason("manifest_invalid", F, None, format!("dependency {KIT:?} has no valid version requirement")));
+                out.push(reason(
+                    "manifest_invalid",
+                    F,
+                    None,
+                    format!("dependency {KIT:?} has no valid version requirement"),
+                ));
             }
         }
         toml::Value::Table(t) => {
@@ -345,7 +331,12 @@ fn check_kit_dependency(value: &toml::Value, out: &mut Vec<Reason>) {
                 ));
             }
             if !matches!(t.get("version"), Some(toml::Value::String(_))) {
-                out.push(reason("manifest_invalid", F, None, format!("dependency {KIT:?} needs a plain version requirement")));
+                out.push(reason(
+                    "manifest_invalid",
+                    F,
+                    None,
+                    format!("dependency {KIT:?} needs a plain version requirement"),
+                ));
             }
         }
         _ => out.push(reason("manifest_invalid", F, None, format!("dependency {KIT:?} is malformed"))),
@@ -391,7 +382,12 @@ fn check_manifest(text: &str, styles: &[&str], out: &mut Vec<Reason>) -> Option<
         ));
     }
     if semver::VersionReq::parse(&manifest.kit).is_err() {
-        out.push(reason("manifest_invalid", F, None, format!("key \"kit\": {:?} is not a version requirement", manifest.kit)));
+        out.push(reason(
+            "manifest_invalid",
+            F,
+            None,
+            format!("key \"kit\": {:?} is not a version requirement", manifest.kit),
+        ));
     }
     if manifest.summary.chars().count() > 200 {
         out.push(reason("manifest_invalid", F, None, "key \"summary\" is over 200 characters"));
