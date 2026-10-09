@@ -2,7 +2,7 @@
 name: perf-hypothesis-explorer
 description: "Use when exploring performance optimization hypotheses for a Rust module. Investigates ONE specific optimization direction (SIMD, allocation reduction, parallelism, data structures, algorithmic, caching, compile-time) and returns a concrete, implementable hypothesis — but makes NO code changes. Designed to run as a cheap parallel subagent inside the optimize-perf workflow."
 tools: Read, Bash, Glob, Grep, mcp__agentmemory-team__memory_recall, mcp__agentmemory-team__memory_smart_search, mcp__agentmemory-team__memory_lesson_recall, mcp__agentmemory-team__memory_slot_get, mcp__code-review-graph-0router__semantic_search_nodes_tool, mcp__code-review-graph-0router__query_graph_tool, mcp__code-review-graph-0router__get_impact_radius_tool, mcp__code-review-graph-0router__detect_changes_tool, mcp__code-review-graph-0router__get_review_context_tool
-model: claude-sonnet-5-5
+model: claude-haiku-5-5
 effort: medium
 ---
 ## Project memory and code graphs
