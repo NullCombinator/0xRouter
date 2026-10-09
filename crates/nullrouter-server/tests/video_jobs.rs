@@ -264,7 +264,7 @@ async fn a_paused_proxy_stops_a_job_poll_before_anything_is_sent() {
     let (_, vj) = submit(&s, "vidco/vid").await;
     let first = json(get(&s, &format!("/v1/videos/{vj}")).send().await.unwrap()).await;
     assert_eq!(first["status"], "in_progress", "{first}");
-    assert!(proxy.carried() >= 2, "the submit and the poll used the account's proxy");
+    assert!(proxy.carried() >= 1, "the submit and the poll used the account's proxy (one pooled connection)");
 
     let print = fingerprints(&s.engine.snapshot()).remove("eu").unwrap();
     s.engine.proxy_board.pause("eu", "connect to proxy failed", &print);
