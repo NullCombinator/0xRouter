@@ -38,7 +38,15 @@ exit: 0
           "cache_lifetime": "5m",
           "price_now": null,
           "why_not": "out_of_service",
-          "windows": []
+          "windows": [],
+          "meter": [],
+          "outside_use": {
+            "intervals_7d": 0,
+            "last": null,
+            "steady": [],
+            "alerts": []
+          },
+          "fit_note": null
         },
         {
           "provider": "bluesminds",
@@ -55,7 +63,15 @@ exit: 0
           "cache_lifetime": "5m",
           "price_now": null,
           "why_not": "out_of_service",
-          "windows": []
+          "windows": [],
+          "meter": [],
+          "outside_use": {
+            "intervals_7d": 0,
+            "last": null,
+            "steady": [],
+            "alerts": []
+          },
+          "fit_note": null
         }
       ]
     }
