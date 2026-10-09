@@ -875,7 +875,7 @@ until cleared, and every request completes.
     `not_run{suspect}`, and keys bound to it are served as plain clients.
   - The `blocked` path drops the runner for the rest of that request's stream.
   - Make T067 pass.
-- [ ] T070 [US3] `adapters clear <H> <version>` in `crates/nullrouter-cli/src/cmd/adapters.rs`.
+- [X] T070 [US3] `adapters clear <H> <version>` in `crates/nullrouter-cli/src/cmd/adapters.rs`.
   It prints the version's guardrail events from alerts and records, asks for confirmation
   (`--yes` to skip), sets the state `suspect` → `approved`, and reloads.
 - [ ] T071 [US3] Make T066 and T068 pass. Fix any gap in T040, T041, T046 or T048 that the

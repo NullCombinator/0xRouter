@@ -4,11 +4,13 @@
 //! at exit. After a step that leaves a version `in_review` it asks the running server to review
 //! it; with no server the review starts when `serve` starts (`Engine::resume_reviews`).
 
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::Subcommand;
+use nullrouter_adapters::alerts::{Alert, AlertKind, AlertLog};
 use nullrouter_adapters::loader::Manifest;
 use nullrouter_adapters::review::ReviewReport;
 use nullrouter_adapters::store::{Index, ReviewConfig, Store, VersionEntry, VersionId, VersionState};
@@ -56,6 +58,13 @@ pub(crate) enum Command {
         #[arg(long)]
         note: Option<String>,
     },
+    /// Clear a suspect version so it serves again. Lists its guardrail events first.
+    Clear {
+        harness: String,
+        version: String,
+        #[arg(long)]
+        yes: bool,
+    },
     /// Set or clear the model that reviews adapter source.
     ReviewSettings {
         /// A unified model id or `provider/model`.
@@ -70,7 +79,7 @@ pub(crate) enum Command {
         #[arg(long)]
         clear: bool,
     },
-    /// `clear`, `remove` and `rebuild` arrive later.
+    /// `remove` and `rebuild` arrive later.
     #[command(external_subcommand)]
     Other(Vec<String>),
 }
@@ -162,6 +171,9 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
             let (h, v) = (harness_of(&harness)?, VersionId::from_run(&version));
             nullrouter_adapters::reject(home.path(), &h, &v, note.as_deref()).map_err(fail)?;
             decided(&home, &h, &v, "rejected", as_json)
+        }
+        Command::Clear { harness, version, yes } => {
+            clear(&home, &harness_of(&harness)?, &VersionId::from_run(&version), yes, as_json)
         }
         Command::ReviewSettings { model, budget, reserve_output, clear } => {
             review_settings(&home, model, budget, reserve_output, clear, as_json)
@@ -378,6 +390,68 @@ fn show(
     if let Some(d) = &decision {
         println!("decision: {d}");
     }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// One guardrail event as a line: when, the record it came from, what happened.
+fn event_line(a: &Alert) -> String {
+    let record = a.record.as_deref().unwrap_or("-");
+    let times = if a.count > 1 { format!("  (x{})", a.count) } else { String::new() };
+    format!("{}  {record}  {}{times}", a.at, a.detail)
+}
+
+/// `suspect` → `approved`: the version serves again. Lists its guardrail events first, then asks
+/// unless `--yes`.
+fn clear(
+    home: &OperatorHome,
+    harness: &HarnessName,
+    version: &VersionId,
+    yes: bool,
+    as_json: bool,
+) -> Result<ExitCode, ExitCode> {
+    if as_json && !yes {
+        eprintln!("--json needs --yes");
+        return Err(ExitCode::from(2));
+    }
+    let index = read_index(home)?;
+    let state = index
+        .version(harness, version)
+        .ok_or_else(|| fail(format!("no version {version} of {harness} in the index")))?
+        .state;
+    if state != VersionState::Suspect {
+        return Err(fail(format!("{harness} {version} is {state}, not suspect")));
+    }
+    let store = store_of(home)?;
+    let events: Vec<Alert> = AlertLog::open(&store)
+        .list()
+        .map_err(fail)?
+        .into_iter()
+        .filter(|a| a.kind == AlertKind::Guardrail && &a.harness == harness && &a.version == version)
+        .collect();
+    if !as_json {
+        for a in &events {
+            println!("{}", event_line(a));
+        }
+    }
+    if !yes {
+        eprint!("clear {harness} {version}: it serves again from the next request [y/N] ");
+        io::stderr().flush().map_err(fail)?;
+        let mut line = String::new();
+        io::stdin().read_line(&mut line).map_err(fail)?;
+        if !matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+            println!("not cleared");
+            return Err(ExitCode::from(1));
+        }
+    }
+    let mut index = store.load_index().map_err(fail)?;
+    index.transition(harness, version, VersionState::Approved, "cleared by the operator").map_err(fail)?;
+    store.save_index(&index).map_err(fail)?;
+    let status = reload(home)?;
+    emit(
+        as_json,
+        &json!({"harness": harness, "version": version, "state": "approved", "status": status, "events": events}),
+        &format!("{harness} {version}: approved: {status}"),
+    );
     Ok(ExitCode::SUCCESS)
 }
 
