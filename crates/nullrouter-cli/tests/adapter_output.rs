@@ -23,11 +23,6 @@ fn nr(home: &Path, args: &[&str], stdin: &str) -> Output {
     child.wait_with_output().unwrap()
 }
 
-/// A fingerprint in the form `SourceFp` parses: `sha256:` and 64 lowercase hex characters.
-fn fp(c: char) -> String {
-    format!("sha256:{}", c.to_string().repeat(64))
-}
-
 /// Appends record lines for `day` to the journal the way the engine lays it out.
 fn journal(home: &Path, day: &str, lines: &[serde_json::Value]) {
     std::fs::create_dir_all(home.join("records")).unwrap();

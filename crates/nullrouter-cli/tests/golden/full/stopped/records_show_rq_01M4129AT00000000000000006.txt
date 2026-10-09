@@ -8,4 +8,5 @@ ttft        -            total -
 usage       not reported
 break       none
 attempts
+response adapter: none
 --- stderr
