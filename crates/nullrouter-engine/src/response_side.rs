@@ -56,6 +56,7 @@ impl ResponseSide {
             framing,
             framer: Framer::new(framing),
             n: 0,
+            blocked: false,
             run: None,
         })
     }
@@ -68,6 +69,8 @@ pub struct Tap {
     framer: Framer,
     /// Events sent to the client so far.
     n: usize,
+    /// The guardrail dropped an event's edits: the adapter is out for the rest of the stream.
+    blocked: bool,
     run: Option<AdapterRun>,
 }
 
@@ -75,6 +78,9 @@ impl Tap {
     /// The bytes to send for `chunk`, which holds whole frames. A chunk no event of which the
     /// adapter edited goes out as it came.
     pub async fn push(&mut self, chunk: String) -> String {
+        if self.blocked {
+            return chunk;
+        }
         let frames = self.framer.feed(chunk.as_bytes());
         if frames.is_empty() {
             return chunk;
@@ -84,7 +90,8 @@ impl Tap {
         for mut frame in frames {
             let n = self.n;
             self.n += 1;
-            if !frame.is_done()
+            if !self.blocked
+                && !frame.is_done()
                 && let Ok(event) = serde_json::from_str::<Value>(&frame.data)
             {
                 let ran = self.side.runner.run_event(&ctx, &event).await;
@@ -92,6 +99,7 @@ impl Tap {
                     frame.data = body.to_string();
                     edited = true;
                 }
+                self.blocked = ran.run.outcome == AdapterOutcome::Blocked;
                 self.absorb(n, ran.run);
             }
             out.push_str(&frame.to_bytes(self.framing).unwrap_or_default());

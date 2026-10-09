@@ -856,7 +856,7 @@ until cleared, and every request completes.
     - `legit_removal` goes through with its changes recorded.
 
   This covers SC-002, SC-003 and US3-1 to US3-8.
-- [ ] T067 [P] [US3] Suspect lifecycle test in `crates/nullrouter-server/tests/suspect.rs`.
+- [X] T067 [P] [US3] Suspect lifecycle test in `crates/nullrouter-server/tests/suspect.rs`.
   - After a guardrail event, requests from **every** key bound to the harness are served as
     plain clients, with `not_run{suspect}`.
   - `adapters clear` returns the version to `approved`, and the next request runs it
@@ -870,7 +870,7 @@ until cleared, and every request completes.
 
 ### Implementation for User Story 3
 
-- [ ] T069 [US3] Suspect handling in `crates/nullrouter-adapters/src/runner.rs`.
+- [X] T069 [US3] Suspect handling in `crates/nullrouter-adapters/src/runner.rs`.
   - At reload, the runner for a harness whose active version is `suspect` is
     `not_run{suspect}`, and keys bound to it are served as plain clients.
   - The `blocked` path drops the runner for the rest of that request's stream.
