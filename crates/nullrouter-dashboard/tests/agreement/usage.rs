@@ -663,7 +663,7 @@ async fn the_topology_graph_has_the_providers_and_counts_usage_prints_with_the_e
             "{period}: red edges are the failed last responses"
         );
         let text = text_of(&html);
-        assert!(!want.is_empty() == text.contains("last response · last 24 h"), "{period}: the label");
+        assert!(want.is_empty() != text.contains("last response · last 24 h"), "{period}: the label");
         assert!(!text.to_lowercase().contains("in flight now"), "{period}: no in-flight count on the graph");
     }
 }

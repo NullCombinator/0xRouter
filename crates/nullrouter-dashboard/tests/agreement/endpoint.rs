@@ -64,7 +64,7 @@ async fn each_key_card_shows_what_keys_list_shows() {
             Some(_) => assert_shows(card, &k["last_used"], &what),
             None => assert!(text.contains("last used never"), "{what} was never used: {text}"),
         }
-        assert!(text.contains("Requests today"), "{what} has its slot");
+        assert!(text.contains("requests today"), "{what} has its slot");
     }
     assert!(keys.iter().any(|k| k["last_used"].is_string()), "a fixture key has records");
     assert!(keys.iter().any(|k| k["last_used"].is_null()), "a fixture key has none");
