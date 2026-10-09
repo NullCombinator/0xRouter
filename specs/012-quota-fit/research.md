@@ -205,7 +205,9 @@ once and never revisiting. Early outside use would stay in the fit forever.
 from the information matrix, and its most collinear partner (the largest absolute correlation in
 the inverse). The partner may be a part-of-day outside rate `b_{a,q}`: then the view names that
 part of the day ("not separable from outside use 08–12: 0router is never idle then"). A number is **not separable** when its VIF exceeds 50, or its partner correlation
-exceeds 0.98. It is then held at the value in effect, excluded from the test, and the view names
+exceeds 0.98, unless its fitted 95% range is already within a factor of 2 either way
+(`1.96·se < ln 2` in log space): correlated is not collinear, and a week of rows pins a pair the
+VIF alone would flag (the capacity's column is the sum of the weighted token columns). It is then held at the value in effect, excluded from the test, and the view names
 the partner. A number with no traffic at all (no rows with that class or group) is **learning**
 with 0 rows, not "not separable".
 

@@ -899,6 +899,8 @@ fn assert_fitted(fit: &FitRun, scenario: &Scenario, weights: bool) {
         ("weight.cache_read", read),
         ("weight.cache_write", write),
     ];
+    // DIAG(012): the states and ranges the fit ended the week with
+    eprintln!("DIAG(012) states {states:?}\nranges {ranges:?}");
     let mut required = vec![capacity.as_str()];
     if weights {
         required.push("weight.output");

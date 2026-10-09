@@ -81,6 +81,25 @@ fn ceil_hour(t: SystemTime) -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(s.div_ceil(3600) * 3600)
 }
 
+/// Whether the rejection of `t` still stands with the one row the start's fit explains worst
+/// left out. A rule change shows in many rows; a burst that doesn't track traffic is one row, and
+/// a few-row fit can bend to it (research R9: it must not move the traffic-direction score).
+fn survives_without_worst_row(spec: &Spec, sub: &[MRow], f: &Fit, t: &Target, null: f64, m: usize, current: &Fit) -> bool {
+    let miss = |r: &MRow| (r.y - f.predict(spec, r).0).abs();
+    let Some(worst) = (0..sub.len()).max_by(|a, b| miss(&sub[*a]).partial_cmp(&miss(&sub[*b])).unwrap_or(std::cmp::Ordering::Equal)) else {
+        return false;
+    };
+    let rest: Vec<MRow> = sub.iter().enumerate().filter(|(i, _)| *i != worst).map(|(_, r)| r.clone()).collect();
+    if rest.len() < MIN_ROWS {
+        return false;
+    }
+    let Some(g) = model::fit(spec, &rest, &current.theta) else { return false };
+    if g.rows < 2 * g.active.len() || !g.active.contains(&t.p) {
+        return false;
+    }
+    g.se(t.p).is_some_and(|se| rejects(t.natural(&g).ln(), null, se, m))
+}
+
 /// The breaks among `targets` as of `now`. `rows` are the epoch's rows; `current` is the fit in
 /// effect (over evidence only), `skip` the split-off account indices left out of the pool, and
 /// `account_epochs` the time a capacity's account last restarted (no start precedes it).
@@ -127,7 +146,7 @@ pub fn detect(
             }
             let Some(se) = f.se(t.p) else { continue };
             let (est, null) = (t.natural(&f).ln(), t.natural(current).ln());
-            if rejects(est, null, se, m) {
+            if rejects(est, null, se, m) && survives_without_worst_row(spec, &sub, &f, t, null, m, current) {
                 let v = 1.0 / (se * se);
                 let score = ((est - null) * v).abs() / boundary(v, m);
                 if best[i].is_none_or(|(b, _)| score > b) {

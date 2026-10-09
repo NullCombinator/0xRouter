@@ -449,7 +449,13 @@ async fn a_factor_three_capacity_becomes_fitted_and_reaches_the_meters() {
     }
     assert!(first_change.is_some_and(|n| n < entries.len()), "capacity never became significant");
     let c = fits.window("keyco", "5-hour").capacity["main"];
-    assert!((c / 333_333.0 - 1.0).abs() < 0.15, "fitted capacity {c}");
+    // One hundred ten-minute rows, each reading rounded to a whole point: the capacity's standard
+    // error is about 13% (noise sd 0.41 points against a signal sd of 0.31 per row), so the old
+    // +-15% bound failed for a quarter of all seeds. The claim is that the truth lies in the
+    // fit's own 95% range and the estimate is within two standard errors of it.
+    let (_, lo, hi) = learner.ranges("keyco", "5-hour")["capacity@main"];
+    assert!(lo <= 333_333.0 && 333_333.0 <= hi, "fitted capacity {c}, range {lo}..{hi}");
+    assert!((c / 333_333.0 - 1.0).abs() < 0.30, "fitted capacity {c}");
     assert!(!fits.window("keyco", "5-hour").capacity.contains_key("spare"), "spare has no evidence");
     let states = learner.number_states("keyco", "5-hour");
     assert!(matches!(states["capacity@main"], NumberState::Fitted { .. }), "{states:?}");
@@ -1024,6 +1030,9 @@ fn an_idle_alert_states_facts_and_changes_nothing_until_the_declaration_is_withd
     }
     let fitted = learner.number_states("keyco", "5-hour");
     assert!(matches!(fitted["capacity@main"], NumberState::Fitted { .. }), "{fitted:?}");
+    // DIAG(012): which alert was written before the idle drop
+    eprintln!("DIAG(012) alerts {:?}", outside::alerts(dir.path(), "keyco", "main"));
+    eprintln!("DIAG(012) entries {:?}", outside::read(dir.path(), "keyco", "main", None, None));
     assert!(outside::alerts(dir.path(), "keyco", "main").is_empty());
 
     // The idle interval before poll 80 is listed and alerted once, while the account is in exclusive use.

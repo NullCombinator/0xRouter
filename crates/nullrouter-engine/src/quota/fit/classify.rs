@@ -14,6 +14,11 @@ pub const SETTLE_ROWS: u32 = 6;
 /// A number is not separable above this variance inflation factor, or this partner correlation.
 pub const VIF_LIMIT: f64 = 50.0;
 pub const CORR_LIMIT: f64 = 0.98;
+/// A flagged number is still separable when its 95% range is narrower than this in log space
+/// (a factor of 2 either way): a high VIF with a tight range means the traffic does tell it
+/// apart (a week of rows pins a pair that is correlated but not collinear). Only a number the
+/// fit cannot pin down stays not separable.
+const TIGHT_LOG_HALF_WIDTH: f64 = std::f64::consts::LN_2;
 /// Added to the correlation matrix diagonal so an exactly collinear pair still inverts.
 const RIDGE: f64 = 1e-9;
 /// Partial correlations closer than this are a tie.
@@ -96,7 +101,8 @@ pub struct Inseparable {
 /// partial correlation with another parameter exceeds [`CORR_LIMIT`] in absolute value. The
 /// correlation matrix is regularised by [`RIDGE`] on its diagonal, so an exactly collinear pair
 /// (singular matrix) gets a huge VIF and a partial correlation near 1 with each other, while the
-/// other numbers are judged as usual. Only a fit whose information is not finite calls every
+/// other numbers are judged as usual. A flagged number whose fitted 95% range is tight (see
+/// [`TIGHT_LOG_HALF_WIDTH`]) is not reported: correlated is not collinear. Only a fit whose information is not finite calls every
 /// number not separable. Ties between partners go to the lower-indexed parameter.
 pub fn separability(fit: &Fit) -> Vec<Inseparable> {
     let n = fit.active.len();
@@ -127,7 +133,8 @@ pub fn separability(fit: &Fit) -> Vec<Inseparable> {
                 partner = Some(fit.active[j]);
             }
         }
-        if vif > VIF_LIMIT || best > CORR_LIMIT {
+        let pinned = fit.se(*p).is_some_and(|se| Z95 * se < TIGHT_LOG_HALF_WIDTH);
+        if (vif > VIF_LIMIT || best > CORR_LIMIT) && !pinned {
             out.push(Inseparable { number: *p, partner, vif });
         }
     }
