@@ -796,7 +796,7 @@ serves before approval, and an operator with no adapters needs none of it.
     refusal exits 3.
   - `approve` is allowed only from `reported`. It writes `decision.json`, sets `active`,
     supersedes the previous version, and reloads.
-- [ ] T063 [US2] `catalogue` CLI in `crates/nullrouter-cli/src/cmd/catalogue.rs`: `list`,
+- [X] T063 [US2] `catalogue` CLI in `crates/nullrouter-cli/src/cmd/catalogue.rs`: `list`,
   `show <H>`, and `install <H> [<semver>]` (the newest version by default). Unreachable
   catalogue exits 5.
 - [X] T064 [US2] Operator socket ops in `crates/nullrouter-server/src/operator.rs`:

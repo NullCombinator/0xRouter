@@ -116,7 +116,11 @@ fn reload(home: &OperatorHome) -> Result<&'static str, ExitCode> {
 
 /// After a step that left a version `in_review`: reload, then have the server review it. With no
 /// server, the review starts when `serve` does.
-fn start_review(home: &OperatorHome, harness: &HarnessName, version: &VersionId) -> Result<&'static str, ExitCode> {
+pub(crate) fn start_review(
+    home: &OperatorHome,
+    harness: &HarnessName,
+    version: &VersionId,
+) -> Result<&'static str, ExitCode> {
     if reload(home)? != "applied" {
         return Ok("the review starts when `serve` starts");
     }
@@ -198,7 +202,7 @@ fn print_installed(done: &Installed, hint: Option<&str>, as_json: bool) {
 }
 
 /// Prints where an install or build ended, and the follow-up each end calls for.
-fn finish(home: &OperatorHome, done: &Installed, as_json: bool) -> Result<ExitCode, ExitCode> {
+pub(crate) fn finish(home: &OperatorHome, done: &Installed, as_json: bool) -> Result<ExitCode, ExitCode> {
     match done.state {
         VersionState::Refused => {
             print_installed(done, None, as_json);

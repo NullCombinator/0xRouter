@@ -165,7 +165,9 @@ fn used_by(home: &OperatorHome, name: &str) -> Result<Vec<String>, String> {
         }
     }
     let list = Accounts::load(&home.path().join(accounts::FILE)).map_err(|e| e.to_string())?;
-    out.extend(list.iter().filter(|a| a.proxy.as_deref() == Some(name)).map(|a| format!("account {}/{}", a.provider, a.name)));
+    out.extend(
+        list.iter().filter(|a| a.proxy.as_deref() == Some(name)).map(|a| format!("account {}/{}", a.provider, a.name)),
+    );
     Ok(out)
 }
 

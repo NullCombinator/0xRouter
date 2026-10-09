@@ -229,9 +229,16 @@ mod tests {
             "PASS     anthropic/max        claude-sonnet-4-5          1.8 s (first output 0.9 s)"
         );
         let broken = json!({"provider": "anthropic", "account": "max", "model": "claude-opus-4-1", "state": "broken", "rejection": "model_not_available", "reason": "403: model claude-opus-4-1 is not available on your plan", "ms": 300});
-        assert!(result_line(&broken, now).ends_with("model not available: 403: model claude-opus-4-1 is not available on your plan"));
+        assert!(
+            result_line(&broken, now)
+                .ends_with("model not available: 403: model claude-opus-4-1 is not available on your plan")
+        );
         let unknown = json!({"provider": "openrouter", "account": "main", "model": "x", "state": "unknown", "reason": "503: upstream overloaded", "ms": 300, "next": "2026-10-07T09:01:00Z"});
-        assert!(result_line(&unknown, now).ends_with("503: upstream overloaded; retest in 1 min"), "{}", result_line(&unknown, now));
+        assert!(
+            result_line(&unknown, now).ends_with("503: upstream overloaded; retest in 1 min"),
+            "{}",
+            result_line(&unknown, now)
+        );
         let skipped = json!({"provider": "xai", "account": "backup", "model": "grok-4", "state": null, "reason": "rate-limited until 09:14 UTC", "skipped": "rate-limited until 09:14 UTC", "ms": 0});
         assert!(result_line(&skipped, now).starts_with("SKIPPED  xai/backup"));
     }

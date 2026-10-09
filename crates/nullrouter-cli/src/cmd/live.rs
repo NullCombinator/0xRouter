@@ -23,7 +23,10 @@ pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, Exit
     loop {
         let snap = snapshot(&home)?;
         if as_json {
-            println!("{}", json!({"as_of": snap["as_of"], "paused_proxies": snap["paused_proxies"], "in_flight": snap["in_flight"]}));
+            println!(
+                "{}",
+                json!({"as_of": snap["as_of"], "paused_proxies": snap["paused_proxies"], "in_flight": snap["in_flight"]})
+            );
             return Ok(ExitCode::SUCCESS);
         }
         if terminal {
@@ -105,7 +108,11 @@ fn render(snap: &Value) -> String {
             };
             (
                 format!("{} {who}", a["n"]),
-                format!("{} {}", name(a["phase"].as_str().unwrap_or("-")), span(a["in_phase_ms"].as_f64().unwrap_or(0.0))),
+                format!(
+                    "{} {}",
+                    name(a["phase"].as_str().unwrap_or("-")),
+                    span(a["in_phase_ms"].as_f64().unwrap_or(0.0))
+                ),
             )
         };
         rows.push([

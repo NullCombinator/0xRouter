@@ -322,15 +322,22 @@ fn phase_rows(a: &Value, o: &mut String) {
             "connect" => t["refresh_ms"]
                 .as_f64()
                 .map_or_else(String::new, |r| format!("   (includes token refresh {})", span(r))),
-            "delivery" => t["closing_ms"]
-                .as_f64()
-                .map_or_else(String::new, |c| format!("   (of which record close {})", span(c))),
+            "delivery" => {
+                t["closing_ms"].as_f64().map_or_else(String::new, |c| format!("   (of which record close {})", span(c)))
+            }
             _ => String::new(),
         }
     };
-    for name in
-        ["router_overhead", "retry_wait", "connect", "headers", "first_token", "waiting_for_provider", "generation", "delivery"]
-    {
+    for name in [
+        "router_overhead",
+        "retry_wait",
+        "connect",
+        "headers",
+        "first_token",
+        "waiting_for_provider",
+        "generation",
+        "delivery",
+    ] {
         let Some(v) = map.get(name) else { continue };
         let text = match v {
             Value::Number(n) => span(n.as_f64().unwrap_or(0.0)),
@@ -676,9 +683,13 @@ mod tests {
     fn list_shows_the_slowest_phase_with_its_side() {
         let done = line(&timed(json!({})));
         assert!(done.ends_with("generation 30.1 s (provider)"), "{done}");
-        let live = line(&timed(json!({"slowest": {"phase": "headers", "ms": 2100.0, "side": "provider", "in_progress": true}})));
+        let live = line(&timed(
+            json!({"slowest": {"phase": "headers", "ms": 2100.0, "side": "provider", "in_progress": true}}),
+        ));
         assert!(live.ends_with("headers 2.1 s… (provider)"), "{live}");
-        let merged = line(&timed(json!({"slowest": {"phase": "waiting_for_provider", "ms": 41.2, "side": "provider", "in_progress": false}})));
+        let merged = line(&timed(
+            json!({"slowest": {"phase": "waiting_for_provider", "ms": 41.2, "side": "provider", "in_progress": false}}),
+        ));
         assert!(merged.ends_with("waiting for provider 41.2 ms (provider)"), "{merged}");
         let old = line(&timed(json!({"slowest": null, "attempts": [{"n": 1, "phases": "not_recorded"}]})));
         assert!(old.ends_with("not recorded"), "{old}");
@@ -705,7 +716,9 @@ mod tests {
         ] {
             assert!(text.contains(want), "{want:?} missing from:\n{text}");
         }
-        let old = timed(json!({"attempts": [{"n": 1, "provider": "p", "model": "m", "outcome": {"state": "ok"}, "dropped": [], "phases": "not_recorded"}]}));
+        let old = timed(
+            json!({"attempts": [{"n": 1, "provider": "p", "model": "m", "outcome": {"state": "ok"}, "dropped": [], "phases": "not_recorded"}]}),
+        );
         assert!(show(&old, &Default::default()).contains("phases  not recorded"));
     }
 
@@ -727,8 +740,12 @@ mod tests {
         });
         assert!(line(&r).ends_with("beta/a  test tr_01"), "{}", line(&r));
         let text = show(&r, &Default::default());
-        for want in ["combo       coder\n", "test        combo test  run tr_01\n", "       member coder › ua\n",
-                     "       member coder › chain › ub\n"] {
+        for want in [
+            "combo       coder\n",
+            "test        combo test  run tr_01\n",
+            "       member coder › ua\n",
+            "       member coder › chain › ub\n",
+        ] {
             assert!(text.contains(want), "{want:?} missing from:\n{text}");
         }
         let mut client = r.clone();

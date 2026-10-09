@@ -1,6 +1,7 @@
-pub(crate) mod adapters;
 pub(crate) mod accounts;
+pub(crate) mod adapters;
 pub(crate) mod behaviour;
+pub(crate) mod catalogue;
 pub(crate) mod check;
 pub(crate) mod combos;
 pub(crate) mod connection;

@@ -150,6 +150,23 @@ impl Entry {
             None => self.version.iter().max_by_key(|v| semver::Version::parse(&v.semver).ok()),
         }
     }
+
+    /// The listed versions above `installed` (semver order, newest first). An unparseable
+    /// `installed` counts as below every version; unparseable listed versions are skipped.
+    pub fn newer_than(&self, installed: &str) -> Vec<&Version> {
+        let floor = semver::Version::parse(installed).ok();
+        let mut listed: Vec<(semver::Version, &Version)> = self
+            .version
+            .iter()
+            .filter_map(|v| semver::Version::parse(&v.semver).ok().map(|s| (s, v)))
+            .filter(|(s, _)| match &floor {
+                Some(f) => s > f,
+                None => true,
+            })
+            .collect();
+        listed.sort_by(|a, b| b.0.cmp(&a.0));
+        listed.into_iter().map(|(_, v)| v).collect()
+    }
 }
 
 /// The HTTP client of the catalogue commands.

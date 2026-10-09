@@ -164,7 +164,8 @@ fn print_list(rows: &Value, as_json: bool) {
     let any_adapter = rows.as_array().into_iter().flatten().any(|r| r["adapter"].is_string());
     for r in rows.as_array().into_iter().flatten() {
         let s = |k: &str| r[k].as_str().unwrap_or_default().to_owned();
-        let adapter = if any_adapter { format!("{:<14} ", r["adapter"].as_str().unwrap_or("-")) } else { String::new() };
+        let adapter =
+            if any_adapter { format!("{:<14} ", r["adapter"].as_str().unwrap_or("-")) } else { String::new() };
         println!(
             "{:<12} {:<20} {:<14} {:<8} {:<26} {:<26} {:<11} {adapter}{}",
             s("id"),

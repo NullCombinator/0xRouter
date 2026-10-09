@@ -72,6 +72,9 @@ enum Command {
     /// Harness adapters: the built-in ones, and (later) installed third-party ones.
     #[command(subcommand)]
     Adapters(cmd::adapters::Command),
+    /// The adapter catalogue: list, show, install and check. Only these commands contact it.
+    #[command(subcommand)]
+    Catalogue(cmd::catalogue::Command),
     /// The read-only web dashboard: its token and its state.
     #[command(subcommand)]
     Dashboard(cmd::dashboard::Command),
@@ -127,6 +130,7 @@ fn main() -> ExitCode {
         Command::Accounts(c) => cmd::accounts::run(cli.home, c, cli.json),
         Command::Keys(c) => cmd::keys::run(cli.home, c, cli.json),
         Command::Adapters(c) => cmd::adapters::run(cli.home, c, cli.json),
+        Command::Catalogue(c) => cmd::catalogue::run(cli.home, c, cli.json),
         Command::Dashboard(c) => cmd::dashboard::run(cli.home, c, cli.json),
         Command::Behaviour(c) => cmd::behaviour::run(cli.home, c, cli.json),
         Command::Records(c) => cmd::records::run(cli.home, c, cli.json),

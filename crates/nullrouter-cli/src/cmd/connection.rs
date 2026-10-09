@@ -365,8 +365,12 @@ mod tests {
 
     #[test]
     fn a_setting_is_added_replaced_and_given_a_table() {
-        assert_eq!(edit("", H, "header_timeout_ms", Some("10000")), ("[provider.acme.connection]\nheader_timeout_ms = 10000\n".into(), true));
-        let with = "schema = 1\n[provider.acme.connection]\n# note\nheader_timeout_ms = 5\n\n[server]\nlisten = \"x\"\n";
+        assert_eq!(
+            edit("", H, "header_timeout_ms", Some("10000")),
+            ("[provider.acme.connection]\nheader_timeout_ms = 10000\n".into(), true)
+        );
+        let with =
+            "schema = 1\n[provider.acme.connection]\n# note\nheader_timeout_ms = 5\n\n[server]\nlisten = \"x\"\n";
         assert_eq!(
             edit(with, H, "header_timeout_ms", Some("9")).0,
             "schema = 1\n[provider.acme.connection]\n# note\nheader_timeout_ms = 9\n\n[server]\nlisten = \"x\"\n"
@@ -421,25 +425,28 @@ mod tests {
     #[test]
     fn set_and_unset_round_trip_through_the_config_and_the_view() {
         let (dir, home) = home_with_config("schema = 1\n");
-        let provider = nullrouter_server::views::open_registry(&home)
-            .unwrap()
-            .snapshot()
-            .providers()
-            .next()
-            .unwrap()
-            .id
-            .clone();
+        let provider =
+            nullrouter_server::views::open_registry(&home).unwrap().snapshot().providers().next().unwrap().id.clone();
         let said = change(&home, &provider, None, "header-timeout", Some("10s")).unwrap();
         assert!(said.ends_with("saved; applies at next start"), "{said}");
         change(&home, &provider, Some("some/model"), "first-token-timeout", Some("5m")).unwrap();
         let text = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
-        assert!(text.contains("header_timeout_ms = 10000") && text.contains("first_token_timeout_ms = 300000"), "{text}");
+        assert!(
+            text.contains("header_timeout_ms = 10000") && text.contains("first_token_timeout_ms = 300000"),
+            "{text}"
+        );
 
         let v = view(&home, Some(&provider)).unwrap();
         assert_eq!(v["providers"][0]["timeouts"]["headers"]["ms"], 10_000);
         let shown = render(&v);
-        assert!(shown.contains("header timeout") && shown.contains("10 s") && shown.contains("operator, provider"), "{shown}");
-        assert!(shown.contains("model some/model") && shown.contains("300 s") && shown.contains("operator, model"), "{shown}");
+        assert!(
+            shown.contains("header timeout") && shown.contains("10 s") && shown.contains("operator, provider"),
+            "{shown}"
+        );
+        assert!(
+            shown.contains("model some/model") && shown.contains("300 s") && shown.contains("operator, model"),
+            "{shown}"
+        );
 
         change(&home, &provider, None, "header-timeout", None).unwrap();
         change(&home, &provider, Some("some/model"), "first-token-timeout", None).unwrap();
@@ -451,14 +458,8 @@ mod tests {
     #[test]
     fn retry_keys_edit_one_rule_per_status_and_show_with_their_source() {
         let (dir, home) = home_with_config("schema = 1\n");
-        let provider = nullrouter_server::views::open_registry(&home)
-            .unwrap()
-            .snapshot()
-            .providers()
-            .next()
-            .unwrap()
-            .id
-            .clone();
+        let provider =
+            nullrouter_server::views::open_registry(&home).unwrap().snapshot().providers().next().unwrap().id.clone();
         let file = || std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
 
         let e = change(&home, &provider, None, "retry-wait.503", Some("2s")).unwrap_err();
@@ -471,7 +472,10 @@ mod tests {
         assert!(text.contains("all = { retries = 1, delay_ms = 0 }"), "{text}");
 
         let shown = render(&view(&home, Some(&provider)).unwrap());
-        assert!(shown.contains("retry 503") && shown.contains("3 x 2000 ms") && shown.contains("operator, provider"), "{shown}");
+        assert!(
+            shown.contains("retry 503") && shown.contains("3 x 2000 ms") && shown.contains("operator, provider"),
+            "{shown}"
+        );
         assert!(shown.contains("retry all"), "{shown}");
 
         let e = change(&home, &provider, None, "retries", Some("6")).unwrap_err();
