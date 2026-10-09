@@ -46,7 +46,7 @@ jobs:
         run: set -o pipefail; cargo test -p nullrouter-engine --release --test sim_suite -- --ignored 2>&1 | tee sim_suite.log
       - name: Clippy
         if: ${{ !cancelled() }}
-        run: cargo clippy --workspace --all-targets --message-format=short -- -D warnings 2>&1 | tee clippy.log
+        run: cargo clippy --workspace --all-targets --keep-going --message-format=short -- -D warnings 2>&1 | tee clippy.log
       - name: Annotate failures
         if: failure()
         run: tools/ci/annotate.sh test.log clippy.log
