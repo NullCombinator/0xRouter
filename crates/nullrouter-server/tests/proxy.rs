@@ -221,3 +221,24 @@ async fn a_provider_error_through_a_healthy_proxy_does_not_pause_it() {
     assert!(s.engine.proxy_board.paused("a").is_none(), "the proxy was fine; the provider was not");
     assert_eq!(a.carried(), 1);
 }
+
+#[tokio::test]
+async fn the_final_503_names_the_paused_proxy() {
+    let s = server().await;
+    s.mock.respond(|_| chat_whole());
+    let a = MockProxy::start_with_auth("u", PASSWORD).await;
+    apply(&s, &[entry("a", &a, true)], Some("a"), "").await;
+    pause_now(&s, "a");
+
+    let r = reqwest::Client::new()
+        .post(format!("{}/v1/chat/completions", s.base))
+        .bearer_auth(&s.key)
+        .body(json!({"model": "mockco/m1", "messages": [{"role": "user", "content": "hi"}]}).to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 503);
+    let body = r.text().await.unwrap();
+    assert!(body.contains("proxy a paused"), "the client is told why: {body}");
+    assert!(!body.contains(PASSWORD) && !body.contains(&a.addr().to_string()), "and nothing of the proxy's address or login: {body}");
+}
