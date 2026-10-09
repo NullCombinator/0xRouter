@@ -24,6 +24,7 @@ use std::time::SystemTime;
 use arc_swap::ArcSwap;
 use nullrouter_registry::schema::{MeterDecl, MeterUnit, QuotaUnit, TokenWeights, glob_match};
 
+use super::breaks::{self, Break};
 use super::classify::{self, Inseparable, is_evidence, reclassify_epoch, separability};
 use super::outside;
 use super::model::{self, Fit, Kind, P, Spec, Theta};
@@ -122,10 +123,18 @@ impl Win {
         let mut w = Self::fresh(parse(&s.epoch).unwrap_or(now), &s.meter_hash, None);
         w.restarted = s.restarted.as_ref().and_then(|r| Some((parse(&r.at)?, r.reason.clone())));
         for (key, n) in &s.numbers {
-            if n.state == "fitted"
-                && let Some(since) = n.since.as_deref().and_then(parse)
-            {
-                w.numbers.insert(key.clone(), NumberState::Fitted { since });
+            let Some(since) = n.since.as_deref().and_then(parse) else { continue };
+            match n.state.as_str() {
+                "fitted" => {
+                    w.numbers.insert(key.clone(), NumberState::Fitted { since });
+                }
+                "relearning" => {
+                    w.numbers.insert(
+                        key.clone(),
+                        NumberState::Relearning { since, progress: Progress { intervals: 0, half_width: WIDE } },
+                    );
+                }
+                _ => {}
             }
         }
         for (account, sp) in &s.splits {
@@ -157,9 +166,8 @@ fn stored_number(s: &NumberState) -> Option<StoredNumber> {
     let (state, since) = match s {
         NumberState::Fitted { since } => ("fitted", Some(rfc3339_millis(*since))),
         NumberState::NotSeparable { .. } => ("not_separable", None),
-        NumberState::Learning { .. } | NumberState::Relearning { .. } | NumberState::Restarted { .. } => {
-            ("learning", None)
-        }
+        NumberState::Relearning { since, .. } => ("relearning", Some(rfc3339_millis(*since))),
+        NumberState::Learning { .. } | NumberState::Restarted { .. } => ("learning", None),
         NumberState::Yardstick | NumberState::NotReported | NumberState::NotFitted(_) => return None,
     };
     Some(StoredNumber { state: state.to_owned(), since })
@@ -455,7 +463,8 @@ impl Learner {
             if !accounts.iter().any(|a| a.as_str() == *account) {
                 continue;
             }
-            let since = win.cursors.get(*account).copied().unwrap_or(win.epoch);
+            let floor = win.base.account_epochs.get(*account).and_then(|e| parse(e)).map_or(win.epoch, |e| e.max(win.epoch));
+            let since = win.cursors.get(*account).copied().unwrap_or(floor);
             let fit = win.last.as_ref().map(|(_, f)| f);
             let mut new = rows_from(account, tail, meter, since);
             for row in &mut new {
@@ -472,7 +481,7 @@ impl Learner {
         if added == 0 {
             return;
         }
-        refit(win, &spec, meter, ov, now);
+        refit(win, &spec, meter, ov, provider, now);
         list_outside_rows(win, home, provider, &spec, meter, unit, now);
         list_steady_rates(win, home, provider, &spec, meter, unit, now);
     }
@@ -677,7 +686,7 @@ fn list_steady_rates(win: &mut Win, home: &Path, provider: &str, spec: &Spec, me
 
 /// Refits the pool over the epoch's evidence, reclassifies, tests splits, then updates the
 /// numbers (R3, R6, R8).
-fn refit(win: &mut Win, spec: &Spec, meter: &MeterDecl, ov: &WindowOverrides, now: SystemTime) {
+fn refit(win: &mut Win, spec: &Spec, meter: &MeterDecl, ov: &WindowOverrides, provider: &str, now: SystemTime) {
     let mut splits_found = 0;
     loop {
         if !settle(win, spec, meter, now) {
@@ -697,6 +706,89 @@ fn refit(win: &mut Win, spec: &Spec, meter: &MeterDecl, ov: &WindowOverrides, no
         splits_found += 1;
     }
     update_numbers(win, spec, meter, ov, now);
+    // A break moves the epoch: refit what remains of it (R9).
+    if detect_breaks(win, spec, meter, ov, provider, now) && settle(win, spec, meter, now) {
+        update_numbers(win, spec, meter, ov, now);
+    }
+}
+
+/// Runs the break detector over the window's fitted numbers and applies what it finds. Returns
+/// whether a break was recorded.
+fn detect_breaks(win: &mut Win, spec: &Spec, meter: &MeterDecl, ov: &WindowOverrides, provider: &str, now: SystemTime) -> bool {
+    let Some((_, fit)) = &win.last else { return false };
+    let targets: Vec<breaks::Target> = numbers(spec, meter, ov)
+        .into_iter()
+        .filter(|n| matches!(win.numbers.get(&n.key), Some(NumberState::Fitted { .. })) && fit.active.contains(&n.p))
+        .map(|n| breaks::Target { number: n.number, p: n.p, account: n.account, scale: n.scale })
+        .collect();
+    if targets.is_empty() {
+        return false;
+    }
+    let account_epochs: BTreeMap<String, SystemTime> =
+        win.base.account_epochs.iter().filter_map(|(a, e)| Some((a.clone(), parse(e)?))).collect();
+    let found = breaks::detect(&meter.name, spec, &win.rows, &split_indices(win, spec), fit, &targets, win.epoch, &account_epochs, now);
+    if found.is_empty() {
+        return false;
+    }
+    apply_breaks(win, &found, provider);
+    true
+}
+
+/// Most breaks a window keeps in its stored record.
+const KEEP_BREAKS: usize = 64;
+
+/// Records `found`: a pooled number's break restarts the whole window at its time (every fitted
+/// number goes to `Relearning`, rows and splits before it are dropped); a capacity's restarts
+/// only that account. Rows of the span that were set aside as busy outside use count as evidence
+/// again; the ones already listed get their `reclassified` line at the next listing pass.
+fn apply_breaks(win: &mut Win, found: &[Break], provider: &str) {
+    let relearn = |since| NumberState::Relearning { since, progress: Progress { intervals: 0, half_width: WIDE } };
+    for b in found {
+        breaks::log(provider, b);
+        win.base.breaks.push(store::StoredBreak {
+            at: rfc3339_millis(b.at),
+            detected_at: rfc3339_millis(b.detected_at),
+            number: b.key(),
+            replaced: b.replaced,
+        });
+    }
+    let excess = win.base.breaks.len().saturating_sub(KEEP_BREAKS);
+    win.base.breaks.drain(..excess);
+
+    let pooled_at = found.iter().filter(|b| b.account.is_none()).map(|b| b.at).max();
+    if let Some(at) = pooled_at {
+        win.epoch = at;
+        win.rows.retain(|r| r.start >= at);
+        win.splits.clear();
+        for state in win.numbers.values_mut() {
+            if matches!(state, NumberState::Fitted { .. }) {
+                *state = relearn(at);
+            }
+        }
+        win.published = WindowFit { relative_to_input: win.published.relative_to_input, ..WindowFit::default() };
+        win.ranges.clear();
+    }
+    let mut from: BTreeMap<String, SystemTime> = BTreeMap::new();
+    for b in found {
+        let Some(account) = &b.account else { continue };
+        if pooled_at.is_some_and(|p| p >= b.at) {
+            continue;
+        }
+        win.rows.retain(|r| r.account != *account || r.start >= b.at);
+        win.base.account_epochs.insert(account.clone(), rfc3339_millis(b.at));
+        win.numbers.insert(b.key(), relearn(b.at));
+        win.published.capacity.remove(account);
+        win.ranges.remove(&b.key());
+        from.insert(account.clone(), b.at);
+    }
+    for r in &mut win.rows {
+        let cut = [pooled_at, from.get(&r.account).copied()].into_iter().flatten().min();
+        if cut.is_some_and(|c| r.start >= c) && r.has_traffic() && matches!(r.class, Class::Outside | Class::OutsideProvisional { .. }) {
+            r.class = Class::Evidence;
+        }
+    }
+    // The fit blended the old rules in; the next one starts from the new epoch's rows.
+    win.last = None;
 }
 
 /// Fits the pool and reclassifies the epoch against the fit until the classes stop moving.
@@ -831,6 +923,10 @@ fn update_numbers(win: &mut Win, spec: &Spec, meter: &MeterDecl, ov: &WindowOver
             Some(NumberState::Fitted { since }) => Some(*since),
             _ => None,
         };
+        let relearning = match win.numbers.get(&n.key) {
+            Some(NumberState::Relearning { since, .. }) => Some(*since),
+            _ => None,
+        };
         let state = if let Some(since) = held {
             NumberState::Fitted { since }
         } else if let Some(i) = insep.get(&n.p) {
@@ -840,7 +936,9 @@ fn update_numbers(win: &mut Win, spec: &Spec, meter: &MeterDecl, ov: &WindowOver
             && rejects(n.natural(fit).ln(), null, se, m)
         {
             NumberState::Fitted { since: now }
-        } else if let Some((since, reason)) = &win.restarted {
+        } else if relearning.is_none()
+            && let Some((since, reason)) = &win.restarted
+        {
             NumberState::Restarted { since: *since, reason: reason.clone() }
         } else {
             let intervals = match &n.account {
@@ -852,7 +950,11 @@ fn update_numbers(win: &mut Win, spec: &Spec, meter: &MeterDecl, ov: &WindowOver
             } else {
                 WIDE
             };
-            NumberState::Learning { progress: Progress { intervals: if informed { intervals } else { 0 }, half_width } }
+            let progress = Progress { intervals: if informed { intervals } else { 0 }, half_width };
+            match relearning {
+                Some(since) => NumberState::Relearning { since, progress },
+                None => NumberState::Learning { progress },
+            }
         };
         if matches!(state, NumberState::Fitted { .. }) && informed {
             let v = n.natural(fit);
