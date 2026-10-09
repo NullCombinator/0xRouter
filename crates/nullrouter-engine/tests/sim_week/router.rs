@@ -347,6 +347,7 @@ impl<'a> Sim<'a> {
                     quota,
                     cache: cache_spec(),
                     price: d.price.clone(),
+                    meter_sources: None,
                 }
             })
             .collect()

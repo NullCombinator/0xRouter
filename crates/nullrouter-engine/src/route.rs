@@ -14,6 +14,7 @@ use serde_json::json;
 use crate::attempt::TextRequest;
 use crate::journal::Target;
 use crate::plan::{self, RequestPlan, Step};
+use crate::quota::fit::{AccountMeters, Source};
 use crate::records::Usage;
 use crate::routing::fingerprint::{Chain, Hash};
 use crate::routing::ledger::Debit;
@@ -156,6 +157,25 @@ pub(crate) fn account_quota(
     )
 }
 
+/// The non-declared numbers in effect for one account, per window, as a decision record lists
+/// them (FR-013). `None` when every number in effect is declared.
+fn meter_sources_of(meters: Option<&AccountMeters>) -> Option<BTreeMap<String, BTreeMap<String, Source>>> {
+    let meters = meters?;
+    let out: BTreeMap<String, BTreeMap<String, Source>> = meters
+        .sources
+        .iter()
+        .filter_map(|(window, numbers)| {
+            let kept: BTreeMap<String, Source> = numbers
+                .iter()
+                .filter(|(_, source)| **source != Source::Declared)
+                .map(|(number, source)| (number.to_string(), *source))
+                .collect();
+            (!kept.is_empty()).then(|| (window.clone(), kept))
+        })
+        .collect();
+    (!out.is_empty()).then_some(out)
+}
+
 fn candidate_of(engine: &Engine, c: &plan::Candidate<'_>, order: i64, now: SystemTime) -> Candidate {
     let account = c.account;
     let name = account.map_or("", |a| a.name.as_str());
@@ -165,6 +185,7 @@ fn candidate_of(engine: &Engine, c: &plan::Candidate<'_>, order: i64, now: Syste
         .cooling(&c.provider.id, name, &c.upstream_id)
         .map(|until| until.saturating_duration_since(tokio::time::Instant::now()));
     let quota = account.map_or_else(AccountQuota::payg, |a| account_quota(engine, c.provider, a, now));
+    let meter_sources = account.and_then(|a| meter_sources_of(engine.meters.get(&a.provider, &a.name).as_deref()));
     Candidate {
         key: CandidateKey::new(&c.provider.id, name, &c.upstream_id),
         order,
@@ -174,6 +195,7 @@ fn candidate_of(engine: &Engine, c: &plan::Candidate<'_>, order: i64, now: Syste
         quota,
         cache: cache_of(c.provider, account),
         price: PriceSpec { schedule: routing.prices.to_vec(), flat: account.and_then(|a| a.routing.price) },
+        meter_sources,
     }
 }
 
@@ -207,6 +229,7 @@ fn candidates_of(
                     min_tokens: 1024,
                 },
                 price: PriceSpec::default(),
+                meter_sources: None,
             }),
         }
         step_of.push(i);
@@ -322,6 +345,7 @@ pub fn decide(engine: &Engine, st: &EngineState, req: &TextRequest, plan: &Reque
                 quota: AccountQuota::payg(),
                 cache,
                 price: PriceSpec::default(),
+                meter_sources: None,
             });
         }
     }
