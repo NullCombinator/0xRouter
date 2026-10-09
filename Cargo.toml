@@ -24,8 +24,9 @@ tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "signal", "fs", "macros", "io-util", "sync"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 axum = "0.8"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "http2", "multipart"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "http2", "multipart", "socks"] }
 futures-util = "0.3"
+tower = { version = "0.5", features = ["util"] }
 bytes = "1"
 memchr = "2"
 sha2 = "0.10"

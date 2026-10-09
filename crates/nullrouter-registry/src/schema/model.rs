@@ -36,6 +36,19 @@ pub struct Model {
     /// R8). Effort-suffixed ids (`grok-4.5-high`) set `reasoning.effort` here.
     #[serde(default)]
     pub force: ForceMap,
+    /// Schema 2: timeouts for this model, over its endpoint's.
+    pub timeouts: Option<ModelTimeouts>,
+}
+
+/// `timeouts = { … }` on a model (contracts/config-files.md). Each is 1–3 600 000 ms, and
+/// `first_token_ms` may also be 0 (off); the plugin gate checks the range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelTimeouts {
+    pub connect_ms: Option<u64>,
+    pub headers_ms: Option<u64>,
+    pub first_token_ms: Option<u64>,
+    pub stall_ms: Option<u64>,
 }
 
 /// A `models` element: a full table or a bare ID string (9router `normalizeModel`).

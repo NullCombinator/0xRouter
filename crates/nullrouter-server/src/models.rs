@@ -1,6 +1,6 @@
 //! Model list routes in each style's shape (T114, research R15).
 //!
-//! Listed: every unified model, and every direct `provider/model` of every type on a
+//! Listed: every unified model, every combo (spec 011), and every direct `provider/model` of every type on a
 //! provider the operator can reach (an enabled account, or no auth needed) through an
 //! endpoint of that type, the static `[[models]]` joined by a provider's live list
 //! (`[models_live]`). The OpenAI shape is the default; `anthropic-messages` and
@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 
 use axum::response::Response;
 use nullrouter_engine::state::EngineState;
+use nullrouter_registry::ModelKind;
 use nullrouter_registry::schema::ModelType;
 use serde_json::{Value, json};
 
@@ -25,18 +26,17 @@ pub struct Listed {
     pub ty: ModelType,
 }
 
-/// Every model a client can reach, unified models first, in load order.
+/// Every model a client can reach, unified models then combos first, in load order.
 pub fn listed(st: &EngineState) -> Vec<Listed> {
     let reg = &st.registry;
-    let mut out: Vec<Listed> = reg
-        .unified_models()
-        .map(|u| Listed {
-            id: u.name.clone(),
-            display_name: u.name.clone(),
-            owned_by: "0router".into(),
-            ty: u.kind.and_then(ModelType::from_capability).unwrap_or(ModelType::Text),
-        })
-        .collect();
+    let ours = |name: &str, kind: Option<ModelKind>| Listed {
+        id: name.to_owned(),
+        display_name: name.to_owned(),
+        owned_by: "0router".into(),
+        ty: kind.and_then(ModelType::from_capability).unwrap_or(ModelType::Text),
+    };
+    let unified = reg.unified_models().map(|u| ours(&u.name, u.kind));
+    let mut out: Vec<Listed> = unified.chain(reg.combos().map(|c| ours(&c.name, c.kind))).collect();
     let mut seen: BTreeSet<String> = out.iter().map(|l| l.id.clone()).collect();
     for p in reg.providers() {
         let no_auth = p.auth.as_ref().is_some_and(|a| a.no_auth);

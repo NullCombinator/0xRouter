@@ -36,7 +36,9 @@ pub fn lines_for(before: &RequestRecord, after: &RequestRecord, force_open: bool
         || before.op != after.op
         || before.model_type != after.model_type
         || before.target != after.target
-        || before.unified_model != after.unified_model;
+        || before.unified_model != after.unified_model
+        || before.test != after.test
+        || before.combo != after.combo;
     if force_open || opened {
         out.push(("open", open_line(after)));
     }
@@ -73,6 +75,12 @@ fn open_line(r: &RequestRecord) -> Value {
         "target": r.target,
         "unified_model": r.unified_model,
     });
+    if let Some(t) = &r.test {
+        line["test"] = json!(t);
+    }
+    if let Some(c) = &r.combo {
+        line["combo"] = json!(c);
+    }
     if let Some(a) = &r.agent {
         line["agent"] = json!(a.key);
         if let Some(s) = &a.session {
@@ -154,6 +162,12 @@ impl Folding {
                 _ => line.get(from).cloned().unwrap_or(Value::Null),
             };
             self.record.insert(key.into(), value);
+        }
+        // Spec 011: present only on test and combo records, so other records read as before.
+        for key in ["test", "combo"] {
+            if let Some(v) = line.get(key) {
+                self.record.insert(key.into(), v.clone());
+            }
         }
     }
 
@@ -258,6 +272,8 @@ pub struct Filter {
     /// Only records whose id sorts below it (the next page back). The id must name a record:
     /// check with [`cursor_exists`]; `read` itself only filters.
     pub before: Option<String>,
+    /// `Some(true)`: only model tests' records; `Some(false)`: none of them (spec 011).
+    pub test: Option<bool>,
 }
 
 impl Filter {
@@ -294,6 +310,11 @@ impl Filter {
         }
         if let Some(u) = &self.unified_model
             && r["unified_model"].as_str() != Some(u)
+        {
+            return false;
+        }
+        if let Some(want) = self.test
+            && r.get("test").is_some_and(|t| !t.is_null()) != want
         {
             return false;
         }
@@ -757,6 +778,8 @@ mod tests {
             forced: Vec::new(),
             placement: None,
             adapter: None,
+            member: None,
+            timing: None,
         }
     }
 

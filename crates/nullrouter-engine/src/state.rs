@@ -22,6 +22,8 @@ use crate::keys::{self, BreakBehaviour, Keys};
 use crate::models_live::LiveModels;
 use crate::records::RecordStore;
 use crate::redact::{Redactor, SharedRedactor};
+use crate::connection::pause::ProxyBoard;
+use crate::connection::proxy::{self, Proxies};
 use crate::tokens::TokenCells;
 use crate::upstream;
 
@@ -43,6 +45,8 @@ pub struct EngineState {
     pub styles: BTreeMap<String, Arc<Style>>,
     /// The upstream client for this snapshot's `allow_private_endpoints`.
     pub http: reqwest::Client,
+    /// The clients per proxy, HTTP mode and reuse, built when first asked for (spec 013).
+    pub clients: crate::connection::clients::Clients,
     pub generation: u64,
 }
 
@@ -112,6 +116,10 @@ pub struct Engine {
     pub router: crate::routing::Router,
     /// Account rests per model and backoff levels (research R6). In memory only.
     pub cooldowns: Cooldowns,
+    /// Requests in flight, for `live.snapshot` (spec 013). In memory only.
+    pub live: crate::live::Live,
+    /// The proxies that are paused, and why (spec 013, research R8). Kept across reloads.
+    pub proxy_board: ProxyBoard,
     /// Video jobs by their `vj_` id.
     pub jobs: crate::jobs::JobMap,
     /// Sign-in account tokens (spec 005, research R6). Kept across reloads; re-read only
@@ -134,6 +142,10 @@ pub struct Engine {
     /// Where third-party adapters are loaded from. Set by `serve` through
     /// [`open_adapters`](Self::open_adapters); without it no third-party adapter runs.
     adapters: OnceLock<nullrouter_adapters::loader::Loader>,
+    /// Model verdicts per account (spec 011). Kept across reloads.
+    pub verdicts: crate::verdict::Board,
+    /// Model tests in flight, retests included (spec 011, R10).
+    pub test_gate: crate::tests::Gate,
     /// The listeners `serve` bound, for the operator socket's `server.status`.
     pub status: crate::status::ServerStatus,
     /// Wakes the maintenance task after a reload or a token change.
@@ -143,16 +155,24 @@ pub struct Engine {
     reload: Mutex<()>,
 }
 
-fn operator_files(home: &OperatorHome) -> Result<(Accounts, Keys, DashboardToken), FileError> {
+type OperatorFiles = (Accounts, Keys, DashboardToken, Proxies);
+
+fn operator_files(home: &OperatorHome) -> Result<OperatorFiles, FileError> {
     let accounts = Accounts::load(&home.path().join(accounts::FILE))?;
     let keys = Keys::load(&home.path().join(keys::FILE))?;
     let dashboard = DashboardToken::load(home.path())?;
-    Ok((accounts, keys, dashboard))
+    let proxies = Proxies::load(&home.path().join(proxy::FILE))?;
+    Ok((accounts, keys, dashboard, proxies))
+}
+
+/// Every proxy's password and username, for the redactor (SC-008).
+fn proxy_secrets(proxies: &Proxies) -> Vec<SecretString> {
+    proxies.iter().flat_map(proxy::Proxy::secrets).collect()
 }
 
 fn assemble(
     registry: Arc<Registry>,
-    (mut accounts, keys, dashboard): (Accounts, Keys, DashboardToken),
+    (mut accounts, keys, dashboard, proxies): OperatorFiles,
     redactor: Arc<SharedRedactor>,
     tokens: Arc<TokenCells>,
     live_models: Arc<LiveModels>,
@@ -177,8 +197,24 @@ fn assemble(
         })
         .collect();
     let http = upstream::client(registry.runtime().allow_private_endpoints);
+    let clients = crate::connection::clients::Clients::new(
+        registry.runtime().allow_private_endpoints,
+        proxies,
+    );
     (
-        EngineState { registry, accounts, keys, dashboard, redactor, tokens, live_models, styles, http, generation },
+        EngineState {
+            registry,
+            accounts,
+            keys,
+            dashboard,
+            redactor,
+            tokens,
+            live_models,
+            styles,
+            http,
+            clients,
+            generation,
+        },
         report,
     )
 }
@@ -245,7 +281,7 @@ impl Engine {
     /// harness. A harness with no built-in and nothing installed gets a runner that records
     /// `not_run` (`no_approved_version`) and changes nothing.
     pub fn runner_for(&self, st: &EngineState, key_id: &str) -> Option<AdapterRunner> {
-        let name = st.keys.iter().find(|k| k.id == key_id)?.harness.as_ref()?;
+        let name = st.keys.iter().find(|k| k.id == key_id)?.adapter.as_ref()?;
         if let Some(r) = self.runners.load().get(name.as_str()) {
             return Some(r.clone());
         }
@@ -270,7 +306,7 @@ impl Engine {
         home: OperatorHome,
         open: impl FnOnce(OperatorHome) -> Result<RegistryHandle, StartupError>,
     ) -> Result<(Self, StateReport), StateError> {
-        let (accounts, keys, dashboard) = operator_files(&home)?;
+        let (accounts, keys, dashboard, proxies) = operator_files(&home)?;
         let tokens = Arc::new(TokenCells::load(home.path())?);
         let history = Arc::new(crate::quota::history::History::open(home.path()));
         let quota = crate::quota::poll::QuotaBoard::default();
@@ -282,16 +318,23 @@ impl Engine {
             crate::journal::Journal::start(registry.home().path(), Default::default())
                 .map_err(|e| StateError::Journal(e.to_string()))?,
         );
+        let (verdicts, replay) = crate::verdict::Board::open(registry.home().path(), journal.clone());
+        if replay.malformed > 0 {
+            tracing::warn!("routing/verdicts.jsonl: {} malformed lines skipped", replay.malformed);
+        }
         let live_models = Arc::new(LiveModels::default());
-        let shared_redactor = Arc::new(SharedRedactor::new(Redactor::for_state(&accounts, &tokens)));
+        let shared_redactor =
+            Arc::new(SharedRedactor::new(Redactor::for_state_with(&accounts, &tokens, &proxy_secrets(&proxies))));
         let (state, report) = assemble(
             registry.snapshot(),
-            (accounts, keys, dashboard),
+            (accounts, keys, dashboard, proxies),
             shared_redactor.clone(),
             tokens.clone(),
             live_models.clone(),
             1,
         );
+        let proxy_board = ProxyBoard::open(registry.home().path());
+        proxy_board.reconcile(&crate::connection::fingerprints(&state));
         let redactor = Arc::new(ArcSwap::new(shared_redactor.current()));
         let engine = Self {
             registry,
@@ -303,6 +346,8 @@ impl Engine {
             journal,
             router,
             cooldowns: Cooldowns::default(),
+            live: Default::default(),
+            proxy_board,
             jobs: crate::jobs::JobMap::default(),
             tokens,
             sessions: AgentSessions::default(),
@@ -310,6 +355,8 @@ impl Engine {
             quota,
             history,
             live_models,
+            verdicts,
+            test_gate: Default::default(),
             changed: tokio::sync::Notify::new(),
             status: Default::default(),
             install_id: OnceLock::new(),
@@ -321,6 +368,7 @@ impl Engine {
         let st = engine.snapshot();
         let restored = crate::route::restore(&engine, &st, crate::clock::now());
         tracing::info!("routing state restored: {} fingerprints, {} ledgers", restored.fingerprints, restored.ledgers);
+        engine.recheck_verdicts(&st);
         Ok((engine, report))
     }
 
@@ -353,7 +401,7 @@ impl Engine {
     /// registry is touched, so any failure leaves everything as it was. Blocking.
     pub fn reload_blocking(&self) -> Result<StateReport, StateError> {
         let _guard = self.reload.lock().unwrap_or_else(|e| e.into_inner());
-        let (accounts, keys, dashboard) = operator_files(self.registry.home())?;
+        let (accounts, keys, dashboard, proxies) = operator_files(self.registry.home())?;
         let tokens = self.tokens.changed(self.registry.home().path())?;
         self.registry.reload().map_err(|e| StateError::Registry(e.to_string()))?;
         accounts.check_routing(&self.registry.snapshot())?;
@@ -376,9 +424,9 @@ impl Engine {
             Some((store, _)) => {
                 let incoming =
                     store.entries.iter().flat_map(|e| std::iter::once(&e.access_token).chain(&e.refresh_token));
-                self.swap_redactor(self.build_redactor(&accounts, incoming));
+                self.swap_redactor(self.build_redactor(&accounts, &proxies, incoming));
             }
-            None => self.swap_redactor(self.build_redactor(&accounts, std::iter::empty())),
+            None => self.swap_redactor(self.build_redactor(&accounts, &proxies, std::iter::empty())),
         }
         if let Some((store, at)) = tokens {
             self.tokens.apply(store, at);
@@ -386,13 +434,14 @@ impl Engine {
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let (state, report) = assemble(
             self.registry.snapshot(),
-            (accounts, keys, dashboard),
+            (accounts, keys, dashboard, proxies),
             self.shared_redactor.clone(),
             self.tokens.clone(),
             self.live_models.clone(),
             generation,
         );
-        self.swap_redactor(self.build_redactor(&state.accounts, std::iter::empty()));
+        self.swap_redactor(self.build_redactor(&state.accounts, state.clients.proxies(), std::iter::empty()));
+        self.proxy_board.reconcile(&crate::connection::fingerprints(&state));
         // An account that was added, enabled again or given a new priority starts its deficit at 0
         // (spec 006).
         let fresh: Vec<String> = state
@@ -421,8 +470,10 @@ impl Engine {
         for (provider, name) in &removed {
             crate::route::drop_account(self, &state, provider, name, SystemTime::now());
         }
-        self.state.store(Arc::new(state));
+        let state = Arc::new(state);
+        self.state.store(state.clone());
         self.refresh_adapters();
+        self.recheck_verdicts(&state);
         self.changed.notify_one();
         Ok(report)
     }
@@ -433,8 +484,18 @@ impl Engine {
     pub fn rebuild_redactor(&self) {
         let _guard = self.reload.lock().unwrap_or_else(|e| e.into_inner());
         let st = self.snapshot();
-        self.swap_redactor(self.build_redactor(&st.accounts, std::iter::empty()));
+        self.swap_redactor(self.build_redactor(&st.accounts, st.clients.proxies(), std::iter::empty()));
+        self.recheck_verdicts(&st);
         self.changed.notify_one();
+    }
+
+    /// Returns to untested every verdict whose account, sign-in or plugin changed, or whose
+    /// account or provider is gone (research R7).
+    fn recheck_verdicts(&self, st: &EngineState) {
+        let cleared = crate::verdict::recheck(self, st, crate::clock::now());
+        if cleared > 0 {
+            tracing::info!("{cleared} model verdicts back to untested: their account or plugin changed");
+        }
     }
 
     /// Adds `secrets` to the redactor before they go into a token cell (security review
@@ -443,12 +504,18 @@ impl Engine {
     pub fn admit_secrets<'a>(&self, secrets: impl IntoIterator<Item = &'a SecretString>) {
         let _guard = self.reload.lock().unwrap_or_else(|e| e.into_inner());
         let st = self.snapshot();
-        self.swap_redactor(self.build_redactor(&st.accounts, secrets));
+        self.swap_redactor(self.build_redactor(&st.accounts, st.clients.proxies(), secrets));
     }
 
     /// Every key-account secret in `accounts`, every token-cell generation, the retired
     /// secrets, and `extra`.
-    fn build_redactor<'a>(&self, accounts: &Accounts, extra: impl IntoIterator<Item = &'a SecretString>) -> Redactor {
+    fn build_redactor<'a>(
+        &self,
+        accounts: &Accounts,
+        proxies: &Proxies,
+        extra: impl IntoIterator<Item = &'a SecretString>,
+    ) -> Redactor {
+        let proxy_secrets = proxy_secrets(proxies);
         let views = self.tokens.views();
         let retired = self.retired.lock().unwrap_or_else(|e| e.into_inner());
         let mut all: Vec<&SecretString> = accounts
@@ -456,6 +523,7 @@ impl Engine {
             .filter_map(|a| a.secret.as_ref())
             .chain(views.iter().flat_map(|v| v.secrets()))
             .chain(retired.iter())
+            .chain(proxy_secrets.iter())
             .collect();
         for s in extra {
             all.push(s);

@@ -14,7 +14,7 @@ use common::*;
 use nullrouter_engine::classify::{self, Budget};
 use nullrouter_engine::records::{AttemptKind, ErrorClass};
 use nullrouter_engine::testkit::Step;
-use nullrouter_registry::schema::RetryOverride;
+use nullrouter_registry::schema::{RetryOverride, RetrySettings};
 use serde_json::json;
 
 fn b(retries: u32, secs: u64) -> Budget {
@@ -22,7 +22,7 @@ fn b(retries: u32, secs: u64) -> Budget {
 }
 
 fn default(status: Option<u16>, verdict: classify::Verdict, indicated: Option<Duration>) -> Budget {
-    classify::budget(status, &verdict, indicated, &BTreeMap::new())
+    classify::budget(status, &verdict, indicated, &RetrySettings::default(), &BTreeMap::new())
 }
 
 #[test]
@@ -66,9 +66,57 @@ fn a_plugin_override_wins_for_its_status() {
     let mut o = BTreeMap::new();
     o.insert("503".to_owned(), RetryOverride { retries: 5, delay_ms: 10 });
     let v = classify::upstream(503, "boom");
-    assert_eq!(classify::budget(Some(503), &v, None, &o), Budget { retries: 5, delay: Duration::from_millis(10) });
+    assert_eq!(classify::budget(Some(503), &v, None, &RetrySettings::default(), &o), Budget { retries: 5, delay: Duration::from_millis(10) });
     let v = classify::upstream(502, "boom");
-    assert_eq!(classify::budget(Some(502), &v, None, &o), b(3, 3), "other statuses keep the table");
+    assert_eq!(classify::budget(Some(502), &v, None, &RetrySettings::default(), &o), b(3, 3), "other statuses keep the table");
+}
+
+fn over(retries: u32, delay_ms: u64) -> RetryOverride {
+    RetryOverride { retries, delay_ms }
+}
+
+fn budget_of(status: u16, indicated: Option<Duration>, operator: &RetrySettings, plugin: &[(&str, RetryOverride)]) -> Budget {
+    let plugin: BTreeMap<String, RetryOverride> = plugin.iter().map(|(k, v)| ((*k).to_owned(), *v)).collect();
+    classify::budget(Some(status), &classify::upstream(status, "boom"), indicated, operator, &plugin)
+}
+
+#[test]
+fn the_operator_status_beats_the_operator_all_beats_the_plugin_beats_the_table() {
+    let plugin = [("503", over(1, 100))];
+    let both = RetrySettings {
+        all: Some(over(2, 200)),
+        by_status: [("503".to_owned(), over(4, 400))].into(),
+    };
+    let all_only = RetrySettings { all: Some(over(2, 200)), ..Default::default() };
+    let none = RetrySettings::default();
+    let ms = Duration::from_millis;
+    assert_eq!(budget_of(503, None, &both, &plugin), Budget { retries: 4, delay: ms(400) }, "operator status");
+    assert_eq!(budget_of(503, None, &all_only, &plugin), Budget { retries: 2, delay: ms(200) }, "operator all");
+    assert_eq!(budget_of(502, None, &all_only, &plugin), Budget { retries: 2, delay: ms(200) }, "all covers every status");
+    assert_eq!(budget_of(503, None, &none, &plugin), Budget { retries: 1, delay: ms(100) }, "plugin status");
+    assert_eq!(budget_of(503, None, &none, &[]), b(3, 2), "the table");
+}
+
+#[test]
+fn a_short_retry_after_still_replaces_the_wait_on_a_429() {
+    let ms = Duration::from_millis;
+    let operator = RetrySettings { all: Some(over(2, 9000)), ..Default::default() };
+    assert_eq!(budget_of(429, Some(ms(1500)), &operator, &[]), Budget { retries: 2, delay: ms(1500) });
+    assert_eq!(budget_of(429, Some(Duration::from_secs(6)), &operator, &[]), Budget { retries: 2, delay: ms(9000) });
+    assert_eq!(budget_of(429, None, &operator, &[]), Budget { retries: 2, delay: ms(9000) });
+    assert_eq!(budget_of(503, Some(ms(1500)), &operator, &[]), Budget { retries: 2, delay: ms(9000) }, "only a 429");
+}
+
+#[test]
+fn the_cap_holds_for_operator_and_plugin_values() {
+    assert!(over(5, 30_000).check().is_ok() && over(0, 0).check().is_ok());
+    assert!(over(6, 0).check().unwrap_err().contains("0-5"));
+    assert!(over(1, 30_001).check().unwrap_err().contains("0-30000"));
+    let toml = |body: &str| toml::from_str::<std::collections::BTreeMap<String, RetrySettings>>(body);
+    assert!(toml("[a]\nall = { retries = 6 }\n").is_err());
+    assert!(toml("[a]\n\"503\" = { retries = 1, delay_ms = 30001 }\n").is_err());
+    assert!(toml("[a]\n\"5xx\" = { retries = 1 }\n").unwrap_err().to_string().contains("3-digit"));
+    assert!(toml("[a]\nall = { retries = 5, delay_ms = 30000 }\n\"429\" = { retries = 0 }\n").is_ok());
 }
 
 #[test]

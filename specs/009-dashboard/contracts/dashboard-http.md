@@ -8,7 +8,7 @@ no scripts anywhere (FR-004).
 
 - Headers (research R8): `Content-Security-Policy: default-src 'none'; style-src 'self';
   font-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
-  `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, `X-Content-Type-Options: nosniff`,
   `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: no-store`. Assets and logos:
   `Cache-Control: public, max-age=86400, immutable` under a content-hashed path.
 - A `Host` other than the dashboard's own (`127.0.0.1:<port>`, `localhost:<port>`, `[::1]:<port>`,

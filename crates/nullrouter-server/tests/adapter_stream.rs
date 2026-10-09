@@ -66,7 +66,7 @@ fn install(s: &Server, select: &str, wasm: &[u8]) {
     s.engine.open_adapters().unwrap();
     let path = s.home().join("keys.toml");
     let mut keys = Keys::load(&path).unwrap();
-    keys.set_harness("laptop", Some(HarnessName::new("acme").unwrap())).unwrap();
+    keys.set_adapter("laptop", Some(HarnessName::new("acme").unwrap())).unwrap();
     keys.save().unwrap();
     s.engine.reload_blocking().unwrap();
 }

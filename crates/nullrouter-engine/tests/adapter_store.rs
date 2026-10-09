@@ -67,7 +67,7 @@ fn key(s: &Setup, harness: &str) -> String {
     let path = s._dir.path().join("keys.toml");
     let mut keys = Keys::load(&path).unwrap();
     let id = keys.issue("k0", None).unwrap().1.id.clone();
-    keys.set_harness(&id, Some(nullrouter_engine::keys::HarnessName::new(harness).unwrap())).unwrap();
+    keys.set_adapter(&id, Some(nullrouter_engine::keys::HarnessName::new(harness).unwrap())).unwrap();
     keys.save().unwrap();
     s.engine.reload_blocking().unwrap();
     id

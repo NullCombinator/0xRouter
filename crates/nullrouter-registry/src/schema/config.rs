@@ -7,8 +7,10 @@ use serde::Deserialize;
 use serde::de::{Deserializer, Error as _};
 
 use super::duration::{de_duration, parse_duration};
+use super::endpoint::RetryOverride;
 use super::enums::ModelKind;
 use super::primitives::BreakBehaviour;
+use crate::validate::FieldPath;
 
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -16,6 +18,9 @@ pub struct OperatorConfig {
     pub schema: Option<i64>,
     #[serde(default)]
     pub unified_model: Vec<UnifiedModelDecl>,
+    /// `[[combo]]` (spec 011): ordered fallback chains of unified models or other combos.
+    #[serde(default)]
+    pub combo: Vec<ComboDecl>,
     #[serde(default)]
     pub provider: BTreeMap<String, ProviderSettings>,
     #[serde(default)]
@@ -33,6 +38,246 @@ pub struct OperatorConfig {
     pub dashboard: DashboardSettings,
     #[serde(default)]
     pub adapters: AdaptersSettings,
+    /// `[connection]`: settings for every provider (spec 013).
+    #[serde(default)]
+    pub connection: GlobalConnection,
+    /// `[tests]` (spec 011): retest schedule, test timeouts and the test-call limit.
+    #[serde(default)]
+    pub tests: TestSettings,
+}
+
+/// `[tests]` (spec 011 data-model § Test settings). Serde parses the durations; the range rules
+/// are in [`TestSettings::check`], so a load reports them at their position.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TestSettings {
+    /// Waits after an UNKNOWN; the last one repeats until the verdict settles.
+    #[serde(default = "default_retest", deserialize_with = "de_durations")]
+    pub retest: Vec<Duration>,
+    /// How often a BROKEN verdict from a test is retested; `None` is `"off"`.
+    #[serde(default, deserialize_with = "de_broken_retest")]
+    pub broken_retest: Option<Duration>,
+    /// Test calls at once, retests included.
+    #[serde(default = "default_concurrency")]
+    pub concurrency: u32,
+    #[serde(default)]
+    pub timeout: TestTimeouts,
+}
+
+impl Default for TestSettings {
+    fn default() -> Self {
+        Self {
+            retest: default_retest(),
+            broken_retest: None,
+            concurrency: default_concurrency(),
+            timeout: TestTimeouts::default(),
+        }
+    }
+}
+
+/// `"on"`: a BROKEN verdict is retested once a day.
+pub const BROKEN_RETEST_ON: Duration = Duration::from_secs(24 * 3600);
+
+fn default_retest() -> Vec<Duration> {
+    [60, 300, 1800, 6 * 3600].into_iter().map(Duration::from_secs).collect()
+}
+
+fn default_concurrency() -> u32 {
+    4
+}
+
+fn de_durations<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<Duration>, D::Error> {
+    Vec::<String>::deserialize(d)?.iter().map(|s| parse_duration(s).map_err(D::Error::custom)).collect()
+}
+
+fn de_broken_retest<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
+    parse_broken_retest(&String::deserialize(d)?).map_err(D::Error::custom)
+}
+
+/// `"off"`, `"on"` or a duration, as `[tests] broken_retest` takes it. The 1 h floor is checked
+/// by [`TestSettings::check`].
+pub fn parse_broken_retest(s: &str) -> Result<Option<Duration>, String> {
+    match s {
+        "off" => Ok(None),
+        "on" => Ok(Some(BROKEN_RETEST_ON)),
+        _ => parse_duration(s).map(Some).map_err(|_| "\"off\", \"on\" or at least 1h".to_owned()),
+    }
+}
+
+/// The model types a test timeout is set for.
+pub const TEST_TYPES: [&str; 6] = ["text", "embedding", "tts", "stt", "image", "video"];
+
+/// `[tests.timeout]`: how long one test call of each type may take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TestTimeouts {
+    pub text: Duration,
+    pub embedding: Duration,
+    pub tts: Duration,
+    pub stt: Duration,
+    pub image: Duration,
+    pub video: Duration,
+}
+
+impl Default for TestTimeouts {
+    fn default() -> Self {
+        let s30 = Duration::from_secs(30);
+        let m5 = Duration::from_secs(300);
+        Self { text: s30, embedding: s30, tts: s30, stt: s30, image: m5, video: m5 }
+    }
+}
+
+impl TestTimeouts {
+    /// The timeout for a model of `kind`; an untyped model or any other kind is tested as text.
+    pub fn for_kind(&self, kind: Option<ModelKind>) -> Duration {
+        match kind {
+            Some(ModelKind::Embedding) => self.embedding,
+            Some(ModelKind::Tts) => self.tts,
+            Some(ModelKind::Stt) => self.stt,
+            Some(ModelKind::Image) => self.image,
+            Some(ModelKind::Video) => self.video,
+            _ => self.text,
+        }
+    }
+
+    /// The timeout named by one of [`TEST_TYPES`].
+    pub fn get_mut(&mut self, ty: &str) -> Option<&mut Duration> {
+        Some(match ty {
+            "text" => &mut self.text,
+            "embedding" => &mut self.embedding,
+            "tts" => &mut self.tts,
+            "stt" => &mut self.stt,
+            "image" => &mut self.image,
+            "video" => &mut self.video,
+            _ => return None,
+        })
+    }
+
+    fn named(&self) -> [(&'static str, Duration); 6] {
+        [
+            ("text", self.text),
+            ("embedding", self.embedding),
+            ("tts", self.tts),
+            ("stt", self.stt),
+            ("image", self.image),
+            ("video", self.video),
+        ]
+    }
+}
+
+impl<'de> Deserialize<'de> for TestTimeouts {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mut out = Self::default();
+        for (ty, v) in BTreeMap::<String, String>::deserialize(d)? {
+            let slot = out.get_mut(&ty).ok_or_else(|| D::Error::custom(format!("unknown type {ty:?}")))?;
+            *slot = parse_duration(&v).map_err(|e| D::Error::custom(format!("{ty}: {e}")))?;
+        }
+        Ok(out)
+    }
+}
+
+impl TestSettings {
+    /// The range rules of contracts/config-and-plugins.md, as `(path under tests, rule)`.
+    pub fn check(&self) -> Vec<(FieldPath, String)> {
+        let at = FieldPath::of("tests");
+        let mut out = Vec::new();
+        if self.retest.is_empty() || self.retest.len() > 10 {
+            out.push((at.key("retest"), "1 to 10 steps".into()));
+        }
+        for (k, step) in self.retest.iter().enumerate() {
+            if *step < Duration::from_secs(30) {
+                out.push((at.key("retest").index(k), "at least 30s".into()));
+            } else if k > 0 && *step < self.retest[k - 1] {
+                out.push((at.key("retest").index(k), "steps must not get shorter".into()));
+            }
+        }
+        if self.broken_retest.is_some_and(|d| d < Duration::from_secs(3600)) {
+            out.push((at.key("broken_retest"), "\"off\", \"on\" or at least 1h".into()));
+        }
+        if !(1..=32).contains(&self.concurrency) {
+            out.push((at.key("concurrency"), "1 to 32".into()));
+        }
+        for (ty, d) in self.timeout.named() {
+            if d < Duration::from_secs(5) || d > Duration::from_secs(1800) {
+                out.push((at.key("timeout").key(ty), "5s to 30m".into()));
+            }
+        }
+        out
+    }
+}
+
+/// The longest timeout an operator or a plugin may set: one hour.
+pub const MAX_TIMEOUT_MS: u64 = 3_600_000;
+
+/// The rule for a timeout: 1–3 600 000 ms, or 0 for a first-token timeout (off).
+pub fn check_timeout_ms(v: u64, allow_off: bool) -> Result<(), String> {
+    match v {
+        0 if allow_off => Ok(()),
+        1..=MAX_TIMEOUT_MS => Ok(()),
+        _ if allow_off => Err(format!("{v} ms is out of range; use 1-{MAX_TIMEOUT_MS}, or 0 for off")),
+        _ => Err(format!("{v} ms is out of range; use 1-{MAX_TIMEOUT_MS}")),
+    }
+}
+
+fn de_timeout<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
+    let v = Option::<u64>::deserialize(d)?;
+    v.map_or(Ok(()), |v| check_timeout_ms(v, false)).map_err(D::Error::custom)?;
+    Ok(v)
+}
+
+fn de_timeout_or_off<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
+    let v = Option::<u64>::deserialize(d)?;
+    v.map_or(Ok(()), |v| check_timeout_ms(v, true)).map_err(D::Error::custom)?;
+    Ok(v)
+}
+
+/// `[connection]`: only the proxy applies to every provider.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GlobalConnection {
+    /// A proxy name from `proxies.toml`, or `"none"`.
+    pub proxy: Option<String>,
+}
+
+/// `[provider.P.connection]`: how requests to one provider are sent (spec 013). Absent keys
+/// fall through to the plugin's declaration, then the built-in default.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectionSettings {
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub connect_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub header_timeout_ms: Option<u64>,
+    /// 0 = off.
+    #[serde(default, deserialize_with = "de_timeout_or_off")]
+    pub first_token_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub stall_timeout_ms: Option<u64>,
+    pub reuse: Option<bool>,
+    pub http2: Option<bool>,
+    /// A proxy name from `proxies.toml`, or `"none"`.
+    pub proxy: Option<String>,
+}
+
+/// `[provider.P.model."M".connection]`: timeouts only.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelConnection {
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub connect_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub header_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout_or_off")]
+    pub first_token_timeout_ms: Option<u64>,
+    #[serde(default, deserialize_with = "de_timeout")]
+    pub stall_timeout_ms: Option<u64>,
+}
+
+/// `[provider.P.model."M"]`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelSettings {
+    #[serde(default)]
+    pub connection: ModelConnection,
 }
 
 /// `[adapters]` (spec 004): where the catalogue and builder are, and the sandbox's limits.
@@ -238,6 +483,15 @@ pub struct UnifiedModelDecl {
     pub members: Vec<MemberDecl>,
 }
 
+/// A `[[combo]]` (spec 011 data-model § Combo): members are unified model or combo names,
+/// tried in order.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComboDecl {
+    pub name: String,
+    pub members: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MemberDecl {
@@ -246,16 +500,50 @@ pub struct MemberDecl {
 }
 
 /// Operator settings for one provider. Keyed by provider id, so they survive a replace.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderSettings {
     #[serde(default = "yes")]
     pub allow_uncatalogued_models: bool,
+    #[serde(default)]
+    pub connection: ConnectionSettings,
+    /// `[provider.P.retry]`: same-account retries (spec 013, US6).
+    #[serde(default)]
+    pub retry: RetrySettings,
+    /// Model id → that model's settings.
+    #[serde(default)]
+    pub model: BTreeMap<String, ModelSettings>,
 }
 
 impl Default for ProviderSettings {
     fn default() -> Self {
-        Self { allow_uncatalogued_models: true }
+        Self {
+            allow_uncatalogued_models: true,
+            connection: ConnectionSettings::default(),
+            retry: RetrySettings::default(),
+            model: BTreeMap::new(),
+        }
+    }
+}
+
+/// `[provider.P.retry]`: `all` for every status, and a 3-digit status key for one.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RetrySettings {
+    pub all: Option<RetryOverride>,
+    pub by_status: BTreeMap<String, RetryOverride>,
+}
+
+impl<'de> Deserialize<'de> for RetrySettings {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mut table = BTreeMap::<String, RetryOverride>::deserialize(d)?;
+        for (key, o) in &table {
+            if key != "all" && !(key.len() == 3 && key.bytes().all(|b| b.is_ascii_digit())) {
+                return Err(D::Error::custom(format!("{key:?}: a status key is a 3-digit HTTP status, or `all`")));
+            }
+            o.check().map_err(|e| D::Error::custom(format!("{key}: {e}")))?;
+        }
+        let all = table.remove("all");
+        Ok(Self { all, by_status: table })
     }
 }
 
@@ -350,6 +638,24 @@ mod tests {
             assert!(toml::from_str::<OperatorConfig>(&format!("[dashboard]\nlisten = \"{bad}\"\n")).is_err(), "{bad}");
         }
         assert!(toml::from_str::<OperatorConfig>("[dashboard]\nport = 1\n").is_err());
+    }
+
+    #[test]
+    fn test_settings() {
+        let c: OperatorConfig = toml::from_str("").unwrap();
+        assert_eq!(c.tests, TestSettings::default());
+        assert_eq!(c.tests.retest.len(), 4);
+        assert_eq!(c.tests.timeout.for_kind(Some(ModelKind::Video)), Duration::from_secs(300));
+        assert_eq!(c.tests.timeout.for_kind(None), Duration::from_secs(30));
+        assert!(c.tests.check().is_empty());
+        let c: OperatorConfig =
+            toml::from_str("[tests]\nbroken_retest = \"on\"\n[tests.timeout]\nimage = \"10m\"\n").unwrap();
+        assert_eq!(c.tests.broken_retest, Some(BROKEN_RETEST_ON));
+        assert_eq!(c.tests.timeout.image, Duration::from_secs(600));
+        let err = toml::from_str::<OperatorConfig>("[tests.timeout]\naudio = \"1m\"\n").unwrap_err().to_string();
+        assert!(err.contains("unknown type \"audio\""), "{err}");
+        let err = toml::from_str::<OperatorConfig>("[tests]\nbroken_retest = \"sometimes\"\n").unwrap_err().to_string();
+        assert!(err.contains("\"off\", \"on\" or at least 1h"), "{err}");
     }
 
     #[test]

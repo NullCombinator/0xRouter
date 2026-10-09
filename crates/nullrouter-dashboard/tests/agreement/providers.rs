@@ -7,7 +7,7 @@ use nullrouter_dashboard::page::ViewName;
 use nullrouter_dashboard::pages::providers::{CUSTOM, SECTIONS, section_of};
 use serde_json::{Value, json};
 
-use crate::common::{Dash, assert_fields, assert_shows, text_of};
+use crate::common::{Dash, assert_fields, assert_shows, home_with_traffic, text_of};
 
 fn rows(v: &Value) -> &[Value] {
     v.as_array().expect("a list view").as_slice()
@@ -114,7 +114,8 @@ async fn a_window_agrees_with_accounts_list_and_model() {
             let model = m["model"].as_str().unwrap();
             let cli = d.view(ViewName::Model, json!({"provider": id, "model": model})).await;
             assert_eq!(&cli, m, "{id}/{model}: the list is what `model <provider> <model>` prints");
-            let keys = ["model", "name", "kind", "target_format", "supported_formats", "quota_family", "strip", "upstream_id"];
+            let keys =
+                ["model", "name", "kind", "target_format", "supported_formats", "quota_family", "strip", "upstream_id"];
             assert_fields(&html, &cli, &keys, &format!("{id}/{model}"));
         }
         assert_eq!(html.matches("class=\"model-row\"").count(), listed.len(), "{id}: every model, none extra");
@@ -152,4 +153,36 @@ async fn the_plugins_panel_agrees_with_plugins_list_community() {
         assert!(row.contains("bundled") && row.contains(r["status"].as_str().unwrap()), "{id}: {row}");
         assert_shows(&html, &r["id"], "plugin id");
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_window_shows_the_last_response_latency_reports() {
+    let d = Dash::start(home_with_traffic()).await;
+    let latency = d.view(ViewName::Latency, json!({})).await;
+    let with_row = rows(&latency["providers"]);
+    assert!(!with_row.is_empty(), "the home has traffic: {latency}");
+    for p in with_row {
+        let id = p["id"].as_str().unwrap();
+        let html = d.ok(&format!("/providers/{id}")).await;
+        let text = text_of(&html);
+        let last = &p["last"];
+        assert!(text.contains(&format!("Last response {}", last["result"].as_str().unwrap())), "{id}: {text}");
+        assert!(
+            crate::common::shows_instant(&html, last["at"].as_str().unwrap()),
+            "{id}: the instant is on the window"
+        );
+        if let Some(status) = last["status"].as_u64() {
+            assert!(text.contains(&format!("· {status}")), "{id}: status {status}");
+        }
+        assert!(!text.contains("None in the last 24 hours"), "{id}");
+    }
+    // A provider with no row in the window says so.
+    let providers = d.view(ViewName::Providers, json!({})).await;
+    let quiet = rows(&providers)
+        .iter()
+        .filter_map(|p| p["id"].as_str())
+        .find(|id| with_row.iter().all(|r| r["id"] != *id))
+        .expect("a provider without traffic");
+    let text = text_of(&d.ok(&format!("/providers/{quiet}")).await);
+    assert!(text.contains("Last response None in the last 24 hours"), "{quiet}: {text}");
 }

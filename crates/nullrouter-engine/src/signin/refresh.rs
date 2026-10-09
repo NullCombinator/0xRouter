@@ -324,8 +324,15 @@ impl Engine {
             return Refreshed::Transient(format!("provider {provider} isn't loaded"));
         };
         let allow_private = st.settings().allow_private_endpoints;
-        let http =
-            SignInHttp::with_client(st.http.clone(), allow_private).with_timeout(self.refresher.timing().timeout);
+        let account = st.accounts.get(provider, name);
+        if let Some(proxy) = crate::connection::paused_for(&self.proxy_board, &st, provider, account) {
+            return Refreshed::Transient(format!("proxy {proxy} paused"));
+        }
+        let client = match crate::connection::client_for(&st, provider, account) {
+            Ok((client, _)) => client,
+            Err(e) => return Refreshed::Transient(e.to_string()),
+        };
+        let http = SignInHttp::with_client(client, allow_private).with_timeout(self.refresher.timing().timeout);
         let result = refresh(&http, entity, &view.entry).await;
         let now = SystemTime::now();
         match result {

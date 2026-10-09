@@ -44,7 +44,7 @@ warning.
 ## 2. hermes (US1, FR-006–FR-009, SC-001)
 
 ```bash
-nr keys issue hermes-desktop --harness hermes         # prints the key once
+nr keys issue hermes-desktop --adapter hermes         # prints the key once
 cargo test -p nullrouter-adapters --test hermes        # images, attachments, echoed reasoning
 ```
 
@@ -66,7 +66,7 @@ nr adapters show noop                                  # quarantined: no_review_
 nr adapters review-settings --model claude-sonnet --budget 60000
 nr adapters review noop <version> --retry              # → reported (live model)
 nr adapters approve noop <version>
-nr keys issue test-agent --harness noop
+nr keys issue test-agent --adapter noop
 ```
 
 **Expected**:
@@ -148,7 +148,7 @@ Live, opt-in, with the builder and a review model:
 nr catalogue install claude-code          # or: nr adapters install adapters/community/claude-code
 nr adapters review claude-code <version> --retry
 nr adapters approve claude-code <version>
-nr keys issue cc-laptop --harness claude-code
+nr keys issue cc-laptop --adapter claude-code
 NR_LIVE=1 cargo test -p nullrouter-server --test harness_claude_code -- --ignored
 ```
 

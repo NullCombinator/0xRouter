@@ -5,7 +5,7 @@ use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use nullrouter_registry::schema::{InputSemantics, ModelType, RouteOp};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::keys::AgentId;
@@ -91,7 +91,7 @@ impl Usage {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AttemptKind {
     Initial,
@@ -123,6 +123,8 @@ pub enum ErrorClass {
     Refused,
     /// A sign-in account whose expired token is being refreshed.
     TokenRefreshing,
+    /// A pair a test or the operator found BROKEN: skipped without an attempt (spec 011).
+    Broken,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -167,6 +169,93 @@ pub struct Attempt {
     /// the key has no harness.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adapter: Option<AdapterRun>,
+    /// The combo path to this attempt's unified model, `coder › fallback-chain › gpt` (spec 011);
+    /// `None` outside a combo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member: Option<String>,
+    /// The attempt's marks (spec 013). `None` on records written before that slice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timing: Option<AttemptTiming>,
+}
+
+/// How an attempt got its connection.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Connection {
+    New,
+    Reused,
+    /// The attempt ended before a connection (skipped, refused at build).
+    #[default]
+    None,
+}
+
+/// The marks of one attempt, in milliseconds from the request's arrival (spec 013, data-model).
+/// Phases are derived from these by `phases::of`; nothing here is a duration except the spans.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AttemptTiming {
+    /// The deliberate wait before this same-account retry.
+    pub retry_wait_ms: Option<f64>,
+    /// Sign-in token refresh before this attempt; reported inside connect.
+    pub refresh_ms: Option<f64>,
+    /// Connection ready. `None` for a reused connection or one never reached.
+    pub connected: Option<f64>,
+    pub connection: Connection,
+    /// `"1.1"` or `"2"`, from the response.
+    pub http: Option<String>,
+    /// The proxy's name only.
+    pub proxy: Option<String>,
+    pub headers: Option<f64>,
+    pub first_output: Option<f64>,
+    /// Headers and first output arrived together.
+    pub merged_wait: bool,
+    pub upstream_done: Option<f64>,
+    /// Time the engine waited on the client channel during this attempt.
+    pub blocked_ms: f64,
+    /// The serving attempt only: the wait for the record's close line, inside delivery.
+    pub closing_ms: Option<f64>,
+    pub timeout: Option<TimeoutHit>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TimeoutKind {
+    Connect,
+    Headers,
+    FirstToken,
+    Stall,
+}
+
+/// The timeout that ended an attempt, and where its value came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimeoutHit {
+    pub which: TimeoutKind,
+    pub ms: u64,
+    pub source: Source,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Source {
+    pub by: SourceBy,
+    pub level: SourceLevel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceBy {
+    Operator,
+    Plugin,
+    BuiltIn,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceLevel {
+    Model,
+    Provider,
+    Endpoint,
+    Env,
+    Default,
 }
 
 /// Cleans an adapter run's client-derived strings with the redactor: control characters
@@ -242,6 +331,22 @@ pub struct RequestRecord {
     /// What the harness adapter did to the response, aggregated over its events (slice 004).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_adapter: Option<AdapterRun>,
+    /// Set on a model test's call (spec 011, FR-021): the run and what started it. A test
+    /// record has no agent and keeps no prompt or output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub test: Option<TestMark>,
+    /// The combo the client named, when it named one (spec 011).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub combo: Option<String>,
+}
+
+/// What marks a record as a model test's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TestMark {
+    /// The run's `tr_` id.
+    pub run: String,
+    /// `test`, `retest` or `combo_test`.
+    pub source: crate::verdict::Source,
 }
 
 impl RequestRecord {
@@ -265,6 +370,8 @@ impl RequestRecord {
             job: None,
             decision: None,
             response_adapter: None,
+            test: None,
+            combo: None,
         }
     }
 
@@ -482,6 +589,8 @@ mod tests {
             forced: Vec::new(),
             placement: None,
             adapter: None,
+            member: None,
+            timing: None,
         });
         r
     }

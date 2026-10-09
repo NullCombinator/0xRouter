@@ -165,3 +165,32 @@ async fn a_permanent_failure_persists_needs_sign_in() {
     assert!(stored.state_since.is_some());
     assert!(matches!(k.engine().tokens.get("p", "a").unwrap().state, AccountState::NeedsSignIn { .. }));
 }
+
+/// Spec 013, SC-003: a request whose account's token was refreshed for it reports the refresh
+/// inside the attempt (`refresh_ms`) and not as router overhead.
+// 010: router overhead = the first attempt's `started`, less a token refresh.
+#[tokio::test]
+async fn a_refresh_for_the_request_is_not_router_overhead() {
+    use nullrouter_engine::phases::{self, Phase, PhaseValue};
+
+    let k = kit(&[("p", Shape::Device, "5m")], &["a"], HOUR).await;
+    k.sign_in("p", "a", |e| {
+        e.expires_at = SystemTime::now() - Duration::from_secs(1);
+        e.signed_in_at = SystemTime::now() - HOUR;
+    });
+    let (id, res) = send(&k.s, "p/m1").await;
+    assert!(res.is_ok());
+    assert_eq!(k.idp.refresh_calls(), 1, "the request refreshed the token");
+    let r = settled(&k.s, &id).await;
+    let first = &r.attempts[0];
+    let refresh = first.timing.as_ref().and_then(|t| t.refresh_ms).expect("the refresh is recorded on the attempt");
+    assert!(refresh > 0.0);
+    let overhead = match phases::of(&r)[0].value(Phase::RouterOverhead) {
+        PhaseValue::Ms(v) => v,
+        other => panic!("{other:?}"),
+    };
+    assert!((overhead - (first.started - refresh).max(0.0)).abs() < 0.01, "{overhead} vs {} - {refresh}", first.started);
+    // The refresh shows up in connect, so the phases still add up to the total.
+    let sum: f64 = phases::of(&r).iter().map(|p| p.sum()).sum();
+    assert!((sum - r.total_ms.unwrap()).abs() <= 1.0, "{sum} vs {:?}", r.total_ms);
+}

@@ -72,12 +72,18 @@ four properties:
 - **Per-agent isolation** — concurrent callers of the same unified model MUST have fully
   independent cache bookkeeping; no cross-caller state.
 - **Windowed amortization** — over a configurable window, traffic spreads across providers
-  weighted by declared parameters (rate limits, quotas, offers). Plugins declare, the user
-  overrides.
+  weighted by declared parameters (rate limits, quotas, offers), corrected by what polls
+  prove. Plugins declare, polls correct once the evidence is significant, and the operator
+  overrides both. Precedence MUST be: operator override, then a significant fitted value,
+  then the plugin's declaration. Until a correction is significant, the declared or
+  overridden value MUST be used unchanged. Quota used outside 0router MUST NOT count as
+  evidence against a plugin's declaration.
 - **Priority order** — warm cache preference takes unconditional priority over amortization.
 
 **Rationale**: These four properties are the entire reason 0router exists. A routing
-implementation that omits or weakens any of them is not 0router.
+implementation that omits or weakens any of them is not 0router. A provider's polls are
+the source of truth for its quota: a plugin's wrong numbers must not fool the router for
+long, but noise and outside use must never be mistaken for a wrong number.
 
 ---
 
@@ -92,7 +98,8 @@ abstractions — not per-modality endpoints.
   offers that capability.
 - A **unified model** is a named target that gathers one or more provider entities
   offering the same model. Clients route to a unified model; the router selects the
-  provider based on cache state, amortization, and declared weights.
+  provider based on cache state, amortization, and declared weights as corrected by polls
+  (II).
 - **Combos** are policies over unified models (e.g. fallback chains, load-balancing
   groups). Nested combos are first-class. A combo can be tested with its own test suite,
   independent of the providers inside it.
@@ -199,12 +206,20 @@ That is a correctness failure with direct user impact and potential revenue cons
 
 Latency MUST be measured and surfaced — it is not a metric noticed retrospectively.
 The routing layer MUST instrument time-to-first-token (TTFT) and total request duration
-per provider, per unified model. These measurements feed the routing decision (cache-aware
-routing needs accurate latency history) and are surfaced in the dashboard.
+per provider, per unified model, from real traffic, and surface them to the operator.
+
+Latency measurements inform the operator; they MUST NOT change the routing decision by
+themselves. No provider, account, or unified-model member may be preferred, demoted,
+skipped, or reweighted because it was measured slow or fast. The operator acts on what
+latency shows through settings they control (priority, timeouts, and other connection
+settings). A request that exceeds a configured timeout is an attempt failure, classified
+and retried or failed over like any other failure (VI); that is not latency steering.
 
 **Rationale**: init.md lists "latency becomes something measured and visible, not something
-noticed" as a first-class goal. Observability is not a feature add-on; it is part of the
-routing contract.
+noticed" as a first-class goal. Observability is part of the routing contract, but routing
+stays predictable: the four properties in II decide where a request goes, and a latency
+signal that silently moved traffic would make that decision unexplainable and could undo
+warm-cache preference on noise. The operator, who knows why a provider is slow, decides.
 
 ---
 
@@ -265,7 +280,21 @@ guidance, PATCH for clarifications and wording fixes.
 or SSE streaming MUST reference the relevant principle(s) in its description. Reviewers
 MUST verify compliance before approving.
 
-**Version**: 3.0.1 | **Ratified**: 2026-09-26 | **Last Amended**: 2026-09-28
+**Version**: 4.0.0 | **Ratified**: 2026-09-26 | **Last Amended**: 2026-10-07
+
+**v4.0.0 changes (MAJOR)**: Redefined Latency Observability (VIII). Latency measurements
+no longer feed the routing decision: they inform the operator and MUST NOT prefer, demote,
+skip, or reweight anything by themselves. The operator acts through priority, timeouts,
+and other connection settings. A configured timeout remains an ordinary attempt failure.
+Measuring TTFT and total duration per provider and per unified model, from real traffic,
+is unchanged. The four Routing Fidelity properties (II) are unchanged.
+
+**v3.1.0 changes (MINOR)**: Expanded windowed amortization in Routing Fidelity (II). Polls
+now correct a plugin's declared quota parameters once the evidence is significant; the
+operator's override still wins, and until a correction is significant the declared or
+overridden value is used unchanged. Outside use never counts against a declaration.
+Unified Models (III) refers to the corrected weights. The four routing properties and the
+warm-first priority are unchanged.
 
 **v3.0.1 changes (PATCH)**: Clarified the optimizer pass-through in Scope Discipline (IV).
 It is guaranteed where the provider speaks the client's API style. Across styles, a field

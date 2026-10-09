@@ -49,8 +49,19 @@ impl Redactor {
     /// Every key account's secret, plus the current and previous access and refresh tokens
     /// of every sign-in account.
     pub fn for_state(accounts: &Accounts, tokens: &TokenCells) -> Self {
+        Self::for_state_with(accounts, tokens, &[])
+    }
+
+    /// [`for_state`](Self::for_state), plus `extra` (the proxies' passwords and usernames).
+    pub fn for_state_with(accounts: &Accounts, tokens: &TokenCells, extra: &[SecretString]) -> Self {
         let views = tokens.views();
-        Self::new(accounts.iter().filter_map(|a| a.secret.as_ref()).chain(views.iter().flat_map(|v| v.secrets())))
+        Self::new(
+            accounts
+                .iter()
+                .filter_map(|a| a.secret.as_ref())
+                .chain(views.iter().flat_map(|v| v.secrets()))
+                .chain(extra),
+        )
     }
 
     pub fn redact<'t>(&self, text: &'t str) -> Cow<'t, str> {

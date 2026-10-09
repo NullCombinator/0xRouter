@@ -15,6 +15,7 @@ exit: 0
   "skipped": [],
   "logos_ignored": [],
   "dropped_unified_models": [],
+  "dropped_combos": [],
   "limits_notes": [],
   "journal": {
     "kept": true,
@@ -39,6 +40,8 @@ exit: 0
     }
   ],
   "routing_warnings": [],
+  "paused_proxies": [],
+  "undefined_proxies": [],
   "notices": [
     {
       "level": "note",

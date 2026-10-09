@@ -287,6 +287,8 @@ share: edits, selectors, key binding, records.
   [contracts/operator-cli.md](contracts/operator-cli.md#commands).
   - `keys issue <name> --harness H`.
   - `keys set-harness <name|id> <H>` and `keys set-harness <name|id> --clear`.
+  - On merging main (2026-10-08) these became `--adapter` and `keys set-adapter`, and the field
+    `AgentKey.adapter`: slice 010 owns `harness` as a display-only tag (research R11).
   - A `harness` column in `keys list`.
   - Writes are atomic and followed by a reload.
 

@@ -34,6 +34,13 @@ pub struct Endpoint {
     /// Time to response headers.
     pub timeout_ms: Option<u64>,
     pub stall_timeout_ms: Option<u64>,
+    /// Time to the TCP/TLS connection.
+    pub connect_timeout_ms: Option<u64>,
+    /// Time from the response headers to the first model output; 0 = off.
+    pub first_token_timeout_ms: Option<u64>,
+    /// Only `false` has an effect: this endpoint's host doesn't speak HTTP/2, so the provider's
+    /// requests use HTTP/1.1.
+    pub http2: Option<bool>,
     #[serde(default)]
     pub force_stream: bool,
     #[serde(default)]
@@ -204,6 +211,24 @@ pub struct RetryOverride {
     pub retries: u32,
     #[serde(default)]
     pub delay_ms: u64,
+}
+
+/// The most same-account retries a plugin or an operator may set for one status.
+pub const MAX_RETRIES: u32 = 5;
+/// The longest wait between same-account retries: 30 seconds.
+pub const MAX_RETRY_DELAY_MS: u64 = 30_000;
+
+impl RetryOverride {
+    /// The rule for a retry policy: `retries` 0-5, `delay_ms` 0-30 000.
+    pub fn check(&self) -> Result<(), String> {
+        if self.retries > MAX_RETRIES {
+            return Err(format!("{} retries is out of range; use 0-{MAX_RETRIES}", self.retries));
+        }
+        if self.delay_ms > MAX_RETRY_DELAY_MS {
+            return Err(format!("{} ms is out of range; use 0-{MAX_RETRY_DELAY_MS}", self.delay_ms));
+        }
+        Ok(())
+    }
 }
 
 /// In-band error rules: a 200 body or a stream event that is really an error.

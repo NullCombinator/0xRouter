@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use nullrouter_registry::schema::RetryOverride;
+use nullrouter_registry::schema::{RetryOverride, RetrySettings};
 
 use crate::records::ErrorClass;
 
@@ -108,15 +108,25 @@ pub const MAX_INDICATED_WAIT: Duration = Duration::from_secs(5);
 
 /// The same-account budget for a failure. `status` is `None` for a transport failure
 /// (counted as 502); `indicated` is the provider's `retry-after` or reset wait, if any.
+///
+/// Order (research R11): the operator's status, the operator's `all`, the plugin's status, then
+/// the table. On a 429 a `retry-after` of at most [`MAX_INDICATED_WAIT`] replaces a configured
+/// wait; the configured count stays.
 pub fn budget(
     status: Option<u16>,
     verdict: &Verdict,
     indicated: Option<Duration>,
-    overrides: &BTreeMap<String, RetryOverride>,
+    operator: &RetrySettings,
+    plugin: &BTreeMap<String, RetryOverride>,
 ) -> Budget {
     let s = status.unwrap_or(502);
-    if let Some(o) = overrides.get(&s.to_string()) {
-        return Budget { retries: o.retries, delay: Duration::from_millis(o.delay_ms) };
+    let key = s.to_string();
+    if let Some(o) = operator.by_status.get(&key).or(operator.all.as_ref()).or_else(|| plugin.get(&key)) {
+        let delay = match indicated {
+            Some(w) if s == 429 && w <= MAX_INDICATED_WAIT => w,
+            _ => Duration::from_millis(o.delay_ms),
+        };
+        return Budget { retries: o.retries, delay };
     }
     let b = |retries, secs| Budget { retries, delay: Duration::from_secs(secs) };
     if !verdict.fallback {

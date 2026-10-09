@@ -245,7 +245,7 @@ Every page needs the frame. The style suite and the full component set finish in
 - [X] T070 [P] Write `crates/nullrouter-dashboard/tests/twins.rs`: for each page, render it from its declared views (T016), and fail if any text node or attribute value that varies with the home's data is not found in those views' JSON (SC-002)
 - [X] T071 Write `crates/nullrouter-dashboard/tests/isolation.rs` (`#[ignore]`, release): 1,000 client requests to a mock provider while 4 workers load pages, and again with a test-only fault feature making every build panic or sleep 20 s; compare client p95 and failures with `enabled = false` (SC-005: ≤ 1 ms p95, 0 extra failures)
 - [ ] T072 [P] Add the `pages` Criterion bench in `crates/nullrouter-dashboard/benches/pages.rs`: each page on a home with 50 accounts, 20 unified models and 100,000 records; each under 1 s (SC-009); baseline in `specs/009-dashboard/bench-baseline.md`
-- [ ] T073 Run a security review of the dashboard (token storage, cookie, Host/Origin/CSP, the 405 rule, logo serving, bounded work) with the `security-auditor` agent, and write `specs/009-dashboard/security-review.md` with each finding and its resolution
+- [X] T073 Run a security review of the dashboard (token storage, cookie, Host/Origin/CSP, the 405 rule, logo serving, bounded work) with the `security-auditor` agent, and write `specs/009-dashboard/security-review.md` with each finding and its resolution
 - [X] T074 [P] Update `init.md`'s dashboard line and `docs/dashboard/9router-inventory.md` "Decisions I need from you" to point at this spec where they are now decided
 - [ ] T075 Run quickstart.md steps 1 to 9 by hand and tick each; record anything that differed
 

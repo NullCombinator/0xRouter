@@ -82,6 +82,8 @@ fn request(s: &Setup, client: &str, target: &str, body: Value, cancel: Cancellat
         cancel,
         media: None,
         count: false,
+        pin: None,
+        test: None,
     }
 }
 

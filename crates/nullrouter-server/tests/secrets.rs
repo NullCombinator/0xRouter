@@ -694,3 +694,185 @@ async fn views_show_no_secret_beyond_its_last_four() {
     stop.send(()).unwrap();
     task.await.unwrap();
 }
+
+// ---- proxy credentials (spec 013 T045, SC-008) -------------------------------------------
+
+/// A proxy's username and password, through a request that succeeds and one that fails to
+/// connect (so the proxy is paused and probed), appear in no record, socket answer, view, log,
+/// client response, or the pause file.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn proxy_credentials_appear_nowhere() {
+    use nullrouter_engine::testkit::MockProxy;
+    use nullrouter_server::views;
+
+    const USER: &str = "proxy-user-SENTINEL-0021";
+    const PASSWORD: &str = "proxy-pw-SENTINEL-0022";
+    let logs = logs();
+
+    let s = server().await;
+    s.mock.respond(|_| chat_stream());
+    let proxy = MockProxy::start_with_auth(USER, PASSWORD).await;
+    nullrouter_engine::files::write_private(
+        &s.home().join("proxies.toml"),
+        &format!(
+            "schema = 1\n\n[[proxy]]\nname = \"eu\"\nurl = \"http://{}\"\nusername = \"{USER}\"\npassword = \"{PASSWORD}\"\n",
+            proxy.addr()
+        ),
+    )
+    .unwrap();
+    nullrouter_engine::files::write_private(
+        &s.home().join(accounts::FILE),
+        &format!("schema = 2\n[[account]]\nprovider = \"mockco\"\nname = \"main\"\nsecret = \"{SECRET}\"\nproxy = \"eu\"\n"),
+    )
+    .unwrap();
+    s.engine.reload().await.unwrap();
+
+    let c = reqwest::Client::new();
+    let mut seen = Vec::new();
+    for round in ["up", "down"] {
+        if round == "down" {
+            proxy.stop().await;
+        }
+        let r = c
+            .post(format!("{}/v1/chat/completions", s.base))
+            .bearer_auth(&s.key)
+            .body(json!({"model": "mockco/m1", "messages": [{"role": "user", "content": "hi"}]}).to_string())
+            .send()
+            .await
+            .unwrap();
+        let headers = format!("{:?}", r.headers());
+        seen.push(format!("{round}: {} {headers}\n{}", r.status(), r.text().await.unwrap()));
+    }
+    assert!(proxy.carried() >= 1, "the proxy carried the first request");
+    assert!(s.engine.proxy_board.paused("eu").is_some(), "the second request paused the proxy");
+
+    let records = serde_json::to_string(&s.engine.records.query(&Query::default())).unwrap();
+    let mut socket = Vec::new();
+    for op in [
+        json!({"op": "records.list"}),
+        json!({"op": "live.snapshot"}),
+        json!({"op": "connection.view", "provider": "mockco"}),
+        json!({"op": "accounts.state"}),
+        json!({"op": "proxy.fixed", "name": "eu"}),
+        json!({"op": "reload"}),
+    ] {
+        socket.push(operator::handle(&s.engine, &op).await.to_string());
+    }
+    for r in s.engine.records.query(&Query::default()) {
+        socket.push(operator::handle(&s.engine, &json!({"op": "records.get", "id": r.id})).await.to_string());
+    }
+    let mut shown = Vec::new();
+    let home = OperatorHome::new(s.home());
+    for (needs, args, build) in [
+        (views::accounts::NEEDS, json!({"provider": null}), views::accounts::build as common::Build),
+        (views::check::NEEDS, json!({}), views::check::build),
+        (views::records::NEEDS, json!({}), views::records::build),
+    ] {
+        let home = home.clone();
+        let args2 = args.clone();
+        let view = views::run_in_process(&s.engine, needs, &args, move |live| build(&home, &args2, live)).await.unwrap();
+        shown.push(format!("{}{}", view.json, view.extra));
+    }
+    let pause_file = std::fs::read_to_string(s.home().join("routing/proxies.json")).unwrap_or_default();
+    assert!(!pause_file.is_empty(), "the pause was saved");
+    drop(s);
+
+    let places: [(&str, String); 6] = [
+        ("logs", logs.text()),
+        ("records", records),
+        ("client responses", seen.join("\n")),
+        ("operator socket answers", socket.join("\n")),
+        ("views", shown.join("\n")),
+        ("pause file", pause_file),
+    ];
+    let leaks = leaks_of(&places, &[USER, PASSWORD]);
+    assert!(leaks.is_empty(), "{}", leaks.join("\n"));
+}
+
+// ---- model tests (spec 011 T051, SC-008) -------------------------------------------------
+
+const TEST_KEY: &str = "sk-test-SENTINEL-T051";
+const OUTPUT: &str = "OUTPUT-SENTINEL-T051 the model's answer is never kept";
+
+/// A combo test answered with a sentinel output, then a pair test refused with the key quoted:
+/// neither the key, the test prompt nor the output shows in the logs, the test's records, what
+/// `test.plan`, `test.run` and `verdicts.list` answer, or `routing/verdicts.jsonl`.
+#[tokio::test]
+async fn model_tests_keep_no_secret_prompt_or_output() {
+    use std::sync::atomic::AtomicUsize;
+
+    use nullrouter_engine::tests as model_tests;
+    use nullrouter_engine::verdict::{Source, State};
+
+    let logs = logs();
+    let accounts = format!("schema = 2\n[[account]]\nprovider = \"alpha\"\nname = \"a\"\nsecret = \"{TEST_KEY}\"\n");
+    let s = common::server_custom(
+        |m| vec![("alpha", routed_plugin(m, "alpha", ""))],
+        &accounts,
+        "[[unified_model]]\nname = \"u\"\nmembers = [{ provider = \"alpha\", model = \"m1\" }]\n\
+         [[combo]]\nname = \"c\"\nmembers = [\"u\"]\n",
+    )
+    .await;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let n = calls.clone();
+    s.mock.respond(move |r| match n.fetch_add(1, Ordering::SeqCst) {
+        0 => Step::json(
+            200,
+            json!({"id": "x", "object": "chat.completion", "model": "m1", "choices": [{"index": 0, "message": {"role": "assistant", "content": OUTPUT}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 3, "completion_tokens": 9}}),
+        ),
+        _ => {
+            let auth = r.headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+            let message = format!("The model m1 does not exist for {auth}");
+            Step::Reply {
+                status: 404,
+                headers: vec![("content-type".into(), "application/json".into()), ("x-debug-auth".into(), auth)],
+                body: Bytes::from(json!({"error": {"message": message}}).to_string()),
+            }
+        }
+    });
+
+    let mut socket = Vec::new();
+    for target in ["alpha/m1", "c"] {
+        socket.push(operator::handle(&s.engine, &json!({"op": "test.plan", "target": target})).await.to_string());
+    }
+    let st = s.engine.snapshot();
+    let planned = model_tests::expand(&s.engine, &st, Some("alpha/m1"), None).unwrap();
+    let stop = CancellationToken::new();
+    let combo = model_tests::combo::run_combo(&s.engine, "c", Source::Test, "tr_s", &stop).await.unwrap().unwrap();
+    assert_eq!(combo.state, State::Pass, "{combo:?}");
+    let pair = model_tests::run_pair(&s.engine, &planned[0], Source::Test, "tr_s", &stop).await.unwrap();
+    assert_eq!(pair.state, Some(State::Broken), "{pair:?}");
+    // What `test.run` streams.
+    socket.push(json!({"event": "result", "result": pair}).to_string());
+    socket.push(json!({"event": "combo", "result": combo}).to_string());
+    let list = operator::handle(&s.engine, &json!({"op": "verdicts.list"})).await;
+    assert_eq!(list["combos"][0]["combo"], "c", "{list}");
+    socket.push(list.to_string());
+
+    let mut records = Vec::new();
+    for r in s.engine.records.query(&Query::default()) {
+        assert!(r.test.is_some(), "every call here was a test: {r:?}");
+        records.push(operator::handle(&s.engine, &json!({"op": "records.get", "id": r.id})).await.to_string());
+    }
+    assert_eq!(records.len(), 2);
+    let journal = s.engine.journal.clone();
+    tokio::task::spawn_blocking(move || journal.flush_blocking()).await.unwrap();
+    let verdicts = std::fs::read_to_string(s.home().join("routing/verdicts.jsonl")).unwrap();
+    assert!(verdicts.contains("\"combo\":\"c\""), "{verdicts}");
+    let mut on_disk = files_under(&s.home().join("records"));
+    on_disk.push(("routing/verdicts.jsonl".into(), verdicts));
+    let key = s.key.clone();
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    drop(s);
+
+    let disk = on_disk.iter().map(|(p, t)| format!("{p}\n{t}")).collect::<Vec<_>>().join("\n");
+    let places: Vec<(&str, String)> = vec![
+        ("logs", logs.text()),
+        ("test.plan, test.run and verdicts.list answers", socket.join("\n")),
+        ("test records", records.join("\n")),
+        ("records/ and routing/verdicts.jsonl", disk),
+    ];
+    // The test prompt is the request body's `"hi"` (research R2).
+    let leaks = leaks_of(&places, &[TEST_KEY, key.as_str(), "OUTPUT-SENTINEL-T051", "\"content\":\"hi\""]);
+    assert!(leaks.is_empty(), "{}", leaks.join("\n"));
+}

@@ -239,12 +239,12 @@ fn accounts_list_shows_sign_in_states_and_the_command() {
     fn cells(l: &str) -> Vec<&str> {
         l.split("  ").map(str::trim).filter(|c| !c.is_empty()).collect()
     }
-    assert_eq!(cells(lines[0]), ["provider", "name", "kind", "order", "priority", "secret", "state"], "{text}");
-    assert_eq!(cells(lines[1]), ["anthropic", "api", "key", "1", "1", "…0003", "active"], "{text}");
-    assert_eq!(cells(lines[2]), ["anthropic", "max", "signin", "0", "1", "…h3Kq", "active"], "{text}");
+    assert_eq!(cells(lines[0]), ["provider", "name", "kind", "order", "priority", "secret", "proxy", "state"], "{text}");
+    assert_eq!(cells(lines[1]), ["anthropic", "api", "key", "1", "1", "…0003", "—", "active"], "{text}");
+    assert_eq!(cells(lines[2]), ["anthropic", "max", "signin", "0", "1", "…h3Kq", "—", "active"], "{text}");
     assert_eq!(
         cells(lines[3]),
-        ["xai", "main", "signin", "0", "1", "…Zt1c", "needs sign-in since 2026-10-03 14:02 (invalid_grant)"],
+        ["xai", "main", "signin", "0", "1", "…Zt1c", "—", "needs sign-in since 2026-10-03 14:02 (invalid_grant)"],
         "{text}"
     );
     assert_eq!(
@@ -256,6 +256,7 @@ fn accounts_list_shows_sign_in_states_and_the_command() {
             "0",
             "1",
             "…p0Lm",
+            "—",
             "refused by provider since 2026-10-03 14:02 (not for this client)"
         ],
         "{text}"
@@ -475,44 +476,101 @@ fn last_used_is_the_newest_arrival_of_the_keys_records_and_never_without_one() {
 }
 
 #[test]
-fn keys_bind_to_a_harness_and_the_list_shows_it_only_when_one_is() {
+fn keys_carry_a_harness_tag_set_changed_cleared_and_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    let file = h.join(keys::FILE);
+    let tag_of = |name: &str| Keys::load(&file).unwrap().iter().find(|k| k.name == name).unwrap().harness.clone();
+
+    let out = nr(h, &["keys", "issue", "tagged", "--harness", "claude-code"], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let secret = String::from_utf8(out.stdout).unwrap().trim().to_owned();
+    assert_eq!(tag_of("tagged").as_deref(), Some("claude-code"));
+    assert!(nr(h, &["keys", "issue", "plain"], "").status.success());
+    assert_eq!(tag_of("plain"), None);
+
+    // Set by name, then by id, then replace.
+    let out = nr(h, &["keys", "tag", "plain", "codex"], "");
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("plain: harness codex\n"), "{:?}", out.stdout);
+    let id = Keys::load(&file).unwrap().iter().find(|k| k.name == "plain").unwrap().id.clone();
+    assert!(nr(h, &["keys", "tag", &id, "codex-cli"], "").status.success());
+    assert_eq!(tag_of("plain").as_deref(), Some("codex-cli"));
+
+    // The list shows a HARNESS column ("-" for none) and --json rows carry the tag.
+    let listed = String::from_utf8(nr(h, &["keys", "list"], "").stdout).unwrap();
+    assert!(listed.lines().any(|l| l.contains("tagged") && l.contains("claude-code")), "{listed}");
+    let rows: serde_json::Value = serde_json::from_slice(&nr(h, &["--json", "keys", "list"], "").stdout).unwrap();
+    assert_eq!(rows[0]["harness"], "claude-code");
+    assert_eq!(rows[1]["harness"], "codex-cli");
+
+    // A refused tag exits 1 and leaves the old one.
+    assert_eq!(nr(h, &["keys", "tag", "plain", "bad\ttag"], "").status.code(), Some(1));
+    assert_eq!(tag_of("plain").as_deref(), Some("codex-cli"));
+    assert_eq!(nr(h, &["keys", "tag", "plain", "x".repeat(33).as_str()], "").status.code(), Some(1));
+    // TEXT and --clear together, or neither, is a usage error.
+    assert_eq!(nr(h, &["keys", "tag", "plain", "x", "--clear"], "").status.code(), Some(1));
+    assert_eq!(nr(h, &["keys", "tag", "plain"], "").status.code(), Some(1));
+    assert_eq!(tag_of("plain").as_deref(), Some("codex-cli"));
+    // An unknown key exits 2.
+    let out = nr(h, &["keys", "tag", "nobody", "x"], "");
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no key \"nobody\""));
+    // A refused tag at issue creates no key.
+    assert_eq!(nr(h, &["keys", "issue", "third", "--harness", ""], "").status.code(), Some(1));
+    assert!(Keys::load(&file).unwrap().iter().all(|k| k.name != "third"));
+
+    // Clearing, and a revoked key can be tagged and stays revoked; the secret is unchanged.
+    let out = nr(h, &["keys", "tag", "plain", "--clear"], "");
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("plain: no harness\n"));
+    assert_eq!(tag_of("plain"), None);
+    assert!(nr(h, &["keys", "revoke", "plain"], "").status.success());
+    assert!(nr(h, &["keys", "tag", "plain", "late"], "").status.success());
+    let k = Keys::load(&file).unwrap().iter().find(|k| k.name == "plain").unwrap().clone();
+    assert_eq!((k.harness.as_deref(), k.revoked.is_some()), (Some("late"), true));
+    assert!(Keys::load(&file).unwrap().lookup(&secret).is_some(), "the secret issued with a tag still matches");
+    assert_eq!(mode(&file), 0o600);
+}
+
+#[test]
+fn keys_bind_to_an_adapter_and_the_list_shows_it_only_when_one_is() {
     let dir = tempfile::tempdir().unwrap();
     let h = dir.path();
     assert!(nr(h, &["keys", "issue", "plain"], "").status.success());
     let before = String::from_utf8(nr(h, &["keys", "list"], "").stdout).unwrap();
     assert!(!before.contains("hermes"), "{before}");
 
-    assert!(nr(h, &["keys", "issue", "desk", "--harness", "hermes"], "").status.success());
+    assert!(nr(h, &["keys", "issue", "desk", "--adapter", "hermes"], "").status.success());
     let file = Keys::load(&h.join(keys::FILE)).unwrap();
-    let harness = |name: &str| file.iter().find(|k| k.name == name).unwrap().harness.clone();
-    assert_eq!(harness("desk").map(|n| n.to_string()), Some("hermes".into()));
-    assert!(harness("plain").is_none());
+    let adapter = |name: &str| file.iter().find(|k| k.name == name).unwrap().adapter.clone();
+    assert_eq!(adapter("desk").map(|n| n.to_string()), Some("hermes".into()));
+    assert!(adapter("plain").is_none());
     let listed = String::from_utf8(nr(h, &["keys", "list"], "").stdout).unwrap();
     assert!(listed.contains("hermes"), "{listed}");
     let json: serde_json::Value = serde_json::from_slice(&nr(h, &["--json", "keys", "list"], "").stdout).unwrap();
     let row = |name: &str| json.as_array().unwrap().iter().find(|r| r["name"] == name).unwrap().clone();
-    assert_eq!(row("desk")["harness"], "hermes");
-    assert!(row("plain").get("harness").is_none());
+    assert_eq!(row("desk")["adapter"], "hermes");
+    assert!(row("plain").get("adapter").is_none());
 
     // Rebind, then clear.
-    assert!(nr(h, &["keys", "set-harness", "plain", "claude-code"], "").status.success());
+    assert!(nr(h, &["keys", "set-adapter", "plain", "claude-code"], "").status.success());
     assert_eq!(
-        Keys::load(&h.join(keys::FILE)).unwrap().iter().find(|k| k.name == "plain").unwrap().harness.as_ref().map(|n| n.to_string()),
+        Keys::load(&h.join(keys::FILE)).unwrap().iter().find(|k| k.name == "plain").unwrap().adapter.as_ref().map(|n| n.to_string()),
         Some("claude-code".into())
     );
-    assert!(nr(h, &["keys", "set-harness", "plain", "--clear"], "").status.success());
-    assert!(Keys::load(&h.join(keys::FILE)).unwrap().iter().find(|k| k.name == "plain").unwrap().harness.is_none());
+    assert!(nr(h, &["keys", "set-adapter", "plain", "--clear"], "").status.success());
+    assert!(Keys::load(&h.join(keys::FILE)).unwrap().iter().find(|k| k.name == "plain").unwrap().adapter.is_none());
 
-    // Reserved and malformed names, unknown keys, and a missing harness are refused.
+    // Reserved and malformed names, unknown keys, and a missing adapter are refused.
     for args in [
-        vec!["keys", "set-harness", "plain", "opencode"],
-        vec!["keys", "set-harness", "plain", "Bad Name"],
-        vec!["keys", "set-harness", "nobody", "hermes"],
-        vec!["keys", "issue", "other", "--harness", "zcode"],
+        vec!["keys", "set-adapter", "plain", "opencode"],
+        vec!["keys", "set-adapter", "plain", "Bad Name"],
+        vec!["keys", "set-adapter", "nobody", "hermes"],
+        vec!["keys", "issue", "other", "--adapter", "zcode"],
     ] {
         assert_eq!(nr(h, &args, "").status.code(), Some(1), "{args:?}");
     }
-    assert!(!nr(h, &["keys", "set-harness", "plain"], "").status.success());
+    assert!(!nr(h, &["keys", "set-adapter", "plain"], "").status.success());
     assert!(Keys::load(&h.join(keys::FILE)).unwrap().iter().all(|k| k.name != "other"), "a refused issue leaves no key");
 }
 

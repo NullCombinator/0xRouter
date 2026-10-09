@@ -39,7 +39,7 @@ fn key(s: &Setup, hermes: bool) -> String {
     let mut keys = Keys::load(&path).unwrap();
     let id = keys.issue(&format!("k{}", keys.iter().count()), None).unwrap().1.id.clone();
     if hermes {
-        keys.set_harness(&id, Some(HarnessName::new("hermes").unwrap())).unwrap();
+        keys.set_adapter(&id, Some(HarnessName::new("hermes").unwrap())).unwrap();
     }
     keys.save().unwrap();
     s.engine.reload_blocking().unwrap();

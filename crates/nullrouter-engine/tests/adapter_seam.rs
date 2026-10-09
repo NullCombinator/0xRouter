@@ -48,7 +48,7 @@ fn key(s: &Setup, harness: Option<&str>) -> String {
     let mut keys = Keys::load(&path).unwrap();
     let id = keys.issue(&format!("k{}", keys.iter().count()), None).unwrap().1.id.clone();
     if let Some(h) = harness {
-        keys.set_harness(&id, Some(nullrouter_engine::keys::HarnessName::new(h).unwrap())).unwrap();
+        keys.set_adapter(&id, Some(nullrouter_engine::keys::HarnessName::new(h).unwrap())).unwrap();
     }
     keys.save().unwrap();
     s.engine.reload_blocking().unwrap();

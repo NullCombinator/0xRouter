@@ -12,6 +12,7 @@ use super::ssrf::{check_endpoint_url, check_public_host};
 use super::style_gate::placeholders;
 use crate::floor::{Floor, PatternRisk};
 use crate::schema::{
+    check_timeout_ms,
     AuthScheme, CapabilityKind, Endpoint, EndpointAuth, Forwarding, HeaderValue, KNOWN_OAUTH_PARAMS,
     KNOWN_SECTION_FORMATS, ModelType, ModelsLiveDecl, PluginFile, PluginSource, ProviderEntity, QuotaAccounts,
     QuotaDecl, QuotaDecoder, QuotaSource, RedirectKind, RouteOp, RoutingDecl, SignInDecl, SignInFlow, SignInParamValue,
@@ -56,6 +57,14 @@ pub fn validate_with(
     file: &str,
     ctx: &GateCtx,
 ) -> Result<Gated, Vec<ValidationError>> {
+    // Before the typed parse, so the refusal reads as this rule and not as an unknown field.
+    let proxies = proxy_keys(src);
+    if !proxies.is_empty() {
+        return Err(proxies
+            .into_iter()
+            .map(|path| positioned(src, file, path, PROXY_REFUSED.to_owned()))
+            .collect());
+    }
     let mut plugin = parse::<PluginFile>(src, file)?;
     let mut errors = semantic_errors(&plugin);
     let mut diags = Found::new();
@@ -70,6 +79,40 @@ pub fn validate_with(
     } else {
         Err(at(errors))
     }
+}
+
+/// Keys a plugin may not carry at any depth (FR-026, research R10).
+const PROXY_KEYS: [&str; 4] = ["proxy", "proxy_url", "https_proxy", "no_proxy"];
+
+const PROXY_REFUSED: &str = "plugins can't declare a proxy; proxies are operator-only";
+
+/// The path of every proxy key in `src`, in document order. A document that doesn't parse has
+/// none here: the typed parse reports it.
+fn proxy_keys(src: &str) -> Vec<FieldPath> {
+    fn walk(v: &toml::Value, at: &FieldPath, out: &mut Vec<FieldPath>) {
+        match v {
+            toml::Value::Table(t) => {
+                for (k, v) in t {
+                    let here = at.key(k.as_str());
+                    if PROXY_KEYS.contains(&k.as_str()) {
+                        out.push(here.clone());
+                    }
+                    walk(v, &here, out);
+                }
+            }
+            toml::Value::Array(a) => {
+                for (i, v) in a.iter().enumerate() {
+                    walk(v, &at.index(i), out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    if let Ok(doc) = src.parse::<toml::Table>() {
+        walk(&toml::Value::Table(doc), &FieldPath::root(), &mut out);
+    }
+    out
 }
 
 /// Deserialises `src` with path-and-span error reporting. Shared with the config loader.
@@ -138,6 +181,17 @@ fn semantic_errors(p: &PluginFile) -> Found {
     if let Some(v) = p.schema.filter(|v| !(1..=2).contains(v)) {
         err(FieldPath::of("schema"), format!("unsupported schema version {v}; expected 1 or 2"));
     }
+    for (i, r) in p.rejections.iter().enumerate() {
+        let at = FieldPath::of("rejections").index(i).key("status");
+        if r.status.iter().any(|s| matches!(s, 402 | 408 | 429)) {
+            err(at, "402, 408 and 429 are never a rejection".into());
+        } else if r.status.is_empty() || r.status.iter().any(|s| !(400..=499).contains(s)) {
+            err(at, "only 400–499 can be a rejection".into());
+        } else if r.body_contains.is_none() && r.status.iter().any(|s| matches!(s, 400 | 422)) {
+            // A bare 400 or 422 is as often the request's own fault as the model's.
+            err(at, "a 400 or 422 rejection needs body_contains".into());
+        }
+    }
     if p.schema_version() < 2 {
         for key in ["endpoints", "forwarding", "session"] {
             let present = match key {
@@ -160,7 +214,11 @@ fn semantic_errors(p: &PluginFile) -> Found {
             err(FieldPath::of(key), "schema 1 has no `".to_owned() + key + "`; set schema = 2");
         }
         for (i, m) in p.models.iter().flatten().enumerate() {
-            for (key, present) in [("wires", m.wires.is_some()), ("force", !m.force.is_empty())] {
+            for (key, present) in [
+                ("wires", m.wires.is_some()),
+                ("force", !m.force.is_empty()),
+                ("timeouts", m.timeouts.is_some()),
+            ] {
                 if present {
                     err(FieldPath::of("models").index(i).key(key), format!("schema 1 has no `{key}`; set schema = 2"));
                 }
@@ -234,6 +292,18 @@ fn semantic_errors(p: &PluginFile) -> Found {
             err(base.key("id"), format!("duplicate of models[{j}]"));
         } else {
             seen.insert((&m.id, m.kind), i);
+        }
+        if let Some(t) = &m.timeouts {
+            for (key, v, off) in [
+                ("connect_ms", t.connect_ms, false),
+                ("headers_ms", t.headers_ms, false),
+                ("first_token_ms", t.first_token_ms, true),
+                ("stall_ms", t.stall_ms, false),
+            ] {
+                if let Some(rule) = v.and_then(|v| check_timeout_ms(v, off).err()) {
+                    err(base.key("timeouts").key(key), rule);
+                }
+            }
         }
         for (j, name) in m.params.iter().flatten().enumerate() {
             if check_map_key(name).is_some() {
@@ -774,8 +844,23 @@ fn check_endpoint(
     for name in e.headers.keys().filter(|n| check_map_key(n).is_some()) {
         err(base.key("headers").key(name.as_str()), "credential-bearing header not allowed in plugins".into());
     }
+    for (key, v, off) in [
+        ("timeout_ms", e.timeout_ms, false),
+        ("stall_timeout_ms", e.stall_timeout_ms, false),
+        ("connect_timeout_ms", e.connect_timeout_ms, false),
+        ("first_token_timeout_ms", e.first_token_timeout_ms, true),
+    ] {
+        if let Some(rule) = v.and_then(|v| check_timeout_ms(v, off).err()) {
+            err(base.key(key), rule);
+        }
+    }
     for status in e.retry.keys().filter(|s| !is_status(s)) {
         err(base.key("retry").key(status.as_str()), "keys are HTTP statuses 100-599".into());
+    }
+    for (status, o) in &e.retry {
+        if let Err(rule) = o.check() {
+            err(base.key("retry").key(status.as_str()), rule);
+        }
     }
     for (kind, rules) in [("body", &e.errors.body), ("stream", &e.errors.stream)] {
         for (i, r) in rules.iter().enumerate() {
@@ -1064,6 +1149,48 @@ kind = "llm"
         let no_count = GateCtx { style_ops: BTreeMap::new(), ..ctx() };
         let got = v2(V2, &no_count).unwrap_err();
         assert!(got.iter().any(|r| r.contains("count_tokens route")), "{got:?}");
+    }
+
+    #[test]
+    fn a_plugin_may_not_declare_a_proxy_at_any_depth() {
+        for (extra, path) in [
+            ("proxy = \"x\"\n", "proxy"),
+            ("https_proxy = \"http://p:1\"\n", "https_proxy"),
+            ("[transport]\nno_proxy = \"a\"\n", "transport.no_proxy"),
+        ] {
+            let src = V2.replace("schema = 2\n", &format!("schema = 2\n{}", if extra.starts_with('[') { "" } else { extra }));
+            let src = if extra.starts_with('[') { format!("{src}\n{extra}") } else { src };
+            let got = v2(&src, &ctx()).unwrap_err();
+            let want = format!("{path}: plugins can't declare a proxy; proxies are operator-only");
+            assert!(got.iter().any(|r| r.contains(&want)), "want {want:?} in {got:#?}");
+        }
+        let deep = V2.replace("wire = \"anthropic-messages\"\n\n[endpoints.text.token_count]", "wire = \"anthropic-messages\"\nproxy_url = \"socks5://p:1\"\n\n[endpoints.text.token_count]");
+        let got = v2(&deep, &ctx()).unwrap_err();
+        assert!(got.iter().any(|r| r.contains("endpoints.text.proxy_url: plugins can't declare a proxy")), "{got:#?}");
+    }
+
+    #[test]
+    fn endpoint_and_model_timeouts_parse_and_are_range_checked() {
+        let with = V2
+            .replace(
+                "wire = \"anthropic-messages\"\n\n[endpoints.text.token_count]",
+                "wire = \"anthropic-messages\"\nconnect_timeout_ms = 5000\nfirst_token_timeout_ms = 0\n\n[endpoints.text.token_count]",
+            )
+            .replace(
+                "id = \"m1\"\nkind = \"llm\"",
+                "id = \"m1\"\nkind = \"llm\"\ntimeouts = { first_token_ms = 600000, stall_ms = 600000 }",
+            );
+        let g = v2(&with, &ctx()).unwrap();
+        let e = &g.entity.endpoints[&ModelType::Text].0[0];
+        assert_eq!((e.connect_timeout_ms, e.first_token_timeout_ms), (Some(5000), Some(0)));
+        let t = g.entity.models.as_ref().unwrap()[0].timeouts.unwrap();
+        assert_eq!((t.first_token_ms, t.stall_ms, t.connect_ms), (Some(600_000), Some(600_000), None));
+
+        v2_fails(&with.replace("connect_timeout_ms = 5000", "connect_timeout_ms = 0"), "endpoints.text.connect_timeout_ms: 0 ms is out of range");
+        v2_fails(&with.replace("connect_timeout_ms = 5000", "timeout_ms = 3600001"), "endpoints.text.timeout_ms: 3600001 ms is out of range");
+        v2_fails(&with.replace("first_token_timeout_ms = 0", "first_token_timeout_ms = 9999999"), "endpoints.text.first_token_timeout_ms");
+        v2_fails(&with.replace("stall_ms = 600000", "stall_ms = 0"), "models[0].timeouts.stall_ms: 0 ms is out of range");
+        v2_fails(&with.replace("first_token_ms = 600000", "first_token_ms = 3600001"), "models[0].timeouts.first_token_ms");
     }
 
     #[test]

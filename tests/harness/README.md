@@ -81,7 +81,7 @@ sentinel the tool printed), a `--continue` follow-up that replays the earlier tu
 operator-run:
 
 ```text
-nullrouter keys issue hermes-live --harness hermes
+nullrouter keys issue hermes-live --adapter hermes
 NR_LIVE=1 NR_KEY=0r-… cargo test -p nullrouter-server --test harness_hermes -- --ignored --nocapture
 ```
 

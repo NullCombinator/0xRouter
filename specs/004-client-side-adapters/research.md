@@ -482,9 +482,14 @@ to it by hash.
   - In-flight requests keep the version they started with, which is why v1 finishes requests
     in flight (US4-3).
   - Compiled modules are cached by `wasm_hash` in the snapshot.
-- **Key binding.** `keys.toml` `AgentKey` gains `harness: Option<String>`. It is set by
-  `keys issue --harness` and changed by `keys set-harness` or `keys set-harness --clear`
+- **Key binding.** `keys.toml` `AgentKey` gains `adapter: Option<HarnessName>`. It is set by
+  `keys issue --adapter` and changed by `keys set-adapter` or `keys set-adapter --clear`
   (FR-001).
+  - Renamed from `harness` / `--harness` / `set-harness` on merging main, 2026-10-08. Slice 010
+    (R7) had shipped `harness` as a free-text, display-only tag that "auth, routing, adapters
+    and records never read" (the user's clarify Q5). One field for both would let a label start
+    running code once an adapter of that name is installed, so the two stay separate: the tag
+    names the client for people, the binding selects the adapter.
   - An unknown harness name is refused at issue time, unless it's a third-party harness that has
     no approved version yet (spec Edge Cases: the key works as a plain client until then).
 

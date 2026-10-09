@@ -52,7 +52,7 @@ fn valid_corpus_is_accepted() {
 #[test]
 fn invalid_corpus_is_rejected_with_one_positioned_error() {
     let files = corpus("invalid");
-    assert_eq!(files.len(), 23);
+    assert_eq!(files.len(), 28);
     for path in files {
         let src = fs::read_to_string(&path).unwrap();
         let rule = path.file_stem().unwrap().to_str().unwrap();
@@ -487,4 +487,34 @@ reset = "rolling"
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert!(errors[0].to_string().contains("routing.window[0].reset"), "{}", errors[0]);
     assert!(errors[0].to_string().contains("unreported windows"), "{}", errors[0]);
+}
+
+fn with_retry(retry: &str) -> String {
+    format!(
+        "schema = 2\nid = \"retrier\"\ncategory = \"apikey\"\n[auth]\nkind = \"apikey\"\n[endpoints.text]\nurl = \"https://example.com/v1/chat/completions\"\nwire = \"openai-chat\"\nretry = {retry}\n[[models]]\nid = \"m\"\n"
+    )
+}
+
+/// Spec 013 US6: a plugin's retry declaration is capped at 5 retries and 30 s, with the field named.
+#[test]
+fn a_plugin_retry_above_the_cap_fails_validation_naming_the_field() {
+    let path = Path::new("retrier.toml");
+    validate_user_plugin(&with_retry("{ \"503\" = { retries = 5, delay_ms = 30000 } }"), path).expect("the cap itself is allowed");
+    let errs = validate_user_plugin(&with_retry("{ \"503\" = { retries = 6 } }"), path).unwrap_err();
+    let text = format!("{errs:?}");
+    assert!(text.contains("retry") && text.contains("503") && text.contains("0-5"), "{text}");
+    let errs = validate_user_plugin(&with_retry("{ \"503\" = { retries = 1, delay_ms = 30001 } }"), path).unwrap_err();
+    assert!(format!("{errs:?}").contains("0-30000"));
+}
+
+/// Slice 011: `[[rejections]]` loads into the entity; 4xx other than 402, 408 and 429 only.
+#[test]
+fn rejections_load_into_the_entity() {
+    let src = "id = \"x\"\ncategory = \"apikey\"\n\n[[rejections]]\nstatus = [400, 404]\nbody_contains = \"model_retired\"\nreason = \"model_not_found\"\n\n[[rejections]]\nstatus = 403\nreason = \"model_not_available\"\n";
+    let p = validate_user_plugin(src, Path::new("x.toml")).unwrap();
+    assert_eq!(p.rejections.len(), 2);
+    assert!(p.rejections[0].matches(404, "{\"error\":\"model_retired\"}"));
+    assert_eq!(p.rejections[1].reason, nullrouter_registry::schema::RejectionReason::ModelNotAvailable);
+    let none = validate_user_plugin("id = \"x\"\ncategory = \"apikey\"\n", Path::new("x.toml")).unwrap();
+    assert!(none.rejections.is_empty());
 }

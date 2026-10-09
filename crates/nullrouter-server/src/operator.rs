@@ -8,12 +8,21 @@
 //! | `{"op":"records.list","provider"?,"unified_model"?,"account"?,"agent"?,"model"?,"reason"?,"since"?,"limit"?,"before"?}` | `{"ok":true,"records":[…]}`: the journal's records plus those still in flight, newest first, those with an id below `before` (which must name a record, else `{"ok":false,"error":"no record rq_…"}`) |
 //! | `{"op":"records.get","id":"rq_…"}` | `{"ok":true,"record":{…}}` |
 //! | `{"op":"keys.last_used"}` | `{"ok":true,"last_used":{"<key id>":"<RFC 3339>"\|null}}`: for every key in `keys.toml`, the arrival of its newest record, from the cached segment index and the requests still in flight; `null` for a key no record names |
+//! | `{"op":"usage.totals","from":"<RFC 3339>"\|null,"to":"<RFC 3339>"}` | `{"ok":true,"totals":{…}}`: requests, tokens, Est. Cost and per-agent and per-provider counts for arrivals in `[from, to)`, from the journal (finished days cached) and the requests still in memory |
+//! | `{"op":"latency.summary","from":"<RFC 3339>","to":"<RFC 3339>"}` | `{"ok":true,"latency":{agents,providers}}`: per agent key and per provider, router overhead and time to first token as p50/p95 (nearest rank), the provider's own wait, requests and the last response, for arrivals in `[from, to)`, from the journal and the requests still in memory; never cached |
 //! | `{"op":"records.forget","account"?:"P/N","agent"?:KEY}` | `{"ok":true,"fingerprints":N}`: the agent's fingerprints (or the account's fingerprints and ledger entries) leave memory and `routing/warm.jsonl`, and the live ring; the CLI then rewrites the record segments |
 //! | `{"op":"accounts.state"}` | `{"ok":true,"accounts":[…]}`: per account `kind`, `state`, `state_since`, `state_reason`, `expires_at`, cooldowns |
 //! | `{"op":"routing.view","target"?}` | `{"ok":true,"amortization":{start,length},"journal":{…},"targets":[…],"warnings":[…]}`: per target and account the pace, share, deficit, priority, cache lifetime, quota source and each window's remaining amount, unit, reset and reserve |
 //! | `{"op":"routing.health"}` | `{"ok":true,"journal":{kept,since,unkept_requests,held_lines,last_sync,last_sync_age_s}}` |
 //! | `{"op":"server.status"}` | `{"ok":true,"client_listen":"…"\|null,"dashboard":{enabled,listen,serving,error}}`: the address `serve` bound for clients, and the dashboard listener's state |
+//! | `{"op":"live.snapshot"}` | `{"ok":true,"as_of":…,"paused_proxies":[…],"in_flight":[…]}`: what is in flight now, each request in its current phase |
+//! | `{"op":"proxy.fixed","name"}` | `{"ok":true,"reachable":true}` and the pause cleared, or `{"ok":true,"reachable":false,"reason"}`; an unknown name is `{"ok":false,"error"}` listing the known ones |
+//! | `{"op":"connection.view","provider"?}` | `{"ok":true,"providers":[{id,timeouts:{connect,headers,first_token,stall}:{ms\|null,source},models:[{id,timeouts}]}]}`: the effective timeouts and where each came from, and the models whose timeouts differ; an unknown provider is `{"ok":false,"error"}` listing the known ones |
 //! | `{"op":"quota.list"}`, `{"op":"quota.poll"}`, `{"op":"quota.checkpoint"}` | see [`crate::quota`] |
+//! | `{"op":"test.plan","target"?,"account"?,"all"?}` | `{"ok":true,"pairs":[{provider,account,model,type,skip?}],"calls":{"<type>":N}}` (spec 011); a combo target adds `"combo":NAME` and counts as 1 call of its kind |
+//! | `{"op":"test.run","target"?,"account"?,"all"?}` | streamed: one `{"event":"result","result":TestResult}` line per pair (a combo: one `{"event":"combo","result":ComboResult}`), then `{"ok":true,"done":{pass,broken,unknown,skipped}}`. Closing the connection cancels calls not yet sent |
+//! | `{"op":"verdicts.list","provider"?,"account"?,"model"?,"state"?}` | `{"ok":true,"verdicts":[{provider,account,model,…Verdict,"waiting"?}],"combos":[{combo,…,"waiting"?}]}`: `waiting` says why a due retest can't run yet |
+//! | `{"op":"verdicts.set","provider","account","model","state":"broken"\|"clear","note"?}` | `{"ok":true}`, or `{"ok":false,"error":"no verdict for …"}` on clearing an untested pair |
 
 use std::future::Future;
 use std::io::{BufRead, BufReader, Write};
@@ -22,13 +31,18 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use nullrouter_engine::journal::records;
+use nullrouter_engine::journal::{records, summary};
 use nullrouter_engine::records::Query;
 use nullrouter_engine::state::Engine;
+use nullrouter_engine::tests::{self as model_tests, Planned};
+use nullrouter_engine::verdict::{Source, State};
 use nullrouter_registry::OperatorHome;
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader, Lines};
+use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 /// The socket's path under the operator home.
 pub fn socket_path(home: &OperatorHome) -> PathBuf {
@@ -75,18 +89,146 @@ pub async fn serve(engine: Arc<Engine>, listener: UnixListener, shutdown: impl F
 
 async fn connection(engine: Arc<Engine>, stream: UnixStream) {
     let (read, mut write) = stream.into_split();
-    let mut lines = tokio::io::BufReader::new(read).lines();
+    let mut lines = AsyncBufReader::new(read).lines();
     while let Ok(Some(line)) = lines.next_line().await {
         let answer = match serde_json::from_str::<Value>(&line) {
+            Ok(req) if req.get("op").and_then(Value::as_str) == Some("test.run") => {
+                match test_run(&engine, &req, &mut lines, &mut write).await {
+                    Some(done) => done,
+                    None => return,
+                }
+            }
             Ok(req) => handle(&engine, &req).await,
             Err(e) => json!({"ok": false, "error": format!("not JSON: {e}")}),
         };
-        let mut out = answer.to_string();
-        out.push('\n');
-        if write.write_all(out.as_bytes()).await.is_err() {
+        if send(&mut write, &answer).await.is_err() {
             return;
         }
     }
+}
+
+async fn send(write: &mut OwnedWriteHalf, v: &Value) -> std::io::Result<()> {
+    let mut out = v.to_string();
+    out.push('\n');
+    write.write_all(out.as_bytes()).await
+}
+
+/// The pairs a `test.plan` or `test.run` request names.
+fn planned(engine: &Engine, req: &Value) -> Result<Vec<Planned>, String> {
+    let target = req.get("target").and_then(Value::as_str);
+    let account = req.get("account").and_then(Value::as_str);
+    let all = req.get("all").and_then(Value::as_bool).unwrap_or(false);
+    if target.is_some() == all {
+        return Err("name a target, or all".into());
+    }
+    model_tests::expand(engine, &engine.snapshot(), target, account)
+}
+
+/// The combo `req` targets, if it names one, with the type of its call: its test is one call
+/// through it (research R14).
+fn combo_target(engine: &Engine, req: &Value) -> Option<Result<(String, String), String>> {
+    let target = req.get("target").and_then(Value::as_str)?;
+    let st = engine.snapshot();
+    let combo = st.registry.combo(target)?;
+    if req.get("account").is_some_and(|a| !a.is_null()) {
+        return Some(Err(format!("{target} is a combo: its test isn't per account")));
+    }
+    Some(Ok((combo.name.clone(), model_tests::combo::kind(combo).to_string())))
+}
+
+fn test_plan(engine: &Engine, req: &Value) -> Value {
+    match combo_target(engine, req) {
+        Some(Ok((name, ty))) => return json!({"ok": true, "pairs": [], "combo": name, "calls": {ty: 1}}),
+        Some(Err(e)) => return json!({"ok": false, "error": e}),
+        None => {}
+    }
+    match planned(engine, req) {
+        Ok(p) => json!({"ok": true, "pairs": p, "calls": model_tests::calls(&p)}),
+        Err(e) => json!({"ok": false, "error": e}),
+    }
+}
+
+/// Streams `test.run`'s results; returns the closing line, or `None` once the client has gone
+/// (the calls not yet sent are cancelled; those in flight finish and keep their verdicts).
+async fn test_run(
+    engine: &Arc<Engine>,
+    req: &Value,
+    lines: &mut Lines<AsyncBufReader<OwnedReadHalf>>,
+    write: &mut OwnedWriteHalf,
+) -> Option<Value> {
+    match combo_target(engine, req) {
+        Some(Ok((name, _))) => return combo_run(engine, name, lines, write).await,
+        Some(Err(e)) => return Some(json!({"ok": false, "error": e})),
+        None => {}
+    }
+    let planned = match planned(engine, req) {
+        Ok(p) => p,
+        Err(e) => return Some(json!({"ok": false, "error": e})),
+    };
+    let stop = CancellationToken::new();
+    let (tx, mut rx) = mpsc::channel(16);
+    tokio::spawn({
+        let (engine, stop, run) = (engine.clone(), stop.clone(), model_tests::run_id());
+        async move { model_tests::run(&engine, planned, Source::Test, &run, stop, tx).await }
+    });
+    let (mut pass, mut broken, mut unknown, mut skipped) = (0, 0, 0, 0);
+    loop {
+        tokio::select! {
+            r = rx.recv() => {
+                let Some(r) = r else { break };
+                match r.state {
+                    Some(State::Pass) => pass += 1,
+                    Some(State::Broken) => broken += 1,
+                    Some(State::Unknown) => unknown += 1,
+                    None => skipped += 1,
+                }
+                if send(write, &json!({"event": "result", "result": r})).await.is_err() {
+                    stop.cancel();
+                    return None;
+                }
+            }
+            l = lines.next_line() => if !matches!(l, Ok(Some(_))) {
+                stop.cancel();
+                return None;
+            },
+        }
+    }
+    Some(json!({"ok": true, "done": {"pass": pass, "broken": broken, "unknown": unknown, "skipped": skipped}}))
+}
+
+/// `test.run` for a combo: one call through it, then its nested result as one line.
+async fn combo_run(
+    engine: &Arc<Engine>,
+    name: String,
+    lines: &mut Lines<AsyncBufReader<OwnedReadHalf>>,
+    write: &mut OwnedWriteHalf,
+) -> Option<Value> {
+    let stop = CancellationToken::new();
+    let mut task = tokio::spawn({
+        let (engine, stop, run) = (engine.clone(), stop.clone(), model_tests::run_id());
+        async move { model_tests::combo::run_combo(&engine, &name, Source::Test, &run, &stop).await }
+    });
+    let ended = loop {
+        tokio::select! {
+            r = &mut task => break r,
+            l = lines.next_line() => if !matches!(l, Ok(Some(_))) {
+                stop.cancel();
+                return None;
+            },
+        }
+    };
+    let r = match ended {
+        Ok(Ok(Some(r))) => r,
+        Ok(Ok(None)) => return Some(json!({"ok": false, "error": "the combo test was cancelled"})),
+        Ok(Err(e)) => return Some(json!({"ok": false, "error": e})),
+        Err(e) => return Some(json!({"ok": false, "error": format!("the combo test failed: {e}")})),
+    };
+    let mut done = json!({"pass": 0, "broken": 0, "unknown": 0, "skipped": 0});
+    done[r.state.as_str()] = json!(1);
+    if send(write, &json!({"event": "combo", "result": r})).await.is_err() {
+        return None;
+    }
+    Some(json!({"ok": true, "done": done}))
 }
 
 /// The listeners `serve` bound (spec 009, R8).
@@ -126,19 +268,38 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
             }
         },
         Some("records.list") => records_list(engine, req).await,
+        Some("live.snapshot") => live_snapshot(engine),
+        Some("connection.view") => {
+            let st = engine.snapshot();
+            match nullrouter_engine::connection::view(&st.registry, str_of("provider").as_deref()) {
+                Ok(mut v) => {
+                    nullrouter_engine::connection::add_proxies(&mut v, &st, &engine.proxy_board);
+                    v
+                }
+                Err(error) => json!({"ok": false, "error": error}),
+            }
+        }
+        Some("proxy.fixed") => proxy_fixed(engine, str_of("name")).await,
         Some("records.get") => {
             let Some(id) = str_of("id") else { return json!({"ok": false, "error": "the request names no id"}) };
             if let Some(r) = engine.records.get(&id) {
-                return json!({"ok": true, "record": r});
+                let mut record = json!(r);
+                nullrouter_engine::phases::decorate(&mut record, None);
+                return json!({"ok": true, "record": record});
             }
             let home = engine.home().path().to_owned();
             let found = tokio::task::spawn_blocking(move || nullrouter_engine::journal::records::get(&home, &id)).await;
             match found {
-                Ok(Some(r)) => json!({"ok": true, "record": r}),
+                Ok(Some(mut r)) => {
+                    nullrouter_engine::phases::decorate(&mut r, None);
+                    json!({"ok": true, "record": r})
+                }
                 _ => json!({"ok": false, "error": "no such record"}),
             }
         }
         Some("keys.last_used") => keys_last_used(engine).await,
+        Some("usage.totals") => usage_totals(engine, req).await,
+        Some("latency.summary") => latency_summary(engine, req).await,
         Some("records.forget") => {
             let st = engine.snapshot();
             let now = nullrouter_engine::clock::now();
@@ -207,12 +368,141 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         Some("quota.list") => crate::quota::list(engine, req),
         Some("quota.poll") => crate::quota::poll_now(engine, req).await,
         Some("quota.checkpoint") => crate::quota::checkpoint(engine).await,
+        Some("test.plan") => test_plan(engine, req),
+        Some("test.run") => json!({"ok": false, "error": "test.run streams: send it on its own connection"}),
+        Some("verdicts.list") => verdicts_list(engine, req),
+        Some("verdicts.set") => verdicts_set(engine, req),
         Some(op) => json!({"ok": false, "error": format!("unknown op {op:?}")}),
         None => json!({"ok": false, "error": "the request names no op"}),
     }
 }
 
+/// `verdicts.list`: every verdict the filter keeps, with why its retest waits, and the combo
+/// results (those only with no provider, account or model filter). Reasons pass the redactor.
+fn verdicts_list(engine: &Engine, req: &Value) -> Value {
+    use nullrouter_engine::tests::retest;
+    use nullrouter_engine::verdict::{Filter, State, store};
+
+    let str_of = |k: &str| req.get(k).and_then(Value::as_str).map(str::to_owned);
+    let state = match str_of("state") {
+        Some(s) => match State::parse(&s) {
+            Some(s) => Some(s),
+            None => return json!({"ok": false, "error": "--state is pass, broken or unknown"}),
+        },
+        None => None,
+    };
+    let filter = Filter { provider: str_of("provider"), account: str_of("account"), model: str_of("model"), state };
+    let st = engine.snapshot();
+    let now = nullrouter_engine::clock::now();
+    let redact = |line: &mut Value| {
+        if let Some(r) = line["reason"].as_str() {
+            let shown = st.redactor.redact(r).into_owned();
+            line["reason"] = json!(shown);
+        }
+    };
+    let verdicts: Vec<Value> = engine
+        .verdicts
+        .list(&filter)
+        .into_iter()
+        .map(|(pair, v)| {
+            let mut line = store::set_line(&pair, &v);
+            if let Some(map) = line.as_object_mut() {
+                map.remove("basis");
+            }
+            redact(&mut line);
+            if let Some(why) = v.next.and_then(|_| retest::waiting(engine, &st, &pair, now)) {
+                line["waiting"] = json!(why);
+            }
+            line
+        })
+        .collect();
+    let by_pair = filter.provider.is_some() || filter.account.is_some() || filter.model.is_some();
+    let combos: Vec<Value> = if by_pair {
+        Vec::new()
+    } else {
+        let all = engine.verdicts.snapshot();
+        all.combos
+            .iter()
+            .filter(|(_, c)| state.is_none_or(|s| s == c.state))
+            .map(|(name, c)| {
+                let mut line = store::combo_line(name, c);
+                if let Some(map) = line.as_object_mut() {
+                    map.remove("definition");
+                }
+                redact(&mut line);
+                let combo = c.next.and_then(|_| st.registry.combo(name));
+                if let Some(why) = combo.and_then(|k| retest::combo_waiting(engine, &st, k)) {
+                    line["waiting"] = json!(why);
+                }
+                line
+            })
+            .collect()
+    };
+    json!({"ok": true, "verdicts": verdicts, "combos": combos})
+}
+
+/// `verdicts.set`: the operator marks a pair BROKEN (with an optional note) or clears it.
+fn verdicts_set(engine: &Engine, req: &Value) -> Value {
+    use nullrouter_engine::verdict::{self, Mark};
+
+    let str_of = |k: &str| req.get(k).and_then(Value::as_str).map(str::to_owned);
+    let (Some(provider), Some(account), Some(model)) = (str_of("provider"), str_of("account"), str_of("model")) else {
+        return json!({"ok": false, "error": "verdicts.set names a provider, an account and a model"});
+    };
+    let mark = match str_of("state").as_deref() {
+        Some("broken") => Mark::Broken { note: str_of("note").filter(|n| !n.trim().is_empty()) },
+        Some("clear") => Mark::Clear,
+        _ => return json!({"ok": false, "error": "state is broken or clear"}),
+    };
+    match verdict::mark(engine, &provider, &account, &model, mark) {
+        Ok(()) => json!({"ok": true}),
+        Err(e) => json!({"ok": false, "error": e}),
+    }
+}
+
 /// `keys.last_used`: the journal read runs on the blocking pool, as `records.get`'s does.
+/// The requests in flight (spec 013, contracts/operator-socket.md). Paused proxies come with
+/// the proxy slice; until then the list is empty. The agent shows as the key's name.
+fn live_snapshot(engine: &Arc<Engine>) -> Value {
+    let st = engine.snapshot();
+    let names: std::collections::HashMap<&str, &str> = st.keys.iter().map(|k| (k.id.as_str(), k.name.as_str())).collect();
+    let in_flight: Vec<Value> = engine
+        .live
+        .snapshot()
+        .into_iter()
+        .filter_map(|s| serde_json::to_value(&s).ok().map(|v| (s.agent, v)))
+        .map(|(agent, mut v)| {
+            v["agent"] = json!(names.get(agent.as_str()).copied().unwrap_or(&agent));
+            v
+        })
+        .collect();
+    json!({
+        "ok": true,
+        "as_of": nullrouter_engine::clock::now_rfc3339(),
+        "paused_proxies": engine
+            .proxy_board
+            .list()
+            .into_iter()
+            .map(|(name, p)| json!({"name": name, "since": p.since, "reason": p.reason}))
+            .collect::<Vec<_>>(),
+        "in_flight": in_flight,
+    })
+}
+
+/// `proxy.fixed`: probes the proxy, and resumes it if it answers (clarify Q1).
+async fn proxy_fixed(engine: &Arc<Engine>, name: Option<String>) -> Value {
+    let Some(name) = name else { return json!({"ok": false, "error": "the request names no proxy"}) };
+    let st = engine.snapshot();
+    let Some(proxy) = st.clients.proxies().get(&name) else {
+        let known: Vec<&str> = st.clients.proxies().iter().map(|p| p.name.as_str()).collect();
+        return json!({"ok": false, "error": format!("no proxy {name:?}; known proxies: {}", known.join(", "))});
+    };
+    match engine.proxy_board.fixed(proxy, std::time::Duration::from_secs(10)).await {
+        Ok(()) => json!({"ok": true, "reachable": true}),
+        Err(reason) => json!({"ok": true, "reachable": false, "reason": reason}),
+    }
+}
+
 async fn keys_last_used(engine: &Arc<Engine>) -> Value {
     use nullrouter_engine::keys::{self, Keys};
 
@@ -245,6 +535,63 @@ async fn keys_last_used(engine: &Arc<Engine>) -> Value {
     json!({"ok": true, "last_used": shown})
 }
 
+/// The window an op names: `from` is null for all time, `to` is required.
+fn window_of(req: &Value) -> Result<summary::Window, Value> {
+    let parse = nullrouter_engine::clock::parse_rfc3339;
+    let to = req.get("to").and_then(Value::as_str).and_then(parse);
+    let from = match req.get("from") {
+        None | Some(Value::Null) => None,
+        Some(f) => match f.as_str().and_then(parse) {
+            Some(t) => Some(t),
+            None => return Err(json!({"ok": false, "error": "from is not an RFC 3339 time"})),
+        },
+    };
+    match to {
+        Some(to) => Ok(summary::Window { from, to }),
+        None => Err(json!({"ok": false, "error": "to is not an RFC 3339 time"})),
+    }
+}
+
+/// `usage.totals`: the journal read runs on the blocking pool, with the requests still in the
+/// live ring merged over it.
+async fn usage_totals(engine: &Arc<Engine>, req: &Value) -> Value {
+    let w = match window_of(req) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let home = engine.home().path().to_owned();
+    let st = engine.snapshot();
+    let live: Vec<Value> =
+        engine.records.query(&Query::default()).iter().filter_map(|r| serde_json::to_value(r).ok()).collect();
+    let read = tokio::task::spawn_blocking(move || {
+        let prices = summary::prices_of(&st.registry, &st.accounts);
+        summary::totals_with(&home, &w, &prices, Some(st.generation), &live, true)
+    })
+    .await;
+    match read {
+        Ok(totals) => {
+            json!({"ok": true, "totals": totals, "window": {"from": w.from.map(nullrouter_engine::clock::rfc3339), "to": nullrouter_engine::clock::rfc3339(w.to)}})
+        }
+        Err(e) => json!({"ok": false, "error": format!("the read failed: {e}")}),
+    }
+}
+
+/// `latency.summary`: as `usage.totals`, on the blocking pool with the live ring merged over disk.
+async fn latency_summary(engine: &Arc<Engine>, req: &Value) -> Value {
+    let w = match window_of(req) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let home = engine.home().path().to_owned();
+    let live: Vec<Value> =
+        engine.records.query(&Query::default()).iter().filter_map(|r| serde_json::to_value(r).ok()).collect();
+    let read = tokio::task::spawn_blocking(move || summary::latency(&home, &w, &live, true)).await;
+    match read {
+        Ok(latency) => json!({"ok": true, "latency": latency}),
+        Err(e) => json!({"ok": false, "error": format!("the read failed: {e}")}),
+    }
+}
+
 /// `records.list`: what the journal holds plus what is still in flight (the live ring is the
 /// fresher copy of a record it has). Reading the segments happens off the executor.
 async fn records_list(engine: &Arc<Engine>, req: &Value) -> Value {
@@ -260,6 +607,7 @@ async fn records_list(engine: &Arc<Engine>, req: &Value) -> Value {
         since: str_of("since").and_then(|s| nullrouter_engine::clock::parse_rfc3339(&s)),
         limit,
         before: str_of("before"),
+        test: req.get("test").and_then(Value::as_bool),
     };
     let home = engine.home().path().to_owned();
     if let Some(id) = &filter.before {
@@ -284,6 +632,18 @@ async fn records_list(engine: &Arc<Engine>, req: &Value) -> Value {
         live.iter().filter_map(|r| r["id"].as_str().map(str::to_owned)).collect();
     disk.retain(|r| r["id"].as_str().is_none_or(|id| !ids.contains(id)));
     disk.extend(live);
+    disk.iter_mut().for_each(|r| nullrouter_engine::phases::decorate(r, None));
+    // A request in flight shows the phase it is in now (FR-013).
+    for r in disk.iter_mut().filter(|r| r["outcome"] == "in_progress") {
+        if let Some((phase, ms)) = r["id"].as_str().and_then(|id| engine.live.current(id)) {
+            r["slowest"] = json!({
+                "phase": phase.name(),
+                "ms": ms,
+                "side": nullrouter_engine::phases::side(phase),
+                "in_progress": true,
+            });
+        }
+    }
     disk.sort_by(|a, b| b["id"].as_str().cmp(&a["id"].as_str()));
     disk.truncate(limit.unwrap_or(usize::MAX));
     json!({"ok": true, "records": disk})
@@ -357,6 +717,27 @@ pub fn call(home: &OperatorHome, req: &Value) -> Result<Value, CallError> {
     let mut answer = String::new();
     BufReader::new(stream).read_line(&mut answer)?;
     serde_json::from_str(&answer).map_err(|e| CallError::BadAnswer(e.to_string()))
+}
+
+/// [`call`] for a streamed answer: `event` is called with each line that carries an `event`,
+/// and the closing line is returned. No read timeout: a test may run for many minutes, and
+/// dropping the connection (the CLI exiting) cancels what is not yet sent.
+pub fn call_stream(home: &OperatorHome, req: &Value, mut event: impl FnMut(&Value)) -> Result<Value, CallError> {
+    let path = socket_path(home);
+    let mut stream =
+        std::os::unix::net::UnixStream::connect(&path).map_err(|_| CallError::NoServer(path.display().to_string()))?;
+    let mut line = req.to_string();
+    line.push('\n');
+    stream.write_all(line.as_bytes())?;
+    for line in BufReader::new(stream).lines() {
+        let v: Value = serde_json::from_str(&line?).map_err(|e| CallError::BadAnswer(e.to_string()))?;
+        if v.get("event").is_some() {
+            event(&v);
+        } else {
+            return Ok(v);
+        }
+    }
+    Err(CallError::BadAnswer("the server closed the connection".into()))
 }
 
 #[cfg(test)]

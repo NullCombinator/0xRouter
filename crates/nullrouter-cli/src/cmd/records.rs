@@ -44,6 +44,12 @@ pub(crate) enum Command {
         /// Only records older than this one: the next page back. The id must name a record.
         #[arg(long, value_name = "ID")]
         before: Option<String>,
+        /// Only test calls (`nullrouter test`, retests, combo tests).
+        #[arg(long, conflicts_with = "no_test")]
+        test: bool,
+        /// Only client requests, no test calls.
+        #[arg(long)]
+        no_test: bool,
     },
     Show {
         id: String,
@@ -84,10 +90,11 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
     let running = views::server_runs(&home);
     match cmd {
-        Command::List { provider, account, agent, model, reason, since, limit, before } => {
+        Command::List { provider, account, agent, model, reason, since, limit, before, test, no_test } => {
+            let test = (test || no_test).then_some(test);
             let args = json!({
                 "provider": provider, "account": account, "agent": agent, "model": model,
-                "reason": reason, "since": since, "limit": limit, "before": before,
+                "reason": reason, "since": since, "limit": limit, "before": before, "test": test,
             });
             let view = super::read(&home, views::records::NEEDS, &args, views::records::build)?;
             if as_json {
@@ -217,18 +224,122 @@ fn who(v: &Value) -> String {
     }
 }
 
-/// One `records list` line.
+/// One `records list` line; a test call ends with its `test` tag and run id.
 fn line(r: &Value) -> String {
     let served = if r["served_by"].is_null() { "-".into() } else { who(&r["served_by"]) };
-    format!(
-        "{}  {}  {:<10} {:<20} {:<24} {}",
+    let test = match r["test"]["run"].as_str() {
+        Some(run) => format!("  test {run}"),
+        None => String::new(),
+    };
+    let line = format!(
+        "{}  {}  {:<10} {:<20} {:<24} {}{test}",
         s(&r["id"]),
         when(&r["arrived"]),
         s(&r["outcome"]).replace('_', " "),
         s(&r["style"]),
         r["target"].as_str().unwrap_or("-"),
         served
-    )
+    );
+    match slowest(r) {
+        Some(text) => format!("{line}  {text}"),
+        None => line,
+    }
+}
+
+/// `1.2 ms`, `41.2 s`: a phase time at the size a person reads.
+fn span(ms: f64) -> String {
+    if ms < 1000.0 { format!("{ms:.1} ms") } else { format!("{:.1} s", ms / 1000.0) }
+}
+
+/// The `SLOWEST` column: the longest phase, its time and its side. `…` marks a phase still
+/// running; `not recorded` a request from before phases were kept. Nothing for a record with
+/// no attempt to time.
+fn slowest(r: &Value) -> Option<String> {
+    let sl = &r["slowest"];
+    if let Some(phase) = sl["phase"].as_str() {
+        let more = if sl["in_progress"] == true { "…" } else { "" };
+        let time = sl["ms"].as_f64().map_or_else(|| "-".into(), span);
+        return Some(format!("{} {time}{more} ({})", phase.replace('_', " "), s(&sl["side"])));
+    }
+    let attempts = r["attempts"].as_array()?;
+    let unrecorded = |a: &Value| a["phases"] == "not_recorded";
+    (attempts.iter().any(unrecorded)).then(|| "not recorded".to_owned())
+}
+
+/// The attempt header's second line: how the connection came, and how the attempt ended.
+fn connection_line(a: &Value) -> String {
+    let t = &a["timing"];
+    let mut parts: Vec<String> = Vec::new();
+    match t["connection"].as_str() {
+        Some("new") => parts.push("new connection".into()),
+        Some("reused") => parts.push("reused".into()),
+        _ => {}
+    }
+    if let Some(v) = t["http"].as_str() {
+        parts.push(format!("HTTP/{}", if v == "2" { "2" } else { "1.1" }));
+    }
+    if let Some(p) = t["proxy"].as_str() {
+        parts.push(format!("proxy {p}"));
+    }
+    let mut out = parts.join(" · ");
+    if let Some(p) = a["phases"]["ended_in"].as_str() {
+        let mut why = format!("failed in {}", p.replace('_', " "));
+        let hit = &t["timeout"];
+        if let Some(which) = hit["which"].as_str() {
+            let by = match s(&hit["source"]["by"]) {
+                "built_in" => "built-in".to_owned(),
+                other => other.to_owned(),
+            };
+            why += &format!(
+                " (timeout: {} {} ms, {by} {})",
+                which.replace('_', " "),
+                hit["ms"],
+                match s(&hit["source"]["level"]) {
+                    l @ ("model" | "provider" | "endpoint") => format!("per {l}"),
+                    other => other.to_owned(),
+                }
+            );
+        }
+        if !out.is_empty() {
+            out += "   ";
+        }
+        out += &why;
+    }
+    out
+}
+
+/// The phase table of one attempt, one row a phase.
+fn phase_rows(a: &Value, o: &mut String) {
+    let p = &a["phases"];
+    if p == "not_recorded" {
+        let _ = writeln!(o, "       phases  not recorded");
+        return;
+    }
+    let Some(map) = p.as_object() else { return };
+    let t = &a["timing"];
+    let note = |name: &str| -> String {
+        match name {
+            "connect" => t["refresh_ms"]
+                .as_f64()
+                .map_or_else(String::new, |r| format!("   (includes token refresh {})", span(r))),
+            "delivery" => t["closing_ms"]
+                .as_f64()
+                .map_or_else(String::new, |c| format!("   (of which record close {})", span(c))),
+            _ => String::new(),
+        }
+    };
+    for name in
+        ["router_overhead", "retry_wait", "connect", "headers", "first_token", "waiting_for_provider", "generation", "delivery"]
+    {
+        let Some(v) = map.get(name) else { continue };
+        let text = match v {
+            Value::Number(n) => span(n.as_f64().unwrap_or(0.0)),
+            Value::Object(o) => format!("{}…", span(o["in_progress"].as_f64().unwrap_or(0.0))),
+            Value::String(x) => x.replace('_', " "),
+            _ => continue,
+        };
+        let _ = writeln!(o, "       {:<22}{text}{}", name.replace('_', " "), note(name));
+    }
 }
 
 fn outcome(a: &Value) -> String {
@@ -375,6 +486,12 @@ fn show(r: &Value, names: &std::collections::HashMap<String, String>) -> String 
         let unified = if r["unified_model"].is_null() { "" } else { " (unified)" };
         let _ = writeln!(o, "target      {t}{unified}");
     }
+    if let Some(c) = r["combo"].as_str() {
+        let _ = writeln!(o, "combo       {c}");
+    }
+    if let Some(t) = r["test"].as_object() {
+        let _ = writeln!(o, "test        {}  run {}", s(&t["source"]).replace('_', " "), s(&t["run"]));
+    }
     if !r["served_by"].is_null() {
         let _ = writeln!(o, "served by   {}  {}", who(&r["served_by"]), s(&r["served_by"]["model"]));
     }
@@ -411,9 +528,30 @@ fn show(r: &Value, names: &std::collections::HashMap<String, String>) -> String 
             let used = attempt_usage(&a["usage"]);
             let _ = writeln!(o, "       {:.2} s{used}", (to - from) / 1000.0);
         }
+        if let Some(m) = a["member"].as_str() {
+            let _ = writeln!(o, "       member {m}");
+        }
         for d in a["dropped"].as_array().into_iter().flatten() {
             let _ = writeln!(o, "       dropped {}: {}", s(&d["path"]), s(&d["reason"]));
         }
+        let how = connection_line(a);
+        if !how.is_empty() {
+            let _ = writeln!(o, "       {how}");
+        }
+        if a["kind"] != "skipped" {
+            phase_rows(a, &mut o);
+        }
+    }
+    let sum: f64 = r["attempts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|a| a["phases"].as_object())
+        .flat_map(|m| m.values())
+        .filter_map(Value::as_f64)
+        .sum();
+    if sum > 0.0 {
+        let _ = writeln!(o, "total {} = sum of phases", span(sum));
     }
     o
 }
@@ -504,5 +642,97 @@ mod tests {
         warm["decision"]["warm"]["stayed"] = json!(false);
         warm["decision"]["warm"]["moved_because"] = json!("reserve_floor");
         assert!(show(&warm, &Default::default()).contains("moved: reserve_floor on anthropic/max"));
+    }
+
+    fn timed(extra: Value) -> Value {
+        let mut r = json!({
+            "id": "rq_01", "arrived": "2026-10-07T14:01:55Z", "outcome": "succeeded", "style": "openai-chat",
+            "target": "gpt-5", "served_by": {"provider": "openrouter", "account": "main", "model": "m"},
+            "ttft_ms": 9300.0, "total_ms": 41000.6, "usage": null, "break_handling": {"kind": "none"},
+            "attempts": [
+                {"n": 1, "provider": "openrouter", "account": "main", "model": "m", "started": 4.1, "ended": 6046.3,
+                 "outcome": {"state": "failed", "status": null, "class": "timeout", "reason": "no response headers"},
+                 "dropped": [],
+                 "timing": {"connection": "new", "http": "2", "proxy": "eu-exit", "refresh_ms": 0.5,
+                            "timeout": {"which": "headers", "ms": 6000, "source": {"by": "operator", "level": "provider"}}},
+                 "phases": {"router_overhead": 4.1, "retry_wait": "not_applicable", "connect": 41.0, "headers": 6000.2,
+                            "first_token": "not_applicable", "generation": "not_applicable",
+                            "delivery": "not_applicable", "ended_in": "headers"}},
+                {"n": 2, "provider": "openrouter", "account": "main", "model": "m", "started": 6048.3, "ended": 41000.6,
+                 "outcome": {"state": "ok"}, "dropped": [],
+                 "timing": {"connection": "reused", "http": "2", "closing_ms": 1.1},
+                 "phases": {"router_overhead": 0.3, "retry_wait": 2000.0, "connect": "not_applicable",
+                            "waiting_for_provider": 3205.5, "generation": 31740.5, "delivery": 12.3, "ended_in": null}}
+            ],
+            "slowest": {"phase": "generation", "ms": 30100.0, "side": "provider", "in_progress": false}
+        });
+        for (k, v) in extra.as_object().unwrap() {
+            r[k] = v.clone();
+        }
+        r
+    }
+
+    #[test]
+    fn list_shows_the_slowest_phase_with_its_side() {
+        let done = line(&timed(json!({})));
+        assert!(done.ends_with("generation 30.1 s (provider)"), "{done}");
+        let live = line(&timed(json!({"slowest": {"phase": "headers", "ms": 2100.0, "side": "provider", "in_progress": true}})));
+        assert!(live.ends_with("headers 2.1 s… (provider)"), "{live}");
+        let merged = line(&timed(json!({"slowest": {"phase": "waiting_for_provider", "ms": 41.2, "side": "provider", "in_progress": false}})));
+        assert!(merged.ends_with("waiting for provider 41.2 ms (provider)"), "{merged}");
+        let old = line(&timed(json!({"slowest": null, "attempts": [{"n": 1, "phases": "not_recorded"}]})));
+        assert!(old.ends_with("not recorded"), "{old}");
+        let none = line(&timed(json!({"slowest": null, "attempts": []})));
+        assert!(!none.contains("not recorded") && !none.contains("provider)"), "{none}");
+    }
+
+    #[test]
+    fn show_prints_the_phase_table_per_attempt() {
+        let text = show(&timed(json!({})), &Default::default());
+        for want in [
+            "new connection · HTTP/2 · proxy eu-exit   failed in headers (timeout: headers 6000 ms, operator per provider)",
+            "router overhead       4.1 ms",
+            "connect               41.0 ms   (includes token refresh 0.5 ms)",
+            "headers               6.0 s",
+            "first token           not applicable",
+            "reused · HTTP/2",
+            "retry wait            2.0 s",
+            "connect               not applicable",
+            "waiting for provider  3.2 s",
+            "generation            31.7 s",
+            "delivery              12.3 ms   (of which record close 1.1 ms)",
+            "= sum of phases",
+        ] {
+            assert!(text.contains(want), "{want:?} missing from:\n{text}");
+        }
+        let old = timed(json!({"attempts": [{"n": 1, "provider": "p", "model": "m", "outcome": {"state": "ok"}, "dropped": [], "phases": "not_recorded"}]}));
+        assert!(show(&old, &Default::default()).contains("phases  not recorded"));
+    }
+
+    /// Spec 011: a test call's tag and run id, its combo and each attempt's member path.
+    #[test]
+    fn a_test_call_shows_its_run_combo_and_members() {
+        let r = json!({
+            "id": "rq_07", "arrived": "2026-10-07T09:20:00Z", "outcome": "succeeded", "style": "openai-chat",
+            "op": "generate", "model_type": "text", "target": "coder", "combo": "coder",
+            "test": {"run": "tr_01", "source": "combo_test"},
+            "served_by": {"provider": "beta", "account": "a", "model": "m1"},
+            "break_handling": {"kind": "none"},
+            "attempts": [
+                {"n": 1, "provider": "alpha", "account": "a", "model": "m1", "member": "coder › ua",
+                 "outcome": {"state": "failed", "status": 503, "class": "transient", "reason": "overloaded"}},
+                {"n": 2, "provider": "beta", "account": "a", "model": "m1", "member": "coder › chain › ub",
+                 "outcome": {"state": "ok"}}
+            ]
+        });
+        assert!(line(&r).ends_with("beta/a  test tr_01"), "{}", line(&r));
+        let text = show(&r, &Default::default());
+        for want in ["combo       coder\n", "test        combo test  run tr_01\n", "       member coder › ua\n",
+                     "       member coder › chain › ub\n"] {
+            assert!(text.contains(want), "{want:?} missing from:\n{text}");
+        }
+        let mut client = r.clone();
+        client.as_object_mut().unwrap().remove("test");
+        assert!(line(&client).ends_with("beta/a"), "a client request has no tag");
     }
 }

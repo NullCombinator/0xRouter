@@ -28,15 +28,16 @@ pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, Vi
             let mut row = json!({
                 "id": k.id,
                 "name": k.name,
+                "harness": k.harness,
                 "key": format!("…{}", k.last4),
                 "created": k.created,
                 "revoked": k.revoked,
                 "break": k.break_behaviour.map(BreakBehaviour::as_str),
                 "last_used": last_used(&k.id),
             });
-            // Only when bound, so a list with no harness keys reads as it did before slice 004.
-            if let Some(h) = &k.harness {
-                row["harness"] = json!(h.as_str());
+            // Only when bound, so a list with no adapter keys reads as it did before slice 004.
+            if let Some(a) = &k.adapter {
+                row["adapter"] = json!(a.as_str());
             }
             row
         })

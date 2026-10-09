@@ -8,7 +8,7 @@ output says either `applied` or `saved; applies at next start` (FR-029: no resta
 
 | Path | Mode | Contents |
 |---|---|---|
-| `keys.toml` | 0600 | Each `[[key]]` gains an optional `harness` field |
+| `keys.toml` | 0600 | Each `[[key]]` gains an optional `adapter` field (the binding; slice 010's `harness` is a separate display-only tag) |
 | `config.toml` | any | Gains `[adapters]` ([data-model.md](../data-model.md#adaptersconfig-configtoml-adapters)) |
 | `adapters/index.toml` | 0600 | Harnesses, versions, states, `[review]` |
 | `adapters/<harness>/<version-id>/…` | 0600 files, 0700 dirs | Source, module, build, review, decision |
@@ -23,8 +23,8 @@ for `keys.toml`.
 
 | Command | Effect |
 |---|---|
-| `nullrouter keys issue <name> [--harness H] [--break …]` | As in slice 003, with an optional harness |
-| `nullrouter keys set-harness <name\|id> <H>` / `--clear` | Binds or unbinds a harness |
+| `nullrouter keys issue <name> [--adapter H] [--harness TEXT] [--break …]` | As in slice 003, with an optional adapter binding (and slice 010's display tag) |
+| `nullrouter keys set-adapter <name\|id> <H>` / `--clear` | Binds or unbinds a harness's adapter |
 | `nullrouter keys list` | Gains a `harness` column |
 
 **Adapters** (FR-029):

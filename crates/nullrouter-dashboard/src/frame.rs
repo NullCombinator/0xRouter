@@ -125,7 +125,8 @@ fn panel(check: Option<&Value>, accounts: Option<&Value>, req: Option<&Req>) -> 
         .flatten()
         .map(|n| (n["level"].as_str().unwrap_or("note"), n["text"].as_str().unwrap_or_default()))
         .collect();
-    let needing: Vec<&Value> = accounts.and_then(Value::as_array).into_iter().flatten().filter(|a| needs_action(a)).collect();
+    let needing: Vec<&Value> =
+        accounts.and_then(Value::as_array).into_iter().flatten().filter(|a| needs_action(a)).collect();
     let close = req.map_or_else(|| "/".to_owned(), |r| r.toggle_notices_href(&r.path()));
     html! {
         section class="house-panel" aria-label="Housekeeping" {
@@ -266,7 +267,17 @@ mod tests {
         let req = Req::parse("/quota", "").unwrap();
         let (c, a) = (check(), json!([]));
         let html = document(&frame(&req, &c, &a), Body::new(html! { p { "content" } })).into_string();
-        let labels = ["Endpoint &amp; Key", "Providers", "Combo", "Usage", "Quota Tracker", "System", "Proxy Pools", "Console Log", "Settings"];
+        let labels = [
+            "Endpoint &amp; Key",
+            "Providers",
+            "Combo",
+            "Usage",
+            "Quota Tracker",
+            "System",
+            "Proxy Pools",
+            "Console Log",
+            "Settings",
+        ];
         let mut at = 0;
         for l in labels {
             let i = html[at..].find(l).unwrap_or_else(|| panic!("{l} after byte {at}: {html}"));
@@ -300,12 +311,19 @@ mod tests {
             { "provider": "xai", "name": "fine", "state": "active", "state_text": "active" },
         ]);
         let html = document(&frame(&req, &c, &a), Body::new(html! {})).into_string();
-        let (e, w, n) = (html.find("skipped: bad.toml").unwrap(), html.find("warning: xai").unwrap(), html.find("note: something").unwrap());
+        let (e, w, n) = (
+            html.find("skipped: bad.toml").unwrap(),
+            html.find("warning: xai").unwrap(),
+            html.find("note: something").unwrap(),
+        );
         assert!(e < w && w < n, "errors, then warnings, then notes");
         assert!(html.contains("nullrouter accounts signin anthropic work"));
         assert!(html.contains("cooling grok-4 12 s") && !html.contains("xai/fine") && !html.contains(">fine<"));
         assert!(html.contains("disabled") && html.contains(CHAT));
-        assert!(html.contains(r#"href="/usage/records/rq_1""#), "the button closes the panel on the same window: {html}");
+        assert!(
+            html.contains(r#"href="/usage/records/rq_1""#),
+            "the button closes the panel on the same window: {html}"
+        );
     }
 
     #[test]

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use nullrouter_engine::maintenance;
 use nullrouter_engine::redact::RedactWriter;
 use nullrouter_engine::state::Engine;
+use nullrouter_engine::tests::retest;
 use nullrouter_registry::OperatorHome;
 use nullrouter_server::operator;
 use nullrouter_server::serve::{self, App};
@@ -67,6 +68,9 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
         // Token refreshes, quota polls and live model lists run while the server is up
         // (research R11, R13, R14).
         let upkeep = maintenance::spawn(engine.clone(), until_stopped(stopped.clone()));
+        // UNKNOWN verdicts are retested on their own task, never in a maintenance slot (spec
+        // 011 research R8).
+        let retests = retest::spawn(engine.clone(), until_stopped(stopped.clone()));
         let journal_owner = engine.clone();
         // The dashboard has its own listener and task; a bind failure is recorded, not fatal
         // (spec 009).
@@ -85,6 +89,7 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
         let _ = ops.await;
         dashboard.stopped().await;
         let _ = upkeep.await;
+        let _ = retests.await;
         // Every line sent so far is written and synced before the process exits (spec 006).
         let _ = tokio::task::spawn_blocking(move || journal_owner.journal.shutdown()).await;
         served.map_err(|e| {

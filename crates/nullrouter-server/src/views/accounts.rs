@@ -3,6 +3,7 @@
 
 use nullrouter_engine::accounts::{Account, Accounts};
 use nullrouter_engine::clock::{parse_rfc3339, rfc3339};
+use nullrouter_engine::connection::{ProxyLevel, proxy_for};
 use nullrouter_engine::tokens::{PersistedState, TokenEntry, TokenStore};
 use nullrouter_registry::OperatorHome;
 use serde_json::{Value, json};
@@ -119,6 +120,8 @@ pub fn build(home: &OperatorHome, args: &Value, live: &Live) -> Result<View, Vie
         warnings.push(format!("warning: {e}"));
         TokenStore::default()
     });
+    // The proxy column needs the settings; a registry that won't open leaves it blank.
+    let registry = super::open_registry(home).ok().map(|h| h.snapshot());
     let rows: Vec<Value> = list
         .iter()
         .filter(|a| provider.is_none_or(|p| a.provider == p))
@@ -130,6 +133,12 @@ pub fn build(home: &OperatorHome, args: &Value, live: &Live) -> Result<View, Vie
                 None => a.shown_secret(),
             };
             let s = shown(a, &live, t);
+            let chosen = registry.as_ref().map(|r| proxy_for(r, &a.provider, Some(a)));
+            let level = chosen.as_ref().and_then(|c| c.level).map(|l| match l {
+                ProxyLevel::Account => "account",
+                ProxyLevel::Provider => "provider",
+                ProxyLevel::All => "all",
+            });
             json!({
                 "provider": a.provider,
                 "name": a.name,
@@ -137,6 +146,8 @@ pub fn build(home: &OperatorHome, args: &Value, live: &Live) -> Result<View, Vie
                 "order": a.order,
                 "priority": a.priority,
                 "secret": secret,
+                "proxy": chosen.as_ref().and_then(|c| c.name.clone()),
+                "proxy_level": level,
                 "state": s.state,
                 "state_since": s.since,
                 "state_reason": s.reason,

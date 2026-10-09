@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use arc_swap::ArcSwap;
 
 pub mod community;
+mod combos;
 mod convert;
 mod credentials;
 pub mod fit;
@@ -27,6 +28,7 @@ pub mod template;
 pub mod validate;
 mod views;
 
+pub use combos::{Combo, ComboStep, DroppedCombo};
 pub use credentials::{ResolvedCredential, SecretString};
 #[cfg(feature = "parity")]
 pub use load::parity_set;

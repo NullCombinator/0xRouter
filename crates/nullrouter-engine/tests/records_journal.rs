@@ -268,3 +268,68 @@ async fn when_the_disk_refuses_writes_clients_still_get_answers_and_writing_resu
         assert_eq!(r["outcome"], "succeeded", "{id}");
     }
 }
+
+fn timed_attempt(timing: Option<nullrouter_engine::records::AttemptTiming>) -> nullrouter_engine::records::Attempt {
+    use nullrouter_engine::records::{Attempt, AttemptKind, AttemptOutcome};
+    Attempt {
+        n: 1,
+        provider: "alpha".into(),
+        account: Some("a".into()),
+        model: "m1".into(),
+        kind: AttemptKind::Initial,
+        started: 1.0,
+        ended: Some(90.0),
+        outcome: Some(AttemptOutcome::Ok),
+        usage: None,
+        dropped: Vec::new(),
+        forced: Vec::new(),
+        placement: None,
+        adapter: None,
+        member: None,
+        timing,
+    }
+}
+
+/// Journals one finished request holding `attempt` and reads it back as the CLI does.
+fn journal_one(id: &str, attempt: nullrouter_engine::records::Attempt) -> Value {
+    use nullrouter_engine::records::{Outcome, RecordStore, RequestRecord};
+    let home = tempfile::tempdir().unwrap();
+    let journal = Arc::new(Journal::start(home.path(), Options::default()).unwrap());
+    let store = RecordStore::journaled(journal.clone());
+    store.insert(RequestRecord::new(id.into(), "2026-10-07T10:00:00Z".into(), "openai-chat"));
+    store.update(id, |r| {
+        r.attempts.push(attempt);
+        r.outcome = Outcome::Succeeded;
+        r.total_ms = Some(90.0);
+    });
+    journal.flush_blocking();
+    let read = records::read(home.path(), &Filter::default());
+    assert_eq!(read.len(), 1);
+    read[0].clone()
+}
+
+#[test]
+fn a_record_from_before_the_slice_has_no_timing() {
+    let r = journal_one("rq_old", timed_attempt(None));
+    assert!(r["attempts"][0].get("timing").is_none_or(Value::is_null), "{r}");
+}
+
+#[test]
+fn a_record_with_timing_round_trips_through_the_journal() {
+    use nullrouter_engine::records::{AttemptTiming, Connection};
+    let t = AttemptTiming {
+        retry_wait_ms: Some(200.0),
+        connected: Some(12.5),
+        connection: Connection::New,
+        http: Some("2".into()),
+        proxy: Some("eu-exit".into()),
+        headers: Some(40.25),
+        first_output: Some(55.5),
+        upstream_done: Some(80.0),
+        blocked_ms: 3.5,
+        ..AttemptTiming::default()
+    };
+    let r = journal_one("rq_new", timed_attempt(Some(t.clone())));
+    assert_eq!(r["attempts"][0]["timing"], serde_json::to_value(&t).unwrap());
+    assert_eq!(r["attempts"][0]["timing"]["connection"], "new");
+}

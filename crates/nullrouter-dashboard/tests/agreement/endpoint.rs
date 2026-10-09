@@ -6,7 +6,7 @@ use nullrouter_dashboard::page::ViewName;
 use nullrouter_engine::files::DashboardToken;
 use serde_json::{Value, json};
 
-use crate::common::{Dash, TOKEN, assert_fields, assert_shows, text_of};
+use crate::common::{Dash, TOKEN, assert_fields, assert_shows, home_with_traffic, text_of};
 
 /// The key cards of the page, each as its own HTML.
 fn key_cards(html: &str) -> Vec<String> {
@@ -49,13 +49,22 @@ async fn each_key_card_shows_what_keys_list_shows() {
             Some(_) => assert_shows(card, &k["revoked"], &what),
             None => assert!(!text.contains("revoked"), "{what} is not revoked: {text}"),
         }
+        match k["harness"].as_str() {
+            Some(tag) => {
+                assert!(
+                    card.contains(&format!("badge--primary\"><span class=\"badge__dot\"></span>{tag}<")),
+                    "{what}: harness {tag}\n{card}"
+                )
+            }
+            None => assert!(!card.contains("badge"), "{what} has no tag, so no badge: {card}"),
+        }
         let behaviour = k["break"].as_str().unwrap_or("default");
         assert!(text.contains(&format!("break {behaviour}")), "{what}: break {behaviour}\n{text}");
         match k["last_used"].as_str() {
             Some(_) => assert_shows(card, &k["last_used"], &what),
             None => assert!(text.contains("last used never"), "{what} was never used: {text}"),
         }
-        assert!(text.contains("Requests today"), "{what} has its slot");
+        assert!(text.contains("requests today"), "{what} has its slot");
     }
     assert!(keys.iter().any(|k| k["last_used"].is_string()), "a fixture key has records");
     assert!(keys.iter().any(|k| k["last_used"].is_null()), "a fixture key has none");
@@ -121,4 +130,108 @@ async fn settings_shows_behaviour_the_home_and_the_dashboard_status() {
     assert_eq!(status["token_issued"], "2026-10-06T08:00:00Z");
     assert_shows(&html, &status["token_issued"], "token issued");
     assert!(text.contains("Change it with nullrouter dashboard token"), "{text}");
+}
+
+// ---------------------------------------------------------------------------------------------
+// The landscape against `latency --json` (spec 010 US3, T038)
+
+/// The CLI's time words: under a second in ms, otherwise seconds with one decimal.
+fn latency_ms(v: f64) -> String {
+    if v < 1000.0 { format!("{} ms", v.round() as u64) } else { format!("{:.1} s", v / 1000.0) }
+}
+
+fn latency_pair(v: &Value) -> String {
+    match (v["p50"].as_f64(), v["p95"].as_f64()) {
+        (Some(a), Some(b)) => format!("{} / {}", latency_ms(a), latency_ms(b)),
+        _ => "none".into(),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_landscape_prints_what_latency_prints() {
+    let d = Dash::start(home_with_traffic()).await;
+    let html = d.ok("/endpoint").await;
+    let text = text_of(&html);
+    let latency = d.view(ViewName::Latency, json!({})).await;
+    assert!(text.contains("Agent traffic · last 24 h · as of "), "{text}");
+    assert!(!text.contains("No requests in the last 24 hours"), "the home has traffic");
+
+    let agents = latency["agents"].as_array().unwrap();
+    let providers = latency["providers"].as_array().unwrap();
+    assert!(agents.len() >= 2 && !providers.is_empty(), "{latency}");
+    for a in agents {
+        let what = format!("agent {}", a["id"]);
+        assert!(
+            text.contains(&latency_pair(&a["overhead"])),
+            "{what}: overhead {}\n{text}",
+            latency_pair(&a["overhead"])
+        );
+        assert!(text.contains(&latency_pair(&a["ttft"])), "{what}: ttft\n{text}");
+        assert!(text.contains(&format!("{} req", a["requests"])), "{what}: requests\n{text}");
+        assert!(text.contains(a["name"].as_str().or(a["id"].as_str()).unwrap()), "{what}: name");
+    }
+    for p in providers {
+        let what = format!("provider {}", p["id"]);
+        assert!(text.contains(p["id"].as_str().unwrap()), "{what}");
+        assert!(text.contains(&latency_pair(&p["own_ttft"])), "{what}: own ttft\n{text}");
+        assert!(text.contains(&format!("{} req", p["requests"])), "{what}: requests");
+        assert!(
+            text.contains(&format!("last response {}", p["last"]["result"].as_str().unwrap())),
+            "{what}: last response\n{text}"
+        );
+        for per in p["agents"].as_array().unwrap() {
+            let name = per["name"].as_str().or(per["id"].as_str()).unwrap();
+            assert!(text.contains(&format!("{name} {}", per["requests"])), "{what}: {name} count\n{text}");
+        }
+    }
+    assert!(!html.contains("<script") && !html.contains("<animate"), "no script or animation");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agents_colour_is_the_same_on_two_loads_and_after_a_key_is_appended() {
+    let dir = home_with_traffic();
+    let path = dir.path().join("keys.toml");
+    let d = Dash::start(dir).await;
+    let colours = |html: &str| -> Vec<String> {
+        html.split("landscape__dot landscape__dot--")
+            .skip(1)
+            .map(|s| s.split('"').next().unwrap_or_default().to_owned())
+            .collect()
+    };
+    let first = colours(&d.ok("/endpoint").await);
+    assert!(first.len() >= 2, "{first:?}");
+    assert_eq!(first, colours(&d.ok("/endpoint").await), "the same on a second load");
+
+    // A key appended to the file takes the next colour and moves none of the others.
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    text += "\n[[key]]\nid = \"ak_fixture9\"\nname = \"newest\"\ndigest = \"0000000000000000000000000000000000000000000000000000000000000009\"\nlast4 = \"N9N9\"\ncreated = \"2026-10-08T08:00:00Z\"\n";
+    std::fs::write(&path, text).unwrap();
+    let after = colours(&d.ok("/endpoint").await);
+    assert_eq!(after[..first.len()], first[..], "{after:?} vs {first:?}");
+    assert_eq!(after.len(), first.len() + 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn each_card_shows_the_requests_today_usage_prints() {
+    let d = Dash::start(home_with_traffic()).await;
+    let usage = d.view(ViewName::Usage, json!({"period": "today"})).await;
+    let keys = d.view(ViewName::Keys, json!({})).await;
+    let html = d.ok("/endpoint").await;
+    let cards = key_cards(&html);
+    assert_eq!(cards.len(), keys.as_array().unwrap().len());
+    let mut some = false;
+    for (card, k) in cards.iter().zip(keys.as_array().unwrap()) {
+        let want = usage["agents"]
+            .as_array()
+            .and_then(|a| a.iter().find(|r| r["id"] == k["id"]))
+            .map_or(0, |r| r["requests"].as_u64().unwrap());
+        some |= want > 0;
+        assert!(
+            text_of(card).contains(&format!("requests today {want}")),
+            "key {}: requests today {want}\n{}",
+            k["id"],
+            text_of(card)
+        );
+    }
+    assert!(some, "the home has a key with requests today");
 }

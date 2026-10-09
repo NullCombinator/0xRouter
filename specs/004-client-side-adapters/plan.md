@@ -247,7 +247,7 @@ crates/
 ├── nullrouter-server/              # extended
 │   └── src/                        # relay.rs per-event response hook; operator.rs +ops
 └── nullrouter-cli/                 # extended
-    └── src/cmd/                    # + adapters, alerts, catalogue; keys --harness
+    └── src/cmd/                    # + adapters, alerts, catalogue; keys --adapter, set-adapter
 adapters/
 └── community/
     ├── .cargo/config.toml          # patches the kit to the workspace path for host tests;

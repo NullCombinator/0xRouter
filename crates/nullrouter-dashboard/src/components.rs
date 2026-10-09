@@ -118,7 +118,8 @@ impl Tone {
             Self::Success
         } else if starts(&["needs sign-in", "needs sign in", "refused", "failed", "records not kept", "error"]) {
             Self::Error
-        } else if starts(&["cooling", "stale", "pending first poll", "estimated", "fallback", "warning", "refreshing"]) {
+        } else if starts(&["cooling", "stale", "pending first poll", "estimated", "fallback", "warning", "refreshing"])
+        {
             Self::Warning
         } else if starts(&["in progress", "in flight", "note"]) {
             Self::Info
@@ -126,6 +127,14 @@ impl Tone {
             Self::Default
         }
     }
+}
+
+/// The palette token of an agent: `agent-1` to `agent-7` by the key's position in `keys list`
+/// order (creation order, revoked keys included), so a colour never moves when keys are added
+/// (spec 010 R8).
+pub fn agent_colour(index: usize) -> &'static str {
+    const NAMES: [&str; 7] = ["agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7"];
+    NAMES[index % NAMES.len()]
 }
 
 /// A pill with a leading dot (`Badge.js`, `dot`).
@@ -346,6 +355,18 @@ pub fn meter(percent: f64) -> Markup {
 
 #[cfg(test)]
 mod tests {
+    use super::agent_colour;
+
+    #[test]
+    fn agent_colours_cycle_through_seven_and_never_move_when_keys_are_appended() {
+        let before: Vec<_> = (0..5).map(agent_colour).collect();
+        let after: Vec<_> = (0..9).map(agent_colour).collect();
+        assert_eq!(before, after[..5], "appending keys leaves the earlier colours alone");
+        assert_eq!(agent_colour(0), "agent-1");
+        assert_eq!(agent_colour(6), "agent-7");
+        assert_eq!(agent_colour(7), "agent-1", "the eighth key wraps");
+    }
+
     use super::*;
 
     #[test]

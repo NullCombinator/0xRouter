@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The real hermes agent against 0router (spec 004, T028). One model per run:
 #   NR_BASE=http://127.0.0.1:20129 NR_KEY=0r-… NR_MODEL=xai/grok-4 tests/harness/hermes/run.sh
-# NR_KEY must belong to a key issued with `--harness hermes`. hermes gets a throwaway
+# NR_KEY must belong to a key issued with `--adapter hermes`. hermes gets a throwaway
 # HERMES_HOME, so nothing of the operator's own hermes setup is read or written.
 # Turns: a plain answer, a tool call, a follow-up that replays the first turns (echoed
 # reasoning rides on it), and an image. Each must exit 0 and print something; the tool

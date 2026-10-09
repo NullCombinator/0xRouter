@@ -14,14 +14,32 @@ pub struct PriceSpec {
     pub flat: Option<PriceOverride>,
 }
 
-/// What one input token costs now, per million: the operator's flat price, else the first
-/// schedule entry whose `when` holds, else the entry without one. `None` when nothing is priced,
-/// which ranks as 1 (R10).
-pub fn price_now(spec: &PriceSpec, now: SystemTime) -> Option<f64> {
-    if let Some(flat) = spec.flat {
-        return Some(flat.input);
+/// The rates in effect at one moment, per million tokens (spec 010, research R5). A missing
+/// rate is the plugin's or the operator's silence, not zero; the reader decides what it means.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rates {
+    pub input: f64,
+    pub output: Option<f64>,
+    pub cache_read: Option<f64>,
+    pub cache_write: Option<f64>,
+}
+
+/// The rates in effect at `at`: the operator's flat price, else the first schedule entry whose
+/// `when` holds, else the entry without one. `None` when nothing is priced.
+pub fn entry_at(spec: &PriceSpec, at: SystemTime) -> Option<Rates> {
+    if let Some(f) = spec.flat {
+        return Some(Rates { input: f.input, output: f.output, cache_read: f.cache_read, cache_write: f.cache_write });
     }
-    spec.schedule.iter().find(|p| p.when.as_ref().is_none_or(|w| holds(w, now))).map(|p| p.input)
+    spec.schedule
+        .iter()
+        .find(|p| p.when.as_ref().is_none_or(|w| holds(w, at)))
+        .map(|p| Rates { input: p.input, output: p.output, cache_read: p.cache_read, cache_write: p.cache_write })
+}
+
+/// What one input token costs now, per million: `entry_at`'s input rate. `None` when nothing is
+/// priced, which ranks as 1 (R10).
+pub fn price_now(spec: &PriceSpec, now: SystemTime) -> Option<f64> {
+    entry_at(spec, now).map(|r| r.input)
 }
 
 /// The price a ranking divides by: `price_now`, or 1 for an account with no price anywhere.
@@ -139,6 +157,60 @@ mod tests {
         let flat = PriceOverride { input: 9.0, output: None, cache_read: None, cache_write: None };
         let s = PriceSpec { schedule: vec![entry(1.0, None)], flat: Some(flat) };
         assert_eq!(price_now(&s, at(0, 12, 0)), Some(9.0));
+    }
+
+    fn full(input: f64, output: f64, cr: f64, cw: f64, when: Option<PriceWhen>) -> PriceDecl {
+        PriceDecl { when, input, output: Some(output), cache_read: Some(cr), cache_write: Some(cw) }
+    }
+
+    #[test]
+    fn entry_at_carries_every_rate_of_the_entry_in_effect() {
+        let s = spec(vec![full(1.0, 5.0, 0.1, 1.25, when(&[], Some("16:00"), Some("23:59"), None)), entry(2.0, None)]);
+        assert_eq!(
+            entry_at(&s, at(0, 17, 0)),
+            Some(Rates { input: 1.0, output: Some(5.0), cache_read: Some(0.1), cache_write: Some(1.25) })
+        );
+        // The default entry declares no output or cache rate, and says so.
+        assert_eq!(
+            entry_at(&s, at(0, 9, 0)),
+            Some(Rates { input: 2.0, output: None, cache_read: None, cache_write: None })
+        );
+    }
+
+    #[test]
+    fn entry_at_takes_the_override_whole_and_honours_wrap_days_and_offset() {
+        let flat = PriceOverride { input: 9.0, output: Some(18.0), cache_read: None, cache_write: Some(3.0) };
+        let s = PriceSpec { schedule: vec![entry(1.0, None)], flat: Some(flat) };
+        assert_eq!(
+            entry_at(&s, at(3, 12, 0)),
+            Some(Rates { input: 9.0, output: Some(18.0), cache_read: None, cache_write: Some(3.0) })
+        );
+        let s = spec(vec![
+            full(1.0, 2.0, 0.0, 0.0, when(&[Weekday::Sat], Some("22:00"), Some("06:00"), Some("+08:00"))),
+            entry(3.0, None),
+        ]);
+        // Saturday 22:00 at +08:00 is Saturday 14:00 UTC; the wrap carries to Sunday 06:00 there.
+        assert_eq!(entry_at(&s, at(5, 14, 0)).map(|r| r.input), Some(1.0));
+        assert_eq!(entry_at(&s, at(0, 14, 0)).map(|r| r.input), Some(3.0), "Monday");
+    }
+
+    #[test]
+    fn entry_at_is_none_with_no_schedule_and_no_override_and_price_now_agrees_everywhere() {
+        assert_eq!(entry_at(&PriceSpec::default(), at(0, 0, 0)), None);
+        let s = spec(vec![entry(2.0, when(&[Weekday::Sat], None, None, None))]);
+        assert_eq!(entry_at(&s, at(0, 0, 0)), None, "a schedule that doesn't cover the moment");
+        let flat = PriceOverride { input: 9.0, output: None, cache_read: None, cache_write: None };
+        let specs = [
+            PriceSpec::default(),
+            s,
+            spec(vec![entry(1.0, when(&[], Some("16:00"), Some("23:59"), None)), entry(5.0, None)]),
+            PriceSpec { schedule: vec![entry(1.0, None)], flat: Some(flat) },
+        ];
+        for sp in &specs {
+            for (d, h) in [(0, 0), (0, 17), (5, 12), (6, 23)] {
+                assert_eq!(price_now(sp, at(d, h, 0)), entry_at(sp, at(d, h, 0)).map(|r| r.input));
+            }
+        }
     }
 
     #[test]

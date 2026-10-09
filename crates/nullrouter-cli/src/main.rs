@@ -35,10 +35,12 @@ enum Command {
         #[arg(required = true)]
         files: Vec<PathBuf>,
     },
-    /// Resolve `provider/model` or a unified model name. Exit 2 if not found.
+    /// Resolve `provider/model`, a unified model or a combo name. Exit 2 if not found.
     Resolve { target: String },
     /// List unified models, or one. Exit 2 if NAME isn't loaded.
     Unified { name: Option<String> },
+    /// List combos with their members, or one. Exit 2 if NAME isn't loaded.
+    Combos { name: Option<String> },
     /// Show what a provider declares about a model, or, without MODEL, about every model it
     /// declares. Exit 2 if the provider is unknown.
     Model { provider: String, model: Option<String> },
@@ -47,6 +49,14 @@ enum Command {
         /// Only providers that offer this capability (e.g. `tts`).
         #[arg(long, value_name = "KIND")]
         capability: Option<String>,
+    },
+    /// Router overhead and time to first token for the last 24 hours, per agent and per provider.
+    Latency,
+    /// Request and token totals and Est. Cost for one period.
+    Usage {
+        /// today, 24h, 7d, 30d, 60d or all.
+        #[arg(long, value_name = "PERIOD", default_value = "today")]
+        period: String,
     },
     /// Run the server in the foreground. Logs go to stderr, redacted.
     Serve {
@@ -71,6 +81,14 @@ enum Command {
     /// Request records of the running server.
     #[command(subcommand)]
     Records(cmd::records::Command),
+    /// The requests in flight, and the phase each is in.
+    Live,
+    /// Connection settings per provider: timeouts, and where each value comes from.
+    #[command(subcommand)]
+    Connection(cmd::connection::Command),
+    /// Define proxies and choose which providers and accounts use them.
+    #[command(subcommand)]
+    Proxy(cmd::proxy::Command),
     /// Bundled, installed and community plugins.
     #[command(subcommand)]
     Plugins(cmd::plugins::Command),
@@ -78,6 +96,10 @@ enum Command {
     Quota(cmd::quota::Args),
     /// The routing view and per-account routing settings.
     Routing(cmd::routing::Args),
+    /// Test models with real, billed calls through the running server.
+    Test(cmd::test::Args),
+    /// Model verdicts per account, the operator's overrides, and the test settings.
+    Verdicts(cmd::verdicts::Args),
 }
 
 /// Opens the registry, or prints the startup errors and exits 1.
@@ -96,8 +118,11 @@ fn main() -> ExitCode {
         Command::Validate { files } => cmd::validate::run(&files),
         Command::Resolve { target } => cmd::resolve::run(cli.home, &target, cli.json),
         Command::Unified { name } => cmd::unified::run(cli.home, name.as_deref(), cli.json),
+        Command::Combos { name } => cmd::combos::run(cli.home, name.as_deref(), cli.json),
         Command::Model { provider, model } => cmd::model::run(cli.home, &provider, model.as_deref(), cli.json),
         Command::Providers { capability } => cmd::providers::run(cli.home, capability.as_deref(), cli.json),
+        Command::Latency => cmd::latency::run(cli.home, cli.json),
+        Command::Usage { period } => cmd::usage::run(cli.home, &period, cli.json),
         Command::Serve { listen } => cmd::serve::run(cli.home, listen),
         Command::Accounts(c) => cmd::accounts::run(cli.home, c, cli.json),
         Command::Keys(c) => cmd::keys::run(cli.home, c, cli.json),
@@ -105,9 +130,14 @@ fn main() -> ExitCode {
         Command::Dashboard(c) => cmd::dashboard::run(cli.home, c, cli.json),
         Command::Behaviour(c) => cmd::behaviour::run(cli.home, c, cli.json),
         Command::Records(c) => cmd::records::run(cli.home, c, cli.json),
+        Command::Live => cmd::live::run(cli.home, cli.json),
+        Command::Connection(c) => cmd::connection::run(cli.home, c, cli.json),
+        Command::Proxy(c) => cmd::proxy::run(cli.home, c, cli.json),
         Command::Plugins(c) => cmd::plugins::run(cli.home, c, cli.json),
         Command::Quota(c) => cmd::quota::run(cli.home, c, cli.json),
         Command::Routing(c) => cmd::routing::run(cli.home, c, cli.json),
+        Command::Test(c) => cmd::test::run(cli.home, c, cli.json),
+        Command::Verdicts(c) => cmd::verdicts::run(cli.home, c, cli.json),
     };
     result.unwrap_or_else(|code| code)
 }

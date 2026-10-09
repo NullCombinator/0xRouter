@@ -1,4 +1,5 @@
-//! A key can name the harness its requests come from (spec 004, FR-001).
+//! A key can name the harness adapter its requests run through (spec 004, FR-001). The key's
+//! `adapter` is separate from its display-only `harness` tag (spec 010 R7).
 
 use std::path::Path;
 
@@ -9,32 +10,34 @@ fn name(s: &str) -> Result<HarnessName, String> {
 }
 
 #[test]
-fn harness_round_trips_through_keys_toml() {
+fn the_adapter_round_trips_through_keys_toml() {
     let dir = tempfile::tempdir().unwrap();
     let mut keys = Keys::load(&dir.path().join("keys.toml")).unwrap();
     keys.issue("laptop", None).unwrap();
-    keys.set_harness("laptop", Some(name("hermes").unwrap())).unwrap();
+    keys.set_adapter("laptop", Some(name("hermes").unwrap())).unwrap();
     keys.save().unwrap();
     let text = std::fs::read_to_string(&keys.path).unwrap();
-    assert!(text.contains("harness = \"hermes\""), "{text}");
+    assert!(text.contains("adapter = \"hermes\""), "{text}");
 
     let mut again = Keys::load(&keys.path).unwrap();
-    assert_eq!(again.iter().next().unwrap().harness.as_ref().map(HarnessName::as_str), Some("hermes"));
-    again.set_harness("laptop", None).unwrap();
-    assert!(!again.to_toml().contains("harness"), "a cleared binding is not written");
+    assert_eq!(again.iter().next().unwrap().adapter.as_ref().map(HarnessName::as_str), Some("hermes"));
+    again.set_adapter("laptop", None).unwrap();
+    assert!(!again.to_toml().contains("adapter"), "a cleared binding is not written");
 }
 
 #[test]
-fn files_without_a_harness_still_load() {
+fn files_without_an_adapter_still_load() {
     let text = "schema = 1\n[[key]]\nid = \"ak_aaaaaaaa\"\nname = \"old\"\ndigest = \"sha256:00\"\nlast4 = \"abcd\"\ncreated = \"2026-10-01T00:00:00Z\"\n";
     let keys = Keys::parse(text, Path::new("keys.toml")).unwrap();
-    assert!(keys.iter().next().unwrap().harness.is_none());
+    assert!(keys.iter().next().unwrap().adapter.is_none());
 }
 
 #[test]
-fn a_bad_harness_in_the_file_is_refused() {
-    let text = "schema = 1\n[[key]]\nid = \"ak_aaaaaaaa\"\nname = \"k\"\ndigest = \"sha256:00\"\nlast4 = \"abcd\"\ncreated = \"x\"\nharness = \"opencode\"\n";
-    assert!(Keys::parse(text, Path::new("keys.toml")).is_err());
+fn a_bad_adapter_in_the_file_is_refused_and_a_harness_tag_binds_nothing() {
+    let key = "schema = 1\n[[key]]\nid = \"ak_aaaaaaaa\"\nname = \"k\"\ndigest = \"sha256:00\"\nlast4 = \"abcd\"\ncreated = \"x\"\n";
+    assert!(Keys::parse(&format!("{key}adapter = \"opencode\"\n"), Path::new("keys.toml")).is_err());
+    let tagged = Keys::parse(&format!("{key}harness = \"hermes\"\n"), Path::new("keys.toml")).unwrap();
+    assert!(tagged.iter().next().unwrap().adapter.is_none(), "the display tag never selects an adapter");
 }
 
 #[test]

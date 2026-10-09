@@ -83,7 +83,8 @@ fn routes_of<'a>(routing: &'a Value, provider: &str, account: &str) -> Vec<(&'a 
         .into_iter()
         .flatten()
         .filter_map(|t| {
-            let row = t["accounts"].as_array()?.iter().find(|r| r["provider"] == provider && r["account"] == account)?;
+            let row =
+                t["accounts"].as_array()?.iter().find(|r| r["provider"] == provider && r["account"] == account)?;
             Some((t, row))
         })
         .collect()

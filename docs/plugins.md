@@ -100,8 +100,24 @@ style.
   `{secret.*}` and unknown names are rejected.
 - **`auth`** moves the secret's header for this endpoint only (`scheme = "bearer"` or
   `"raw"`).
-- **Timeouts and retries**: `timeout_ms` (to response headers), `stall_timeout_ms` (between
-  stream bytes), and `retry` per status, overriding the core's defaults.
+- **Timeouts and retries**: `connect_timeout_ms`, `timeout_ms` (to response headers),
+  `first_token_timeout_ms` (to the first model output, thinking included; `0` is off) and
+  `stall_timeout_ms` (with no data at all), each 1-3 600 000 ms, and `retry` per status,
+  overriding the core's defaults. A retry is `{ retries = 2, delay_ms = 2000 }`, with at most
+  5 retries and a wait of at most 30 000 ms; a plugin above either fails validation, naming the
+  field. The operator's own settings win over all of these. A model may declare its own:
+
+  ```toml
+  [[models]]
+  id = "slow-reasoner"
+  timeouts = { first_token_ms = 600000, stall_ms = 600000 }   # also connect_ms, headers_ms
+  ```
+- **`http2 = false`**: the provider doesn't speak HTTP/2, so 0router uses HTTP/1.1 for the whole
+  provider. It is the only value that has an effect, and the operator can override it. A
+  schema 1 plugin writes it in `[transport]`; a schema 2 plugin on the endpoint.
+- **No proxy**: `proxy`, `proxy_url`, `https_proxy` and `no_proxy` are refused at any depth
+  with `plugins can't declare a proxy; proxies are operator-only`. The operator assigns
+  proxies; see [operator-config.md](operator-config.md#proxies).
 - **`force_stream`**: the endpoint only streams; 0router collects the stream for a client
   that didn't ask for one.
 - **`[endpoints.<type>.errors]`**: where the provider puts an error's message and status,
@@ -238,6 +254,25 @@ forced parameter is noted in the request record. Prompt content, tools, conversa
 items and the system prompt are never changed, for any provider: no renamed or decoy
 tools, no injected text, no invented ids. Any other key is refused:
 `force: tools can't be forced`.
+
+## Rejections
+
+0router knows the usual ways a provider says a model doesn't exist, isn't available to the
+account, or doesn't support the request type. A provider that says it differently declares its
+own signals; a test that meets one gives BROKEN (see [Model tests](operator-config.md#model-tests)).
+
+```toml
+[[rejections]]
+status = [400, 404]                # required; each 400–499, never 402, 408 or 429
+body_contains = "model_retired"    # case-sensitive; required when status lists 400 or 422
+reason = "model_not_found"         # model_not_found | model_not_available | type_not_supported
+```
+
+A rule matches when the status is listed and the body contains the text, if one is given. Rules
+are tried before 0router's own list. A rate limit, a server error, a timeout or an account out of
+credit can never be a rejection, so the gate refuses 402, 408, 429 and anything outside 400–499.
+A 400 or 422 is as often the request's fault as the model's, so a rule listing either needs
+`body_contains`.
 
 ## Sign-in, identity, quota and live models (bundled plugins only)
 
@@ -555,7 +590,10 @@ acme.toml:9:13 transport.headers.Authorization: credential-bearing header not al
   - a duplicate model id;
   - `[[transports]]` without `[transport]`;
   - a `default_region` that is not a key of `regions`;
-  - `auth.credential_fallback` naming an unknown provider.
+  - `auth.credential_fallback` naming an unknown provider;
+  - a `[[rejections]]` status of 402, 408, 429 or outside 400–499, a 400 or 422 without
+    `body_contains`, or an unknown reason;
+  - a `combo` table (only `config.toml` declares combos).
 
 ## Community plugins and the fit check
 
