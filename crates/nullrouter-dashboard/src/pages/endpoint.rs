@@ -7,10 +7,12 @@ use maud::{Markup, html};
 use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
-use crate::components::{Head, card, disabled, empty, kv, name, section_bar, side_panel, side_section, slot};
+use crate::components::{Head, Tone, badge, card, disabled, empty, kv, name, section_bar, side_panel, side_section};
+use crate::landscape;
 use crate::page::{ViewName, Want};
 
-pub const VIEWS: &[ViewName] = &[ViewName::Check, ViewName::Keys];
+pub const VIEWS: &[ViewName] =
+    &[ViewName::Check, ViewName::Keys, ViewName::Accounts, ViewName::Latency, ViewName::Usage];
 
 /// The hint beside the disabled "Add Agent" (research R15).
 pub const ADD_HINT: &str = "In the CLI: `nullrouter keys issue <name>`";
@@ -21,14 +23,27 @@ pub const ADAPTERS: &str = "Client-side adapters are not built yet.";
 pub const CONFIGURED: &str = "(configured; no server running)";
 
 pub fn wants(_req: &Req) -> Vec<Want> {
-    vec![Want::new(ViewName::Check, json!({})), Want::new(ViewName::Keys, json!({}))]
+    vec![
+        Want::new(ViewName::Check, json!({})),
+        Want::new(ViewName::Keys, json!({})),
+        Want::new(ViewName::Accounts, json!({})),
+        Want::new(ViewName::Latency, json!({})),
+        Want::new(ViewName::Usage, json!({"period": "today"})),
+    ]
 }
 
 pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
     let keys = ctx.json(ViewName::Keys).as_array().map_or(&[][..], Vec::as_slice);
     let content = html! {
         (endpoint(ctx.json(ViewName::Check)))
-        (slot("Agent traffic"))
+        (section_bar(&landscape::heading(ctx.page.as_of, ctx.tz), html! {}))
+        (landscape::landscape(&landscape::Inputs {
+            keys: ctx.json(ViewName::Keys),
+            accounts: ctx.json(ViewName::Accounts),
+            latency: ctx.json(ViewName::Latency),
+            tz: ctx.tz,
+            as_of: ctx.page.as_of,
+        }))
         (section_bar("Agents", disabled("Add Agent", Some("add"), ADD_HINT)))
         @if keys.is_empty() {
             (empty("key", NO_AGENTS, NO_AGENTS_HINT))
@@ -57,6 +72,15 @@ fn endpoint(check: &Value) -> Markup {
     )
 }
 
+/// A key's requests so far today: its row in `usage --period today`, else 0.
+fn today(usage: &Value, id: &str) -> u64 {
+    usage["agents"]
+        .as_array()
+        .and_then(|a| a.iter().find(|r| r["id"] == id))
+        .and_then(|r| r["requests"].as_u64())
+        .unwrap_or(0)
+}
+
 /// One key as `keys list` shows it: name, id, `…last4`, created, revoked, break behaviour and
 /// last used, with a place for the day's requests.
 fn key_card(ctx: &Ctx<'_>, k: &Value) -> Markup {
@@ -67,6 +91,7 @@ fn key_card(ctx: &Ctx<'_>, k: &Value) -> Markup {
         article class=(class) {
             div class="key-card__head" {
                 b class="key-card__name" { (name(text("name"))) }
+                @if let Some(tag) = k["harness"].as_str() { (badge(Tone::Primary, tag)) }
             }
             div class="key-card__rows" {
                 (kv("id", html! { code class="code" { (text("id")) } }))
@@ -79,7 +104,7 @@ fn key_card(ctx: &Ctx<'_>, k: &Value) -> Markup {
                     None => html! { "never" },
                 }))
             }
-            (slot("Requests today"))
+            (kv("requests today", html! { (today(ctx.json(ViewName::Usage), text("id"))) }))
         }
     }
 }

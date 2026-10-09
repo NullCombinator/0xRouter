@@ -139,7 +139,14 @@ async fn an_open_without_a_close_is_in_progress_with_a_server_and_interrupted_wi
     let today = nullrouter_engine::clock::now_rfc3339();
     segment(h, &today[..10], &[open("rq_live", &today, "key_a", "sonnet")]);
     let with = ok(h, &["records", "list"]);
-    assert!(with.contains("rq_live") && with.contains("in progress"), "{with}");
+    let sock = h.join("run/operator.sock");
+    assert!(
+        with.contains("rq_live") && with.contains("in progress"),
+        "{with}\nsocket {}: exists {}, connect {:?}",
+        sock.display(),
+        sock.exists(),
+        std::os::unix::net::UnixStream::connect(&sock).err()
+    );
     let shown: Value = serde_json::from_str(&ok(h, &["--json", "records", "show", "rq_live"])).unwrap();
     assert_eq!(shown["outcome"], "in_progress");
 
@@ -231,8 +238,15 @@ async fn serve(home: &Path) -> Serving {
         .unwrap();
     let serving = Serving(child);
     for _ in 0..500 {
-        if home.join("run/operator.sock").exists() && tokio::net::TcpStream::connect(&listen).await.is_ok() {
-            return serving;
+        // Connect, don't just look for the file: the CLI's "a server runs" is this connect.
+        let sock = home.join("run/operator.sock");
+        if std::os::unix::net::UnixStream::connect(&sock).is_ok() && tokio::net::TcpStream::connect(&listen).await.is_ok() {
+            // Both listeners are bound before the server recovers the journal and starts
+            // accepting, and recovery closes any open request as interrupted: wait for an HTTP
+            // answer, which only comes after it.
+            if reqwest::get(format!("http://{listen}/")).await.is_ok() {
+                return serving;
+            }
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }

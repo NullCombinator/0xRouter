@@ -10,4 +10,5 @@ break       none
 attempts
   1  anthropic/main   claude-sonnet-4-5          warm (rank 0)  ok
        0.90 s
+       phases  not recorded
 --- stderr

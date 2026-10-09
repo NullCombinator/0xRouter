@@ -501,6 +501,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
             amortization_for: outcome.amortization_for,
         },
         tests: config.tests.clone(),
+        connection_proxy: config.connection.proxy.clone(),
     };
     registry.set_operator_state(outcome.unified, outcome.combos, outcome.settings, runtime, report);
     Ok(registry)
@@ -762,7 +763,7 @@ pub(crate) fn validate_config(
     for (token, s) in &config.provider {
         match reg.index_of(token) {
             Some(p) => {
-                settings.insert(reg.providers[p].id.clone(), *s);
+                settings.insert(reg.providers[p].id.clone(), s.clone());
             }
             None if excused(token) => {}
             None => err(FieldPath::of("provider").key(token.as_str()), "unknown provider".into()),

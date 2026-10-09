@@ -215,3 +215,34 @@ async fn the_maintenance_queue_runs_at_most_four_jobs_at_once() {
         assert_eq!(k.engine().tokens.get("p", n).unwrap().state, nullrouter_engine::tokens::AccountState::Active);
     }
 }
+
+#[tokio::test]
+async fn a_paused_proxy_stops_a_token_refresh_before_anything_is_sent() {
+    use nullrouter_engine::accounts::{self, Accounts};
+    use nullrouter_engine::connection::fingerprints;
+    use nullrouter_engine::testkit::MockProxy;
+
+    let k = kit(&[("p", Shape::Device, "5m")], &["a"], HOUR).await;
+    k.sign_in("p", "a", |_| {});
+    let proxy = MockProxy::start().await;
+    nullrouter_engine::files::write_private(
+        &k.home().join("proxies.toml"),
+        &format!("schema = 1\n\n[[proxy]]\nname = \"eu\"\nurl = \"http://{}\"\n", proxy.addr()),
+    )
+    .unwrap();
+    let mut list = Accounts::load(&k.home().join(accounts::FILE)).unwrap();
+    list.set_proxy("p", "a", Some("eu".into())).unwrap();
+    list.save().unwrap();
+    k.engine().reload().await.unwrap();
+
+    // Through a healthy proxy the refresh goes out, and the proxy carried it.
+    assert_eq!(k.engine().refresh_account("p", "a").await, Refreshed::Fresh);
+    assert_eq!(k.idp.refresh_calls(), 1);
+    assert!(proxy.carried() >= 1, "the refresh used the account's proxy");
+
+    let print = fingerprints(&k.engine().snapshot()).remove("eu").unwrap();
+    k.engine().proxy_board.pause("eu", "connect to proxy failed", &print);
+    let (carried, calls) = (proxy.carried(), k.idp.refresh_calls());
+    assert_eq!(k.engine().refresh_account("p", "a").await, Refreshed::Transient("proxy eu paused".into()));
+    assert_eq!((proxy.carried(), k.idp.refresh_calls()), (carried, calls), "nothing was sent");
+}

@@ -31,6 +31,11 @@ pub enum Step {
     StallAfter { frames: Vec<Bytes>, hold: Duration },
     /// No response headers for `hold`.
     StallHeaders { hold: Duration },
+    /// A 200 event stream with a delay at each phase (spec 013): `headers_delay` before the
+    /// response headers, `first_frame_delay` after them before the first frame, then `frames`
+    /// sent `every` apart. A zero `first_frame_delay` lets the headers and the first frame
+    /// travel together.
+    Phased { headers_delay: Duration, first_frame_delay: Duration, frames: Vec<Bytes>, every: Duration },
 }
 
 impl Step {
@@ -212,6 +217,11 @@ impl MockUpstream {
         self.inner.connections.load(Ordering::SeqCst)
     }
 
+    /// Connections that did not come through `proxy`: what reached the upstream directly.
+    pub fn direct_connections(&self, proxy: &super::MockProxy) -> usize {
+        self.connections().saturating_sub(proxy.carried())
+    }
+
     /// When clients dropped streamed bodies before their end.
     pub fn disconnects(&self) -> Vec<Instant> {
         lock(&self.inner.disconnects).clone()
@@ -305,6 +315,24 @@ async fn handle(State(inner): State<Arc<Inner>>, req: Request) -> Response {
                     }
                 });
             head(status, &headers).body(Body::from_stream(s)).expect("response")
+        }
+        Step::Phased { headers_delay, first_frame_delay, frames, every } => {
+            tokio::time::sleep(headers_delay).await;
+            let watch = Watch { inner: inner.clone(), finished: false };
+            let s = stream::unfold((frames.into_iter(), watch, 0usize), move |(mut it, watch, sent)| async move {
+                let Some(f) = it.next() else {
+                    watch.finish();
+                    return None;
+                };
+                let wait = if sent == 0 { first_frame_delay } else { every };
+                if !wait.is_zero() {
+                    tokio::time::sleep(wait).await;
+                }
+                Some((Ok::<Bytes, std::io::Error>(f), (it, watch, sent + 1)))
+            });
+            head(200, &[("content-type".into(), "text/event-stream".into())])
+                .body(Body::from_stream(s))
+                .expect("response")
         }
         Step::StallAfter { frames, hold } => {
             let watch = Watch { inner: inner.clone(), finished: false };

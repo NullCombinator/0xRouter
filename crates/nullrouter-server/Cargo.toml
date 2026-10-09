@@ -21,6 +21,7 @@ nullrouter-wire.workspace = true
 nullrouter-registry.workspace = true
 url.workspace = true
 thiserror.workspace = true
+jiff.workspace = true
 
 [dev-dependencies]
 toml.workspace = true

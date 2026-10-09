@@ -695,6 +695,100 @@ async fn views_show_no_secret_beyond_its_last_four() {
     task.await.unwrap();
 }
 
+// ---- proxy credentials (spec 013 T045, SC-008) -------------------------------------------
+
+/// A proxy's username and password, through a request that succeeds and one that fails to
+/// connect (so the proxy is paused and probed), appear in no record, socket answer, view, log,
+/// client response, or the pause file.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn proxy_credentials_appear_nowhere() {
+    use nullrouter_engine::testkit::MockProxy;
+    use nullrouter_server::views;
+
+    const USER: &str = "proxy-user-SENTINEL-0021";
+    const PASSWORD: &str = "proxy-pw-SENTINEL-0022";
+    let logs = logs();
+
+    let s = server().await;
+    s.mock.respond(|_| chat_stream());
+    let proxy = MockProxy::start_with_auth(USER, PASSWORD).await;
+    nullrouter_engine::files::write_private(
+        &s.home().join("proxies.toml"),
+        &format!(
+            "schema = 1\n\n[[proxy]]\nname = \"eu\"\nurl = \"http://{}\"\nusername = \"{USER}\"\npassword = \"{PASSWORD}\"\n",
+            proxy.addr()
+        ),
+    )
+    .unwrap();
+    nullrouter_engine::files::write_private(
+        &s.home().join(accounts::FILE),
+        &format!("schema = 2\n[[account]]\nprovider = \"mockco\"\nname = \"main\"\nsecret = \"{SECRET}\"\nproxy = \"eu\"\n"),
+    )
+    .unwrap();
+    s.engine.reload().await.unwrap();
+
+    let c = reqwest::Client::new();
+    let mut seen = Vec::new();
+    for round in ["up", "down"] {
+        if round == "down" {
+            proxy.stop().await;
+        }
+        let r = c
+            .post(format!("{}/v1/chat/completions", s.base))
+            .bearer_auth(&s.key)
+            .body(json!({"model": "mockco/m1", "messages": [{"role": "user", "content": "hi"}]}).to_string())
+            .send()
+            .await
+            .unwrap();
+        let headers = format!("{:?}", r.headers());
+        seen.push(format!("{round}: {} {headers}\n{}", r.status(), r.text().await.unwrap()));
+    }
+    assert!(proxy.carried() >= 1, "the proxy carried the first request");
+    assert!(s.engine.proxy_board.paused("eu").is_some(), "the second request paused the proxy");
+
+    let records = serde_json::to_string(&s.engine.records.query(&Query::default())).unwrap();
+    let mut socket = Vec::new();
+    for op in [
+        json!({"op": "records.list"}),
+        json!({"op": "live.snapshot"}),
+        json!({"op": "connection.view", "provider": "mockco"}),
+        json!({"op": "accounts.state"}),
+        json!({"op": "proxy.fixed", "name": "eu"}),
+        json!({"op": "reload"}),
+    ] {
+        socket.push(operator::handle(&s.engine, &op).await.to_string());
+    }
+    for r in s.engine.records.query(&Query::default()) {
+        socket.push(operator::handle(&s.engine, &json!({"op": "records.get", "id": r.id})).await.to_string());
+    }
+    let mut shown = Vec::new();
+    let home = OperatorHome::new(s.home());
+    for (needs, args, build) in [
+        (views::accounts::NEEDS, json!({"provider": null}), views::accounts::build as common::Build),
+        (views::check::NEEDS, json!({}), views::check::build),
+        (views::records::NEEDS, json!({}), views::records::build),
+    ] {
+        let home = home.clone();
+        let args2 = args.clone();
+        let view = views::run_in_process(&s.engine, needs, &args, move |live| build(&home, &args2, live)).await.unwrap();
+        shown.push(format!("{}{}", view.json, view.extra));
+    }
+    let pause_file = std::fs::read_to_string(s.home().join("routing/proxies.json")).unwrap_or_default();
+    assert!(!pause_file.is_empty(), "the pause was saved");
+    drop(s);
+
+    let places: [(&str, String); 6] = [
+        ("logs", logs.text()),
+        ("records", records),
+        ("client responses", seen.join("\n")),
+        ("operator socket answers", socket.join("\n")),
+        ("views", shown.join("\n")),
+        ("pause file", pause_file),
+    ];
+    let leaks = leaks_of(&places, &[USER, PASSWORD]);
+    assert!(leaks.is_empty(), "{}", leaks.join("\n"));
+}
+
 // ---- model tests (spec 011 T051, SC-008) -------------------------------------------------
 
 const TEST_KEY: &str = "sk-test-SENTINEL-T051";

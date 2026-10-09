@@ -198,3 +198,80 @@ async fn a_signed_in_xai_account_runs_a_video_job() {
     assert!(got.iter().all(|r| r.headers["authorization"] == format!("Bearer {SECRET}-xai-main")));
     outcome(&s, &rec, Outcome::Succeeded).await;
 }
+
+/// Spec 013: the submit's phases end when 0router answers with the job id; polls and the
+/// download add no attempt and change nothing in the submit's timing.
+#[tokio::test]
+async fn polling_a_job_adds_nothing_to_the_submits_phases() {
+    use nullrouter_engine::phases::{self, Phase, PhaseValue};
+
+    let s = server_with(|m| vec![vidco(m)]).await;
+    let file = s.mock.url("/files/out.mp4");
+    s.mock.on("/files/out.mp4", [Step::binary("video/mp4", &b"MP4-bytes"[..])]);
+    s.mock.on(
+        "/v1/videos/req-1",
+        [
+            Step::json(200, json!({"status": "processing"})),
+            Step::json(200, json!({"status": "done", "video": {"url": file, "duration": 8}})),
+        ],
+    );
+    s.mock.on("/v1/videos/generations", [Step::json(200, json!({"request_id": "req-1"}))]);
+
+    let (rec, vj) = submit(&s, "vidco/vid").await;
+    for _ in 0..100 {
+        if s.engine.records.get(&rec).unwrap().attempts.first().is_some_and(|a| a.ended.is_some()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let before = s.engine.records.get(&rec).unwrap();
+    let timing = before.attempts[0].timing.clone().expect("the submit's attempt is timed");
+    assert!(timing.first_output.is_some(), "the job id is the answer");
+    assert_eq!(timing.first_output, timing.upstream_done, "a whole answer");
+    assert_eq!(phases::of(&before)[0].value(Phase::Generation), PhaseValue::NotApplicable);
+
+    for _ in 0..2 {
+        json(get(&s, &format!("/v1/videos/{vj}")).send().await.unwrap()).await;
+    }
+    get(&s, &format!("/v1/videos/{vj}/content")).send().await.unwrap().bytes().await.unwrap();
+    outcome(&s, &rec, Outcome::Succeeded).await;
+
+    let after = s.engine.records.get(&rec).unwrap();
+    assert_eq!(after.attempts.len(), 1, "polls are not attempts");
+    assert_eq!(serde_json::to_value(&after.attempts[0].timing).unwrap(), serde_json::to_value(Some(timing)).unwrap());
+}
+
+#[tokio::test]
+async fn a_paused_proxy_stops_a_job_poll_before_anything_is_sent() {
+    use nullrouter_engine::accounts::{self, Accounts};
+    use nullrouter_engine::connection::fingerprints;
+    use nullrouter_engine::testkit::MockProxy;
+
+    let s = server_with(|m| vec![vidco(m)]).await;
+    let proxy = MockProxy::start().await;
+    nullrouter_engine::files::write_private(
+        &s.home().join("proxies.toml"),
+        &format!("schema = 1\n\n[[proxy]]\nname = \"eu\"\nurl = \"http://{}\"\n", proxy.addr()),
+    )
+    .unwrap();
+    let mut list = Accounts::load(&s.home().join(accounts::FILE)).unwrap();
+    list.set_proxy("vidco", "main", Some("eu".into())).unwrap();
+    list.save().unwrap();
+    s.engine.reload().await.unwrap();
+
+    s.mock.on("/v1/videos/generations", [Step::json(200, json!({"request_id": "req-1"}))]);
+    s.mock.on("/v1/videos/req-1", [Step::json(200, json!({"status": "processing"}))]);
+    let (_, vj) = submit(&s, "vidco/vid").await;
+    let first = json(get(&s, &format!("/v1/videos/{vj}")).send().await.unwrap()).await;
+    assert_eq!(first["status"], "in_progress", "{first}");
+    assert!(proxy.carried() >= 1, "the submit and the poll used the account's proxy (one pooled connection)");
+
+    let print = fingerprints(&s.engine.snapshot()).remove("eu").unwrap();
+    s.engine.proxy_board.pause("eu", "connect to proxy failed", &print);
+    let (carried, seen) = (proxy.carried(), s.mock.received().len());
+    let r = get(&s, &format!("/v1/videos/{vj}")).send().await.unwrap();
+    assert_eq!(r.status(), 502);
+    let body = r.text().await.unwrap();
+    assert!(body.contains("proxy eu paused"), "{body}");
+    assert_eq!((proxy.carried(), s.mock.received().len()), (carried, seen), "nothing was sent");
+}

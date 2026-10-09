@@ -25,6 +25,8 @@ pub enum ViewName {
     Check,
     Dashboard,
     Keys,
+    /// The last 24 hours per agent and provider (`latency`).
+    Latency,
     Model,
     Plugins,
     Providers,
@@ -34,6 +36,8 @@ pub enum ViewName {
     /// The Requests table (`records list`).
     Records,
     Routing,
+    /// Request and token totals for one period (`usage`).
+    Usage,
 }
 
 type Build = fn(&OperatorHome, &Value, &Live) -> Result<View, ViewError>;
@@ -47,13 +51,21 @@ impl ViewName {
             Self::Check => views::check::NEEDS,
             Self::Dashboard => views::dashboard::NEEDS,
             Self::Keys => views::keys::NEEDS,
+            Self::Latency => views::latency::NEEDS,
             Self::Model => views::model::NEEDS,
             Self::Plugins => views::plugins::NEEDS,
             Self::Providers => views::providers::NEEDS,
             Self::Quota => views::quota::NEEDS,
             Self::Record | Self::Records => views::records::NEEDS,
             Self::Routing => views::routing::NEEDS,
+            Self::Usage => views::usage::NEEDS,
         }
+    }
+
+    /// Whether the view reads relative to a time, which a page sets to its own "as of" so the
+    /// page and the CLI's `--json` at that time agree (spec 010 research R2).
+    const fn takes_at(self) -> bool {
+        matches!(self, Self::Usage | Self::Latency)
     }
 
     fn builder(self) -> Build {
@@ -63,6 +75,7 @@ impl ViewName {
             Self::Check => views::check::build,
             Self::Dashboard => views::dashboard::build,
             Self::Keys => views::keys::build,
+            Self::Latency => views::latency::build,
             Self::Model => views::model::build,
             Self::Plugins => views::plugins::build,
             Self::Providers => views::providers::build,
@@ -70,6 +83,7 @@ impl ViewName {
             Self::Record => views::records::record,
             Self::Records => views::records::build,
             Self::Routing => views::routing::build,
+            Self::Usage => views::usage::build,
         }
     }
 }
@@ -153,17 +167,15 @@ pub async fn build_with(
         let as_of = Timestamp::try_from(nullrouter_engine::clock::now()).unwrap_or_else(|_| Timestamp::now());
         let mut views = Vec::with_capacity(wanted.len());
         for (i, want) in wanted.iter().enumerate() {
-            let (home, args, build) = (engine.home().clone(), want.args.clone(), want.view.builder());
-            let value =
-                views::run_in_process(engine, want.view.needs(), &want.args, move |live| build(&home, &args, live))
-                    .await
-                    .map_err(PageError::View)?;
-            views.push(Fetched {
-                view: want.view,
-                args: want.args.clone(),
-                value,
-                generation: engine.snapshot().generation,
-            });
+            let mut args = want.args.clone();
+            if want.view.takes_at() {
+                args["at"] = Value::String(nullrouter_engine::clock::rfc3339(as_of.into()));
+            }
+            let (home, own, build) = (engine.home().clone(), args.clone(), want.view.builder());
+            let value = views::run_in_process(engine, want.view.needs(), &args, move |live| build(&home, &own, live))
+                .await
+                .map_err(PageError::View)?;
+            views.push(Fetched { view: want.view, args, value, generation: engine.snapshot().generation });
             after_fetch(i);
         }
         if engine.snapshot().generation == generation && views.iter().all(|f| f.generation == generation) {

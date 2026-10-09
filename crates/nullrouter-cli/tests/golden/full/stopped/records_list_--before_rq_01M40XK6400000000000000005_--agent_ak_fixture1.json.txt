@@ -35,7 +35,8 @@ exit: 0
           "state": "ok"
         },
         "dropped": [],
-        "forced": []
+        "forced": [],
+        "phases": "not_recorded"
       }
     ],
     "outcome": "succeeded",
@@ -46,7 +47,8 @@ exit: 0
     "total_ms": 900.0,
     "usage": null,
     "job": null,
-    "decision": null
+    "decision": null,
+    "slowest": null
   },
   {
     "id": "rq_01M3VB29M00000000000000001",
@@ -82,7 +84,8 @@ exit: 0
           "state": "ok"
         },
         "dropped": [],
-        "forced": []
+        "forced": [],
+        "phases": "not_recorded"
       }
     ],
     "outcome": "succeeded",
@@ -99,7 +102,8 @@ exit: 0
       "estimated": false
     },
     "job": null,
-    "decision": null
+    "decision": null,
+    "slowest": null
   }
 ]
 --- stderr

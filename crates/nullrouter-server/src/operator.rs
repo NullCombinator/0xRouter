@@ -8,11 +8,16 @@
 //! | `{"op":"records.list","provider"?,"unified_model"?,"account"?,"agent"?,"model"?,"reason"?,"since"?,"limit"?,"before"?}` | `{"ok":true,"records":[…]}`: the journal's records plus those still in flight, newest first, those with an id below `before` (which must name a record, else `{"ok":false,"error":"no record rq_…"}`) |
 //! | `{"op":"records.get","id":"rq_…"}` | `{"ok":true,"record":{…}}` |
 //! | `{"op":"keys.last_used"}` | `{"ok":true,"last_used":{"<key id>":"<RFC 3339>"\|null}}`: for every key in `keys.toml`, the arrival of its newest record, from the cached segment index and the requests still in flight; `null` for a key no record names |
+//! | `{"op":"usage.totals","from":"<RFC 3339>"\|null,"to":"<RFC 3339>"}` | `{"ok":true,"totals":{…}}`: requests, tokens, Est. Cost and per-agent and per-provider counts for arrivals in `[from, to)`, from the journal (finished days cached) and the requests still in memory |
+//! | `{"op":"latency.summary","from":"<RFC 3339>","to":"<RFC 3339>"}` | `{"ok":true,"latency":{agents,providers}}`: per agent key and per provider, router overhead and time to first token as p50/p95 (nearest rank), the provider's own wait, requests and the last response, for arrivals in `[from, to)`, from the journal and the requests still in memory; never cached |
 //! | `{"op":"records.forget","account"?:"P/N","agent"?:KEY}` | `{"ok":true,"fingerprints":N}`: the agent's fingerprints (or the account's fingerprints and ledger entries) leave memory and `routing/warm.jsonl`, and the live ring; the CLI then rewrites the record segments |
 //! | `{"op":"accounts.state"}` | `{"ok":true,"accounts":[…]}`: per account `kind`, `state`, `state_since`, `state_reason`, `expires_at`, cooldowns |
 //! | `{"op":"routing.view","target"?}` | `{"ok":true,"amortization":{start,length},"journal":{…},"targets":[…],"warnings":[…]}`: per target and account the pace, share, deficit, priority, cache lifetime, quota source and each window's remaining amount, unit, reset and reserve |
 //! | `{"op":"routing.health"}` | `{"ok":true,"journal":{kept,since,unkept_requests,held_lines,last_sync,last_sync_age_s}}` |
 //! | `{"op":"server.status"}` | `{"ok":true,"client_listen":"…"\|null,"dashboard":{enabled,listen,serving,error}}`: the address `serve` bound for clients, and the dashboard listener's state |
+//! | `{"op":"live.snapshot"}` | `{"ok":true,"as_of":…,"paused_proxies":[…],"in_flight":[…]}`: what is in flight now, each request in its current phase |
+//! | `{"op":"proxy.fixed","name"}` | `{"ok":true,"reachable":true}` and the pause cleared, or `{"ok":true,"reachable":false,"reason"}`; an unknown name is `{"ok":false,"error"}` listing the known ones |
+//! | `{"op":"connection.view","provider"?}` | `{"ok":true,"providers":[{id,timeouts:{connect,headers,first_token,stall}:{ms\|null,source},models:[{id,timeouts}]}]}`: the effective timeouts and where each came from, and the models whose timeouts differ; an unknown provider is `{"ok":false,"error"}` listing the known ones |
 //! | `{"op":"quota.list"}`, `{"op":"quota.poll"}`, `{"op":"quota.checkpoint"}` | see [`crate::quota`] |
 //! | `{"op":"test.plan","target"?,"account"?,"all"?}` | `{"ok":true,"pairs":[{provider,account,model,type,skip?}],"calls":{"<type>":N}}` (spec 011); a combo target adds `"combo":NAME` and counts as 1 call of its kind |
 //! | `{"op":"test.run","target"?,"account"?,"all"?}` | streamed: one `{"event":"result","result":TestResult}` line per pair (a combo: one `{"event":"combo","result":ComboResult}`), then `{"ok":true,"done":{pass,broken,unknown,skipped}}`. Closing the connection cancels calls not yet sent |
@@ -26,7 +31,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use nullrouter_engine::journal::records;
+use nullrouter_engine::journal::{records, summary};
 use nullrouter_engine::records::Query;
 use nullrouter_engine::state::Engine;
 use nullrouter_engine::tests::{self as model_tests, Planned};
@@ -263,19 +268,38 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
             }
         },
         Some("records.list") => records_list(engine, req).await,
+        Some("live.snapshot") => live_snapshot(engine),
+        Some("connection.view") => {
+            let st = engine.snapshot();
+            match nullrouter_engine::connection::view(&st.registry, str_of("provider").as_deref()) {
+                Ok(mut v) => {
+                    nullrouter_engine::connection::add_proxies(&mut v, &st, &engine.proxy_board);
+                    v
+                }
+                Err(error) => json!({"ok": false, "error": error}),
+            }
+        }
+        Some("proxy.fixed") => proxy_fixed(engine, str_of("name")).await,
         Some("records.get") => {
             let Some(id) = str_of("id") else { return json!({"ok": false, "error": "the request names no id"}) };
             if let Some(r) = engine.records.get(&id) {
-                return json!({"ok": true, "record": r});
+                let mut record = json!(r);
+                nullrouter_engine::phases::decorate(&mut record, None);
+                return json!({"ok": true, "record": record});
             }
             let home = engine.home().path().to_owned();
             let found = tokio::task::spawn_blocking(move || nullrouter_engine::journal::records::get(&home, &id)).await;
             match found {
-                Ok(Some(r)) => json!({"ok": true, "record": r}),
+                Ok(Some(mut r)) => {
+                    nullrouter_engine::phases::decorate(&mut r, None);
+                    json!({"ok": true, "record": r})
+                }
                 _ => json!({"ok": false, "error": "no such record"}),
             }
         }
         Some("keys.last_used") => keys_last_used(engine).await,
+        Some("usage.totals") => usage_totals(engine, req).await,
+        Some("latency.summary") => latency_summary(engine, req).await,
         Some("records.forget") => {
             let st = engine.snapshot();
             let now = nullrouter_engine::clock::now();
@@ -437,6 +461,48 @@ fn verdicts_set(engine: &Engine, req: &Value) -> Value {
 }
 
 /// `keys.last_used`: the journal read runs on the blocking pool, as `records.get`'s does.
+/// The requests in flight (spec 013, contracts/operator-socket.md). Paused proxies come with
+/// the proxy slice; until then the list is empty. The agent shows as the key's name.
+fn live_snapshot(engine: &Arc<Engine>) -> Value {
+    let st = engine.snapshot();
+    let names: std::collections::HashMap<&str, &str> = st.keys.iter().map(|k| (k.id.as_str(), k.name.as_str())).collect();
+    let in_flight: Vec<Value> = engine
+        .live
+        .snapshot()
+        .into_iter()
+        .filter_map(|s| serde_json::to_value(&s).ok().map(|v| (s.agent, v)))
+        .map(|(agent, mut v)| {
+            v["agent"] = json!(names.get(agent.as_str()).copied().unwrap_or(&agent));
+            v
+        })
+        .collect();
+    json!({
+        "ok": true,
+        "as_of": nullrouter_engine::clock::now_rfc3339(),
+        "paused_proxies": engine
+            .proxy_board
+            .list()
+            .into_iter()
+            .map(|(name, p)| json!({"name": name, "since": p.since, "reason": p.reason}))
+            .collect::<Vec<_>>(),
+        "in_flight": in_flight,
+    })
+}
+
+/// `proxy.fixed`: probes the proxy, and resumes it if it answers (clarify Q1).
+async fn proxy_fixed(engine: &Arc<Engine>, name: Option<String>) -> Value {
+    let Some(name) = name else { return json!({"ok": false, "error": "the request names no proxy"}) };
+    let st = engine.snapshot();
+    let Some(proxy) = st.clients.proxies().get(&name) else {
+        let known: Vec<&str> = st.clients.proxies().iter().map(|p| p.name.as_str()).collect();
+        return json!({"ok": false, "error": format!("no proxy {name:?}; known proxies: {}", known.join(", "))});
+    };
+    match engine.proxy_board.fixed(proxy, std::time::Duration::from_secs(10)).await {
+        Ok(()) => json!({"ok": true, "reachable": true}),
+        Err(reason) => json!({"ok": true, "reachable": false, "reason": reason}),
+    }
+}
+
 async fn keys_last_used(engine: &Arc<Engine>) -> Value {
     use nullrouter_engine::keys::{self, Keys};
 
@@ -467,6 +533,63 @@ async fn keys_last_used(engine: &Arc<Engine>) -> Value {
     let shown: serde_json::Map<String, Value> =
         ids.into_iter().map(|id| (id.clone(), last.get(&id).map_or(Value::Null, |t| json!(t)))).collect();
     json!({"ok": true, "last_used": shown})
+}
+
+/// The window an op names: `from` is null for all time, `to` is required.
+fn window_of(req: &Value) -> Result<summary::Window, Value> {
+    let parse = nullrouter_engine::clock::parse_rfc3339;
+    let to = req.get("to").and_then(Value::as_str).and_then(parse);
+    let from = match req.get("from") {
+        None | Some(Value::Null) => None,
+        Some(f) => match f.as_str().and_then(parse) {
+            Some(t) => Some(t),
+            None => return Err(json!({"ok": false, "error": "from is not an RFC 3339 time"})),
+        },
+    };
+    match to {
+        Some(to) => Ok(summary::Window { from, to }),
+        None => Err(json!({"ok": false, "error": "to is not an RFC 3339 time"})),
+    }
+}
+
+/// `usage.totals`: the journal read runs on the blocking pool, with the requests still in the
+/// live ring merged over it.
+async fn usage_totals(engine: &Arc<Engine>, req: &Value) -> Value {
+    let w = match window_of(req) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let home = engine.home().path().to_owned();
+    let st = engine.snapshot();
+    let live: Vec<Value> =
+        engine.records.query(&Query::default()).iter().filter_map(|r| serde_json::to_value(r).ok()).collect();
+    let read = tokio::task::spawn_blocking(move || {
+        let prices = summary::prices_of(&st.registry, &st.accounts);
+        summary::totals_with(&home, &w, &prices, Some(st.generation), &live, true)
+    })
+    .await;
+    match read {
+        Ok(totals) => {
+            json!({"ok": true, "totals": totals, "window": {"from": w.from.map(nullrouter_engine::clock::rfc3339), "to": nullrouter_engine::clock::rfc3339(w.to)}})
+        }
+        Err(e) => json!({"ok": false, "error": format!("the read failed: {e}")}),
+    }
+}
+
+/// `latency.summary`: as `usage.totals`, on the blocking pool with the live ring merged over disk.
+async fn latency_summary(engine: &Arc<Engine>, req: &Value) -> Value {
+    let w = match window_of(req) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let home = engine.home().path().to_owned();
+    let live: Vec<Value> =
+        engine.records.query(&Query::default()).iter().filter_map(|r| serde_json::to_value(r).ok()).collect();
+    let read = tokio::task::spawn_blocking(move || summary::latency(&home, &w, &live, true)).await;
+    match read {
+        Ok(latency) => json!({"ok": true, "latency": latency}),
+        Err(e) => json!({"ok": false, "error": format!("the read failed: {e}")}),
+    }
 }
 
 /// `records.list`: what the journal holds plus what is still in flight (the live ring is the
@@ -509,6 +632,18 @@ async fn records_list(engine: &Arc<Engine>, req: &Value) -> Value {
         live.iter().filter_map(|r| r["id"].as_str().map(str::to_owned)).collect();
     disk.retain(|r| r["id"].as_str().is_none_or(|id| !ids.contains(id)));
     disk.extend(live);
+    disk.iter_mut().for_each(|r| nullrouter_engine::phases::decorate(r, None));
+    // A request in flight shows the phase it is in now (FR-013).
+    for r in disk.iter_mut().filter(|r| r["outcome"] == "in_progress") {
+        if let Some((phase, ms)) = r["id"].as_str().and_then(|id| engine.live.current(id)) {
+            r["slowest"] = json!({
+                "phase": phase.name(),
+                "ms": ms,
+                "side": nullrouter_engine::phases::side(phase),
+                "in_progress": true,
+            });
+        }
+    }
     disk.sort_by(|a, b| b["id"].as_str().cmp(&a["id"].as_str()));
     disk.truncate(limit.unwrap_or(usize::MAX));
     json!({"ok": true, "records": disk})

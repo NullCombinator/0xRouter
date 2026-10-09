@@ -33,6 +33,8 @@ exit: 0
     }
   ],
   "routing_warnings": [],
+  "paused_proxies": [],
+  "undefined_proxies": [],
   "notices": [
     {
       "level": "note",

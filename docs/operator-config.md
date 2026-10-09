@@ -11,7 +11,10 @@ $NULLROUTER_HOME
 ├── install-id      # this installation's random id (mode 0600)
 ├── keys.toml       # agent key digests (mode 0600)
 ├── dashboard.toml  # the dashboard token's digest and issue time (mode 0600)
+├── proxies.toml    # named proxies and their credentials (mode 0600)
 ├── plugins/        # user and installed community plugins (*.toml, top level only), see plugins.md
+├── routing/
+│   └── proxies.json    # paused proxies: names, times and reasons, no addresses (mode 0600)
 └── run/
     └── operator.sock   # the running server's operator socket (mode 0600)
 ```
@@ -242,12 +245,24 @@ characters, so a lost key can't be shown again: issue a new one.
 
 ```bash
 nullrouter keys issue claude-code-laptop      # prints the key (0r-…) once
-nullrouter keys list                          # id, name, …last4, created, revoked
+nullrouter keys list                          # id, name, harness, …last4, created, revoked
 nullrouter keys revoke claude-code-laptop     # by name or id
+nullrouter keys issue codex-ci --harness codex-cli   # issue with a harness tag
+nullrouter keys tag codex-ci claude-code      # set or replace the tag, by name or id
+nullrouter keys tag codex-ci --clear          # remove it
 ```
 
 The key's id is the agent's identity: provider session ids are derived from it, and
 records name it.
+
+The harness tag is a label for you: the dashboard shows it as a badge on the key and
+`keys list` shows it in the `HARNESS` column (`-` when none). It is 1 to 32 characters with no
+control characters, it changes nothing about routing, and a refused tag exits 1 and issues or
+changes nothing. `keys tag` works on revoked keys too, never touches the secret, and unknown
+keys exit 2.
+
+**Downgrading.** A `keys.toml` that holds a tagged key is refused by a binary from before the
+tag existed. Run `nullrouter keys tag <key> --clear` for each tagged key before going back.
 
 ## The dashboard
 
@@ -483,6 +498,38 @@ a record that never closed shows `interrupted`.
 cold. `prune` and `forget` take the journal lock and exit 1 if it isn't free within 10 s.
 Error bodies sent to clients carry the record id, so a failure can be looked up.
 
+### Usage and latency
+
+Two read-only commands summarise the records. Both ask a running server, or read the journal
+in their own process when none is running, and both give the same numbers.
+
+```bash
+nullrouter usage                      # today, local midnight to now
+nullrouter usage --period 7d          # today, 24h, 7d, 30d, 60d or all
+nullrouter latency                    # the last 24 hours, per agent and per provider
+```
+
+`usage` prints requests (with how many are in flight and how many reported no usage), input
+tokens (uncached), cached tokens, output tokens, an estimated cost, and requests per agent and
+per provider. Add `--json` for exact integers. The dashboard's Usage page shows the same
+figures for the same period.
+
+**Est. Cost** is an estimate, not billing. It prices each record with the prices declared today
+for its provider and account, at the rate in effect when the request arrived; earlier price
+changes are not tracked. Cached tokens are priced at the cache rate when one is declared, and at
+the input rate when none is. A request is left out of the cost, and counted under "not priced"
+with its reason, when its account has no price, when it has output tokens but the price has no
+output rate, or when it reported no usage.
+
+The per-agent rows can add up to less than the total: a request refused before a key matched
+counts in the total but belongs to no agent. A request that fell back counts once for each
+provider it tried, so the per-provider rows can add up to more.
+
+`latency` lists, for each agent, the router's own overhead and the time to first token, and for
+each provider its own wait for a first token (measured from the start of its attempt, so a
+fallback's earlier tries don't count), as p50 / p95, with the last response and, for a provider,
+requests by agent. `none` means no request in the window had that value; it is never `0 ms`.
+
 ### Durability
 
 The routing state (which account each agent is warm on, and the deficits) and the model
@@ -564,6 +611,126 @@ Each member's upstream id is resolved once, at load. Rules:
   passthrough;
 - a provider appears at most once per unified model;
 - typed members must agree on `kind` (untyped members never conflict).
+
+## Phases in records
+
+Each attempt of a record carries the marks the router took and the phases derived from them.
+`records show ID` prints a table per attempt:
+
+```text
+attempt 2  openrouter/main  reused · HTTP/2                              ok
+  retry wait       2000.0 ms
+  router overhead     0.3 ms
+  waiting for provider 3205.5 ms
+  generation      31740.5 ms
+  delivery           12.3 ms
+total 41000.6 ms = sum of phases
+```
+
+- **Router overhead** is 0router's own work before sending. A deliberate wait before a
+  same-account retry is **retry wait**, and a sign-in token refresh counts inside **connect**;
+  neither is overhead.
+- **Connect**, **headers** and **first token** are the network and the provider's wait. A phase
+  that didn't happen reads `not applicable`. The phases add up to the total.
+- The attempt line names the connection (`new connection` or `reused`), the HTTP version and
+  the proxy, and a timeout names which one fired, its value and who set it.
+- `records list` has a `SLOWEST` column: the request's longest phase and whose side it is on.
+- `records show --json` carries `timing` (the marks) and `phases` per attempt.
+
+Latency never changes routing: no provider, account or placement depends on a measured phase.
+
+## The live view
+
+```bash
+nullrouter live           # redraws once a second until Ctrl-C; a snapshot per second if piped
+nullrouter live --json    # one snapshot: {"as_of": …, "paused_proxies": […], "in_flight": […]}
+```
+
+It lists the requests in flight with their agent, target, current attempt, current phase and
+time in it, and what earlier attempts of the same request did. A finished request leaves the
+list at once. It needs a running server and exits 1 with `no server is running` otherwise. A slow
+`live` client never slows a request.
+
+## Connection settings
+
+Timeouts, connection reuse, HTTP/2 and same-account retries are set per provider in
+`config.toml`; timeouts also per model:
+
+```toml
+[provider.openrouter.connection]
+connect_timeout_ms = 5000          # 1-3 600 000
+header_timeout_ms = 10000          # from the attempt's start, connect included
+first_token_timeout_ms = 60000     # 0 = off, which is the default
+stall_timeout_ms = 360000          # time with no data at all, so keepalives keep a stream alive
+reuse = true                       # false: a new connection for every request
+http2 = false                      # false: HTTP/1.1 only; true: negotiate (the default)
+
+[provider.openrouter.model."anthropic/claude-opus-4.1".connection]
+first_token_timeout_ms = 300000    # timeouts only at model level
+
+[provider.openrouter.retry]
+all = { retries = 2, delay_ms = 1000 }
+"503" = { retries = 3, delay_ms = 2000 }
+```
+
+or with the CLI, which refuses a value the config would refuse and writes nothing then:
+
+```bash
+nullrouter connection show [PROVIDER] [--json]     # every value with the level that set it
+nullrouter connection set openrouter header-timeout 10s
+nullrouter connection set openrouter --model anthropic/claude-opus-4.1 first-token-timeout 5m
+nullrouter connection set openrouter first-token-timeout off
+nullrouter connection set openrouter reuse off     # reuse and http2 take on|off
+nullrouter connection set openrouter retries.503 3        # then:
+nullrouter connection set openrouter retry-wait.503 2s    # a wait needs its retry count first
+nullrouter connection unset openrouter header-timeout
+```
+
+**Timeouts.** For each timeout the first value set wins: operator per model, operator per
+provider, plugin per model, plugin per provider, then the built-in default (60 s connect and
+headers, 360 s stall, first token off; `FETCH_CONNECT_TIMEOUT_MS` and `STREAM_STALL_TIMEOUT_MS`
+still override the defaults). A timeout is a failed attempt: it is classified, retried and
+failed over like another transport failure. A thinking stream is never cut: thinking output is
+output. Settings apply from the next request, with no restart.
+
+**Reuse and HTTP/2.** `http2 = true` only lets the connection negotiate; it never forces HTTP/2
+against a server that doesn't offer it. A plugin may declare `http2 = false` for a provider
+that doesn't speak it; the operator's value wins. One endpoint without HTTP/2 puts the whole
+provider on HTTP/1.1.
+
+**Retries.** A rule is `{ retries, delay_ms }` with 0-5 retries and a wait of 0-30 000 ms,
+under `all` or a three-digit status. For a failure the first rule that applies wins: operator
+status, operator `all`, plugin status, then the built-in table. On a 429 a `retry-after` of 5 s
+or less replaces the configured wait. The wait is recorded as the attempt's retry wait.
+
+## Proxies
+
+A proxy is named in `proxies.toml` and assigned to all providers, one provider or one account.
+The account's assignment wins over the provider's, which wins over the all-providers one;
+`none` is an answer and stops the search. Plugins can't declare a proxy.
+
+```bash
+nullrouter proxy add eu-exit http://10.0.0.5:3128 --username me   # password on stdin, or --password-env VAR
+nullrouter proxy list                                   # name, address without credentials, user ✓, state, used by
+nullrouter proxy use eu-exit --all                      # or --provider P, or --account P/N
+nullrouter proxy use none --account anthropic/work      # this account goes direct
+nullrouter proxy clear --provider anthropic             # remove the assignment at that level
+nullrouter proxy remove eu-exit                         # refused while assigned; names where
+nullrouter proxy fixed eu-exit                          # probe now; resume traffic if it answers
+```
+
+The schemes are `http`, `https` and `socks5`. The password is never read from an argument and
+never printed, and it appears in no record, live view, dashboard page, log line or error; with
+`--password-env` only the variable's name is stored. Everything sent for an account goes
+through its proxy: requests, token refreshes, quota polls and job polls.
+
+**Pause.** When a proxy can't be reached, 0router probes it at once. If the probe fails too, the
+proxy is **paused** (`routing/proxies.json`) and everything behind it is skipped as
+`proxy NAME paused`, with no direct fallback and no cooldown for the account. The pause
+survives a restart. It ends when you run `nullrouter proxy fixed NAME` and the proxy answers,
+or when a reload finds the proxy's definition or an assignment to it changed. `nullrouter
+accounts list` has a `PROXY` column, `connection show` and `live` show a pause, and `check`
+reports it as an error (exit 1) and reports an assignment naming an undefined proxy as a note.
 
 ## Combos
 
@@ -728,7 +895,8 @@ config.toml:4:1 unified_model[0].members[1].provider: unknown provider "xx"
   - any error rejects the reload, and the previous state keeps serving;
   - in-flight requests keep the snapshot they started with;
   - nothing watches the files. Each mutating command (`accounts`, `keys`, `behaviour`,
-    `quota interval`, `routing set`/`unset`/`window`, `verdicts settings`, `plugins install`/`uninstall`) writes its file atomically and then asks the running
+    `quota interval`, `routing set`/`unset`/`window`, `connection set`/`unset`, `proxy add`/`remove`/`use`/`clear`/`fixed`,
+    `verdicts settings`, `plugins install`/`uninstall`) writes its file atomically and then asks the running
     server to reload over the operator socket. It prints `applied` when the server
     acknowledged, or `saved; applies at next start` when no server is running. A hand
     edit applies at the next start or the next such reload. If the reload loads a unified

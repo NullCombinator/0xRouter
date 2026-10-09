@@ -23,7 +23,8 @@ exit: 0
     "total_ms": null,
     "usage": null,
     "job": null,
-    "decision": null
+    "decision": null,
+    "slowest": null
   },
   {
     "id": "rq_01M40XK6400000000000000005",
@@ -55,7 +56,8 @@ exit: 0
           "state": "ok"
         },
         "dropped": [],
-        "forced": []
+        "forced": [],
+        "phases": "not_recorded"
       }
     ],
     "outcome": "interrupted",
@@ -66,7 +68,8 @@ exit: 0
     "total_ms": null,
     "usage": null,
     "job": null,
-    "decision": null
+    "decision": null,
+    "slowest": null
   },
   {
     "id": "rq_01M40FVQM00000000000000004",
@@ -102,7 +105,8 @@ exit: 0
           "state": "ok"
         },
         "dropped": [],
-        "forced": []
+        "forced": [],
+        "phases": "not_recorded"
       }
     ],
     "outcome": "succeeded",
@@ -113,7 +117,8 @@ exit: 0
     "total_ms": 900.0,
     "usage": null,
     "job": null,
-    "decision": null
+    "decision": null,
+    "slowest": null
   }
 ]
 --- stderr

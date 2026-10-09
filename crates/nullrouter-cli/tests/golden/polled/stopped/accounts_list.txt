@@ -1,5 +1,5 @@
 exit: 0
 --- stdout
-provider  name  kind    order  priority  secret  state
-grok-cli  work  signin  0      1         …5555   active
+provider  name  kind    order  priority  secret  proxy  state
+grok-cli  work  signin  0      1         …5555   —      active
 --- stderr

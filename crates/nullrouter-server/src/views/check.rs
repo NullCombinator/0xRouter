@@ -6,6 +6,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use nullrouter_engine::accounts::{self, Accounts};
+use nullrouter_engine::connection::pause::ProxyBoard;
+use nullrouter_engine::connection::proxy::{self, Proxies};
 use nullrouter_engine::files::{self, FileError};
 use nullrouter_engine::identity;
 use nullrouter_engine::journal::records;
@@ -38,6 +40,7 @@ pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, Vi
     let pair = |(p, n): &(String, String)| json!({ "provider": p, "name": n });
     let unmetered = unmetered_windows(&reg);
     let routing = routing_warnings(&reg, handle.home().path());
+    let proxies = proxy_findings(&reg, handle.home().path());
     let status = live.answer("server.status").filter(|a| a["ok"] == true);
     let (endpoint, endpoint_source) = endpoint(status, &reg.runtime().server.listen);
     let json = json!({
@@ -62,7 +65,9 @@ pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, Vi
         "journal": journal,
         "unmetered_windows": unmetered.iter().map(|(p, w)| json!({ "provider": p, "window": w })).collect::<Vec<_>>(),
         "routing_warnings": routing,
-        "notices": notices(handle.home().path(), r, journal.as_ref(), &unmetered, &routing, &s, status),
+        "paused_proxies": proxies.paused.iter().map(|(n, since, _)| json!({ "name": n, "since": since })).collect::<Vec<_>>(),
+        "undefined_proxies": proxies.undefined.iter().map(|(who, n)| json!({ "assigned_to": who, "proxy": n })).collect::<Vec<_>>(),
+        "notices": notices(handle.home().path(), r, journal.as_ref(), &Findings { unmetered: &unmetered, routing: &routing, proxies: &proxies }, &s, status),
         "signin": {
             "errors": s.errors,
             "tokens_without_account": s.orphan_tokens.iter().map(pair).collect::<Vec<_>>(),
@@ -141,11 +146,11 @@ fn notices(
     home: &Path,
     r: &LoadReport,
     journal: Option<&Value>,
-    unmetered: &[(String, String)],
-    routing: &[String],
+    found: &Findings,
     s: &SigninReport,
     status: Option<&Value>,
 ) -> Vec<Value> {
+    let Findings { unmetered, routing, proxies } = *found;
     let mut out = Vec::new();
     for c in &r.pending_conflicts {
         let (id, path) = (&c.id, c.path.display());
@@ -205,6 +210,16 @@ fn notices(
     }
     for w in routing {
         out.push(Notice::new("warning", "quota", format!("warning: {w}")));
+    }
+    for (name, since, _) in &proxies.paused {
+        let text = format!(
+            "error: proxy {name} is paused (unreachable since {since}); fix it, then run nullrouter proxy fixed {name}"
+        );
+        out.push(Notice::new("error", "providers", text));
+    }
+    for (who, name) in &proxies.undefined {
+        let text = format!("note: {who} is assigned proxy \"{name}\", which isn't defined");
+        out.push(Notice::new("note", "providers", text));
     }
     for e in &s.errors {
         out.push(Notice::new("error", "quota", format!("error: {e}")));
@@ -291,6 +306,47 @@ fn routing_warnings(reg: &nullrouter_registry::Registry, home: &Path) -> Vec<Str
     out
 }
 
+/// The routing and proxy findings `notices` prints, bundled to keep its arguments few.
+struct Findings<'a> {
+    unmetered: &'a [(String, String)],
+    routing: &'a [String],
+    proxies: &'a ProxyFindings,
+}
+
+/// What `check` says about proxies (spec 013, US4): the paused ones, and assignments naming a
+/// proxy `proxies.toml` doesn't define.
+#[derive(Default)]
+struct ProxyFindings {
+    /// Name, since, reason.
+    paused: Vec<(String, String, String)>,
+    /// Who is assigned (`account kiro/old`, `provider kiro`, `all providers`), and the name.
+    undefined: Vec<(String, String)>,
+}
+
+fn proxy_findings(reg: &nullrouter_registry::Registry, home: &Path) -> ProxyFindings {
+    let mut f = ProxyFindings {
+        paused: ProxyBoard::open(home).list().into_iter().map(|(n, p)| (n, p.since, p.reason)).collect(),
+        undefined: Vec::new(),
+    };
+    // An unreadable proxies.toml is a startup error `serve` reports; nothing to compare with.
+    let Ok(defined) = Proxies::load(&home.join(proxy::FILE)) else { return f };
+    let mut check = |who: String, name: Option<&String>| {
+        if let Some(n) = name.filter(|n| n.as_str() != proxy::NONE && defined.get(n).is_none()) {
+            f.undefined.push((who, n.clone()));
+        }
+    };
+    check("all providers".to_owned(), reg.runtime().connection_proxy.as_ref());
+    for p in reg.providers() {
+        check(format!("provider {}", p.id), reg.settings(&p.id).connection.proxy.as_ref());
+    }
+    if let Ok(list) = Accounts::load(&home.join(accounts::FILE)) {
+        for a in list.iter() {
+            check(format!("account {}/{}", a.provider, a.name), a.proxy.as_ref());
+        }
+    }
+    f
+}
+
 /// The sign-in files' findings (spec 005 T092). Built from names and modes only: no token
 /// is ever read into the report.
 #[derive(Default)]
@@ -347,6 +403,8 @@ fn signin_report(home: &Path) -> SigninReport {
     check_mode(tokens::path(home), true, &mut r);
     // As `keys.toml`: `serve` refuses a dashboard.toml readable by others (spec 009).
     check_mode(home.join(files::DASHBOARD_FILE), true, &mut r);
+    // And a proxies.toml readable by others: it can hold a password.
+    check_mode(home.join(proxy::FILE), true, &mut r);
     check_mode(home.join(tokens::LOCK), false, &mut r);
     check_mode(home.join(identity::INSTALL_ID_FILE), false, &mut r);
     check_mode(home.join(records::LOCK_FILE), false, &mut r);
@@ -473,8 +531,11 @@ mod tests {
             home,
             &report,
             Some(&journal),
-            &[("grok-cli".into(), "prepaid".into())],
-            &["anthropic/main is pay-as-you-go".into()],
+            &Findings {
+                unmetered: &[("grok-cli".into(), "prepaid".into())],
+                routing: &["anthropic/main is pay-as-you-go".into()],
+                proxies: &ProxyFindings::default(),
+            },
             &signin,
             None,
         );

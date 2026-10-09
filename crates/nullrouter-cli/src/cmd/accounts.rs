@@ -286,7 +286,7 @@ fn print_list(view: &View, long: bool, as_json: bool) {
     }
     let text = |r: &Value, k: &str| r[k].as_str().unwrap_or("-").to_owned();
     let mut cells =
-        vec![["provider", "name", "kind", "order", "priority", "secret", "state"].map(str::to_owned).to_vec()];
+        vec![["provider", "name", "kind", "order", "priority", "secret", "proxy", "state"].map(str::to_owned).to_vec()];
     cells.extend(rows.iter().map(|r| {
         vec![
             text(r, "provider"),
@@ -295,6 +295,10 @@ fn print_list(view: &View, long: bool, as_json: bool) {
             r["order"].to_string(),
             r["priority"].as_f64().map_or_else(|| "-".into(), |p| p.to_string()),
             text(r, "secret"),
+            match (r["proxy"].as_str(), r["proxy_level"].as_str()) {
+                (Some(name), Some(level)) => format!("{name} ({level})"),
+                _ => "—".to_owned(),
+            },
             text(r, "state_text"),
         ]
     }));

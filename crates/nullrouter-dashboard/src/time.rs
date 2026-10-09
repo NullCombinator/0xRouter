@@ -23,6 +23,13 @@ pub fn time_element(rfc3339: &str, tz: &TimeZone) -> Markup {
     }
 }
 
+/// An instant as plain text in `tz`, `YYYY-MM-DD HH:MM:SS`; `None` when it isn't an RFC 3339 time.
+/// For places an element can't go (SVG text).
+pub fn local_text(rfc3339: &str, tz: &TimeZone) -> Option<String> {
+    let at = rfc3339.parse::<Timestamp>().ok()?;
+    Some(at.to_zoned(tz.clone()).strftime("%Y-%m-%d %H:%M:%S").to_string())
+}
+
 /// `as of 15:04:05 CEST (Europe/Berlin) · reload to refresh`. A zone with no IANA name (a fixed
 /// offset) is named by its offset.
 pub fn as_of(now: Timestamp, tz: &TimeZone) -> String {

@@ -247,6 +247,11 @@ impl Engine {
                     .ok_or_else(|| failure(502, format!("0router: account {}/{name} is gone", job.provider)))?,
             ),
         };
+        if let Some(proxy) = crate::connection::paused_for(&self.proxy_board, st, &job.provider, account) {
+            return Err(failure(502, format!("0router: proxy {proxy} paused")));
+        }
+        let (client, _) = crate::connection::client_for(st, &job.provider, account)
+            .map_err(|e| failure(502, format!("0router: {e}")))?;
         let released = account
             .map(|a| accounts::release(a, provider, &st.tokens))
             .transpose()
@@ -256,7 +261,7 @@ impl Engine {
         if let Target::Download(raw) = target {
             let url = download_url(raw, allow_private)?;
             if !bound(&url, account, released.as_ref()) {
-                let req = st.http.get(url);
+                let req = client.get(url);
                 return self.job_send(st, job, req).await;
             }
         }
@@ -302,7 +307,7 @@ impl Engine {
         };
         let out = upstream::build_request(parts).map_err(|e| failure(502, format!("0router: {e}")))?;
         upstream::check_ip_host(&out.url, allow_private).map_err(|e| failure(502, format!("0router: {e}")))?;
-        self.job_send(st, job, out.into_request(&st.http)).await
+        self.job_send(st, job, out.into_request(&client)).await
     }
 
     /// Sends one job request: a 2xx answer, else the provider's status and redacted text.

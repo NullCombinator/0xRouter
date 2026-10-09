@@ -48,10 +48,8 @@ pub fn href(name: &str) -> String {
 /// `GET /assets/<hash>/<file>`: the asset when the hash is the current one; 404 otherwise.
 pub fn serve(path: &str) -> Response {
     let rest = path.strip_prefix("/assets/").unwrap_or_default();
-    let found = rest
-        .split_once('/')
-        .filter(|(h, _)| *h == hash())
-        .and_then(|(_, name)| ASSETS.iter().find(|a| a.name == name));
+    let found =
+        rest.split_once('/').filter(|(h, _)| *h == hash()).and_then(|(_, name)| ASSETS.iter().find(|a| a.name == name));
     match found {
         Some(a) => (StatusCode::OK, [(header::CONTENT_TYPE, a.mime), (header::CACHE_CONTROL, IMMUTABLE)], a.bytes)
             .into_response(),

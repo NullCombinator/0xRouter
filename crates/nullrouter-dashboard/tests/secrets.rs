@@ -2,8 +2,8 @@
 //! sentinel scan, extended to the dashboard: on the `dashboard()` home with a sentinel provider
 //! key, its sign-in tokens, a freshly issued agent key, the dashboard token and a served request
 //! whose prompt and answer are sentinels, every route is fetched (pages, `?notices`, windows,
-//! filters, the sign-in page, assets, logos) and every response body and header is scanned. Only
-//! a `…last4` form may appear.
+//! filters, the sign-in page, assets, logos) and every response body and header is scanned. The account goes through a proxy with a sentinel username and password, up and then
+//! paused (spec 013, SC-008). Only a `…last4` form may appear.
 
 mod common;
 
@@ -15,7 +15,7 @@ use nullrouter_dashboard::logos::Index;
 use nullrouter_dashboard::pages::Id;
 use nullrouter_engine::files::write_private;
 use nullrouter_engine::keys::{self, Keys};
-use nullrouter_engine::testkit::{MockUpstream, Step, homes};
+use nullrouter_engine::testkit::{MockProxy, MockUpstream, Step, homes};
 use reqwest::header::COOKIE;
 use reqwest::{Client, redirect};
 use serde_json::json;
@@ -23,10 +23,12 @@ use serde_json::json;
 const KEY: &str = "sk-dash-SENTINEL-KEY-0001";
 const PROMPT: &str = "PROMPT-SENTINEL-the-cat-sat";
 const ANSWER: &str = "ANSWER-SENTINEL-on-the-mat";
+const PROXY_USER: &str = "proxy-user-SENTINEL-0031";
+const PROXY_PASSWORD: &str = "proxy-pw-SENTINEL-0032";
 
 /// The `dashboard()` home with one more provider at the mock (its account holds [`KEY`]) and one
 /// more agent key, returned whole.
-fn home(mock: &MockUpstream) -> (tempfile::TempDir, String) {
+fn home(mock: &MockUpstream, proxy: &MockProxy) -> (tempfile::TempDir, String) {
     let dir = homes::dashboard();
     let h = dir.path();
     fs::write(
@@ -43,7 +45,15 @@ fn home(mock: &MockUpstream) -> (tempfile::TempDir, String) {
     let accounts = fs::read_to_string(h.join(nullrouter_engine::accounts::FILE)).unwrap();
     write_private(
         &h.join(nullrouter_engine::accounts::FILE),
-        &format!("{accounts}\n[[account]]\nprovider = \"sentinel\"\nname = \"main\"\nsecret = \"{KEY}\"\norder = 9\n"),
+        &format!("{accounts}\n[[account]]\nprovider = \"sentinel\"\nname = \"main\"\nsecret = \"{KEY}\"\norder = 9\nproxy = \"eu\"\n"),
+    )
+    .unwrap();
+    write_private(
+        &h.join("proxies.toml"),
+        &format!(
+            "schema = 1\n\n[[proxy]]\nname = \"eu\"\nurl = \"http://{}\"\nusername = \"{PROXY_USER}\"\npassword = \"{PROXY_PASSWORD}\"\n",
+            proxy.addr()
+        ),
     )
     .unwrap();
     let mut keys = Keys::load(&h.join(keys::FILE)).unwrap();
@@ -80,10 +90,11 @@ async fn no_route_carries_a_secret_or_a_prompt() {
                    "usage": {"prompt_tokens": 3, "completion_tokens": 3}}),
         )
     });
-    let (dir, agent) = home(&mock);
+    let proxy = MockProxy::start_with_auth(PROXY_USER, PROXY_PASSWORD).await;
+    let (dir, agent) = home(&mock, &proxy);
     let mut sentinels = home_secrets(dir.path());
     assert!(sentinels.iter().any(|s| s == KEY) && sentinels.len() >= 4, "{sentinels:?}");
-    sentinels.extend([agent.clone(), TOKEN.to_owned(), PROMPT.to_owned(), ANSWER.to_owned()]);
+    sentinels.extend([agent.clone(), TOKEN.to_owned(), PROMPT.to_owned(), ANSWER.to_owned(), PROXY_USER.to_owned(), PROXY_PASSWORD.to_owned()]);
     let d = Dash::start(dir).await;
 
     // A served request whose prompt and answer are sentinels: the provider got the key, so the
@@ -98,7 +109,24 @@ async fn no_route_carries_a_secret_or_a_prompt() {
         .unwrap();
     let body = r.text().await.unwrap();
     assert!(body.contains(ANSWER), "{body}");
-    assert!(mock.received().iter().any(|r| r.headers.values().any(|v| v.to_str().is_ok_and(|v| v.contains(KEY)))), "the key went upstream");
+    assert!(
+        mock.received().iter().any(|r| r.headers.values().any(|v| v.to_str().is_ok_and(|v| v.contains(KEY)))),
+        "the key went upstream"
+    );
+
+    assert!(proxy.carried() >= 1, "the request went through the account's proxy");
+
+    // Take the proxy down and send again, so the pages are also read with it paused and probed.
+    proxy.stop().await;
+    let _ = http
+        .post(format!("http://{}/v1/chat/completions", d.client_addr))
+        .bearer_auth(&agent)
+        .body(json!({"model": "sentinel/m1", "messages": [{"role": "user", "content": PROMPT}]}).to_string())
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await;
 
     let record = d.view(nullrouter_dashboard::page::ViewName::Records, json!({"limit": 1, "before": null})).await;
     let record = record[0]["id"].as_str().unwrap().to_owned();
@@ -111,6 +139,8 @@ async fn no_route_carries_a_secret_or_a_prompt() {
         "/providers/sentinel".into(),
         "/providers/xai".into(),
         "/providers?kind=llm&q=sent".into(),
+        "/usage?period=all".into(),
+        "/usage?period=24h".into(),
         "/quota?provider=sentinel&account=main".into(),
         format!("/usage/records/{record}"),
         format!("/usage/records/{record}?notices"),
@@ -126,7 +156,8 @@ async fn no_route_carries_a_secret_or_a_prompt() {
                 req = req.header(COOKIE, format!("nr_dashboard={TOKEN}"));
             }
             let r = req.send().await.unwrap();
-            let headers: String = r.headers().iter().map(|(k, v)| format!("{k}: {}\n", v.to_str().unwrap_or("?"))).collect();
+            let headers: String =
+                r.headers().iter().map(|(k, v)| format!("{k}: {}\n", v.to_str().unwrap_or("?"))).collect();
             let bytes = r.bytes().await.unwrap();
             let body = String::from_utf8_lossy(&bytes);
             for s in &sentinels {

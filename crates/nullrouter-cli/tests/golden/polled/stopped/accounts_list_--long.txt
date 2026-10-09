@@ -1,6 +1,6 @@
 exit: 0
 --- stdout
-provider  name  kind    order  priority  secret  state
-grok-cli  work  signin  0      1         …5555   active
+provider  name  kind    order  priority  secret  proxy  state
+grok-cli  work  signin  0      1         …5555   —      active
     email -  tier -  expires 2026-10-03T20:23:00Z  refreshed -
 --- stderr
