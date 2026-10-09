@@ -3,6 +3,7 @@ schema = 1
 id = "stability-ai"
 category = "apikey"
 alias = "stability-ai"
+logo = "stability-ai.png"
 aliases = ["stability"]
 ui_alias = "stability"
 requires = ["9router-image:stability-ai"]

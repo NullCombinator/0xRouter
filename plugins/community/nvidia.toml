@@ -3,6 +3,7 @@ schema = 1
 id = "nvidia"
 category = "freeTier"
 alias = "nvidia"
+logo = "nvidia.png"
 transport = { base_url = "https://integrate.api.nvidia.com/v1/chat/completions", validate_url = "https://integrate.api.nvidia.com/v1/models" }
 
 [[models]]

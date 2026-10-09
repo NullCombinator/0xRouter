@@ -3,6 +3,7 @@ schema = 1
 id = "topaz"
 category = "apikey"
 alias = "topaz"
+logo = "topaz.png"
 
 [auth]
 kind = "apikey"

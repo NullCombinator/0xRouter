@@ -3,6 +3,7 @@ schema = 1
 id = "linkup"
 category = "apikey"
 alias = "linkup"
+logo = "linkup.png"
 
 [auth]
 kind = "apikey"

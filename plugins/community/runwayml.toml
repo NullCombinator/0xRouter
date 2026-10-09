@@ -3,6 +3,7 @@ schema = 1
 id = "runwayml"
 category = "apikey"
 alias = "runwayml"
+logo = "runwayml.png"
 aliases = ["runway"]
 ui_alias = "runway"
 requires = ["9router-image:runwayml"]

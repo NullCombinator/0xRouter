@@ -3,6 +3,7 @@ schema = 1
 id = "together"
 category = "apikey"
 alias = "together"
+logo = "together.png"
 transport = { base_url = "https://api.together.xyz/v1/chat/completions", validate_url = "https://api.together.xyz/v1/models" }
 
 [[models]]

@@ -3,6 +3,7 @@ schema = 1
 id = "perplexity"
 category = "apikey"
 alias = "perplexity"
+logo = "perplexity.png"
 aliases = ["pplx"]
 ui_alias = "pplx"
 transport = { base_url = "https://api.perplexity.ai/chat/completions", validate_url = "https://api.perplexity.ai/models" }

@@ -4,6 +4,7 @@ id = "vertex-partner"
 category = "apikey"
 requires = ["9router-executor:vertex-partner"]
 alias = "vertex-partner"
+logo = "vertex-partner.png"
 aliases = ["vxp"]
 ui_alias = "vxp"
 transport = { base_url = "https://aiplatform.googleapis.com" }

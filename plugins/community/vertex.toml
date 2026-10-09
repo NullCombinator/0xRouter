@@ -4,6 +4,7 @@ id = "vertex"
 category = "freeTier"
 requires = ["9router-executor:vertex"]
 alias = "vertex"
+logo = "vertex.png"
 aliases = ["vx"]
 ui_alias = "vx"
 transport = { base_url = "https://aiplatform.googleapis.com", format = "vertex" }

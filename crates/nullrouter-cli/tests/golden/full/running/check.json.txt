@@ -2,6 +2,8 @@ exit: 1
 --- stdout
 {
   "home": "<HOME>",
+  "endpoint": "http://127.0.0.1:<PORT>/v1",
+  "endpoint_source": "server",
   "providers": {
     "bundled": 7,
     "user": 1
@@ -19,6 +21,7 @@ exit: 1
       ]
     }
   ],
+  "logos_ignored": [],
   "dropped_unified_models": [
     {
       "name": "lost",
@@ -80,6 +83,53 @@ exit: 1
   "routing_warnings": [
     "anthropic/main is pay-as-you-go with no price in its plugin or account; it ranks as price 1 against other pay-as-you-go accounts",
     "anthropic/spare is pay-as-you-go with no price in its plugin or account; it ranks as price 1 against other pay-as-you-go accounts"
+  ],
+  "notices": [
+    {
+      "level": "error",
+      "subject": "providers",
+      "text": "skipped: <HOME>/plugins/broken.toml\n  <HOME>/plugins/broken.toml:3:6: key with no value, expected `=`"
+    },
+    {
+      "level": "error",
+      "subject": "combo",
+      "text": "dropped unified model lost: member provider broken was skipped"
+    },
+    {
+      "level": "note",
+      "subject": "combo",
+      "text": "note: unified model mixed: members differ in context_length: grok-cli 500000, bluesminds 200000"
+    },
+    {
+      "level": "note",
+      "subject": "combo",
+      "text": "note: unified model mixed: members differ in max_output_tokens: grok-cli 64000, bluesminds undeclared"
+    },
+    {
+      "level": "note",
+      "subject": "quota",
+      "text": "note: grok-cli reports window on-demand, which no [[routing.window]] meter names; it is paced in its own unit"
+    },
+    {
+      "level": "note",
+      "subject": "quota",
+      "text": "note: grok-cli reports window prepaid, which no [[routing.window]] meter names; it is paced in its own unit"
+    },
+    {
+      "level": "note",
+      "subject": "quota",
+      "text": "note: grok-cli reports window credits, which no [[routing.window]] meter names; it is paced in its own unit"
+    },
+    {
+      "level": "warning",
+      "subject": "quota",
+      "text": "warning: anthropic/main is pay-as-you-go with no price in its plugin or account; it ranks as price 1 against other pay-as-you-go accounts"
+    },
+    {
+      "level": "warning",
+      "subject": "quota",
+      "text": "warning: anthropic/spare is pay-as-you-go with no price in its plugin or account; it ranks as price 1 against other pay-as-you-go accounts"
+    }
   ],
   "signin": {
     "errors": [],

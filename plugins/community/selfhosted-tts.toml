@@ -3,6 +3,7 @@ schema = 1
 id = "selfhosted-tts"
 category = "apikey"
 alias = "selfhosted-tts"
+logo = "selfhosted-tts.png"
 requires = ["9router-tts:selfhosted-tts"]
 
 [[models]]

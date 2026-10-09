@@ -1,6 +1,7 @@
 exit: 1
 --- stdout
 home: <HOME>
+endpoint: http://127.0.0.1:<PORT>/v1
 providers: 8 (7 bundled, 1 user)
 unified models: 1
 skipped: <HOME>/plugins/broken.toml

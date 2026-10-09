@@ -3,6 +3,7 @@ schema = 1
 id = "fal-ai"
 category = "apikey"
 alias = "fal-ai"
+logo = "fal-ai.png"
 aliases = ["fal"]
 ui_alias = "fal"
 requires = ["9router-image:fal-ai"]

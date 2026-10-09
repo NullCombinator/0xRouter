@@ -17,6 +17,7 @@ use serde_json::{Map, Value, json};
 
 use crate::clock;
 use crate::journal::writer::sync_dir;
+use crate::keys::{self, Keys};
 use crate::records::{Outcome, RequestRecord};
 
 /// The advisory lock the writer takes per batch and a rewrite takes for its whole run.
@@ -479,7 +480,7 @@ impl Default for Tail {
 impl Tail {
     fn take(&mut self, line: &[u8]) {
         // Only `t` and `id` are read here; `fold` parses the whole line once the request is ready.
-        let Ok(super::index::Head { t, id }) = serde_json::from_slice(line) else { return };
+        let Ok(super::index::Head { t, id, .. }) = serde_json::from_slice(line) else { return };
         let Ok(text) = std::str::from_utf8(line) else { return };
         self.lines.entry(id.to_owned()).or_default().push(text.to_owned());
         if t == "open" && self.opened.insert(id.to_owned()) {
@@ -502,6 +503,34 @@ impl Tail {
             self.kept.extend(fold(&mine.join("\n")).into_iter().filter(|r| filter.matches(r)));
         }
     }
+}
+
+/// When each agent key in `keys.toml` last arrived, as the `arrived` text of its newest record:
+/// the newest arrival among the records whose agent is the key's id. A key in no record is absent.
+/// Segments are read newest first, from the segment index (so a cached one costs only what was
+/// appended), and reading stops once every key is found.
+pub fn last_arrived(home: &Path) -> BTreeMap<String, String> {
+    let Ok(list) = Keys::load(&home.join(keys::FILE)) else { return BTreeMap::new() };
+    let wanted: BTreeSet<String> = list.iter().map(|k| k.id.clone()).collect();
+    let mut found = BTreeMap::new();
+    for (_, path) in segments(home).into_iter().rev() {
+        if found.len() >= wanted.len() {
+            break;
+        }
+        // A newer segment holds only later arrivals, so the first one that names a key is final.
+        for (agent, (_, text)) in super::index::newest(&path).unwrap_or_default() {
+            if wanted.contains(&agent) {
+                found.entry(agent).or_insert(text);
+            }
+        }
+    }
+    found
+}
+
+/// [`last_arrived`] as times.
+pub fn last_used(home: &Path) -> BTreeMap<String, SystemTime> {
+    let found = last_arrived(home);
+    found.into_iter().filter_map(|(k, text)| Some((k, clock::parse_rfc3339(&text)?))).collect()
 }
 
 /// One record by id; the id's ULID gives no day, so the segments are searched newest first.

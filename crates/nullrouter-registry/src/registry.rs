@@ -6,11 +6,13 @@ use std::collections::{BTreeMap, HashMap};
 use crate::credentials::{self, ResolvedCredential};
 use crate::floor::Floor;
 use crate::load::{LoadReport, WithheldCredential, style_carriers};
+use crate::logo::Logo;
 use crate::lookup::{Catalog, derive_model_name};
 use crate::resolve::NotFound;
 use crate::schema::{
-    CapabilityKind, CapabilitySection, ContentKind, Endpoint, Model, ModelKind, ModelType, PipelineSettings,
-    ProviderEntity, ProviderSettings, RoutingSettings, SectionModel, ServerSettings, StyleFile, WireFormat,
+    CapabilityKind, CapabilitySection, ContentKind, DashboardSettings, Endpoint, Model, ModelKind, ModelType,
+    PipelineSettings, ProviderEntity, ProviderSettings, RoutingSettings, SectionModel, ServerSettings, StyleFile,
+    WireFormat,
 };
 use crate::validate::FieldPath;
 
@@ -84,6 +86,8 @@ pub struct Registry {
     styles: Vec<StyleFile>,
     floor: Floor,
     runtime: RuntimeSettings,
+    /// Logos that passed the check at load, by provider id (spec 009 research R10).
+    logos: BTreeMap<String, Logo>,
 }
 
 /// The `config.toml` settings the request pipeline reads (spec 003).
@@ -92,6 +96,8 @@ pub struct RuntimeSettings {
     pub allow_private_endpoints: bool,
     pub server: ServerSettings,
     pub pipeline: PipelineSettings,
+    /// `[dashboard]` (spec 009).
+    pub dashboard: DashboardSettings,
     /// `[routing]`, with target keys written as unified names or `provider-id/model`.
     pub routing: RoutingSettings,
 }
@@ -166,6 +172,7 @@ impl Registry {
             styles: Vec::new(),
             floor: Floor::default(),
             runtime: RuntimeSettings::default(),
+            logos: BTreeMap::new(),
         };
         registry.compute_floor();
         registry
@@ -181,6 +188,10 @@ impl Registry {
     fn compute_floor(&mut self) {
         let auth = self.providers.iter().flat_map(ProviderEntity::auth_headers);
         self.floor = Floor::computed(style_carriers(&self.styles), auth);
+    }
+
+    pub(crate) fn set_logos(&mut self, logos: BTreeMap<String, Logo>) {
+        self.logos = logos;
     }
 
     pub(crate) fn set_operator_state(
@@ -338,5 +349,16 @@ impl Registry {
 
     pub fn runtime(&self) -> &RuntimeSettings {
         &self.runtime
+    }
+
+    /// `provider_id`'s logo, when its plugin declared one that passed the check at load; `None`
+    /// shows the text icon.
+    pub fn logo(&self, provider_id: &str) -> Option<&Logo> {
+        self.logos.get(provider_id)
+    }
+
+    /// Every logo that passed the check, by provider id.
+    pub fn logos(&self) -> impl Iterator<Item = (&str, &Logo)> {
+        self.logos.iter().map(|(id, logo)| (id.as_str(), logo))
     }
 }

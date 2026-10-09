@@ -3,6 +3,7 @@ schema = 1
 id = "aws-polly"
 category = "apikey"
 alias = "polly"
+logo = "aws-polly.png"
 
 [[capabilities.tts.models]]
 id = "standard"

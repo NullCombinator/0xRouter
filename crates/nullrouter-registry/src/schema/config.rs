@@ -29,6 +29,52 @@ pub struct OperatorConfig {
     pub pipeline: PipelineSettings,
     #[serde(default)]
     pub routing: RoutingSettings,
+    #[serde(default)]
+    pub dashboard: DashboardSettings,
+}
+
+/// `[dashboard]` (spec 009): whether `serve` also serves the read-only dashboard, and where.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DashboardSettings {
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// `host:port`. The host must be a loopback address (`127.0.0.0/8`, `::1`, `localhost`).
+    #[serde(default = "default_dashboard_listen", deserialize_with = "de_loopback_listen")]
+    pub listen: String,
+}
+
+impl Default for DashboardSettings {
+    fn default() -> Self {
+        Self { enabled: true, listen: default_dashboard_listen() }
+    }
+}
+
+fn default_dashboard_listen() -> String {
+    "127.0.0.1:20130".into()
+}
+
+/// Whether `host` (as written in a `host:port` listen address) is a loopback address.
+fn is_loopback_host(host: &str) -> bool {
+    let bare = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')).unwrap_or(host);
+    if bare.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    bare.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+}
+
+fn de_loopback_listen<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    let listen = String::deserialize(d)?;
+    let Some((host, port)) = listen.rsplit_once(':') else {
+        return Err(D::Error::custom(format!("{listen:?} is not host:port")));
+    };
+    if port.parse::<u16>().is_err() {
+        return Err(D::Error::custom(format!("{listen:?} has no valid port")));
+    }
+    if !is_loopback_host(host) {
+        return Err(D::Error::custom("must be a loopback address; network binding is not supported"));
+    }
+    Ok(listen)
 }
 
 /// `[routing]`: how long the amortization window is (Clarifications Q4). Cold work is spread over
@@ -175,6 +221,32 @@ mod tests {
         ] {
             assert!(toml::from_str::<OperatorConfig>(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn dashboard_settings() {
+        let c: OperatorConfig = toml::from_str("").unwrap();
+        assert!(c.dashboard.enabled);
+        assert_eq!(c.dashboard.listen, "127.0.0.1:20130");
+        for good in ["127.0.0.1:1", "127.8.9.10:20130", "[::1]:20130", "localhost:20130", "LOCALHOST:9"] {
+            let c: OperatorConfig = toml::from_str(&format!("[dashboard]\nlisten = \"{good}\"\n")).unwrap();
+            assert_eq!(c.dashboard.listen, good);
+        }
+        let c: OperatorConfig = toml::from_str("[dashboard]\nenabled = false\n").unwrap();
+        assert!(!c.dashboard.enabled);
+        assert_eq!(c.dashboard.listen, "127.0.0.1:20130");
+        for bad in
+            ["0.0.0.0:20130", "[::]:20130", "192.168.1.5:20130", "example.com:20130", "10.0.0.1:1", "128.0.0.1:1"]
+        {
+            let err = toml::from_str::<OperatorConfig>(&format!("[dashboard]\nlisten = \"{bad}\"\n"))
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("must be a loopback address; network binding is not supported"), "{bad}: {err}");
+        }
+        for bad in ["127.0.0.1", "127.0.0.1:http", "127.0.0.1:70000"] {
+            assert!(toml::from_str::<OperatorConfig>(&format!("[dashboard]\nlisten = \"{bad}\"\n")).is_err(), "{bad}");
+        }
+        assert!(toml::from_str::<OperatorConfig>("[dashboard]\nport = 1\n").is_err());
     }
 
     #[test]

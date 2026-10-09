@@ -15,7 +15,7 @@ use nullrouter_wire::codec::Style;
 
 use crate::accounts::{self, Accounts};
 use crate::cooldown::Cooldowns;
-use crate::files::FileError;
+use crate::files::{DashboardToken, FileError};
 use crate::identity::AgentSessions;
 use crate::keys::{self, BreakBehaviour, Keys};
 use crate::models_live::LiveModels;
@@ -29,6 +29,8 @@ pub struct EngineState {
     pub registry: Arc<Registry>,
     pub accounts: Accounts,
     pub keys: Keys,
+    /// The dashboard token's digest (`dashboard.toml`, spec 009), read again at every reload.
+    pub dashboard: DashboardToken,
     /// The engine's one redactor, shared by every snapshot (security review L3): a request
     /// holding an older snapshot still masks a token refreshed after it started.
     pub redactor: Arc<SharedRedactor>,
@@ -123,6 +125,8 @@ pub struct Engine {
     pub history: Arc<crate::quota::history::History>,
     /// Live model lists, shared with every snapshot.
     pub live_models: Arc<LiveModels>,
+    /// The listeners `serve` bound, for the operator socket's `server.status`.
+    pub status: crate::status::ServerStatus,
     /// Wakes the maintenance task after a reload or a token change.
     pub(crate) changed: tokio::sync::Notify,
     install_id: OnceLock<String>,
@@ -130,16 +134,16 @@ pub struct Engine {
     reload: Mutex<()>,
 }
 
-fn operator_files(home: &OperatorHome) -> Result<(Accounts, Keys), FileError> {
+fn operator_files(home: &OperatorHome) -> Result<(Accounts, Keys, DashboardToken), FileError> {
     let accounts = Accounts::load(&home.path().join(accounts::FILE))?;
     let keys = Keys::load(&home.path().join(keys::FILE))?;
-    Ok((accounts, keys))
+    let dashboard = DashboardToken::load(home.path())?;
+    Ok((accounts, keys, dashboard))
 }
 
 fn assemble(
     registry: Arc<Registry>,
-    mut accounts: Accounts,
-    keys: Keys,
+    (mut accounts, keys, dashboard): (Accounts, Keys, DashboardToken),
     redactor: Arc<SharedRedactor>,
     tokens: Arc<TokenCells>,
     live_models: Arc<LiveModels>,
@@ -164,7 +168,10 @@ fn assemble(
         })
         .collect();
     let http = upstream::client(registry.runtime().allow_private_endpoints);
-    (EngineState { registry, accounts, keys, redactor, tokens, live_models, styles, http, generation }, report)
+    (
+        EngineState { registry, accounts, keys, dashboard, redactor, tokens, live_models, styles, http, generation },
+        report,
+    )
 }
 
 impl Engine {
@@ -186,7 +193,7 @@ impl Engine {
         home: OperatorHome,
         open: impl FnOnce(OperatorHome) -> Result<RegistryHandle, StartupError>,
     ) -> Result<(Self, StateReport), StateError> {
-        let (accounts, keys) = operator_files(&home)?;
+        let (accounts, keys, dashboard) = operator_files(&home)?;
         let tokens = Arc::new(TokenCells::load(home.path())?);
         let history = Arc::new(crate::quota::history::History::open(home.path()));
         let quota = crate::quota::poll::QuotaBoard::default();
@@ -202,8 +209,7 @@ impl Engine {
         let shared_redactor = Arc::new(SharedRedactor::new(Redactor::for_state(&accounts, &tokens)));
         let (state, report) = assemble(
             registry.snapshot(),
-            accounts,
-            keys,
+            (accounts, keys, dashboard),
             shared_redactor.clone(),
             tokens.clone(),
             live_models.clone(),
@@ -228,6 +234,7 @@ impl Engine {
             history,
             live_models,
             changed: tokio::sync::Notify::new(),
+            status: Default::default(),
             install_id: OnceLock::new(),
             generation: AtomicU64::new(1),
             reload: Mutex::new(()),
@@ -267,7 +274,7 @@ impl Engine {
     /// registry is touched, so any failure leaves everything as it was. Blocking.
     pub fn reload_blocking(&self) -> Result<StateReport, StateError> {
         let _guard = self.reload.lock().unwrap_or_else(|e| e.into_inner());
-        let (accounts, keys) = operator_files(self.registry.home())?;
+        let (accounts, keys, dashboard) = operator_files(self.registry.home())?;
         let tokens = self.tokens.changed(self.registry.home().path())?;
         self.registry.reload().map_err(|e| StateError::Registry(e.to_string()))?;
         accounts.check_routing(&self.registry.snapshot())?;
@@ -300,8 +307,7 @@ impl Engine {
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let (state, report) = assemble(
             self.registry.snapshot(),
-            accounts,
-            keys,
+            (accounts, keys, dashboard),
             self.shared_redactor.clone(),
             self.tokens.clone(),
             self.live_models.clone(),

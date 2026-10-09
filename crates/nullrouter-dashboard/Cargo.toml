@@ -1,0 +1,46 @@
+[package]
+name = "nullrouter-dashboard"
+version = "0.1.0"
+description = "0router read-only web dashboard: access, pages, style tokens, assets"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+axum.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+base64.workspace = true
+getrandom.workspace = true
+tracing.workspace = true
+maud.workspace = true
+jiff.workspace = true
+subtle.workspace = true
+ulid.workspace = true
+nullrouter-server.workspace = true
+nullrouter-engine.workspace = true
+nullrouter-registry.workspace = true
+
+[features]
+# Test-only: the isolation test (T071) makes every page build panic or sleep.
+fault = []
+
+[dev-dependencies]
+nullrouter-engine = { workspace = true, features = ["testkit"] }
+tempfile.workspace = true
+reqwest.workspace = true
+tower = { version = "0.5", features = ["util"] }
+toml.workspace = true
+criterion.workspace = true
+
+[[test]]
+name = "isolation"
+required-features = ["fault"]
+
+[[bench]]
+name = "pages"
+harness = false
+
+[lints]
+workspace = true

@@ -3,6 +3,7 @@ schema = 1
 id = "coqui"
 category = "freeTier"
 alias = "coqui"
+logo = "coqui.png"
 
 [[capabilities.tts.models]]
 id = "tts_models/en/ljspeech/tacotron2-DDC"

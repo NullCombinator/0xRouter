@@ -3,6 +3,7 @@ schema = 1
 id = "clinepass"
 category = "oauth"
 alias = "clinepass"
+logo = "clinepass.png"
 ui_alias = "clinepass"
 
 [transport]

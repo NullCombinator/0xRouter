@@ -13,6 +13,7 @@ toml.workspace = true
 nullrouter-registry.workspace = true
 nullrouter-engine.workspace = true
 nullrouter-server.workspace = true
+nullrouter-dashboard.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true

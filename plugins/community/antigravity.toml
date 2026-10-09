@@ -4,6 +4,7 @@ id = "antigravity"
 category = "oauth"
 requires = ["9router-executor:antigravity", "9router-image:antigravity"]
 alias = "ag"
+logo = "antigravity.png"
 ui_alias = "ag"
 
 [transport]

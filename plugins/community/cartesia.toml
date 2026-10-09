@@ -3,6 +3,7 @@ schema = 1
 id = "cartesia"
 category = "apikey"
 alias = "cartesia"
+logo = "cartesia.png"
 
 [[capabilities.tts.models]]
 id = "sonic-2"

@@ -3,6 +3,7 @@ schema = 1
 id = "api-airforce"
 category = "freeTier"
 alias = "af"
+logo = "api-airforce.png"
 aliases = ["airforce"]
 ui_alias = "af"
 passthrough_models = true

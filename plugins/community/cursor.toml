@@ -4,6 +4,7 @@ id = "cursor"
 category = "oauth"
 requires = ["9router-executor:cursor"]
 alias = "cu"
+logo = "cursor.png"
 ui_alias = "cu"
 
 [transport]

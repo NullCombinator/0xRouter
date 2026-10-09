@@ -3,6 +3,7 @@ schema = 1
 id = "black-forest-labs"
 category = "apikey"
 alias = "black-forest-labs"
+logo = "black-forest-labs.png"
 aliases = ["bfl"]
 ui_alias = "bfl"
 requires = ["9router-image:black-forest-labs"]

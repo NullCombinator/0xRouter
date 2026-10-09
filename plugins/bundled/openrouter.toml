@@ -5,6 +5,7 @@ category = "freeTier"
 alias = "openrouter"
 passthrough_models = true
 models_fetcher = { url = "https://openrouter.ai/api/v1/models", kind = "openrouter-free" }
+logo = "openrouter.png"
 
 [auth]
 kind = "apikey"

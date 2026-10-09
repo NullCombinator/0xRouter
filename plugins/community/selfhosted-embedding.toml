@@ -3,6 +3,7 @@ schema = 1
 id = "selfhosted-embedding"
 category = "apikey"
 alias = "selfhosted-embedding"
+logo = "selfhosted-embedding.png"
 requires = ["9router-embedding:selfhosted-embedding"]
 
 [[models]]

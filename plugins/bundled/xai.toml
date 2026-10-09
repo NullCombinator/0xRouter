@@ -4,6 +4,7 @@ schema = 2
 id = "xai"
 category = "apikey"
 alias = "xai"
+logo = "xai.png"
 
 [auth]
 kind = "apikey"

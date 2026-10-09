@@ -2,6 +2,7 @@
 schema = 1
 id = "mmf"
 category = "apikey"
+logo = "mmf.png"
 requires = ["9router-executor:mmf"]
 
 [transport]

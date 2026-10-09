@@ -3,6 +3,7 @@ schema = 1
 id = "minimax-cn"
 category = "apikey"
 alias = "minimax-cn"
+logo = "minimax-cn.png"
 
 [transport]
 base_url = "https://api.minimaxi.com/anthropic/v1/messages"

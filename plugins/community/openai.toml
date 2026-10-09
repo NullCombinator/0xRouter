@@ -3,6 +3,7 @@ schema = 1
 id = "openai"
 category = "apikey"
 alias = "openai"
+logo = "openai.png"
 transport = { base_url = "https://api.openai.com/v1/chat/completions", force_stream = true }
 
 [[models]]

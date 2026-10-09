@@ -3,6 +3,7 @@ schema = 1
 id = "tortoise"
 category = "freeTier"
 alias = "tortoise"
+logo = "tortoise.png"
 
 [[capabilities.tts.models]]
 id = "tortoise-v2"

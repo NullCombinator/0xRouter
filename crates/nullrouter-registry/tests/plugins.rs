@@ -196,3 +196,19 @@ fn plugin_file_path_is_reported_as_given() {
     assert_eq!(p.source, nullrouter_registry::PluginSource::User(path.clone()));
     assert!(Path::new(&path).exists());
 }
+
+#[test]
+fn dashboard_listen_must_be_loopback() {
+    let home = Home::new();
+    home.config("[dashboard]\nlisten = \"127.0.0.1:20999\"\n");
+    let reg = home.open().unwrap().snapshot();
+    assert_eq!(reg.runtime().dashboard.listen, "127.0.0.1:20999");
+    assert!(reg.runtime().dashboard.enabled);
+
+    home.config("schema = 1\n\n[dashboard]\nlisten = \"0.0.0.0:20130\"\n");
+    let msg = home.open().err().expect("a network address is a load error").to_string();
+    assert!(
+        msg.contains("config.toml:4:10 dashboard.listen: must be a loopback address; network binding is not supported"),
+        "{msg}"
+    );
+}

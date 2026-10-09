@@ -4,6 +4,7 @@ id = "codex"
 category = "oauth"
 requires = ["9router-executor:codex", "9router-image:codex"]
 alias = "cx"
+logo = "codex.png"
 ui_alias = "cx"
 
 [transport]

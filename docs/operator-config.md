@@ -10,6 +10,7 @@ $NULLROUTER_HOME
 ├── tokens.lock     # lock for tokens.toml writers (mode 0600)
 ├── install-id      # this installation's random id (mode 0600)
 ├── keys.toml       # agent key digests (mode 0600)
+├── dashboard.toml  # the dashboard token's digest and issue time (mode 0600)
 ├── plugins/        # user and installed community plugins (*.toml, top level only), see plugins.md
 └── run/
     └── operator.sock   # the running server's operator socket (mode 0600)
@@ -247,6 +248,58 @@ nullrouter keys revoke claude-code-laptop     # by name or id
 
 The key's id is the agent's identity: provider session ids are derived from it, and
 records name it.
+
+## The dashboard
+
+`serve` also serves a read-only web dashboard on its own port, `127.0.0.1:20130`. It shows the
+endpoint, agent keys, providers, quota, routing and request records on pages that read the same
+facts the CLI prints; it changes nothing, so every change stays in the CLI. It runs in the
+`serve` process, on its own listener, and a fault in it never slows or breaks a client request.
+
+```toml
+# config.toml
+[dashboard]
+enabled = true                  # false: `serve` opens no dashboard port
+listen = "127.0.0.1:20130"      # a loopback address only: 127.0.0.0/8, ::1 or localhost
+```
+
+A `listen` that isn't loopback is refused at load (`config.toml:L:C dashboard.listen: must be a
+loopback address; network binding is not supported`). The setting applies at the next `serve`
+start; a reload doesn't rebind the port. If the port is taken, `serve` starts anyway, the clients
+are served, and `nullrouter dashboard status` and `nullrouter check` say why the dashboard isn't
+listening.
+
+### Signing in
+
+Until you issue a token, the dashboard's only page tells you to run the command that does:
+
+```bash
+nullrouter dashboard token     # prints nrd_… once; a running server is told to reload
+nullrouter dashboard status    # on or off, the address, whether it is listening, when the token was issued
+```
+
+Open `http://127.0.0.1:20130` and enter the token once. The browser keeps a cookie
+(`nr_dashboard`, `HttpOnly`, `SameSite=Strict`) for 400 days, the longest a browser allows, so it
+doesn't ask again. 0router stores only the token's SHA-256 digest in `dashboard.toml` (mode
+0600), so a lost token can't be shown again: issue a new one. Issuing a token signs out every
+browser that holds the previous one. There is no sign-out page; clearing the browser's cookies
+does the same for one browser.
+
+A wrong token is refused after a delay that starts at 1 second and doubles to 30 seconds with
+each wrong token, and a right one resets it. The delay is shared, not per browser. Other limits:
+a request whose `Host` isn't the dashboard's own gets `421` (DNS rebinding), a sign-in posted
+from another site gets `403`, and every method but `GET` gets `405` (the sign-in post is the one
+exception).
+
+### What the cookie reaches
+
+Browsers scope a cookie by host name, not by port. The dashboard cookie is therefore also sent to
+any other web server you run on `127.0.0.1` and visit in the same browser. This is a known and
+accepted limit: a process running as your own user can already read `~/.0router`, and the only
+thing the cookie opens is a read-only view that shows no secret and no prompt. (Security review
+finding L1, accepted on 2026-10-06.) To give the dashboard its own cookie host on Linux, where
+every `127.0.0.0/8` address is loopback, set `listen = "127.0.0.2:20130"` and open that address.
+The default stays `127.0.0.1:20130` on every system.
 
 ## When a stream breaks
 

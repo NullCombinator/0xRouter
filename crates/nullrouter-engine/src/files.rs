@@ -103,9 +103,112 @@ pub fn write_private(path: &Path, text: &str) -> Result<(), FileError> {
     result.map_err(io)
 }
 
+/// `dashboard.toml` (spec 009, data-model § `dashboard.toml`): the digest of the one dashboard
+/// token, never the token. Absent until the first `nullrouter dashboard token`.
+pub const DASHBOARD_FILE: &str = "dashboard.toml";
+
+/// The dashboard token's digest and when it was issued. Both `None`: no token yet.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DashboardToken {
+    /// SHA-256 of the full token text (`nrd_…`), 64 lowercase hex characters.
+    pub digest: Option<String>,
+    /// RFC 3339 UTC.
+    pub issued: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawDashboardFile {
+    schema: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    token_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    issued: Option<String>,
+}
+
+/// A dashboard token starts with this, then 43 base64url characters (32 random bytes).
+pub const DASHBOARD_TOKEN_PREFIX: &str = "nrd_";
+
+impl DashboardToken {
+    /// A fresh token and the record to store for it. The token text is the only copy; the record
+    /// holds its digest and the time.
+    pub fn issue() -> (String, Self) {
+        use base64::Engine as _;
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let mut bytes = [0u8; 32];
+        getrandom::fill(&mut bytes).expect("the OS random source is available");
+        let token = format!("{DASHBOARD_TOKEN_PREFIX}{}", URL_SAFE_NO_PAD.encode(bytes));
+        let record = Self { digest: Some(Self::digest_of(&token)), issued: Some(crate::clock::now_rfc3339()) };
+        (token, record)
+    }
+
+    /// The digest of `token` as `dashboard.toml` keeps it.
+    pub fn digest_of(token: &str) -> String {
+        use sha2::{Digest, Sha256};
+        use std::fmt::Write as _;
+        Sha256::digest(token.as_bytes()).iter().fold(String::with_capacity(64), |mut out, b| {
+            let _ = write!(out, "{b:02x}");
+            out
+        })
+    }
+
+    /// The file under `home`; a missing file is no token. Refuses a shared file.
+    pub fn load(home: &Path) -> Result<Self, FileError> {
+        let path = home.join(DASHBOARD_FILE);
+        match read_private_file(&path)? {
+            None => Ok(Self::default()),
+            Some(text) => Self::parse(&text, &path),
+        }
+    }
+
+    fn parse(text: &str, path: &Path) -> Result<Self, FileError> {
+        let raw: RawDashboardFile = toml::from_str(text).map_err(|e| FileError::toml(path, text, &e))?;
+        if raw.schema != 1 {
+            return Err(FileError::invalid(path, format!("schema {} is not supported (expected 1)", raw.schema)));
+        }
+        if let Some(d) = &raw.token_digest
+            && !(d.len() == 64 && d.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+        {
+            return Err(FileError::invalid(path, "token_digest is not 64 lowercase hex characters"));
+        }
+        if let Some(t) = &raw.issued
+            && crate::clock::parse_rfc3339(t).is_none()
+        {
+            return Err(FileError::invalid(path, "issued is not an RFC 3339 time"));
+        }
+        if raw.token_digest.is_some() != raw.issued.is_some() {
+            return Err(FileError::invalid(path, "token_digest and issued go together"));
+        }
+        Ok(Self { digest: raw.token_digest, issued: raw.issued })
+    }
+
+    /// Writes the file under `home`: mode 0600, atomically.
+    pub fn save(&self, home: &Path) -> Result<(), FileError> {
+        let path = home.join(DASHBOARD_FILE);
+        let raw = RawDashboardFile { schema: 1, token_digest: self.digest.clone(), issued: self.issued.clone() };
+        let text = toml::to_string(&raw).map_err(|e| FileError::invalid(&path, e.to_string()))?;
+        write_private(&path, &text)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_issued_token_is_nrd_and_43_chars_and_only_its_digest_is_kept() {
+        let (token, record) = DashboardToken::issue();
+        assert!(token.starts_with("nrd_") && token.len() == 4 + 43, "{token}");
+        assert!(token[4..].bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'));
+        assert_eq!(record.digest, Some(DashboardToken::digest_of(&token)));
+        assert!(crate::clock::parse_rfc3339(record.issued.as_deref().unwrap()).is_some());
+        let (other, _) = DashboardToken::issue();
+        assert_ne!(token, other);
+        let dir = tempfile::tempdir().unwrap();
+        record.save(dir.path()).unwrap();
+        let text = fs::read_to_string(dir.path().join(DASHBOARD_FILE)).unwrap();
+        assert!(!text.contains(&token), "the token itself is never stored");
+    }
 
     #[test]
     fn written_files_are_private_and_shared_ones_refused() {
@@ -141,5 +244,52 @@ mod tests {
         let err = read_private_file(&link).unwrap_err().to_string();
         assert!(err.contains("symbolic link"), "{err}");
         assert!(read_private_file(&dir.path().join("missing.toml")).unwrap().is_none());
+    }
+    #[test]
+    fn dashboard_token_file_round_trips_private() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(DashboardToken::load(dir.path()).unwrap(), DashboardToken::default(), "missing file: no token");
+
+        let token = DashboardToken {
+            digest: Some(DashboardToken::digest_of("nrd_example")),
+            issued: Some("2026-10-05T11:50:00Z".into()),
+        };
+        assert_eq!(token.digest.as_ref().unwrap().len(), 64);
+        token.save(dir.path()).unwrap();
+        let path = dir.path().join(DASHBOARD_FILE);
+        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("nrd_example"), "only the digest is stored: {text}");
+        assert_eq!(DashboardToken::load(dir.path()).unwrap(), token);
+
+        // Replacing the token replaces both fields.
+        let next = DashboardToken {
+            digest: Some(DashboardToken::digest_of("nrd_other")),
+            issued: Some("2026-10-06T08:00:00Z".into()),
+        };
+        next.save(dir.path()).unwrap();
+        assert_eq!(DashboardToken::load(dir.path()).unwrap(), next);
+
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(DashboardToken::load(dir.path()).unwrap_err().to_string().contains("chmod 600"));
+    }
+
+    #[test]
+    fn dashboard_token_file_rejects_bad_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let digest = "a".repeat(64);
+        for bad in [
+            "schema = 2\n".to_owned(),
+            format!("schema = 1\ntoken_digest = \"{}\"\nissued = \"2026-10-05T11:50:00Z\"\n", "A".repeat(64)),
+            format!("schema = 1\ntoken_digest = \"{}\"\nissued = \"2026-10-05T11:50:00Z\"\n", "a".repeat(63)),
+            format!("schema = 1\ntoken_digest = \"{digest}\"\n"),
+            format!("schema = 1\ntoken_digest = \"{digest}\"\nissued = \"yesterday\"\n"),
+            "schema = 1\nextra = 1\n".to_owned(),
+        ] {
+            write_private(&dir.path().join(DASHBOARD_FILE), &bad).unwrap();
+            assert!(DashboardToken::load(dir.path()).is_err(), "{bad}");
+        }
+        write_private(&dir.path().join(DASHBOARD_FILE), "schema = 1\n").unwrap();
+        assert_eq!(DashboardToken::load(dir.path()).unwrap(), DashboardToken::default());
     }
 }

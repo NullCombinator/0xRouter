@@ -3,6 +3,7 @@ schema = 2
 id = "anthropic"
 category = "apikey"
 alias = "anthropic"
+logo = "anthropic.png"
 
 [auth]
 kind = "apikey"

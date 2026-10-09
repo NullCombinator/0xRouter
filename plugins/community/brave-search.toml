@@ -3,6 +3,7 @@ schema = 1
 id = "brave-search"
 category = "apikey"
 alias = "brave"
+logo = "brave-search.png"
 
 [auth]
 kind = "apikey"

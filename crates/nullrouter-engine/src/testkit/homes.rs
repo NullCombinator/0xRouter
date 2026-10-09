@@ -34,6 +34,10 @@ pub const ALL: &[Fixture] = &[
 ];
 
 fn put(home: &Path, rel: &str, text: &str) {
+    put_bytes(home, rel, text.as_bytes());
+}
+
+fn put_bytes(home: &Path, rel: &str, bytes: &[u8]) {
     let path = home.join(rel);
     // Directories and files are private, as the server makes them (`check` warns about others).
     let mut dirs = std::fs::DirBuilder::new();
@@ -41,7 +45,7 @@ fn put(home: &Path, rel: &str, text: &str) {
     #[cfg(unix)]
     std::os::unix::fs::DirBuilderExt::mode(&mut dirs, 0o700);
     dirs.create(path.parent().unwrap()).unwrap();
-    fs::write(&path, text).unwrap();
+    fs::write(&path, bytes).unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -181,6 +185,9 @@ break_behaviour = "error_event"
     // and one invalid user plugin whose unified model is therefore dropped.
     let community = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/community/bluesminds.toml");
     put(h, "plugins/bluesminds.toml", &fs::read_to_string(community).unwrap());
+    // `plugins install` copies the plugin's logo too (spec 009 T063).
+    let logo = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/community/logos/bluesminds.png");
+    put_bytes(h, "plugins/logos/bluesminds.png", &fs::read(logo).unwrap());
     put(h, "plugins/broken.toml", "schema = 2\nid = \"broken\"\nthis is not valid\n");
     put(
         h,
@@ -218,6 +225,115 @@ members = [
     records(h);
     check_loads(h);
     dir
+}
+
+/// The dashboard suite's home (spec 009, T003): [`full`] plus an estimated account, a sign-in
+/// account with no tokens, a token with no account, a key never used, a request that fell back
+/// with dropped and forced parameters, a plugin shadowing a bundled id (pending), one declined,
+/// and a record segment with a loose file mode.
+///
+/// What a home on disk can't hold: a cooldown (the engine keeps it in memory; the suite makes one
+/// by failing a mock upstream), the records-not-kept and dashboard-not-listening warnings (both
+/// come from a running server), a sign-in error (`serve` refuses to start with one), and a
+/// withheld credential (it needs a user plugin with its own sign-in, which the fit check refuses).
+/// T022 adds the dashboard port. T062 adds `pixel`, a user plugin whose logo is a JPEG named
+/// `.png`: it loads without it, and `check` notes `logo ignored: pixel: not a PNG`.
+pub fn dashboard() -> TempDir {
+    let dir = full();
+    let h = dir.path();
+    let read = |rel: &str| fs::read_to_string(h.join(rel)).unwrap();
+    let bundled = |file: &str| {
+        fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/bundled/").to_owned() + file).unwrap()
+    };
+
+    // anthropic/main gets a declared capacity, so its quota is estimated; anthropic/spare (disabled)
+    // and openrouter/envkey stay pay-as-you-go.
+    let accounts = read(accounts::FILE)
+        .replace(
+            "secret = \"sk-fixture-main-AAAA0001\"\norder = 1\n",
+            "secret = \"sk-fixture-main-AAAA0001\"\norder = 1\n\n[account.routing]\nwindow.\"5-hour\" = { capacity = 12_000_000 }\n",
+        );
+    put(
+        h,
+        accounts::FILE,
+        &(accounts + "\n[[account]]\nprovider = \"xai\"\nname = \"fresh\"\nkind = \"signin\"\norder = 7\n"),
+    );
+    put(
+        h,
+        tokens::FILE,
+        &(read(tokens::FILE)
+            + "\n[[token]]\nprovider = \"xai\"\nname = \"orphan\"\naccess_token = \"xai-access-fixture-ORPH5555\"\nexpires_at = \"2026-10-03T20:23:00Z\"\nhosts = [\"auth.x.ai\"]\nsigned_in_at = \"2026-10-01T09:00:00Z\"\n"),
+    );
+    put(
+        h,
+        keys::FILE,
+        &(read(keys::FILE)
+            + "\n[[key]]\nid = \"ak_fixture3\"\nname = \"unused\"\ndigest = \"0000000000000000000000000000000000000000000000000000000000000003\"\nlast4 = \"U3U3\"\ncreated = \"2026-10-02T08:00:00Z\"\n"),
+    );
+
+    put(h, "plugins/elevenlabs.toml", &bundled("elevenlabs.toml"));
+    put(h, "plugins/openrouter.toml", &bundled("openrouter.toml"));
+    put(h, "config.toml", &(read("config.toml") + "\n[plugin_decisions]\nopenrouter = \"decline\"\n"));
+    put(h, "plugins/pixel.toml", PIXEL);
+    put_bytes(h, "plugins/logos/pixel.png", &JPEG);
+
+    // A request that fell back: the first account was rate limited, the second served it. The
+    // second attempt dropped a field the style can't carry and forced a parameter.
+    let at = "2026-10-03T10:00:00Z";
+    let i = fallback_id();
+    let first = serde_json::json!({"v":1,"t":"attempt","id":i,"attempt":{"n":1,"provider":"anthropic","account":"main","model":"claude-sonnet-4-5","kind":"initial",
+        "placement":{"reason":"warm","rank":0},"started":0.4,"ended":310.0,
+        "outcome":{"state":"failed","status":429,"class":"rate_limited","reason":"rate limited"},"dropped":[],"forced":[]}});
+    let second = serde_json::json!({"v":1,"t":"attempt","id":i,"attempt":{"n":2,"provider":"xai","account":"work","model":"grok-4","kind":"next_account",
+        "placement":{"reason":"fallback","rank":1},"started":311.0,"ended":1500.0,"outcome":{"state":"ok"},
+        "dropped":[{"path":"messages[0].x_opt","reason":"no place in openai-chat"}],"forced":[["reasoning.effort","high"]]}});
+    let usage = serde_json::json!({"input":900,"output":210,"cache_read":0,"cache_write":null,"estimated":false});
+    let text = open(&i, at, "ak_fixture1", "sonnet")
+        + &line(first)
+        + &line(second)
+        + &close(&i, "xai", "work", "grok-4", usage);
+    let path = "records/2026-10-03.jsonl";
+    put(h, path, &(read(path) + &text));
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(h.join("records/2026-10-01.jsonl"), fs::Permissions::from_mode(0o644)).unwrap();
+    }
+    check_loads(h);
+    dir
+}
+
+/// The [`dashboard`] home's user plugin with a bad logo (T062).
+const PIXEL: &str = r##"schema = 2
+id = "pixel"
+category = "apikey"
+logo = "pixel.png"
+
+[auth]
+kind = "apikey"
+header = "Authorization"
+scheme = "bearer"
+
+[endpoints.text]
+url = "https://api.pixel.example/v1/chat/completions"
+wire = "openai-chat"
+
+[[models]]
+id = "pixel-1"
+
+[display]
+name = "Pixel"
+color = "#6C5CE7"
+text_icon = "PX"
+"##;
+
+/// The start of a JPEG file (JFIF), which `pixel.png` holds instead of a PNG.
+const JPEG: [u8; 20] = [0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0, 1, 1, 0, 0, 1, 0, 1, 0, 0];
+
+/// The id of the [`dashboard`] home's request with a failed first attempt.
+pub fn fallback_id() -> String {
+    id("2026-10-03T10:00:00Z", 7)
 }
 
 /// A signed-in account of a provider that polls quota, with its history. Stopped-only.

@@ -4,6 +4,7 @@ id = "kimchi"
 category = "freeTier"
 requires = ["9router-executor:kimchi"]
 alias = "kimchi"
+logo = "kimchi.png"
 ui_alias = "kimchi"
 passthrough_models = true
 

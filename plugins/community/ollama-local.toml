@@ -4,6 +4,7 @@ id = "ollama-local"
 category = "apikey"
 requires = ["9router-executor:ollama-local"]
 alias = "ollama-local"
+logo = "ollama-local.png"
 transport = { base_url = "http://localhost:11434/api/chat", format = "ollama" }
 
 [capabilities]

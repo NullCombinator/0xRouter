@@ -16,6 +16,7 @@ use url::Url;
 
 use crate::convert;
 use crate::fit::{self, FitVerdict};
+use crate::logo::{self, Logo};
 use crate::registry::{Registry, RuntimeSettings, UnifiedMember, UnifiedModel, token_clashes, token_path};
 use crate::schema::{
     Decision, Model, ModelType, OperatorConfig, PluginSource, ProviderEntity, ProviderSettings, RoutingSettings,
@@ -79,6 +80,17 @@ pub struct LoadReport {
     pub unsupported: Vec<UnsupportedPlugin>,
     /// Unified models whose members declare different limits. Never an error (R14).
     pub notes: Vec<LimitsNote>,
+    /// Active plugins whose declared logo failed the check: each loaded without it (spec 009
+    /// research R10). Not limits notes, so a list of its own.
+    pub logos_ignored: Vec<IgnoredLogo>,
+}
+
+/// A declared logo that failed the check at load. `reason` is what `check` prints after
+/// `note: logo ignored: <id>: `.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IgnoredLogo {
+    pub id: String,
+    pub reason: String,
 }
 
 /// One limit that differs between a unified model's members.
@@ -457,11 +469,13 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
 
     report.user = active.iter().filter(|l| l.user_path().is_some()).count();
     report.bundled = active.len() - report.user;
+    let logos = check_logos(home, &active, &mut report);
     let skipped_ids: BTreeSet<String> =
         report.skipped.iter().map(|s| s.id.clone()).chain(report.unsupported.iter().map(|u| u.id.clone())).collect();
 
     let mut registry = Registry::new(active.into_iter().map(|l| l.entity).collect());
     registry.set_styles(styles);
+    registry.set_logos(logos);
     let outcome = validate_config(&config, &config_src, &config_name, &registry, &bundled_ids, mode, &skipped_ids);
     errors.extend(outcome.errors);
     if !errors.is_empty() {
@@ -475,6 +489,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
         allow_private_endpoints: config.allow_private_endpoints,
         server: config.server.clone(),
         pipeline: config.pipeline,
+        dashboard: config.dashboard.clone(),
         routing: RoutingSettings {
             amortization: config.routing.amortization,
             amortization_for: outcome.amortization_for,
@@ -482,6 +497,34 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
     };
     registry.set_operator_state(outcome.unified, outcome.settings, runtime, report);
     Ok(registry)
+}
+
+/// The active plugins' declared logos (research R10): a bundled plugin's from the embedded
+/// `plugins/bundled/logos/`, a community one's (parity set) from `plugins/community/logos/`, a user
+/// plugin's from `<home>/plugins/logos/`. One that passes the check is kept by provider id; one
+/// that fails is added to `report.logos_ignored` and the plugin loads without it.
+fn check_logos(home: &OperatorHome, active: &[Loaded], report: &mut LoadReport) -> BTreeMap<String, Logo> {
+    let user_dir = home.plugins_dir().join(logo::DIR);
+    let mut logos = BTreeMap::new();
+    for l in active {
+        let Some(name) = l.entity.logo.as_deref() else { continue };
+        let checked: Result<Cow<'static, [u8]>, _> = match l.user_path() {
+            Some(_) => logo::read(&user_dir, name).map(Cow::Owned),
+            None if l.file.starts_with("plugins/community/") => {
+                logo::embedded(logo::COMMUNITY_LOGOS, name).map(Cow::Borrowed)
+            }
+            None => logo::embedded(logo::BUNDLED_LOGOS, name).map(Cow::Borrowed),
+        };
+        match checked {
+            Ok(bytes) => {
+                logos.insert(l.entity.id.clone(), Logo::new(bytes));
+            }
+            Err(problem) => {
+                report.logos_ignored.push(IgnoredLogo { id: l.entity.id.clone(), reason: problem.to_string() })
+            }
+        }
+    }
+    logos
 }
 
 /// Top-level `*.toml` files in `plugins/`, sorted. Invalid files are skipped at startup.

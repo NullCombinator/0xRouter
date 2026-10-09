@@ -2,6 +2,7 @@
 schema = 1
 id = "gitlab"
 category = "oauth"
+logo = "gitlab.png"
 
 [transport]
 base_url = "https://gitlab.com/api/v4/chat/completions"

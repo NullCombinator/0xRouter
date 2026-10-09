@@ -27,6 +27,7 @@ pub mod route;
 pub mod routing;
 pub mod signin;
 pub mod state;
+pub mod status;
 pub mod tokens;
 pub mod upstream;
 

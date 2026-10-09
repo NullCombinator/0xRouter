@@ -3,6 +3,7 @@ schema = 1
 id = "glm-cn"
 category = "apikey"
 alias = "glm-cn"
+logo = "glm-cn.png"
 
 [transport]
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions"

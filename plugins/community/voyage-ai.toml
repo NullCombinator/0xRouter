@@ -3,6 +3,7 @@ schema = 1
 id = "voyage-ai"
 category = "apikey"
 alias = "voyage-ai"
+logo = "voyage-ai.png"
 ui_alias = "voyage"
 
 [[models]]

@@ -49,6 +49,10 @@ pub struct PluginFile {
     #[serde(default)]
     pub capabilities: BTreeMap<CapabilityKind, CapabilitySection>,
     pub display: Option<Display>,
+    /// The provider's logo: a bare file name ending in `.png`, looked up in the `logos/`
+    /// directory beside the plugin's set and checked by the core at load (spec 009 research R10).
+    /// The plugin only names the file.
+    pub logo: Option<String>,
     /// Schema 2: upstream endpoints per model type.
     #[serde(default)]
     pub endpoints: BTreeMap<ModelType, Endpoints>,
@@ -119,6 +123,9 @@ pub struct ProviderEntity {
     pub models: Option<Vec<Model>>,
     pub capabilities: BTreeMap<CapabilityKind, CapabilitySection>,
     pub display: Option<Display>,
+    /// The declared logo file name. Whether it passed the check is the registry's
+    /// [`logo`](crate::Registry::logo).
+    pub logo: Option<String>,
     pub endpoints: BTreeMap<ModelType, Endpoints>,
     pub forwarding: Option<Forwarding>,
     pub session: Option<ProviderSession>,
@@ -214,6 +221,7 @@ impl ProviderEntity {
             models,
             capabilities,
             display: f.display,
+            logo: f.logo,
             endpoints: f.endpoints,
             forwarding: f.forwarding,
             session: f.session,

@@ -1,0 +1,9 @@
+/* Inter, variable weight, Latin subset (SIL OFL 1.1, assets/LICENSES/Inter-OFL-1.1.txt), served
+   from the binary beside this sheet; never fetched from outside the machine (research R11). */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("inter-latin.woff2") format("woff2");
+}

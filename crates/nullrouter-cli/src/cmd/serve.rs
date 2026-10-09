@@ -44,6 +44,9 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
             eprintln!("cannot listen on {listen}: {e}");
             ExitCode::from(1)
         })?;
+        if let Ok(addr) = listener.local_addr() {
+            engine.status.set_client_listen(addr.to_string());
+        }
         let socket = operator::bind(&home).map_err(|e| {
             eprintln!("cannot open the operator socket: {e}");
             ExitCode::from(1)
@@ -56,11 +59,22 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
         // (research R11, R13, R14).
         let upkeep = maintenance::spawn(engine.clone(), until_stopped(stopped.clone()));
         let journal_owner = engine.clone();
+        // The dashboard has its own listener and task; a bind failure is recorded, not fatal
+        // (spec 009).
+        let settings = engine.snapshot().settings().dashboard.clone();
+        let dashboard = nullrouter_dashboard::spawn(
+            engine.clone(),
+            &settings,
+            env!("CARGO_PKG_VERSION"),
+            until_stopped(stopped.clone()),
+        )
+        .await;
         let ops = tokio::spawn(operator::serve(engine, socket, until_stopped(stopped)));
         tracing::info!("listening on {listen}");
         let served = serve::run(app, listener, serve::signal()).await;
         let _ = stop.send(true);
         let _ = ops.await;
+        dashboard.stopped().await;
         let _ = upkeep.await;
         // Every line sent so far is written and synced before the process exits (spec 006).
         let _ = tokio::task::spawn_blocking(move || journal_owner.journal.shutdown()).await;

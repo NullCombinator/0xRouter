@@ -39,8 +39,9 @@ enum Command {
     Resolve { target: String },
     /// List unified models, or one. Exit 2 if NAME isn't loaded.
     Unified { name: Option<String> },
-    /// Show what a provider declares about a model. Exit 2 if the provider is unknown.
-    Model { provider: String, model: String },
+    /// Show what a provider declares about a model, or, without MODEL, about every model it
+    /// declares. Exit 2 if the provider is unknown.
+    Model { provider: String, model: Option<String> },
     /// List providers.
     Providers {
         /// Only providers that offer this capability (e.g. `tts`).
@@ -58,6 +59,9 @@ enum Command {
     /// Agent keys (`keys.toml`).
     #[command(subcommand)]
     Keys(cmd::keys::Command),
+    /// The read-only web dashboard: its token and its state.
+    #[command(subcommand)]
+    Dashboard(cmd::dashboard::Command),
     /// Operator defaults for request handling.
     #[command(subcommand)]
     Behaviour(cmd::behaviour::Command),
@@ -89,11 +93,12 @@ fn main() -> ExitCode {
         Command::Validate { files } => cmd::validate::run(&files),
         Command::Resolve { target } => cmd::resolve::run(cli.home, &target, cli.json),
         Command::Unified { name } => cmd::unified::run(cli.home, name.as_deref(), cli.json),
-        Command::Model { provider, model } => cmd::model::run(cli.home, &provider, &model, cli.json),
+        Command::Model { provider, model } => cmd::model::run(cli.home, &provider, model.as_deref(), cli.json),
         Command::Providers { capability } => cmd::providers::run(cli.home, capability.as_deref(), cli.json),
         Command::Serve { listen } => cmd::serve::run(cli.home, listen),
         Command::Accounts(c) => cmd::accounts::run(cli.home, c, cli.json),
         Command::Keys(c) => cmd::keys::run(cli.home, c, cli.json),
+        Command::Dashboard(c) => cmd::dashboard::run(cli.home, c, cli.json),
         Command::Behaviour(c) => cmd::behaviour::run(cli.home, c, cli.json),
         Command::Records(c) => cmd::records::run(cli.home, c, cli.json),
         Command::Plugins(c) => cmd::plugins::run(cli.home, c, cli.json),

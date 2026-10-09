@@ -5,6 +5,7 @@ category = "apikey"
 alias = "opencode-go"
 aliases = ["ocg"]
 ui_alias = "ocg"
+logo = "opencode-go.png"
 
 [auth]
 kind = "apikey"

@@ -3,6 +3,7 @@ schema = 1
 id = "deepseek"
 category = "apikey"
 alias = "deepseek"
+logo = "deepseek.png"
 aliases = ["ds"]
 ui_alias = "ds"
 

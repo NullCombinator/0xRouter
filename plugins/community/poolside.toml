@@ -3,6 +3,7 @@ schema = 1
 id = "poolside"
 category = "freeTier"
 alias = "poolside"
+logo = "poolside.png"
 aliases = ["ps"]
 ui_alias = "ps"
 transport = { base_url = "https://inference.poolside.ai/v1/chat/completions", validate_url = "https://inference.poolside.ai/v1/models" }

@@ -4,6 +4,7 @@ id = "xiaomi-mimo"
 category = "oauth"
 requires = ["9router-executor:xiaomi-mimo", "9router-tts:xiaomi-mimo"]
 alias = "xiaomi-mimo"
+logo = "xiaomi-mimo.png"
 aliases = ["mimo", "mimo-desktop", "xmd"]
 ui_alias = "mimo"
 transport = { base_url = "https://api.xiaomimimo.com/v1/chat/completions", validate_url = "https://api.xiaomimimo.com/v1/models" }

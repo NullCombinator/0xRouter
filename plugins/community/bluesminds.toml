@@ -3,6 +3,7 @@ schema = 1
 id = "bluesminds"
 category = "apikey"
 alias = "bm"
+logo = "bluesminds.png"
 aliases = ["blue-sminds"]
 ui_alias = "bm"
 transport = { base_url = "https://api.bluesminds.com/v1/chat/completions", validate_url = "https://api.bluesminds.com/v1/models" }

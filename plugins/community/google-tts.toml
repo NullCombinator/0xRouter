@@ -3,6 +3,7 @@ schema = 1
 id = "google-tts"
 category = "freeTier"
 alias = "google-tts"
+logo = "google-tts.png"
 requires = ["9router-tts:google-tts"]
 
 [[models]]

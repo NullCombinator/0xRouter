@@ -3,6 +3,7 @@ schema = 1
 id = "assemblyai"
 category = "apikey"
 alias = "assemblyai"
+logo = "assemblyai.png"
 aliases = ["aai"]
 ui_alias = "aai"
 transport = { base_url = "https://api.assemblyai.com/v1/audio/transcriptions", validate_url = "https://api.assemblyai.com/v1/account" }

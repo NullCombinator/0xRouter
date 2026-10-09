@@ -3,6 +3,7 @@ schema = 1
 id = "gemini"
 category = "freeTier"
 alias = "gemini"
+logo = "gemini.png"
 requires = ["9router-image:gemini", "9router-embedding:gemini", "9router-tts:gemini"]
 
 [transport]

@@ -188,6 +188,32 @@ shorter than 3 characters is an error.
   has none.
 - `wires = [...]` lists the wires a model may be sent on, in order of preference.
 
+## Logo
+
+```toml
+logo = "xai.png"
+```
+
+Optional. The dashboard shows it on the provider's card and window. Without one, or when the
+logo fails a check, it shows the provider's two-letter text icon instead.
+
+- The value is a bare file name ending in `.png`, with no `/`, `\` or `..`. Anything else fails
+  validation on `logo`, like any other bad field.
+- The file is looked up in the `logos/` directory beside the plugin's set: `<home>/plugins/logos/`
+  for a user or installed plugin. The bundled and community logos are embedded in the binary.
+- The core checks the file at load without decoding it, and serves it only if it passes:
+
+| Check | Note in `check` |
+|---|---|
+| The file exists | `note: logo ignored: <id>: file not found: logos/<file>` |
+| At most 65,536 bytes | `note: logo ignored: <id>: <n> KiB, over 64 KiB` |
+| A PNG signature, then an `IHDR` chunk | `note: logo ignored: <id>: not a PNG` |
+| Width and height each 1 to 256 px | `note: logo ignored: <id>: <w> × <h> px, over 256 px` |
+
+A failed logo never stops the plugin: it loads and serves as before. SVG is never accepted.
+`plugins install` copies a community plugin's logo along with it, and `plugins uninstall`
+removes it. `plugins/LOGOS.md` lists where each shipped logo comes from.
+
 ## Forced parameters
 
 By default a request goes upstream as the client sent it, with as little change as

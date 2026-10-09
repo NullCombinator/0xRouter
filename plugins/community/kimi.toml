@@ -3,6 +3,7 @@ schema = 1
 id = "kimi"
 category = "oauth"
 alias = "kimi"
+logo = "kimi.png"
 aliases = ["kimi-coding", "kmc"]
 
 [transport]

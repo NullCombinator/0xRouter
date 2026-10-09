@@ -3,6 +3,7 @@ schema = 1
 id = "cerebras"
 category = "apikey"
 alias = "cerebras"
+logo = "cerebras.png"
 
 [transport]
 base_url = "https://api.cerebras.ai/v1/chat/completions"
