@@ -22,9 +22,13 @@ use std::time::Duration;
 use nullrouter_engine::journal::records;
 use nullrouter_engine::journal::state;
 use nullrouter_engine::clock;
-use nullrouter_engine::quota::fit::outside::{self, OutsideType};
-use nullrouter_engine::quota::fit::{NumberState, TokenClass};
-use nullrouter_engine::routing::meter::cost_spent;
+use indexmap::IndexMap;
+use nullrouter_engine::quota::extract::rfc3339_millis;
+use nullrouter_engine::quota::fit::outside::{self, OutsideEntry, OutsideType};
+use nullrouter_engine::quota::fit::store::{self, Loaded};
+use nullrouter_engine::quota::fit::{MeterNumber, NumberOverrides, NumberState, Source, TokenClass, WindowFit, in_effect};
+use nullrouter_engine::routing::meter::{Spent, cost_spent};
+use nullrouter_engine::routing::view::{NumberView, WindowMeterView};
 use nullrouter_engine::routing::{
     CandidateKey, CandidateRow, Decision, DecisionKind, MovedBecause, PlacementReason, PriceSpec, Tier, WhyNot,
 };
@@ -982,6 +986,17 @@ const POOL_SHARES: [f64; 3] = [0.30, 0.40, 0.50];
 /// Three subscription accounts of one plugin that declares the weights wrong (the true ones are
 /// 3x on output and cache) and each capacity 1/0.6 too high, over two overflow keys.
 fn pooled_week(reqs: &[Req], odd_account_weights: &'static str) -> Week {
+    pooled_run(reqs, odd_account_weights, Vec::new(), |_, _| {}).0
+}
+
+/// [`pooled_week`] with outside use injected, and `setup` run on the fit before the first request.
+/// Also returns the drops applied and the definitions (for the checks after the week).
+fn pooled_run(
+    reqs: &[Req],
+    odd_account_weights: &'static str,
+    outside: Vec<OutsideUse>,
+    setup: impl FnOnce(&Defs, &mut FitRun),
+) -> (Week, Vec<Injected>, Defs) {
     let base = (peak_five_hours(reqs, THREE_TIMES_WEIGHTS) / PEAK_SHARE).round();
     let payg = |key: &str, order: i64, toml: &str| {
         let (provider, account) = key.split_once('/').expect("provider/account");
@@ -1023,14 +1038,18 @@ fn pooled_week(reqs: &[Req], odd_account_weights: &'static str) -> Week {
     truth.extend([TrueAccount::default(), TrueAccount::default()]);
     let mut world = World::new(truth);
     world.rounding = Some(Rounding::HalfUp);
+    world.outside = outside;
 
     let dir = tempfile::tempdir().unwrap();
     let mut sim = Sim::new(&defs, dir.path()).with_fit(FitRun::new(defs.accounts.len()));
+    setup(&defs, sim.fit.as_mut().expect("a fit run"));
     for r in reqs {
         sim.handle(&mut world, r);
     }
     sim.journal.flush_blocking();
-    Week { placed: std::mem::take(&mut sim.placed), fit: sim.fit.take() }
+    let week = Week { placed: std::mem::take(&mut sim.placed), fit: sim.fit.take() };
+    drop(sim);
+    (week, world.injected, defs)
 }
 
 fn assert_in_range(fit: &FitRun, key: &str, want: f64) {
@@ -1235,4 +1254,490 @@ fn an_idle_change_of_one_step_is_not_listed() {
     let (hit, _) = listed(fit, &injected);
     assert_eq!(hit, 0, "{hit} one-step changes were listed as outside use");
     assert!(fit.fits.windows.is_empty(), "a right declaration got a significant number: {:?}", fit.fits.windows);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Overrides (T041; US4 scenarios 1-3 and 5; FR-020)
+
+/// An output weight that is neither the declared 5.0 nor the true 15.0.
+const OVERRIDE_OUTPUT: f64 = 12.0;
+
+fn weights_override(output: f64) -> NumberOverrides {
+    NumberOverrides { weights: [None, Some(output), None, None], ..NumberOverrides::default() }
+}
+
+/// The output weight routing reads for account `i`'s window.
+fn output_in_effect(fit: &FitRun, defs: &Defs, i: usize) -> f64 {
+    fit.meters(i)
+        .unwrap_or(&defs.accounts[i].meters)
+        .iter()
+        .find(|m| m.name == FIT_WINDOW)
+        .and_then(|m| m.token_weights)
+        .expect("a weighted window")
+        .output
+}
+
+fn number<'a>(v: &'a WindowMeterView, name: &str) -> &'a NumberView {
+    v.numbers.iter().find(|n| n.number == name).unwrap_or_else(|| panic!("the view has no {name}: {:?}", v.numbers))
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum SetWhen {
+    /// Before the first poll: the override is in place while nothing is significant.
+    Start,
+    /// When the output weight has just become significant.
+    AfterSignificance,
+    /// At the start, and removed again after `REMOVED_AT` requests, before any poll could fit.
+    RemovedEarly,
+}
+
+const REMOVED_AT: usize = 50;
+
+/// A week of the three-times-off mock with an account override on `weight.output`; every request
+/// after the override is set is checked to be placed with it.
+fn override_week(reqs: &[Req], scenario: &Scenario, when: SetWhen) -> (FitRun, Defs) {
+    let (defs, mut world) = scenario.week();
+    let dir = tempfile::tempdir().unwrap();
+    let mut sim = Sim::new(&defs, dir.path()).with_fit(FitRun::new(defs.accounts.len()));
+    let mut active = false;
+    if when != SetWhen::AfterSignificance {
+        sim.fit.as_mut().expect("a fit run").set_account_override(&defs, 0, FIT_WINDOW, Some(weights_override(OVERRIDE_OUTPUT)));
+        active = true;
+    }
+    let (mut before, mut after) = (0u64, 0u64);
+    for (k, r) in reqs.iter().enumerate() {
+        sim.handle(&mut world, r);
+        let fit = sim.fit.as_mut().expect("a fit run");
+        let published = fit.fits.window(FIT_PROVIDER, FIT_WINDOW);
+        let significant = published.weights.contains_key(&TokenClass::Output);
+        if when == SetWhen::AfterSignificance && !active && significant {
+            // Until the override arrives, routing reads the fitted weight.
+            let fitted = published.weights[&TokenClass::Output];
+            let got = output_in_effect(fit, &defs, 0);
+            assert!((got - fitted).abs() < 1e-9, "request {k}: the output weight in effect is {got}, the fit {fitted}");
+            fit.set_account_override(&defs, 0, FIT_WINDOW, Some(weights_override(OVERRIDE_OUTPUT)));
+            active = true;
+        }
+        if when == SetWhen::RemovedEarly && k == REMOVED_AT {
+            assert!(fit.first_change.is_none(), "the fit was significant after only {REMOVED_AT} requests");
+            fit.set_account_override(&defs, 0, FIT_WINDOW, None);
+            assert!(fit.meters(0).is_none(), "with nothing fitted and no override, routing reads the declaration");
+            assert!((output_in_effect(fit, &defs, 0) - 5.0).abs() < 1e-12, "the declared output weight is back");
+            active = false;
+        }
+        if active {
+            let got = output_in_effect(fit, &defs, 0);
+            assert!((got - OVERRIDE_OUTPUT).abs() < 1e-12, "request {k}: routing reads output weight {got}, not the override");
+            if significant {
+                after += 1;
+            } else {
+                before += 1;
+            }
+        }
+    }
+    match when {
+        SetWhen::Start => assert!(before > 0 && after > 0, "overridden requests: {before} before significance, {after} after"),
+        SetWhen::AfterSignificance => assert!(after > 0, "no request after the override was set"),
+        SetWhen::RemovedEarly => assert!(before >= REMOVED_AT as u64, "{before} overridden requests"),
+    }
+    sim.journal.flush_blocking();
+    let fit = sim.fit.take().expect("a fit run");
+    drop(sim);
+    (fit, defs)
+}
+
+#[test]
+fn an_account_override_is_used_before_and_after_significance_and_removing_it_returns_the_fit() {
+    let reqs = plan(SEED);
+    let scenario = Scenario::three_times_off(&reqs);
+    for when in [SetWhen::Start, SetWhen::AfterSignificance] {
+        let (mut fit, defs) = override_week(&reqs, &scenario, when);
+        assert!(fit.fits.window(FIT_PROVIDER, FIT_WINDOW).weights.contains_key(&TokenClass::Output), "{when:?}: the output weight never became significant");
+        let v = fit.view(&defs, 0, FIT_WINDOW);
+        let n = number(&v, "weight.output");
+        assert_eq!(n.source, Source::AccountOverride, "{when:?}");
+        assert_eq!(n.account_override, Some(OVERRIDE_OUTPUT), "{when:?}");
+        assert_eq!(n.in_use, Some(OVERRIDE_OUTPUT), "{when:?}");
+        assert_eq!(n.declared, Some(5.0), "{when:?}");
+        // The fit goes on beside the override and the view shows its range.
+        let range = n.fit.as_ref().unwrap_or_else(|| panic!("{when:?}: the view shows no fit range"));
+        let want = THREE_TIMES_RATIOS[0];
+        assert!(range.low <= want && want <= range.high, "{when:?}: the range {}..{} misses {want}", range.low, range.high);
+
+        // Removed: the fit is used (it is significant).
+        fit.set_account_override(&defs, 0, FIT_WINDOW, None);
+        let v = fit.view(&defs, 0, FIT_WINDOW);
+        let n = number(&v, "weight.output");
+        assert_eq!(n.source, Source::Fit, "{when:?}: after removal");
+        assert_eq!(n.account_override, None, "{when:?}");
+        let used = n.in_use.expect("a weight in use");
+        assert!((used / want - 1.0).abs() <= 0.10, "{when:?}: after removal {used} is in use, true {want}");
+    }
+}
+
+#[test]
+fn an_override_removed_before_anything_is_significant_returns_the_declaration() {
+    let reqs = plan(SEED);
+    let scenario = Scenario::three_times_off(&reqs);
+    // The checks are inside: the override is read on every request until it is removed, and the
+    // declaration after.
+    let (fit, defs) = override_week(&reqs, &scenario, SetWhen::RemovedEarly);
+    // Later in the week the fit does gain a number, and routing then reads it, not the override.
+    let v = fit.view(&defs, 0, FIT_WINDOW);
+    assert_eq!(number(&v, "weight.output").account_override, None);
+}
+
+const WITH_MULTIPLIERS: &str = "token_weights = { input = 1.0, output = 5.0, cache_read = 0.1, cache_write = 1.25 }\nmodel_multiplier = { \"m\" = 1.0, \"other-*\" = 1.0 }";
+
+#[test]
+fn a_multiplier_override_applies_only_to_the_models_it_names() {
+    // The week's accounts serve one model, so this checks the meter the fit hands routing directly.
+    let meter = five_hour(1.0e9, WITH_MULTIPLIERS);
+    let spent = |model: &str| Spent { model: model.into(), requests: 1, input: 1000, output: 100, cache_read: 0, cache_write: 0 };
+    let base = cost_spent(&meter, &spent("m"));
+    let mult = |glob: &str, v: f64| NumberOverrides { multipliers: IndexMap::from([(glob.to_owned(), v)]), ..NumberOverrides::default() };
+    let none = WindowFit::default();
+    let key = |g: &str| MeterNumber::Multiplier(g.to_owned());
+
+    let (m, src) = in_effect(&meter, None, Some(&mult("other-*", 3.0)), &none, "acct");
+    assert_eq!(cost_spent(&m, &spent("m")), base, "a model the override doesn't match is charged as declared");
+    assert_eq!(cost_spent(&m, &spent("other-x")), base * 3.0);
+    assert_eq!(src.get(&key("other-*")), Some(&Source::AccountOverride));
+    assert!(!src.contains_key(&key("m")));
+
+    let (m, src) = in_effect(&meter, Some(&mult("m", 2.0)), None, &none, "acct");
+    assert_eq!(cost_spent(&m, &spent("m")), base * 2.0);
+    assert_eq!(cost_spent(&m, &spent("other-x")), base);
+    assert_eq!(src.get(&key("m")), Some(&Source::PluginOverride));
+
+    let (m, src) = in_effect(&meter, Some(&mult("m", 2.0)), Some(&mult("m", 4.0)), &none, "acct");
+    assert_eq!(cost_spent(&m, &spent("m")), base * 4.0, "the account's own override wins over the plugin's");
+    assert_eq!(src.get(&key("m")), Some(&Source::AccountOverride));
+}
+
+#[test]
+fn a_plugin_override_applies_to_every_account_but_one_with_its_own() {
+    let reqs = plan(SEED);
+    let (week, _, defs) = pooled_run(&reqs, THREE_TIMES_WEIGHTS, Vec::new(), |defs, fit| {
+        fit.set_plugin_override(defs, FIT_WINDOW, Some(weights_override(OVERRIDE_OUTPUT)));
+        fit.set_account_override(defs, 1, FIT_WINDOW, Some(weights_override(20.0)));
+    });
+    let mut fit = week.fit.expect("a fit run");
+    assert!(fit.fits.window(FIT_PROVIDER, FIT_WINDOW).weights.contains_key(&TokenClass::Output), "the output weight never became significant");
+    let want = THREE_TIMES_RATIOS[0];
+    for (i, value, source) in [(0, 12.0, Source::PluginOverride), (1, 20.0, Source::AccountOverride), (2, 12.0, Source::PluginOverride)] {
+        assert_eq!(output_in_effect(&fit, &defs, i), value, "account {i}");
+        let v = fit.view(&defs, i, FIT_WINDOW);
+        let n = number(&v, "weight.output");
+        assert_eq!(n.source, source, "account {i}");
+        assert_eq!(n.plugin_override, Some(12.0), "account {i}");
+        assert_eq!(n.account_override, (i == 1).then_some(20.0), "account {i}");
+        assert_eq!(n.in_use, Some(value), "account {i}");
+    }
+    // Without its own override the account follows the plugin's.
+    fit.set_account_override(&defs, 1, FIT_WINDOW, None);
+    assert_eq!(output_in_effect(&fit, &defs, 1), 12.0);
+    assert_eq!(number(&fit.view(&defs, 1, FIT_WINDOW), "weight.output").source, Source::PluginOverride);
+    // Without the plugin's, every account reads the fit.
+    fit.set_plugin_override(&defs, FIT_WINDOW, None);
+    for i in 0..3 {
+        let v = fit.view(&defs, i, FIT_WINDOW);
+        let n = number(&v, "weight.output");
+        assert_eq!(n.source, Source::Fit, "account {i}");
+        let used = n.in_use.expect("a weight in use");
+        assert!((used / want - 1.0).abs() <= 0.10, "account {i}: {used} in use, true {want}");
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// A provider that changes its rules (T046; US5 scenario 2; SC-006)
+
+/// Thursday 06:00: the fourth day, before its working hours.
+const HALVE_AT: u64 = 3 * DAY + 6 * HOUR;
+
+#[test]
+fn a_halved_capacity_is_a_break_found_within_a_day_and_relearned_from_the_rows_after_it() {
+    let reqs = plan(SEED);
+    let scenario = Scenario::three_times_off(&reqs);
+    let (defs, mut world) = scenario.week();
+    let new_capacity = (scenario.true_capacity / 2.0).round();
+    world.set_true_capacity(HALVE_AT, 0, FIT_WINDOW, new_capacity);
+    let dir = tempfile::tempdir().unwrap();
+    let mut sim = Sim::new(&defs, dir.path()).with_fit(FitRun::new(defs.accounts.len()));
+    // Exclusive-use, so that a busy row wrongly called outside use would raise an alert.
+    sim.fit.as_mut().expect("a fit run").set_exclusive(&defs, 0, Some(at(0)));
+    let cap_key = format!("capacity@{FIT_ACCOUNT}");
+
+    let mut old: Option<f64> = None;
+    let mut known_at: Option<u64> = None;
+    let mut after = 0u64;
+    for r in &reqs {
+        sim.handle(&mut world, r);
+        let fit = sim.fit.as_ref().expect("a fit run");
+        match fit.learner.number_states(FIT_PROVIDER, FIT_WINDOW).get(&cap_key) {
+            Some(NumberState::Fitted { .. }) if known_at.is_none() => {
+                old = fit.fits.window(FIT_PROVIDER, FIT_WINDOW).capacity.get(FIT_ACCOUNT).copied().or(old);
+            }
+            Some(NumberState::Relearning { .. }) if known_at.is_none() => known_at = Some(r.at_ms),
+            _ => {}
+        }
+        if let (Some(_), Some(was)) = (known_at, old) {
+            // SC-006: from the request that saw the report on, the old fitted capacity is not used.
+            let now_in_effect = fit.capacity_in_effect(&defs, 0).expect("a capacity in effect");
+            assert!((now_in_effect / was - 1.0).abs() > 0.10, "request {} is placed with {now_in_effect}, the old fitted {was}", r.n);
+            after += 1;
+        }
+    }
+    sim.journal.flush_blocking();
+    let fit = sim.fit.as_ref().expect("a fit run");
+    let known = known_at.expect("the halving was never reported as a break");
+    assert!(after > 0);
+    assert!(known >= HALVE_AT && known <= HALVE_AT + DAY, "the break was reported at +{:.1}h, the halving was at +{:.1}h", known as f64 / HOUR as f64, HALVE_AT as f64 / HOUR as f64);
+
+    let Loaded::Ok(stored) = store::load(fit.home(), FIT_PROVIDER).expect("the fit state reads") else { panic!("no fit state saved") };
+    let breaks = &stored.windows.get(FIT_WINDOW).expect("the window is stored").breaks;
+    let found: Vec<_> = breaks.iter().filter(|b| b.number == cap_key).collect();
+    assert_eq!(found.len(), 1, "breaks recorded: {breaks:?}");
+    let b = found[0];
+    let (b_at, detected) = (clock::parse_rfc3339(&b.at).expect("a time"), clock::parse_rfc3339(&b.detected_at).expect("a time"));
+    assert!(b_at >= at(HALVE_AT - 3 * HOUR) && b_at <= detected, "the break is placed at {}", b.at);
+    assert!(detected <= at(HALVE_AT + DAY), "detected at {}", b.detected_at);
+    assert!((b.replaced / scenario.true_capacity - 1.0).abs() <= 0.10, "the replaced value {} was not the old capacity {}", b.replaced, scenario.true_capacity);
+
+    // Only rows after the break count: the new fit is the new capacity, not a blend with the old.
+    let states = fit.learner.number_states(FIT_PROVIDER, FIT_WINDOW);
+    match states.get(&cap_key) {
+        Some(NumberState::Fitted { since }) => assert!(*since >= b_at, "fitted since {since:?}, before the break"),
+        other => panic!("{cap_key} is {other:?} at the end of the week, not fitted again"),
+    }
+    let got = fitted_value(fit, &cap_key).expect("the new capacity is published");
+    assert!((got / new_capacity - 1.0).abs() <= 0.10, "relearned {got}, true {new_capacity}");
+    let (_, lo, hi) = fit.learner.ranges(FIT_PROVIDER, FIT_WINDOW).get(&cap_key).copied().expect("a range");
+    assert!(lo <= new_capacity && new_capacity <= hi, "the 95% range {lo}..{hi} misses {new_capacity}");
+
+    // The busy rows around the halving were a rule change, not outside use.
+    let entries = outside::read(fit.home(), FIT_PROVIDER, FIT_ACCOUNT, None, None).expect("the outside-use file reads");
+    let stray: Vec<_> = entries
+        .iter()
+        .filter(|e| matches!(e.ty, OutsideType::Idle | OutsideType::Busy))
+        .filter(|e| e.start_time().is_some_and(|t| t >= at(HALVE_AT - HOUR) && t <= detected))
+        .collect();
+    assert!(stray.is_empty(), "rows around the halving were listed as outside use: {stray:?}");
+    let alerts = outside::alerts(fit.home(), FIT_PROVIDER, FIT_ACCOUNT);
+    assert!(alerts.is_empty(), "the halving raised alerts: {alerts:?}");
+    println!("halved capacity: reported +{:.1}h after the halving; {after} requests placed after the report", (known - HALVE_AT) as f64 / HOUR as f64);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Restart and crash (T047; US5 scenario 5; SC-008)
+
+/// Friday noon.
+const RESTART_AT: u64 = 4 * DAY + 12 * HOUR;
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Restart {
+    Never,
+    /// Between two polls.
+    Clean,
+    /// At the first poll after `RESTART_AT`: the entry is in the history, the process dies before
+    /// learning from it.
+    Crash,
+}
+
+/// What a run's fit left behind, in a form two runs can be compared in.
+#[derive(Debug)]
+struct Outcome {
+    states: BTreeMap<String, String>,
+    numbers: Vec<(String, f64)>,
+    breaks: Vec<(String, String)>,
+    /// `(type, start, end, amount or rate)`.
+    entries: Vec<(String, String, String, f64)>,
+    alerts: Vec<String>,
+    exclusive: Vec<(usize, String)>,
+}
+
+fn describe(s: &NumberState) -> String {
+    match s {
+        NumberState::Learning { .. } => "learning".into(),
+        NumberState::Fitted { since } => format!("fitted@{}", rfc3339_millis(*since)),
+        NumberState::Relearning { since, .. } => format!("relearning@{}", rfc3339_millis(*since)),
+        NumberState::Restarted { since, reason } => format!("restarted@{}:{reason}", rfc3339_millis(*since)),
+        other => format!("{other:?}"),
+    }
+}
+
+fn outcome_of(fit: &FitRun) -> Outcome {
+    let states = fit.learner.number_states(FIT_PROVIDER, FIT_WINDOW).iter().map(|(k, s)| (k.clone(), describe(s))).collect();
+    let published = fit.fits.window(FIT_PROVIDER, FIT_WINDOW);
+    let mut numbers: Vec<(String, f64)> = published.capacity.iter().map(|(a, v)| (format!("capacity@{a}"), *v)).collect();
+    numbers.extend(published.weights.iter().map(|(c, v)| (format!("weight.{}", c.as_str()), *v)));
+    for (k, (est, lo, hi)) in fit.learner.ranges(FIT_PROVIDER, FIT_WINDOW) {
+        numbers.extend([(format!("{k}.estimate"), est), (format!("{k}.low"), lo), (format!("{k}.high"), hi)]);
+    }
+    let Loaded::Ok(stored) = store::load(fit.home(), FIT_PROVIDER).expect("the fit state reads") else { panic!("no fit state saved") };
+    let mut breaks: Vec<(String, String)> =
+        stored.windows.values().flat_map(|w| w.breaks.iter().map(|b| (b.at.clone(), b.number.clone()))).collect();
+    breaks.sort();
+    let mut entries: Vec<(String, String, String, f64)> = outside::read(fit.home(), FIT_PROVIDER, FIT_ACCOUNT, None, None)
+        .expect("the outside-use file reads")
+        .into_iter()
+        .map(|e| (format!("{:?}", e.ty), e.start.clone(), e.end.clone().unwrap_or_default(), e.amount.or(e.rate_per_hour).unwrap_or(0.0)))
+        .collect();
+    entries.sort_by(|a, b| (&a.0, &a.1, &a.2).cmp(&(&b.0, &b.1, &b.2)));
+    let mut alerts: Vec<String> =
+        outside::alerts(fit.home(), FIT_PROVIDER, FIT_ACCOUNT).into_iter().map(|a| a.text.unwrap_or_default()).collect();
+    alerts.sort();
+    let exclusive = fit.exclusive().iter().map(|(i, t)| (*i, rfc3339_millis(*t))).collect();
+    Outcome { states, numbers, breaks, entries, alerts, exclusive }
+}
+
+fn same(a: f64, b: f64) -> bool {
+    (a - b).abs() <= 1e-4 * a.abs().max(b.abs()).max(1.0)
+}
+
+fn assert_same(what: &str, a: &Outcome, b: &Outcome) {
+    assert_eq!(a.states, b.states, "{what}: number states");
+    assert_eq!(a.breaks, b.breaks, "{what}: breaks");
+    assert_eq!(a.exclusive, b.exclusive, "{what}: exclusive-use declarations");
+    assert_eq!(a.alerts, b.alerts, "{what}: alerts");
+    assert_eq!(a.numbers.len(), b.numbers.len(), "{what}: fitted numbers {:?} against {:?}", a.numbers, b.numbers);
+    for ((ka, va), (kb, vb)) in a.numbers.iter().zip(&b.numbers) {
+        assert!(ka == kb && same(*va, *vb), "{what}: {ka} is {va}, then {kb} is {vb}");
+    }
+    assert_eq!(a.entries.len(), b.entries.len(), "{what}: outside-use entries {:?} against {:?}", a.entries, b.entries);
+    for (x, y) in a.entries.iter().zip(&b.entries) {
+        assert!((&x.0, &x.1, &x.2) == (&y.0, &y.1, &y.2) && same(x.3, y.3), "{what}: entry {x:?} against {y:?}");
+    }
+}
+
+/// Idle drops (never within an hour of a burst), and busy bursts.
+fn drops_and_bursts(reqs: &[Req], idle_n: usize, bursts: &[(u64, u64)], burst_pct: f64) -> Vec<(u64, f64, bool)> {
+    let burst_at: Vec<u64> = bursts.iter().map(|(d, h)| d * DAY + h * HOUR + 25 * MIN).collect();
+    let idle: Vec<u64> =
+        idle_polls(reqs).into_iter().filter(|p| *p >= 2 * DAY && burst_at.iter().all(|b| p.abs_diff(*b) > HOUR)).collect();
+    let sizes = [2.0, 3.0, 6.0];
+    let mut out: Vec<(u64, f64, bool)> = spread(&idle, idle_n).iter().enumerate().map(|(k, p)| (p - 5 * MIN, sizes[k % 3], false)).collect();
+    out.extend(burst_at.iter().map(|b| (*b, burst_pct, true)));
+    out
+}
+
+fn restart_week(reqs: &[Req], mode: Restart) -> Outcome {
+    let scenario = Scenario::three_times_off(reqs);
+    let (defs, mut world) = scenario.week();
+    world.set_true_capacity(HALVE_AT, 0, FIT_WINDOW, (scenario.true_capacity / 2.0).round());
+    world.outside = drops_and_bursts(reqs, 10, &[(1, 11), (2, 15), (4, 16)], 15.0)
+        .into_iter()
+        .map(|(at_ms, pct, busy)| drop_at(at_ms, pct, busy))
+        .collect();
+    let dir = tempfile::tempdir().unwrap();
+    let mut sim = Sim::new(&defs, dir.path()).with_fit(FitRun::new(defs.accounts.len()));
+    sim.fit.as_mut().expect("a fit run").set_exclusive(&defs, 0, Some(at(0)));
+    let mut done = false;
+    for r in reqs {
+        sim.handle(&mut world, r);
+        if !done && r.at_ms >= RESTART_AT {
+            done = true;
+            let fit = sim.fit.as_mut().expect("a fit run");
+            match mode {
+                Restart::Never => {}
+                Restart::Clean => fit.restart(&defs, at(r.at_ms / POLL_MS * POLL_MS)),
+                Restart::Crash => fit.arm_crash(),
+            }
+        }
+    }
+    sim.journal.flush_blocking();
+    let fit = sim.fit.as_ref().expect("a fit run");
+    assert_eq!(fit.crashes, u32::from(mode == Restart::Crash), "{mode:?}");
+    outcome_of(fit)
+}
+
+#[test]
+fn a_clean_restart_and_a_crash_mid_week_replay_to_the_same_fits_entries_and_alerts() {
+    let reqs = plan(SEED);
+    let reference = restart_week(&reqs, Restart::Never);
+    // The comparison must have something in it.
+    assert!(reference.states.values().any(|s| s.starts_with("fitted@")), "{:?}", reference.states);
+    assert!(!reference.breaks.is_empty(), "the halving left no break");
+    assert!(reference.entries.iter().any(|e| e.0 == "Idle"), "no idle outside use was listed");
+    assert!(!reference.alerts.is_empty(), "no alert was raised");
+    assert_eq!(reference.exclusive.len(), 1);
+    for mode in [Restart::Clean, Restart::Crash] {
+        let run = restart_week(&reqs, mode);
+        assert_same(&format!("{mode:?}"), &reference, &run);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Usage alerts (T055; US6 scenarios 1, 3, 4, 8; SC-007)
+
+/// A busy burst well beyond what a ten-minute stretch of traffic costs (about 2% at the peak).
+const BURST_PCT: f64 = 15.0;
+
+fn overlaps(e: &OutsideEntry, t: std::time::SystemTime) -> bool {
+    let Some(start) = e.start_time() else { return false };
+    let end = e.end.as_deref().and_then(clock::parse_rfc3339).unwrap_or(start);
+    start <= t && t <= end
+}
+
+#[test]
+fn alerts_follow_idle_drops_and_busy_bursts_on_an_exclusive_account_and_nothing_else() {
+    let reqs = plan(SEED);
+    let bursts = [(2, 10), (2, 16), (3, 11), (3, 15), (4, 10), (4, 16)];
+    // Half of these idle polls get a real drop (2, 3 or 6 steps), the others one step of noise.
+    let idle: Vec<u64> = idle_polls(&reqs)
+        .into_iter()
+        .filter(|p| *p >= 2 * DAY && bursts.iter().all(|(d, h)| p.abs_diff(d * DAY + h * HOUR + 25 * MIN) > HOUR))
+        .collect();
+    let picks = spread(&idle, 18);
+    assert!(picks.len() >= 12, "only {} idle polls in the week to inject into", picks.len());
+    let sizes = [2.0, 3.0, 6.0];
+    let drops: Vec<(u64, f64)> = picks.iter().step_by(2).enumerate().map(|(k, p)| (*p, sizes[k % 3])).collect();
+    let noise: Vec<u64> = picks.iter().skip(1).step_by(2).copied().collect();
+    let mut outside_use = Vec::new();
+    // Account 0 is exclusive-use; account 1 gets the same use and is not.
+    for account in [0, 1] {
+        let mk = |at_ms: u64, pct: f64, busy: bool| OutsideUse::Drop { account, window: FIT_WINDOW.into(), at_ms, pct, busy };
+        outside_use.extend(drops.iter().map(|(p, pct)| mk(p - 5 * MIN, *pct, false)));
+        outside_use.extend(noise.iter().map(|p| mk(p - 5 * MIN, 1.0, false)));
+        outside_use.extend(bursts.iter().map(|(d, h)| mk(d * DAY + h * HOUR + 25 * MIN, BURST_PCT, true)));
+    }
+    let (week, injected, _defs) = pooled_run(&reqs, THREE_TIMES_WEIGHTS, outside_use, |defs, fit| fit.set_exclusive(defs, 0, Some(at(0))));
+    let fit = week.fit.as_ref().expect("a fit run");
+    let mine: Vec<&Injected> = injected.iter().filter(|i| i.account == 0).collect();
+    assert_eq!(mine.len(), drops.len() + noise.len() + bursts.len(), "every drop was applied");
+
+    // Scenario 1: nothing is alerted on an account that is not exclusive-use, though its use is listed.
+    let (exclusive, other) = (POOL_ACCOUNTS[0], POOL_ACCOUNTS[1]);
+    let listed_other = outside::read(fit.home(), FIT_PROVIDER, other, None, None).expect("the outside-use file reads");
+    assert!(listed_other.iter().any(|e| e.ty == OutsideType::Idle), "the non-exclusive account's idle use was not listed");
+    let alerts_other = outside::alerts(fit.home(), FIT_PROVIDER, other);
+    assert!(alerts_other.is_empty(), "alerts on the non-exclusive account: {alerts_other:?}");
+
+    let entries = outside::read(fit.home(), FIT_PROVIDER, exclusive, None, None).expect("the outside-use file reads");
+    let alerts = outside::alerts(fit.home(), FIT_PROVIDER, exclusive);
+    let entry_of = |id: &str| entries.iter().find(|e| e.id == id);
+
+    // Scenarios 3 and 4: every alert (steady rates aside) stands on an injected change of 2 steps or more.
+    for a in &alerts {
+        let e = entry_of(&a.entry).unwrap_or_else(|| panic!("alert {a:?} names no listed entry"));
+        if e.ty == OutsideType::Steady {
+            continue;
+        }
+        assert!(
+            mine.iter().any(|i| i.pct.round() >= 2.0 && overlaps(e, at(i.at_ms))),
+            "an alert without injected use (1-step noise or ordinary traffic): {a:?} on {e:?}"
+        );
+    }
+    // Every idle drop is alerted at the first poll that shows it.
+    for (p, pct) in &drops {
+        let raised = rfc3339_millis(at(*p));
+        let hit = alerts.iter().any(|a| a.raised_at == raised && entry_of(&a.entry).is_some_and(|e| overlaps(e, at(p - 5 * MIN))));
+        assert!(hit, "the idle drop of {pct}% shown at poll +{:.2}h raised no alert at that poll", *p as f64 / HOUR as f64);
+    }
+    // Scenario 8: each burst that passes the test is alerted (the bursts are far beyond it).
+    for i in mine.iter().filter(|i| i.busy) {
+        let hit = alerts.iter().any(|a| entry_of(&a.entry).is_some_and(|e| overlaps(e, at(i.at_ms))));
+        assert!(hit, "the busy burst at +{:.2}h raised no alert", i.at_ms as f64 / HOUR as f64);
+    }
+    println!("alerts: {} on the exclusive account for {} idle drops and {} bursts, {} noise steps; none on the other", alerts.len(), drops.len(), bursts.len(), noise.len());
 }

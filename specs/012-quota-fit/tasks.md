@@ -141,7 +141,7 @@ priority").
 
 - [X] T039 [P] [US4] In `crates/nullrouter-engine/src/accounts.rs` tests, cover parsing and refusal of `window."<name>" = { token_weights = { output = 15.0 }, model_multiplier = { "claude-opus-*" = 1.5 } }`: refusals use the plugin gate's wording, a glob the plugin doesn't declare is refused, and token weights on a `requests` window are refused (Story 4 scenario 4)
 - [X] T040 [P] [US4] In `crates/nullrouter-registry/src/schema/config.rs` tests, cover `[provider.<id>.meter."<window>"]` with `token_weights` and `model_multiplier` accepted, and `capacity` refused with `capacity is per account; use routing set <provider> <account>` (contracts/state-files.md § config.toml)
-- [ ] T041 [P] [US4] In `crates/nullrouter-engine/tests/sim_week.rs`, override `weight.output` on the 3×-off mock before significance and after it. Routing uses the override both times, and the view shows `source: account_override` with the fit range. After removing the override, the fit (if significant) or the declaration is used. A multiplier override applies only to matching models. A plugin-level override applies to every account except one with its own account override (Story 4 scenarios 1–3, 5; FR-020)
+- [X] T041 [P] [US4] In `crates/nullrouter-engine/tests/sim_week.rs`, override `weight.output` on the 3×-off mock before significance and after it. Routing uses the override both times, and the view shows `source: account_override` with the fit range. After removing the override, the fit (if significant) or the declaration is used. A multiplier override applies only to matching models. A plugin-level override applies to every account except one with its own account override (Story 4 scenarios 1–3, 5; FR-020)
 
 ### Implementation for US4
 
@@ -162,8 +162,8 @@ priority").
 
 ### Tests for US5
 
-- [ ] T046 [P] [US5] In `crates/nullrouter-engine/tests/sim_week.rs`, halve the 3×-off account's true capacity on day 4. Assert a break is recorded within 1 simulated day, 0 placements after the report use the old fitted capacity (SC-006), only rows after the break count for the new fit (Story 5 scenario 2), and the busy rows around the halving are not listed as outside use and raise no alert
-- [ ] T047 [P] [US5] In `crates/nullrouter-engine/tests/sim_week.rs`, restart cleanly and crash (drop without shutdown) mid-week. Assert fits, states, breaks, outside-use entries, exclusive-use declarations and alerts are identical after replay (SC-008, Story 5 scenario 5)
+- [X] T046 [P] [US5] In `crates/nullrouter-engine/tests/sim_week.rs`, halve the 3×-off account's true capacity on day 4. Assert a break is recorded within 1 simulated day, 0 placements after the report use the old fitted capacity (SC-006), only rows after the break count for the new fit (Story 5 scenario 2), and the busy rows around the halving are not listed as outside use and raise no alert
+- [X] T047 [P] [US5] In `crates/nullrouter-engine/tests/sim_week.rs`, restart cleanly and crash (drop without shutdown) mid-week. Assert fits, states, breaks, outside-use entries, exclusive-use declarations and alerts are identical after replay (SC-008, Story 5 scenario 5)
 - [X] T048 [P] [US5] In `crates/nullrouter-engine/tests/quota_fit.rs`, change one window's declared meter between loads. Assert that window's numbers become `Restarted` with reason `plugin meter changed` and no other number changes (SC-008, FR-017). Also cover the fit file that doesn't parse: it is renamed, the fit restarts, and a warning is raised
 - [X] T049 [P] [US5] In `crates/nullrouter-engine/tests/quota_fit.rs`, inject an outside-use burst against a fitted model. Assert the break detector does not fire (Story 5 scenario 4)
 
@@ -188,7 +188,7 @@ priority").
 
 ### Tests for US6
 
-- [ ] T055 [P] [US6] In `crates/nullrouter-engine/tests/sim_week.rs`, inject idle drops, 1-step noise and busy-time bursts on one exclusive-use and one non-exclusive account. Assert 0 alerts on the non-exclusive account, 0 alerts from 1-step noise, every idle drop of ≥ 2 steps alerted at the first poll that shows it, 0 alerts on busy intervals without injected use, and an alert for each busy burst whose excess passes the test (SC-007, Story 6 scenarios 1, 3, 4, 8)
+- [X] T055 [P] [US6] In `crates/nullrouter-engine/tests/sim_week.rs`, inject idle drops, 1-step noise and busy-time bursts on one exclusive-use and one non-exclusive account. Assert 0 alerts on the non-exclusive account, 0 alerts from 1-step noise, every idle drop of ≥ 2 steps alerted at the first poll that shows it, 0 alerts on busy intervals without injected use, and an alert for each busy burst whose excess passes the test (SC-007, Story 6 scenarios 1, 3, 4, 8)
 - [X] T056 [P] [US6] In `crates/nullrouter-engine/tests/quota_fit.rs`, assert alert text matches `"<provider>/<account>: N% of <window> used HH:MM–HH:MM with no traffic from 0router"` (idle) and contains no "leak" or "key". Assert the account's state, priority and routing are unchanged after an alert, and that withdrawing the declaration stops new alerts (FR-025, FR-026; Story 6 scenarios 5, 7)
 - [X] T057 [P] [US6] In `crates/nullrouter-cli/tests/accounts_keys.rs`, `quota.rs` and `check.rs`, assert `accounts exclusive xai main on` on an unpolled account exits 2 with `account xai/main: exclusive use needs quota polls; xai reports no quota for this account` (FR-023); `quota ack <id>` removes the alert from `quota alerts` and keeps the entry in `quota outside` (Story 6 scenario 6); `check` lists unacknowledged alerts as warnings and its exit status is unchanged by them (0 with no errors)
 
