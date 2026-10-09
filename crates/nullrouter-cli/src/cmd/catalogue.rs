@@ -99,9 +99,9 @@ fn exit_of(e: &CatalogueError) -> u8 {
 /// intersection is exactly its set.
 fn newer_than_all<'a>(entry: &'a catalogue::Entry, installed: &[&str]) -> Vec<&'a catalogue::Version> {
     let Some((first, rest)) = installed.split_first() else { return Vec::new() };
-    let mut out = entry.newer_than(*first);
+    let mut out = entry.newer_than(first);
     for s in rest {
-        let other = entry.newer_than(*s);
+        let other = entry.newer_than(s);
         out.retain(|v| other.iter().any(|o| o.semver == v.semver));
     }
     out
