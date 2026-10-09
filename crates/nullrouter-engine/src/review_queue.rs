@@ -8,8 +8,9 @@ use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use nullrouter_adapters::HarnessName;
+use nullrouter_adapters::alerts::{Alert, AlertLog};
 use nullrouter_adapters::review::{self, ReviewCall, ReviewEnd, ReviewError, ReviewReply, Styles};
-use nullrouter_adapters::store::{Origin, Store, VersionId, VersionState};
+use nullrouter_adapters::store::{Index, Origin, Store, StoreError, VersionId, VersionState};
 use nullrouter_adapters::{BUILD_TIMEOUT, InstallError, InstallOptions, Installed, install};
 use tokio::sync::mpsc;
 
@@ -110,5 +111,61 @@ impl Engine {
             tx
         });
         let _ = tx.send((harness, version));
+    }
+
+    /// Queues the reviews a server stopped in: every version left `in_review` with no worker to
+    /// run it. Called once by `serve`, inside the runtime. Fail-open: a store error is logged and
+    /// nothing is queued.
+    pub fn resume_reviews(self: &Arc<Self>) {
+        let index = match self.adapter_index() {
+            Ok(index) => index,
+            Err(e) => {
+                tracing::warn!("adapter reviews not resumed: {e}");
+                return;
+            }
+        };
+        for h in &index.harnesses {
+            for v in h.versions.iter().filter(|v| v.state == VersionState::InReview) {
+                self.enqueue_review(h.name.clone(), v.id.clone());
+            }
+        }
+    }
+
+    /// The `adapters/` store under the home, or `None` while there is no `adapters/` yet (nothing
+    /// is created to answer a read).
+    fn adapter_store(&self) -> Result<Option<Store>, StoreError> {
+        let home = self.home().path();
+        if !home.join("adapters").is_dir() {
+            return Ok(None);
+        }
+        Store::open(home).map(Some)
+    }
+
+    /// The adapter index, empty while there is no store. Blocking: reads `adapters/index.toml`.
+    pub fn adapter_index(&self) -> Result<Index, StoreError> {
+        match self.adapter_store()? {
+            Some(store) => store.load_index(),
+            None => Ok(Index::default()),
+        }
+    }
+
+    /// Every adapter alert, oldest first (the log's order). Blocking.
+    pub fn adapter_alerts(&self) -> Result<Vec<Alert>, String> {
+        let store = self.adapter_store().map_err(|e| e.to_string())?;
+        let Some(store) = store else { return Ok(Vec::new()) };
+        AlertLog::open(&store).list().map_err(|e| e.to_string())
+    }
+
+    /// The harness and version an `adapters.review` request names, if the version is in the index
+    /// and `in_review`. Blocking.
+    pub fn adapter_review_target(&self, harness: &str, version: &str) -> Result<(HarnessName, VersionId), String> {
+        let name = HarnessName::new(harness).map_err(|e| e.to_string())?;
+        let id = VersionId::from_run(version);
+        let index = self.adapter_index().map_err(|e| e.to_string())?;
+        let entry = index.version(&name, &id).ok_or_else(|| format!("no version {version} of {harness}"))?;
+        if entry.state != VersionState::InReview {
+            return Err(format!("version {version} of {harness} is {}, not in_review", entry.state));
+        }
+        Ok((name, id))
     }
 }

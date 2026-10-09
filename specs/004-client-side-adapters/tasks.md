@@ -690,7 +690,7 @@ serves before approval, and an operator with no adapters needs none of it.
   - (e) A provider error gives `quarantined`, and a previously active version keeps serving.
   - (f) A valid report gives `reported`, with `review.json` written.
   - (g) The review request is recorded with agent `review:<harness>@<version>`.
-- [ ] T052 [P] [US2] Catalogue tests in `crates/nullrouter-adapters/tests/catalogue.rs`,
+- [X] T052 [P] [US2] Catalogue tests in `crates/nullrouter-adapters/tests/catalogue.rs`,
   against a local HTTPS mock (self-signed CA trusted in-test).
   - Index parse, with unknown keys refused.
   - Archive `sha256` mismatch gives `catalogue_hash_mismatch`, with nothing unpacked.
@@ -775,7 +775,7 @@ serves before approval, and an operator with no adapters needs none of it.
     the state to `in_review`.
   - Enqueue the review. A missing builder leaves `queued` / `builder_not_installed`.
   - Make T053 pass.
-- [ ] T061 [US2] The catalogue client in `crates/nullrouter-adapters/src/catalogue.rs`, per
+- [X] T061 [US2] The catalogue client in `crates/nullrouter-adapters/src/catalogue.rs`, per
   [contracts/catalogue.md](contracts/catalogue.md).
   - Fetch with slice 003's `reqwest` client and SSRF rules:
     - HTTPS only;
@@ -799,7 +799,7 @@ serves before approval, and an operator with no adapters needs none of it.
 - [ ] T063 [US2] `catalogue` CLI in `crates/nullrouter-cli/src/cmd/catalogue.rs`: `list`,
   `show <H>`, and `install <H> [<semver>]` (the newest version by default). Unreachable
   catalogue exits 5.
-- [ ] T064 [US2] Operator socket ops in `crates/nullrouter-server/src/operator.rs`:
+- [X] T064 [US2] Operator socket ops in `crates/nullrouter-server/src/operator.rs`:
   `adapters.state`, `adapters.review` (enqueue) and `alerts.list`.
   - Approve, reject, clear and remove are file writes followed by `reload`.
   - Make T054 pass.

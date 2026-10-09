@@ -23,6 +23,9 @@
 //! | `{"op":"test.run","target"?,"account"?,"all"?}` | streamed: one `{"event":"result","result":TestResult}` line per pair (a combo: one `{"event":"combo","result":ComboResult}`), then `{"ok":true,"done":{pass,broken,unknown,skipped}}`. Closing the connection cancels calls not yet sent |
 //! | `{"op":"verdicts.list","provider"?,"account"?,"model"?,"state"?}` | `{"ok":true,"verdicts":[{provider,account,model,…Verdict,"waiting"?}],"combos":[{combo,…,"waiting"?}]}`: `waiting` says why a due retest can't run yet |
 //! | `{"op":"verdicts.set","provider","account","model","state":"broken"\|"clear","note"?}` | `{"ok":true}`, or `{"ok":false,"error":"no verdict for …"}` on clearing an untested pair |
+//! | `{"op":"adapters.state"}` | `{"ok":true,"adapters":[{harness,active,versions:[{id,semver,state,reason,rebuilding,rebuild_failed}]}]}`: the adapter store's index, one entry per harness |
+//! | `{"op":"adapters.review","harness","version"}` | `{"ok":true,"queued":true}`, or `{"ok":false,"error"}` when the version is not in the index or not `in_review`; the review runs in the background |
+//! | `{"op":"alerts.list","all"?:bool}` | `{"ok":true,"alerts":[…]}`: the adapter alerts, newest first; only the unacknowledged ones unless `all` is true |
 
 use std::future::Future;
 use std::io::{BufRead, BufReader, Write};
@@ -372,6 +375,9 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         Some("test.run") => json!({"ok": false, "error": "test.run streams: send it on its own connection"}),
         Some("verdicts.list") => verdicts_list(engine, req),
         Some("verdicts.set") => verdicts_set(engine, req),
+        Some("adapters.state") => adapters_state(engine).await,
+        Some("adapters.review") => adapters_review(engine, req).await,
+        Some("alerts.list") => alerts_list(engine, req).await,
         Some(op) => json!({"ok": false, "error": format!("unknown op {op:?}")}),
         None => json!({"ok": false, "error": "the request names no op"}),
     }
@@ -460,12 +466,82 @@ fn verdicts_set(engine: &Engine, req: &Value) -> Value {
     }
 }
 
+/// `adapters.state`: the adapter store's index, read on the blocking pool. Reasons pass the
+/// redactor, as the verdicts' do.
+async fn adapters_state(engine: &Arc<Engine>) -> Value {
+    let e = engine.clone();
+    let index = match tokio::task::spawn_blocking(move || e.adapter_index().map_err(|e| e.to_string())).await {
+        Ok(Ok(index)) => index,
+        Ok(Err(e)) => return json!({"ok": false, "error": e}),
+        Err(e) => return json!({"ok": false, "error": format!("the read failed: {e}")}),
+    };
+    let st = engine.snapshot();
+    let adapters: Vec<Value> = index
+        .harnesses
+        .iter()
+        .map(|h| {
+            let versions: Vec<Value> = h
+                .versions
+                .iter()
+                .map(|v| {
+                    json!({
+                        "id": v.id.to_string(),
+                        "semver": v.semver,
+                        "state": v.state.to_string(),
+                        "reason": st.redactor.redact(&v.state_reason).into_owned(),
+                        "rebuilding": v.rebuilding,
+                        "rebuild_failed": v.rebuild_failed,
+                    })
+                })
+                .collect();
+            let active = h.active.as_ref().map(ToString::to_string);
+            json!({"harness": h.name.to_string(), "active": active, "versions": versions})
+        })
+        .collect();
+    json!({"ok": true, "adapters": adapters})
+}
+
+/// `adapters.review`: queues a review of a version that is `in_review`. The check reads the index
+/// on the blocking pool (`adapter_review_target`); the review itself runs in the background.
+async fn adapters_review(engine: &Arc<Engine>, req: &Value) -> Value {
+    let str_of = |k: &str| req.get(k).and_then(Value::as_str).map(str::to_owned);
+    let (Some(harness), Some(version)) = (str_of("harness"), str_of("version")) else {
+        return json!({"ok": false, "error": "adapters.review names a harness and a version"});
+    };
+    let e = engine.clone();
+    match tokio::task::spawn_blocking(move || e.adapter_review_target(&harness, &version)).await {
+        Ok(Ok((harness, version))) => {
+            engine.enqueue_review(harness, version);
+            json!({"ok": true, "queued": true})
+        }
+        Ok(Err(e)) => json!({"ok": false, "error": e}),
+        Err(e) => json!({"ok": false, "error": format!("the read failed: {e}")}),
+    }
+}
+
+/// `alerts.list`: the adapter alerts, newest first. Unacknowledged ones only, unless `all` is true.
+async fn alerts_list(engine: &Arc<Engine>, req: &Value) -> Value {
+    let all = req.get("all").and_then(Value::as_bool).unwrap_or(false);
+    let e = engine.clone();
+    let mut alerts = match tokio::task::spawn_blocking(move || e.adapter_alerts()).await {
+        Ok(Ok(alerts)) => alerts,
+        Ok(Err(e)) => return json!({"ok": false, "error": e}),
+        Err(e) => return json!({"ok": false, "error": format!("the read failed: {e}")}),
+    };
+    if !all {
+        alerts.retain(|a| a.acked.is_none());
+    }
+    alerts.sort_by_key(|a| std::cmp::Reverse(nullrouter_engine::clock::parse_rfc3339(&a.at)));
+    json!({"ok": true, "alerts": alerts})
+}
+
 /// `keys.last_used`: the journal read runs on the blocking pool, as `records.get`'s does.
 /// The requests in flight (spec 013, contracts/operator-socket.md). Paused proxies come with
 /// the proxy slice; until then the list is empty. The agent shows as the key's name.
 fn live_snapshot(engine: &Arc<Engine>) -> Value {
     let st = engine.snapshot();
-    let names: std::collections::HashMap<&str, &str> = st.keys.iter().map(|k| (k.id.as_str(), k.name.as_str())).collect();
+    let names: std::collections::HashMap<&str, &str> =
+        st.keys.iter().map(|k| (k.id.as_str(), k.name.as_str())).collect();
     let in_flight: Vec<Value> = engine
         .live
         .snapshot()

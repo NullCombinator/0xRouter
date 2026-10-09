@@ -61,6 +61,8 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
             eprintln!("cannot open the operator socket: {e}");
             ExitCode::from(1)
         })?;
+        // Reviews a stopped server left `in_review` start again now: queuing needs the runtime.
+        engine.resume_reviews();
         let (stop, stopped) = tokio::sync::watch::channel(false);
         let until_stopped = |mut stopped: tokio::sync::watch::Receiver<bool>| async move {
             let _ = stopped.wait_for(|s| *s).await;
