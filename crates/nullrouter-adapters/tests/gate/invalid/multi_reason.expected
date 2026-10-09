@@ -1,0 +1,4 @@
+refused: foreign_dependency at Cargo.toml: dependency "serde" is not the kit
+refused: build_script at Cargo.toml: key "build" is not allowed
+refused: proc_macro at Cargo.toml: key "proc-macro" is not allowed
+refused: opaque_blob at src/lib.rs:13: base64 run over 256 characters

@@ -1,0 +1,1 @@
+refused: extern_crate at src/lib.rs:13: extern crate "libc"

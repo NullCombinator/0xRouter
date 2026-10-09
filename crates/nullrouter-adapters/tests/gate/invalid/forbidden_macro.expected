@@ -1,0 +1,1 @@
+refused: forbidden_macro at src/lib.rs:13: macro `include_str!`

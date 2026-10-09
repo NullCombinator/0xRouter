@@ -655,7 +655,7 @@ serves before approval, and an operator with no adapters needs none of it.
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T049 [P] [US2] Gate corpus in `crates/nullrouter-adapters/tests/gate/invalid/`.
+- [X] T049 [P] [US2] Gate corpus in `crates/nullrouter-adapters/tests/gate/invalid/`.
   - One directory per code in
     [contracts/adapter-package.md § Gate rules](contracts/adapter-package.md#gate-rules-and-refusal-messages),
     21 codes, each with a golden `.expected` file (`refused: <code> at <location>: <message>`).
@@ -663,7 +663,7 @@ serves before approval, and an operator with no adapters needs none of it.
     `opaque_blob` together, whose `.expected` lists all four.
   - Plus `valid/noop`, which must pass.
   - Test runner: `crates/nullrouter-adapters/tests/gate.rs`, covering SC-004.
-- [ ] T050 [P] [US2] Scrambler tests in `crates/nullrouter-adapters/tests/scramble.rs`.
+- [X] T050 [P] [US2] Scrambler tests in `crates/nullrouter-adapters/tests/scramble.rs`.
   - Collect every identifier the fixture defines (items, fields, variants, bindings,
     lifetimes, labels, generics) with a `syn` visitor.
   - Assert that none appears in the scrambled output, as whole tokens.

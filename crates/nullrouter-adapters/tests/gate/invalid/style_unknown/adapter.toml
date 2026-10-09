@@ -1,0 +1,11 @@
+harness = "noop"
+style = "klingon"
+kit = "1"
+summary = "does nothing"
+
+[request]
+selectors = ["model"]
+
+[response]
+selectors = []
+events = false
