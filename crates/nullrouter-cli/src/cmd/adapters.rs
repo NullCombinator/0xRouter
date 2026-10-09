@@ -160,7 +160,7 @@ fn runtime() -> Result<tokio::runtime::Runtime, ExitCode> {
 pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
     match cmd {
-        Command::List => list(as_json),
+        Command::List => list(&home, as_json),
         Command::Install { package } => install(&home, &package, as_json),
         Command::Show { harness, version } => show(&home, &harness_of(&harness)?, version.as_deref(), as_json),
         Command::Review { harness, version, retry } => {
@@ -200,18 +200,49 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     }
 }
 
-fn list(as_json: bool) -> Result<ExitCode, ExitCode> {
-    if as_json {
-        let rows: Vec<_> = BUILTIN
-            .iter()
-            .map(|h| json!({"harness": h, "built_in": true, "versions": [], "active": "builtin", "alerts": 0}))
-            .collect();
-        println!("{}", Value::Array(rows));
+/// One version as a text line, without its indent: id, semver, state, then any rebuild flags.
+fn version_line(v: &VersionEntry) -> String {
+    let flags: Vec<&str> = [(v.rebuilding, "rebuilding"), (v.rebuild_failed, "rebuild_failed")]
+        .into_iter()
+        .filter(|(on, _)| *on)
+        .map(|(_, flag)| flag)
+        .collect();
+    let flags = if flags.is_empty() { String::new() } else { format!(" {}", flags.join(" ")) };
+    format!("{}  {}  {}{flags}", v.id, v.semver, v.state)
+}
+
+fn version_json(v: &VersionEntry) -> Value {
+    json!({"id": v.id, "semver": v.semver, "state": v.state,
+           "rebuilding": v.rebuilding, "rebuild_failed": v.rebuild_failed})
+}
+
+/// Every harness: hermes as `built-in`, then each third-party harness in the index with its
+/// active version, the state of that version, its unacknowledged alerts and its versions. Reads
+/// only: with no `adapters/` directory there is nothing to list.
+fn list(home: &OperatorHome, as_json: bool) -> Result<ExitCode, ExitCode> {
+    let index = read_index(home)?;
+    let alerts: Vec<Alert> = if home.path().join("adapters").is_dir() {
+        AlertLog::open(&store_of(home)?).list().map_err(fail)?
     } else {
-        for h in BUILTIN {
-            println!("{h}  built-in");
+        Vec::new()
+    };
+    let unacked = |name: &HarnessName| alerts.iter().filter(|a| a.acked.is_none() && &a.harness == name).count();
+
+    let mut rows: Vec<Value> = BUILTIN.iter().map(|h| json!({"harness": h, "built_in": true})).collect();
+    let mut lines: Vec<String> = BUILTIN.iter().map(|h| format!("{h}  built-in")).collect();
+    for h in index.harnesses.iter().filter(|h| !h.name.is_builtin()) {
+        let n = unacked(&h.name);
+        let active_entry = h.active.as_ref().and_then(|id| h.versions.iter().find(|v| &v.id == id));
+        let active = h.active.as_ref().map_or_else(|| "-".to_owned(), ToString::to_string);
+        let active_state = active_entry.map_or_else(|| "-".to_owned(), |v| v.state.to_string());
+        lines.push(format!("{}  {active}  {active_state}  {n} alerts", h.name));
+        for v in &h.versions {
+            lines.push(format!("  {}", version_line(v)));
         }
+        rows.push(json!({"harness": h.name, "built_in": false, "active": h.active, "alerts": n,
+                         "versions": h.versions.iter().map(version_json).collect::<Vec<Value>>()}));
     }
+    emit(as_json, &Value::Array(rows), &lines.join("\n"));
     Ok(ExitCode::SUCCESS)
 }
 
