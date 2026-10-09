@@ -126,4 +126,20 @@
   --opacity-disabled: 0.5;
   --z-modal: 50;
   --z-panel: 40;
+  --agent-1: #6366f1;
+  --agent-2: #14b8a6;
+  --agent-3: #f59e0b;
+  --agent-4: #8b5cf6;
+  --agent-5: #06b6d4;
+  --agent-6: #10b981;
+  --agent-7: #f97316;
+  --edge-failed: #ef4444;
+  --edge-last: #f59e0b;
+  --edge-failed-width: 2.5;
+  --edge-last-width: 2;
+  --edge-idle-width: 1;
+  --edge-failed-opacity: 0.9;
+  --edge-last-opacity: 0.7;
+  --edge-idle-opacity: 0.3;
+  --node-border-width: 2px;
 }

@@ -109,7 +109,10 @@ async fn no_route_carries_a_secret_or_a_prompt() {
         .unwrap();
     let body = r.text().await.unwrap();
     assert!(body.contains(ANSWER), "{body}");
-    assert!(mock.received().iter().any(|r| r.headers.values().any(|v| v.to_str().is_ok_and(|v| v.contains(KEY)))), "the key went upstream");
+    assert!(
+        mock.received().iter().any(|r| r.headers.values().any(|v| v.to_str().is_ok_and(|v| v.contains(KEY)))),
+        "the key went upstream"
+    );
 
     assert!(proxy.carried() >= 1, "the request went through the account's proxy");
 
@@ -136,6 +139,8 @@ async fn no_route_carries_a_secret_or_a_prompt() {
         "/providers/sentinel".into(),
         "/providers/xai".into(),
         "/providers?kind=llm&q=sent".into(),
+        "/usage?period=all".into(),
+        "/usage?period=24h".into(),
         "/quota?provider=sentinel&account=main".into(),
         format!("/usage/records/{record}"),
         format!("/usage/records/{record}?notices"),
@@ -151,7 +156,8 @@ async fn no_route_carries_a_secret_or_a_prompt() {
                 req = req.header(COOKIE, format!("nr_dashboard={TOKEN}"));
             }
             let r = req.send().await.unwrap();
-            let headers: String = r.headers().iter().map(|(k, v)| format!("{k}: {}\n", v.to_str().unwrap_or("?"))).collect();
+            let headers: String =
+                r.headers().iter().map(|(k, v)| format!("{k}: {}\n", v.to_str().unwrap_or("?"))).collect();
             let bytes = r.bytes().await.unwrap();
             let body = String::from_utf8_lossy(&bytes);
             for s in &sentinels {

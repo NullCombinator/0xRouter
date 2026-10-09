@@ -1,0 +1,175 @@
+# Hand-worked figures for the records in records/*.jsonl, with the prices in prices.toml.
+# `at` = 2026-10-07T12:00:00Z. Windows are [from, to). Tokens: input = uncached input (cache reads
+# out; cache writes stay in), cached = cache reads, output as reported. Cost per million tokens.
+#
+# Records (agent, arrival UTC, served by, usage -> tokens (input, cached, output), cost):
+#  fx01 alice 10-05 10:00 alpha/main, peak 4/20/0.4/5. includes_cache: in 1,000,000 incl. 600,000
+#       read, 0 write, out 100,000 -> (400,000, 600,000, 100,000).
+#       cost = 0.4*4 + 0.6*0.4 + 0.1*20 = 1.6 + 0.24 + 2.0 = 3.84
+#  fx02 bob   10-05 22:00 alpha/main, off-peak 2/10/0.2/2.5. excludes_cache: in 200,000, read
+#       300,000, write 100,000, out 50,000 -> input 200,000 + 100,000 write = 300,000, cached
+#       300,000, output 50,000.
+#       cost = 0.2*2 + 0.3*0.2 + 0.1*2.5 + 0.05*10 = 0.4 + 0.06 + 0.25 + 0.5 = 1.21
+#  fx03 alice 10-06 09:00 alpha/override flat 1/3. includes_cache: in 500,000 incl. 100,000 read,
+#       out 20,000 -> (400,000, 100,000, 20,000). No cache rate: reads at the input rate.
+#       cost = 0.4*1 + 0.1*1 + 0.02*3 = 0.4 + 0.1 + 0.06 = 0.56
+#  fx04 bob   10-06 15:00 beta/main, 3 in, no output rate. in 100,000, out 10,000 -> (100,000, 0,
+#       10,000). UNPRICED no_output_price.
+#  fx05 alice 10-06 16:00 beta/main. in 50,000, out 0 -> (50,000, 0, 0). Output 0 needs no output
+#       rate. cost = 0.05*3 = 0.15
+#  fx06 bob   10-06 18:00 gamma/main (no price). in 80,000, out 8,000. UNPRICED no_price.
+#  fx07 alice 10-06 19:00 delta/ghost (account gone). in 60,000, out 6,000. UNPRICED account_gone.
+#  fx08 alice 10-06 23:30 alpha/main, usage null -> not reported, no tokens, no cost.
+#  fx09 alice 10-07 01:00 alpha/main after gamma failed (503). off-peak. in 100,000, out 40,000.
+#       cost = 0.1*2 + 0.04*10 = 0.2 + 0.4 = 0.6
+#  fx10 bob   10-07 03:00 alpha/main, a continuation (attempt 2). in 70,000, out 30,000.
+#       cost = 0.07*2 + 0.03*10 = 0.14 + 0.3 = 0.44
+#  fx11 bob   10-07 05:00 beta/main after alpha failed (500): a restart. in 40,000, out 0.
+#       cost = 0.04*3 = 0.12
+#  fx12 (no agent) 10-07 06:00 refused before a key matched: no usage -> not reported.
+#  fx13 carol 10-07 08:00 alpha/main. 08:00 is inside the peak window [08:00, 20:00): 4/20.
+#       in 10,000, out 2,000. cost = 0.01*4 + 0.002*20 = 0.04 + 0.04 = 0.08
+#  fx14 alice 10-07 11:00 cancelled, no usage -> not reported.
+#  fx15 bob   10-07 11:55 in progress (a skipped gamma attempt, then alpha): in flight.
+
+# ---- Totals ------------------------------------------------------------------------------------
+
+# all: fx01..fx15
+[[totals]]
+name = "all"
+to = "2026-10-07T12:00:00Z"
+requests = 15
+in_flight = 1                   # fx15
+not_reported = 3                # fx08, fx12, fx14
+input = 1_610_000               # 400+300+400+100+50+80+60+100+70+40+10 thousand
+cached = 1_000_000              # 600+300+100 thousand
+output = 266_000                # 100+50+20+10+0+8+6+40+30+0+2 thousand
+cost_usd = 7.00                 # 3.84+1.21+0.56+0.15+0.6+0.44+0.12+0.08
+unpriced = { no_price = 1, account_gone = 1, no_output_price = 1 }   # fx06, fx07, fx04
+agents = { ak_alice = 7, ak_bob = 6, ak_carol = 1 }        # fx12 has none: 14 of 15
+providers = { alpha = 10, beta = 3, gamma = 2, delta = 1 } # fx09 counts gamma and alpha; fx11 alpha and beta; fx10 alpha once
+
+# yesterday, the whole UTC day 2026-10-06: fx03..fx08
+[[totals]]
+name = "yesterday"
+from = "2026-10-06T00:00:00Z"
+to = "2026-10-07T00:00:00Z"
+requests = 6
+in_flight = 0
+not_reported = 1                # fx08
+input = 690_000                 # 400+100+50+80+60 thousand
+cached = 100_000
+output = 44_000                 # 20+10+0+8+6 thousand
+cost_usd = 0.71                 # 0.56+0.15
+unpriced = { no_price = 1, account_gone = 1, no_output_price = 1 }
+agents = { ak_alice = 4, ak_bob = 2 }
+providers = { alpha = 2, beta = 2, gamma = 1, delta = 1 }
+
+# today (UTC) until at: fx09..fx15
+[[totals]]
+name = "today"
+from = "2026-10-07T00:00:00Z"
+to = "2026-10-07T12:00:00Z"
+requests = 7
+in_flight = 1
+not_reported = 2                # fx12, fx14
+input = 220_000                 # 100+70+40+10 thousand
+cached = 0
+output = 72_000                 # 40+30+0+2 thousand
+cost_usd = 1.24                 # 0.6+0.44+0.12+0.08
+unpriced = { no_price = 0, account_gone = 0, no_output_price = 0 }
+agents = { ak_alice = 2, ak_bob = 3, ak_carol = 1 }
+providers = { alpha = 6, beta = 1, gamma = 1 }
+
+# last 24 hours: fx04..fx15 (fx03 at 09:00 on 10-06 is before 12:00)
+[[totals]]
+name = "last24h"
+from = "2026-10-06T12:00:00Z"
+to = "2026-10-07T12:00:00Z"
+requests = 12
+in_flight = 1
+not_reported = 3
+input = 510_000                 # all less fx01, fx02, fx03: 1,610,000 - 1,100,000
+cached = 0
+output = 96_000                 # 266,000 - 170,000
+cost_usd = 1.39                 # 0.15+0.6+0.44+0.12+0.08
+unpriced = { no_price = 1, account_gone = 1, no_output_price = 1 }
+agents = { ak_alice = 5, ak_bob = 5, ak_carol = 1 }
+providers = { alpha = 7, beta = 3, gamma = 2, delta = 1 }
+
+# a window with no records
+[[totals]]
+name = "empty"
+from = "2026-09-01T00:00:00Z"
+to = "2026-09-02T00:00:00Z"
+requests = 0
+in_flight = 0
+not_reported = 0
+input = 0
+cached = 0
+output = 0
+cost_usd = 0.0
+unpriced = { no_price = 0, account_gone = 0, no_output_price = 0 }
+agents = {}
+providers = {}
+
+# ---- Latency, last 24 hours: [2026-10-06T12:00:00Z, 2026-10-07T12:00:00Z) ----------------------
+# Records with an agent: fx04 fx05 fx06 fx07 fx08 fx09 fx10 fx11 fx13 fx14 fx15 (fx12 has none;
+# fx01..fx03 are older). Router overhead = `started` of the first attempt that isn't skipped:
+#   fx04 4, fx05 4, fx06 5, fx07 6, fx08 4, fx09 5, fx10 6, fx11 7, fx13 3, fx14 4, fx15 5 (not
+#   the skipped one at 1.0).
+# Client TTFT = ttft_ms: fx04 800, fx05 200, fx06 600, fx07 350, fx08 250, fx09 1400, fx10 300,
+#   fx11 1500, fx13 100; fx14 and fx15 have none.
+# Nearest rank: v[ceil(q*n) - 1] over the sorted values.
+
+[latency]
+at = "2026-10-07T12:00:00Z"
+
+[latency.agents.ak_alice]       # fx05 fx07 fx08 fx09 fx14
+requests = 5
+overhead = { p50 = 4.0, p95 = 6.0, n = 5 }     # [4,4,4,5,6]: ceil(2.5)=3 -> 4; ceil(4.75)=5 -> 6
+ttft = { p50 = 250.0, p95 = 1400.0, n = 4 }    # [200,250,350,1400]: ceil(2)=2 -> 250; ceil(3.8)=4 -> 1400
+last = { result = "resolved", at = "2026-10-07T01:00:04Z" }   # fx09, 01:00:00 + 4000 ms; fx14 cancelled is ignored
+
+[latency.agents.ak_bob]         # fx04 fx06 fx10 fx11 fx15
+requests = 5
+overhead = { p50 = 5.0, p95 = 7.0, n = 5 }     # [4,5,5,6,7]: 3rd -> 5; 5th -> 7
+ttft = { p50 = 600.0, p95 = 1500.0, n = 4 }    # [300,600,800,1500]: 2nd -> 600; 4th -> 1500
+last = { result = "resolved", at = "2026-10-07T05:00:04Z" }   # fx11; fx15 is unfinished
+
+[latency.agents.ak_carol]       # fx13
+requests = 1
+overhead = { p50 = 3.0, p95 = 3.0, n = 1 }
+ttft = { p50 = 100.0, p95 = 100.0, n = 1 }
+last = { result = "resolved", at = "2026-10-07T08:00:01Z" }
+
+# Provider rows. Requests = records with a non-skipped attempt on it. Own TTFT = ttft_ms less the
+# start of the last non-skipped attempt with started <= ttft_ms, credited to that attempt's provider.
+#   fx08 alpha 250-4=246; fx09 alpha (attempt 2, started 1010) 1400-1010=390; fx10 alpha attempt 1
+#   (attempt 2 started 2100 > 300) 300-6=294; fx11 beta attempt 2 (started 1100) 1500-1100=400;
+#   fx13 alpha 100-3=97; fx04 beta 800-4=796; fx05 beta 200-4=196; fx06 gamma 600-5=595;
+#   fx07 delta 350-6=344.
+
+[latency.providers.alpha]       # fx08 fx09 fx10 fx11 fx13 fx14 fx15
+requests = 7
+own_ttft = { p50 = 246.0, p95 = 390.0, n = 4 }   # [97,246,294,390]: 2nd -> 246; 4th -> 390
+agents = { ak_alice = 3, ak_bob = 3, ak_carol = 1 }
+last = { result = "resolved", at = "2026-10-07T08:00:01Z" }   # fx13's attempt, newest ok/failed (fx14's is cancelled, fx15's has no outcome)
+
+[latency.providers.beta]        # fx04 fx05 fx11
+requests = 3
+own_ttft = { p50 = 400.0, p95 = 796.0, n = 3 }   # [196,400,796]: ceil(1.5)=2 -> 400; ceil(2.85)=3 -> 796
+agents = { ak_alice = 1, ak_bob = 2 }
+last = { result = "resolved", at = "2026-10-07T05:00:04Z" }   # fx11 attempt 2
+
+[latency.providers.gamma]       # fx06 fx09
+requests = 2
+own_ttft = { p50 = 595.0, p95 = 595.0, n = 1 }   # fx09's first token came from alpha, so only fx06 counts
+agents = { ak_alice = 1, ak_bob = 1 }
+last = { result = "failed", at = "2026-10-07T01:00:01Z", status = 503 }   # fx09 attempt 1, after fx06's ok at 10-06 18:00:03
+
+[latency.providers.delta]       # fx07
+requests = 1
+own_ttft = { p50 = 344.0, p95 = 344.0, n = 1 }
+agents = { ak_alice = 1 }
+last = { result = "resolved", at = "2026-10-06T19:00:03Z" }

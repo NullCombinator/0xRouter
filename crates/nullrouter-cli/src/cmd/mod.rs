@@ -5,6 +5,7 @@ pub(crate) mod combos;
 pub(crate) mod connection;
 pub(crate) mod dashboard;
 pub(crate) mod keys;
+pub(crate) mod latency;
 pub(crate) mod live;
 pub(crate) mod model;
 pub(crate) mod plugins;
@@ -17,6 +18,7 @@ pub(crate) mod routing;
 pub(crate) mod serve;
 pub(crate) mod test;
 pub(crate) mod unified;
+pub(crate) mod usage;
 pub(crate) mod validate;
 pub(crate) mod verdicts;
 

@@ -652,6 +652,15 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .usage-overview__pair { display: grid; grid-template-columns: var(--grid-usage); align-items: stretch; gap: var(--space-2); }
 .usage-overview__graph { display: flex; flex-direction: column; min-width: 0; }
 .usage-overview__graph .slot { flex: var(--flex-1); }
+.usage-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--card-min), var(--fr))); gap: var(--space-3); }
+.usage-stat { display: flex; flex-direction: column; align-items: center; min-width: 0; padding: var(--space-3); gap: var(--space-1); text-align: center; }
+.usage-stat__label { color: var(--color-text-muted); font-size: var(--text-xs); line-height: var(--text-xs-leading); font-weight: var(--weight-semibold); text-transform: uppercase; }
+.usage-stat__value { width: var(--size-full); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-lg); line-height: var(--text-lg-leading); font-weight: var(--weight-bold); }
+.usage-stat__value--input { color: var(--color-primary); }
+.usage-stat__value--cached { color: var(--color-blue-500); }
+.usage-stat__value--output { color: var(--color-green-500); }
+.usage-stat__value--cost { color: var(--color-yellow-500); }
+.usage-stat__small { color: var(--color-text-muted); font-size: var(--text-10); }
 .usage-recent { min-width: 0; }
 .usage-recent > .card { height: var(--size-full); padding: var(--space-3); }
 .usage-recent__none { color: var(--color-text-muted); font-size: var(--text-sm); line-height: var(--text-sm-leading); }
@@ -757,6 +766,9 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .provider-window__models { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .kind-filter { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
 .kind-filter__item {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1-5);
@@ -827,3 +839,53 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .settings-list { display: flex; flex-direction: column; }
 .settings-list__note { margin-top: var(--space-3); color: var(--color-text-muted); font-size: var(--text-sm); line-height: var(--text-sm-leading); }
 .settings-list__path { font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--text-sm-leading); overflow-wrap: anywhere; }
+
+.gauge { display: block; }
+.gauge__zone { fill: none; stroke-width: var(--size-1-5); }
+.gauge__zone--ok { stroke: var(--color-green-500); }
+.gauge__zone--warn { stroke: var(--color-yellow-500); }
+.gauge__zone--hot { stroke: var(--color-red-500); }
+.gauge__needle { stroke: var(--color-text-main); stroke-width: var(--border-width); }
+.gauge__hub { fill: var(--color-text-main); }
+.gauge__value { fill: var(--color-text-main); font-size: var(--text-11); font-weight: var(--weight-medium); }
+.gauge__small { fill: var(--color-text-muted); font-size: var(--text-10); }
+.pipe { fill: none; stroke: var(--color-border); stroke-width: var(--border-width); }
+.pipe--idle { opacity: var(--edge-idle-opacity); }
+.pipe--agent-1 { stroke: var(--agent-1); }
+.pipe--agent-2 { stroke: var(--agent-2); }
+.pipe--agent-3 { stroke: var(--agent-3); }
+.pipe--agent-4 { stroke: var(--agent-4); }
+.pipe--agent-5 { stroke: var(--agent-5); }
+.pipe--agent-6 { stroke: var(--agent-6); }
+.pipe--agent-7 { stroke: var(--agent-7); }
+.topology { display: block; width: var(--size-full); height: auto; }
+.topology__edge { fill: none; stroke: var(--color-border); stroke-width: var(--edge-idle-width); opacity: var(--edge-idle-opacity); }
+.topology__edge--last { stroke: var(--edge-last); stroke-width: var(--edge-last-width); opacity: var(--edge-last-opacity); }
+.topology__edge--failed { stroke: var(--edge-failed); stroke-width: var(--edge-failed-width); opacity: var(--edge-failed-opacity); }
+.topology__node { fill: var(--color-surface); stroke: var(--color-border); stroke-width: var(--node-border-width); }
+.topology__node--last { stroke: var(--edge-last); }
+.topology__node--failed { stroke: var(--edge-failed); }
+.topology__router { fill: var(--color-surface); stroke: var(--color-primary); stroke-width: var(--node-border-width); }
+.topology__name { fill: var(--color-text-main); font-size: var(--text-base); font-weight: var(--weight-medium); }
+.topology__count { fill: var(--color-text-muted); font-size: var(--text-xs); }
+.topology__last { fill: var(--color-text-muted); font-size: var(--text-10); }
+.landscape { min-width: 0; overflow-x: auto; }
+.landscape__svg { display: block; width: var(--size-full); height: auto; }
+.landscape__node rect { fill: var(--color-surface); stroke: var(--color-border); stroke-width: var(--border-width); }
+.landscape__node .landscape__router { fill: var(--color-surface); stroke: var(--color-primary); }
+.landscape__node--revoked { opacity: var(--opacity-disabled); }
+.landscape__dot--agent-1 { fill: var(--agent-1); }
+.landscape__dot--agent-2 { fill: var(--agent-2); }
+.landscape__dot--agent-3 { fill: var(--agent-3); }
+.landscape__dot--agent-4 { fill: var(--agent-4); }
+.landscape__dot--agent-5 { fill: var(--agent-5); }
+.landscape__dot--agent-6 { fill: var(--agent-6); }
+.landscape__dot--agent-7 { fill: var(--agent-7); }
+.landscape__name { fill: var(--color-text-main); font-size: var(--text-xs); font-weight: var(--weight-semibold); }
+.landscape__tag { fill: var(--color-text-muted); font-size: var(--text-10); }
+.landscape__text { fill: var(--color-text-muted); font-size: var(--text-10); }
+.landscape__card { visibility: hidden; }
+.landscape__node:hover .landscape__card, .landscape__node:focus-within .landscape__card { visibility: visible; }
+.landscape__card rect { fill: var(--color-surface); stroke: var(--color-border); stroke-width: var(--border-width); }
+.landscape__empty { color: var(--color-text-muted); font-size: var(--text-sm); line-height: var(--text-sm-leading); padding: var(--space-2); }
+.topology__label { color: var(--color-text-muted); font-size: var(--text-xs); text-align: center; }

@@ -28,6 +28,7 @@ pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, Vi
             json!({
                 "id": k.id,
                 "name": k.name,
+                "harness": k.harness,
                 "key": format!("…{}", k.last4),
                 "created": k.created,
                 "revoked": k.revoked,

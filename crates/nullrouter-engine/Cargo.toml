@@ -62,5 +62,13 @@ harness = false
 name = "keys_last_used_100k"
 harness = false
 
+[[bench]]
+name = "usage_totals_100k"
+harness = false
+
+[[bench]]
+name = "latency_24h_100k"
+harness = false
+
 [lints]
 workspace = true
