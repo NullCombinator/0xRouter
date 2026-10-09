@@ -283,7 +283,7 @@ share: edits, selectors, key binding, records.
   - Aggregate the changes into `RequestRecord.response_adapter`, prefixing paths with
     `event[N].`, where `N` counts client events across attempts.
   - Make T014 pass.
-- [ ] T025 `keys` CLI in `crates/nullrouter-cli/src/cmd/keys.rs`, per
+- [X] T025 `keys` CLI in `crates/nullrouter-cli/src/cmd/keys.rs`, per
   [contracts/operator-cli.md](contracts/operator-cli.md#commands).
   - `keys issue <name> --harness H`.
   - `keys set-harness <name|id> <H>` and `keys set-harness <name|id> --clear`.
@@ -419,7 +419,7 @@ foundation here, not a later story.
   - Done (green in CI #127): `tests/guard.rs` with one line per style in `tests/guard/`,
     expanding a shared suite of 18 cases, and the stream-event cases in `guard.rs`. The event
     IR has no opaque block, so "add an opaque block" is covered for requests only.
-- [ ] T035 [P] Store and state-machine tests in `crates/nullrouter-adapters/tests/store.rs`.
+- [X] T035 [P] Store and state-machine tests in `crates/nullrouter-adapters/tests/store.rs`.
   - Every transition in the
     [data-model.md state machine](data-model.md#adapterversion-state-machine), and every
     forbidden transition refused. For example, approving from `in_review` is refused.
@@ -429,7 +429,9 @@ foundation here, not a later story.
   - `serve` refuses a group-readable `adapters/`.
   - Done at the store level (CI #121): `Store::open` refuses it. The `serve` call waits for the
     engine loader.
-- [ ] T036 [P] Fingerprint and tamper tests in `crates/nullrouter-adapters/tests/tamper.rs`.
+  - Done (2026-10-09): `serve` calls `Engine::open_adapters` before listening, which refuses it;
+    covered by `engine/tests/adapter_store.rs::a_group_readable_adapters_directory_is_refused`.
+- [X] T036 [P] Fingerprint and tamper tests in `crates/nullrouter-adapters/tests/tamper.rs`.
   - `source_fp` is stable across file order and mtime, and changes on any byte, rename or
     added file.
   - Loading after editing `source/src/lib.rs` or `module.wasm` is refused with
@@ -437,7 +439,9 @@ foundation here, not a later story.
     plain client (SC-005, US2-6).
   - Fingerprint and `Store::verify` done (CI #121). The alert and the plain-client request wait
     for alerts (T044) and the engine loader.
-- [ ] T037 [P] Builder tests in `crates/nullrouter-builder/tests/build.rs`, which skip with a
+  - Done (2026-10-09): `adapters/tests/loader.rs` (`an_edited_source_…`, `an_edited_module_…`
+    raise `source_mismatch`) and `engine/tests/adapter_store.rs::a_version_edited_after_approval_runs_as_a_plain_client_and_the_reload_notices`.
+- [X] T037 [P] Builder tests in `crates/nullrouter-builder/tests/build.rs`, which skip with a
   message when the wasm32 target is missing.
   - The fixture `crates/nullrouter-adapters/tests/fixtures/noop/` builds offline after
     `setup`, resolving the kit from the local registry with no crates.io access.
@@ -509,7 +513,7 @@ foundation here, not a later story.
   - Repeated `adapter_failed` alerts for the same version and reason within 60 s fold into
     one alert with a count.
   - Every alert is also logged at `warn`, and `detail` is fixed text plus codes only.
-- [ ] T045 The builder in `crates/nullrouter-builder/src/main.rs`, per
+- [X] T045 The builder in `crates/nullrouter-builder/src/main.rs`, per
   [R8](research.md#r8-the-builder) and
   [contracts/adapter-package.md](contracts/adapter-package.md#after-the-gate).
   - Kit embedding ([R8](research.md#r8-the-builder), Kit source): the kit is not on
@@ -544,7 +548,12 @@ foundation here, not a later story.
     - build twice and compare the hashes;
     - output the JSON result.
   - Make T037 pass.
-- [ ] T046 Wasm runner arm in `crates/nullrouter-adapters/src/runner.rs` and
+  - Done (2026-10-09), with deviations recorded in R8: the kit's sources are embedded with
+    `include_str!` (no `.crate`, no `tools/package-kit.sh`, no `kit_embed.rs`), `setup` vendors
+    from the embedded workspace `Cargo.lock`, and the limits come from `prlimit(1)`, plus a
+    600 s wall cap, so the builder has no `unsafe`. Library entry points for T037 and T046:
+    `setup(dir)`, `build(dir, &Job)`, `builder_dir(home)`, `source_fp`.
+- [X] T046 Wasm runner arm in `crates/nullrouter-adapters/src/runner.rs` and
   `builder_client.rs`.
   - `WasmHandle { harness, version, manifest selectors, InstancePre }` is loaded at reload
     from the store's active version.
@@ -594,12 +603,18 @@ foundation here, not a later story.
     drives a store version over a real streamed answer: an event edit reaches the client and the
     record, and a blocked event leaves the stream as it was, marks the version suspect and the
     next request records `not_run{suspect}`.
-  - Still to do: `builder_client.rs` (waits for the builder, T045).
-- [ ] T047 [P] `nullrouter-adapters` testkit in `src/testkit.rs` (feature `testkit`).
+  - `builder_client.rs` done (2026-10-09): `run_builder` spawns the builder with `--home <home> build`,
+    the job on stdin and a timeout, and checks the result's `source_fp`. Outcome codes: the
+    builder's refusals, `builder_not_installed`, `builder_timeout`, `builder_failed`,
+    `builder_bad_output`, `source_mismatch`. Tests: `tests/builder_client.rs`, on fake builders.
+- [X] T047 [P] `nullrouter-adapters` testkit in `src/testkit.rs` (feature `testkit`).
   - `install_fixture(home, harness, wasm_bytes, source_dir, state)` writes a store entry
     directly, with the correct hashes.
   - `wat_adapter(behaviour)` builds small WAT modules for hostile and guard cases, so tests
     don't need the builder.
+  - Done (2026-10-09): `install_fixture(home, harness, manifest, wasm)` (the manifest stands in
+    for `source_dir`; the state is walked to `approved`), and `wat_adapter(Behaviour)` returning
+    a binary module (`wat` is an optional dependency behind `testkit`).
 - [X] T048 The guardrail in `crates/nullrouter-adapters/src/guard.rs`, per
   [R6](research.md#r6-the-guardrail).
   - `check_request(style, &before_ir, &after_body)`, `check_response(...)` and

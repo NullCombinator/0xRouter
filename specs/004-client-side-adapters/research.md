@@ -376,6 +376,14 @@ where they are enforced.
   - `nullrouter-builder setup` unpacks the kit into `$NULLROUTER_HOME/builder/vendor/`, with its
     `.cargo-checksum.json`. It fetches `serde` and `serde_json` at the locked versions, the only
     network use, run once by the operator. It then points `crates-io` at that directory.
+  - **Deviation (2026-10-09):** no one may run cargo locally, so `tools/package-kit.sh`, the
+    committed `.crate` and `tests/kit_embed.rs` are replaced. The builder embeds the kit's live
+    source files with `include_str!`, so it cannot drift from `crates/nullrouter-adapter-kit`.
+    `setup` writes the kit into `vendor/` with a normalised manifest (no workspace
+    inheritance) and a `.cargo-checksum.json` whose `package` value is also the kit's lock
+    `checksum`. It vendors `serde`, `serde_json` and their closure with `cargo vendor` from
+    the workspace `Cargo.lock`, embedded with `include_str!` (no copy to drift), and derives the pinned
+    `Cargo.lock` from the result. The builder adds the adapter's own lock entry per build.
   - Adapter packages keep writing `nullrouter-adapter-kit = "1"`, so a future crates.io release
     needs no change to any package.
   - Authors build with `nullrouter-builder`. In this repository, `adapters/community/` carries a
