@@ -276,6 +276,38 @@ pub fn steady_line(
     Some((key, est, Line::Entry(entry)))
 }
 
+/// The `idle` or `busy` entry for an interval of `window` from `start` to `end` that moved
+/// `amount` beyond what 0router's traffic explains, found at `now`. Returns its id and the line.
+pub fn interval_line(
+    window: &str,
+    unit: &str,
+    ty: OutsideType,
+    (start, end): (SystemTime, SystemTime),
+    amount: f64,
+    now: SystemTime,
+) -> (String, Line) {
+    let id = ulid::Ulid::new().to_string();
+    let entry = OutsideEntry {
+        v: VERSION,
+        id: id.clone(),
+        window: window.to_owned(),
+        ty,
+        start: rfc3339_millis(start),
+        end: Some(rfc3339_millis(end)),
+        amount: Some(amount),
+        rate_per_hour: None,
+        part: None,
+        unit: unit.to_owned(),
+        found_at: rfc3339_millis(now),
+    };
+    (id, Line::Entry(entry))
+}
+
+/// The line that withdraws entry `entry` because its row counts as evidence again.
+pub fn reclassified_line(entry: &str, reason: &str, now: SystemTime) -> Line {
+    Line::Reclassified { v: VERSION, entry: entry.to_owned(), at: rfc3339_millis(now), reason: reason.to_owned() }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;

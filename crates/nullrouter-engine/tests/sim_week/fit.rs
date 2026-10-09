@@ -49,6 +49,11 @@ impl FitRun {
         }
     }
 
+    /// The home directory the run keeps its state in.
+    pub fn home(&self) -> &std::path::Path {
+        self.home.path()
+    }
+
     /// The meters routing reads for account `i`: those in effect, or `None` for the declared ones.
     pub fn meters(&self, i: usize) -> Option<&[MeterDecl]> {
         self.effective[i].as_deref()

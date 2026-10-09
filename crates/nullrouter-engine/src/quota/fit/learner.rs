@@ -91,6 +91,12 @@ struct Win {
     ranges: BTreeMap<String, (f64, f64, f64)>,
     /// What was stored for the window; fields the learner doesn't own yet pass through.
     base: StoredWindow,
+    /// Idle and busy rows already listed, keyed `(account, start)` to the entry id. Read from the
+    /// account's outside-use file the first time the window lists, so a replay never lists a row
+    /// twice (FR-021). Not stored: the file is the record.
+    listed: BTreeMap<(String, String), String>,
+    /// Accounts whose file `listed` has been read from.
+    listed_read: BTreeSet<String>,
 }
 
 impl Win {
@@ -107,6 +113,8 @@ impl Win {
             published: WindowFit::default(),
             ranges: BTreeMap::new(),
             base: StoredWindow::default(),
+            listed: BTreeMap::new(),
+            listed_read: BTreeSet::new(),
         }
     }
 
@@ -465,6 +473,7 @@ impl Learner {
             return;
         }
         refit(win, &spec, meter, ov, now);
+        list_outside_rows(win, home, provider, &spec, meter, unit, now);
         list_steady_rates(win, home, provider, &spec, meter, unit, now);
     }
 
@@ -574,6 +583,67 @@ fn start_theta(spec: &Spec, meter: &MeterDecl) -> Theta {
     }
     th.mu = meter.model_multiplier.values().map(|f| positive(*f)).collect();
     th
+}
+
+/// After a refit: lists each idle row classified `Outside` as an `idle` entry (amount: the whole
+/// change) and each busy row now final `Outside` as a `busy` entry (amount: the excess beyond the
+/// upper range, step included). A provisional busy row is not listed. Each row is listed once: the
+/// account's file is read the first time, and rows whose `(account, start)` it holds are skipped.
+/// A listed row that counts as evidence again gets a `reclassified` line and may be listed anew
+/// if it turns outside again. An account whose file can't be read or written is left for the
+/// next refit. Raises no alerts and logs no outside use (FR-022).
+fn list_outside_rows(win: &mut Win, home: &Path, provider: &str, spec: &Spec, meter: &MeterDecl, unit: QuotaUnit, now: SystemTime) {
+    let Some((_, fit)) = &win.last else { return };
+    for account in &spec.accounts {
+        if !win.listed_read.contains(account) {
+            match outside::read(home, provider, account, None, None) {
+                Ok(list) => {
+                    for e in list {
+                        if e.window == meter.name && matches!(e.ty, outside::OutsideType::Idle | outside::OutsideType::Busy) {
+                            win.listed.insert((account.clone(), e.start), e.id);
+                        }
+                    }
+                    win.listed_read.insert(account.clone());
+                }
+                Err(e) => {
+                    tracing::warn!(provider, account = account.as_str(), "outside use not read: {e}");
+                    continue;
+                }
+            }
+        }
+        let mut lines = Vec::new();
+        let mut added: Vec<((String, String), String)> = Vec::new();
+        let mut withdrawn: Vec<(String, String)> = Vec::new();
+        for row in win.rows.iter().filter(|r| r.account == *account) {
+            let key = (account.clone(), rfc3339_millis(row.start));
+            if row.class == Class::Outside {
+                if win.listed.contains_key(&key) {
+                    continue;
+                }
+                let (ty, amount) = if row.has_traffic() {
+                    let Some(m) = model::prepare(spec, std::slice::from_ref(row)).into_iter().next() else { continue };
+                    (outside::OutsideType::Busy, (row.y - classify::upper(fit, spec, &m, STEP)).max(0.0))
+                } else {
+                    (outside::OutsideType::Idle, row.y)
+                };
+                let (id, line) = outside::interval_line(&meter.name, unit.as_str(), ty, (row.start, row.end), amount, now);
+                lines.push(line);
+                added.push((key, id));
+            } else if let Some(id) = win.listed.get(&key) {
+                lines.push(outside::reclassified_line(id, "counts as evidence again", now));
+                withdrawn.push(key);
+            }
+        }
+        match outside::append(home, provider, account, &lines) {
+            Ok(()) => {
+                for key in withdrawn {
+                    win.listed.remove(&key);
+                }
+                win.listed.extend(added);
+            }
+            Err(e) => tracing::warn!(provider, account = account.as_str(), "outside use not listed: {e}"),
+        }
+    }
 }
 
 /// After a refit: appends a `steady` outside-use entry for each account's part-of-day rate that
@@ -931,5 +1001,88 @@ mod edge_tests {
         let m = meter("credits", "30d", None);
         let spec = Spec { kind: Kind::Counted, accounts: vec!["a".into()], globs: vec![], utc_offset_secs: 0 };
         assert!(numbers(&spec, &m, &WindowOverrides::default()).iter().all(|n| n.number != MeterNumber::Capacity));
+    }
+}
+
+#[cfg(test)]
+mod outside_list_tests {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    use super::super::linalg::Mat;
+    use super::super::rows::Group;
+    use super::*;
+
+    fn meter() -> MeterDecl {
+        toml::from_str("name = \"weekly\"\nlength = \"7d\"\nunit = \"weighted_tokens\"\n").unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    fn row(start: u64, traffic: bool, y: f64, class: Class) -> Row {
+        let x = if traffic { BTreeMap::from([((Group::Plain, TokenClass::Input), 1)]) } else { BTreeMap::new() };
+        Row {
+            account: "a".into(),
+            window: "weekly".into(),
+            start: UNIX_EPOCH + Duration::from_secs(start),
+            end: UNIX_EPOCH + Duration::from_secs(start + 600),
+            y,
+            x,
+            requests: u64::from(traffic),
+            hours: 1.0 / 6.0,
+            class,
+        }
+    }
+
+    fn win(rows: Vec<Row>, spec: &Spec) -> Win {
+        let mut w = Win::fresh(UNIX_EPOCH, "h", None);
+        w.rows = rows;
+        let fit = Fit {
+            theta: Theta::neutral(1, 0),
+            active: vec![P::K(0)],
+            cov: Mat::identity(1),
+            info: Mat::identity(1),
+            rows: 10,
+            rss: 0.0,
+            sigma_e2: 0.0,
+            converged: true,
+        };
+        w.last = Some((spec.clone(), fit));
+        w
+    }
+
+    #[test]
+    fn idle_and_busy_outside_rows_are_each_listed_once_across_refits_and_replays() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let spec = Spec { kind: Kind::Percent, accounts: vec!["a".into()], globs: vec![], utc_offset_secs: 0 };
+        let m = meter();
+        let now = UNIX_EPOCH + Duration::from_secs(100_000);
+        let until = UNIX_EPOCH + Duration::from_secs(50_000);
+        let rows = vec![row(1000, false, 3.0, Class::Outside), row(2000, true, 500.0, Class::OutsideProvisional { until })];
+        let count = || outside::read(home, "p", "a", None, None).unwrap();
+
+        let mut w = win(rows, &spec);
+        // The busy row is provisional: only the idle row is listed, however often we refit.
+        for _ in 0..3 {
+            list_outside_rows(&mut w, home, "p", &spec, &m, QuotaUnit::Percent, now);
+        }
+        let got = count();
+        assert_eq!(got.len(), 1);
+        assert_eq!((got[0].ty, got[0].amount), (outside::OutsideType::Idle, Some(3.0)));
+
+        // It turns final: now it is listed, once.
+        w.rows[1].class = Class::Outside;
+        for _ in 0..3 {
+            list_outside_rows(&mut w, home, "p", &spec, &m, QuotaUnit::Percent, now);
+        }
+        let got = count();
+        assert_eq!(got.len(), 2);
+        let busy = got.iter().find(|e| e.ty == outside::OutsideType::Busy).expect("busy listed");
+        assert!(busy.amount.is_some_and(|a| a > 0.0), "{busy:?}");
+
+        // A fresh learner replaying the same history lists nothing more.
+        let mut again = win(w.rows.clone(), &spec);
+        for _ in 0..2 {
+            list_outside_rows(&mut again, home, "p", &spec, &m, QuotaUnit::Percent, now);
+        }
+        assert_eq!(count().len(), 2);
     }
 }
