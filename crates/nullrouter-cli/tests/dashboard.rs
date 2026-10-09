@@ -225,6 +225,13 @@ fn status_and_check_when_the_port_is_taken() {
         .find(|n| n["text"].as_str().unwrap().contains("dashboard not listening"))
         .unwrap();
     assert_eq!((notice["level"].as_str(), notice["subject"].as_str()), (Some("warning"), Some("settings")));
+
+    // Whoever holds the port isn't the dashboard: the token output doesn't send the operator there.
+    let issued = nr(dir.path(), &["dashboard", "token"]);
+    assert!(is_token(issued.stdout.trim_end()), "{}", issued.stderr);
+    let warned = format!("The dashboard is not listening (127.0.0.1:{port}: ");
+    assert!(issued.stderr.contains(&warned), "{}", issued.stderr);
+    assert!(!issued.stderr.contains("Open http"), "{}", issued.stderr);
 }
 
 #[test]
