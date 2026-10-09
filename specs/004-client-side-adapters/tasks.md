@@ -747,7 +747,7 @@ serves before approval, and an operator with no adapters needs none of it.
   - Strip `#[doc]` attributes, and print with `prettyplease`.
   - Keep a line map on the operator's side only, stored in `review.json`, never sent.
   - Make T050 pass.
-- [ ] T058 [US2] Internal requests in `crates/nullrouter-engine/src/internal.rs` (new).
+- [X] T058 [US2] Internal requests in `crates/nullrouter-engine/src/internal.rs` (new).
   - `InternalRequest { agent_label, model, system, user, max_tokens }` runs through the
     normal plan and attempt loop on the operator's accounts, with no key check and no
     adapter.

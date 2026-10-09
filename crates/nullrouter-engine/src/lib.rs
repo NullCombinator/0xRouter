@@ -15,6 +15,7 @@ pub mod files;
 pub mod forwarding;
 pub mod identity;
 pub mod inband;
+pub mod internal;
 pub mod jobs;
 pub mod journal;
 pub mod live;
