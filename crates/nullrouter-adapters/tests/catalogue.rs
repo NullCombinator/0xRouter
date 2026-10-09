@@ -460,3 +460,33 @@ async fn catalogue_check_reports_a_newer_version_and_leaves_the_store_untouched(
 
     assert_eq!(snapshot(home.path()), before, "the store is unchanged, byte for byte");
 }
+
+/// The real `catalogue/index.toml` lists what `tools/package-adapter.sh` makes of the Claude
+/// Code source. The fingerprint is machine-stable; the archive hash also needs the same GNU
+/// tar and gzip output, so a mismatch there after a tool upgrade means re-running the script
+/// and re-publishing, not a bug in the adapter.
+#[test]
+fn the_listed_claude_code_entry_matches_the_packaged_source() {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let text = std::fs::read_to_string(repo.join("catalogue/index.toml")).unwrap();
+    let index = Index::parse(&text).unwrap();
+    let version =
+        index.entry("claude-code").expect("claude-code is listed").pick(Some("0.1.0")).expect("0.1.0 is listed");
+    assert!(version.source.ends_with("/claude-code-0.1.0.tar.gz"), "{}", version.source);
+
+    let out = tempfile::tempdir().unwrap();
+    let archive_path = out.path().join("claude-code-0.1.0.tar.gz");
+    let status = std::process::Command::new("bash")
+        .arg(repo.join("tools/package-adapter.sh"))
+        .arg(repo.join("adapters/community/claude-code"))
+        .arg(&archive_path)
+        .status()
+        .unwrap();
+    assert!(status.success(), "package-adapter.sh failed");
+
+    let fp = fingerprint::of_files(&unpack::read_package(&archive_path).unwrap());
+    assert_eq!(fp.as_str(), version.source_fp, "source_fp of the unpacked archive");
+    let source = fingerprint::of_dir(&repo.join("adapters/community/claude-code")).unwrap();
+    assert_eq!(source, fp, "the archive holds exactly the source tree");
+    assert_eq!(sha(&std::fs::read(&archive_path).unwrap()), version.sha256, "sha256 of the archive");
+}

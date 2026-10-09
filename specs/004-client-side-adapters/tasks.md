@@ -1012,7 +1012,7 @@ provider.
       `adapters/community/.cargo/config.toml`.
   - It must pass the T056 gate unchanged.
   - Make T080 pass.
-- [ ] T083 [US5] Catalogue entry.
+- [X] T083 [US5] Catalogue entry.
   - Write a `tools/package-adapter.sh` that builds a deterministic `.tar.gz`: sorted entries,
     zeroed mtimes and uid/gid, `gzip -n`.
   - Add `catalogue/index.toml` `[[entry]] claude-code` with version `0.1.0`, the release asset

@@ -1,1 +1,14 @@
 schema = 1
+
+[[entry]]
+harness = "claude-code"
+summary = "Claude Code quirks: foreign thinking and server-tool blocks, haiku params, mid-conversation system turns, duplicate tools"
+homepage = "https://github.com/NullCombinator/0xRouter/tree/main/adapters/community/claude-code"
+style = "anthropic-messages"
+
+[[entry.version]]
+semver = "0.1.0"
+source = "https://github.com/NullCombinator/0xRouter/releases/download/adapter-claude-code-v0.1.0/claude-code-0.1.0.tar.gz"
+sha256 = "7a5527de96bbf921e885d68a8a73120eff4a955bcdb1fa018263a6a437e4ddab"
+source_fp = "sha256:b232a8cdbddb73aeeed9b1533c694acca83fd6558cddb3d8f7f49916d8d08f9a"
+kit = "1"
