@@ -17,6 +17,7 @@ use super::models_live::ModelsLiveDecl;
 use super::oauth::OAuthDecl;
 use super::primitives::ModelType;
 use super::quota::QuotaDecl;
+use super::rejection::RejectionRule;
 use super::routing::{EffectiveRouting, RoutingDecl};
 use super::session::ProviderSession;
 use super::signin::SignInDecl;
@@ -68,6 +69,9 @@ pub struct PluginFile {
     pub models_live: Option<ModelsLiveDecl>,
     /// Schema 2: prompt-cache behaviour, quota meters and prices (slice 006).
     pub routing: Option<RoutingDecl>,
+    /// Answers that definitively reject a model (slice 011).
+    #[serde(default)]
+    pub rejections: Vec<RejectionRule>,
     /// Inert names used only by the fit check.
     #[serde(default)]
     pub requires: Vec<String>,
@@ -134,6 +138,7 @@ pub struct ProviderEntity {
     pub quota: Option<QuotaDecl>,
     pub models_live: Option<ModelsLiveDecl>,
     pub routing: Option<RoutingDecl>,
+    pub rejections: Vec<RejectionRule>,
     pub requires: Vec<String>,
     pub source: PluginSource,
 }
@@ -230,6 +235,7 @@ impl ProviderEntity {
             quota: f.quota,
             models_live: f.models_live,
             routing: f.routing,
+            rejections: f.rejections,
             requires: f.requires,
             source,
         }

@@ -14,6 +14,7 @@ use std::{env, fs, io};
 
 use url::Url;
 
+use crate::combos::{self, Combo, DroppedCombo};
 use crate::convert;
 use crate::fit::{self, FitVerdict};
 use crate::logo::{self, Logo};
@@ -74,6 +75,8 @@ pub struct LoadReport {
     pub skipped: Vec<SkippedPlugin>,
     /// Unified models dropped at startup because a member's plugin was skipped or unsupported.
     pub dropped_unified_models: Vec<DroppedUnifiedModel>,
+    /// Combos dropped at startup with a unified model they need (spec 011).
+    pub dropped_combos: Vec<DroppedCombo>,
     /// Gate warnings and stripped forwarding entries from loaded plugins.
     pub diagnostics: Vec<ValidationError>,
     /// User plugins this core can't support, skipped whole (R19).
@@ -473,7 +476,9 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
     let skipped_ids: BTreeSet<String> =
         report.skipped.iter().map(|s| s.id.clone()).chain(report.unsupported.iter().map(|u| u.id.clone())).collect();
 
+    let digests = active.iter().map(|l| (l.entity.id.clone(), source_digest(&l.src))).collect();
     let mut registry = Registry::new(active.into_iter().map(|l| l.entity).collect());
+    registry.set_plugin_digests(digests);
     registry.set_styles(styles);
     registry.set_logos(logos);
     let outcome = validate_config(&config, &config_src, &config_name, &registry, &bundled_ids, mode, &skipped_ids);
@@ -482,6 +487,7 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
         return Err(errors);
     }
     report.dropped_unified_models = outcome.dropped;
+    report.dropped_combos = outcome.dropped_combos;
     report.unified_models = outcome.unified.len();
     report.notes = limits_notes(&registry, &outcome.unified);
     report.withheld_credentials = registry.withheld_credentials();
@@ -494,9 +500,10 @@ pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Reg
             amortization: config.routing.amortization,
             amortization_for: outcome.amortization_for,
         },
+        tests: config.tests.clone(),
         connection_proxy: config.connection.proxy.clone(),
     };
-    registry.set_operator_state(outcome.unified, outcome.settings, runtime, report);
+    registry.set_operator_state(outcome.unified, outcome.combos, outcome.settings, runtime, report);
     Ok(registry)
 }
 
@@ -638,6 +645,12 @@ fn read_optional(path: &Path) -> io::Result<Option<String>> {
     }
 }
 
+/// `sha256:<hex>` of a plugin's source bytes.
+fn source_digest(src: &str) -> String {
+    use sha2::{Digest, Sha256};
+    format!("sha256:{:x}", Sha256::digest(src.as_bytes()))
+}
+
 fn io_error(path: &Path, e: &io::Error) -> ValidationError {
     ValidationError { file: path.display().to_string(), line: 0, col: 0, path: FieldPath::root(), rule: e.to_string() }
 }
@@ -647,6 +660,8 @@ pub(crate) struct ConfigOutcome {
     pub(crate) settings: BTreeMap<String, ProviderSettings>,
     pub(crate) errors: Vec<ValidationError>,
     pub(crate) dropped: Vec<DroppedUnifiedModel>,
+    pub(crate) combos: Vec<Combo>,
+    pub(crate) dropped_combos: Vec<DroppedCombo>,
     /// `[routing.amortization_for]` with each direct target written as `provider-id/model`.
     pub(crate) amortization_for: BTreeMap<String, Duration>,
 }
@@ -739,6 +754,11 @@ pub(crate) fn validate_config(
         }
     }
 
+    let combos = combos::load(config, reg, &unified);
+    for (path, rule) in combos.errors {
+        err(path, rule);
+    }
+
     let mut settings = BTreeMap::new();
     for (token, s) in &config.provider {
         match reg.index_of(token) {
@@ -772,6 +792,10 @@ pub(crate) fn validate_config(
         }
     }
 
+    for (path, rule) in config.tests.check() {
+        err(path, rule);
+    }
+
     for id in config.plugin_decisions.keys().filter(|id| !bundled_ids.contains(*id)) {
         err(FieldPath::of("plugin_decisions").key(id.as_str()), "not a bundled provider id".into());
     }
@@ -782,6 +806,8 @@ pub(crate) fn validate_config(
         amortization_for,
         errors: found.into_iter().map(|(path, rule)| positioned(src, file, path, rule)).collect(),
         dropped,
+        combos: combos.combos,
+        dropped_combos: combos.dropped,
     }
 }
 

@@ -124,6 +124,8 @@ pub async fn generate(
             job,
         }),
         count: false,
+        pin: None,
+        test: None,
     };
     let guard = cancel.clone().drop_guard();
     let (answer, forwarded) = match engine.reply(st, req).await {

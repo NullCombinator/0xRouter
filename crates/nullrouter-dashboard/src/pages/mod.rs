@@ -178,6 +178,17 @@ impl Req {
         access::field(&self.query, name).filter(|v| !v.is_empty())
     }
 
+    /// A record id this request names (the window or `before`) that no record can have. Its page
+    /// is "no record <id>" without reading the journal: `records show` and `records list --before`
+    /// look for an id by scanning every segment for its text, so `/usage/records/r` would fold the
+    /// whole journal (security-review.md M1).
+    pub fn impossible_record(&self) -> Option<&str> {
+        if self.id != Id::Usage {
+            return None;
+        }
+        self.window.as_deref().into_iter().chain(self.get("before")).find(|id| !is_record_id(id))
+    }
+
     /// Whether the housekeeping panel is open (`?notices`).
     pub fn notices_open(&self) -> bool {
         self.query.iter().any(|(k, _)| k == "notices")
@@ -219,6 +230,11 @@ impl Req {
             _ => self.base().to_owned(),
         }
     }
+}
+
+/// `rq_` and a ULID, as the engine makes record ids.
+fn is_record_id(id: &str) -> bool {
+    id.strip_prefix("rq_").is_some_and(|u| ulid::Ulid::from_string(u).is_ok())
 }
 
 fn pair(k: &str, v: &str) -> String {
@@ -369,6 +385,18 @@ mod tests {
         let r = Req::parse("/providers", "q=a%26b").unwrap();
         assert_eq!(r.get("q"), Some("a&b"));
         assert_eq!(r.href("/providers", &[], &[]), "/providers?q=a%26b");
+    }
+
+    #[test]
+    fn an_id_no_record_can_have_is_named_before_any_read() {
+        let real = "rq_01K6Y2W7Q0000000000000000Z";
+        let both = Req::parse(&format!("/usage/records/{real}"), &format!("before={real}")).unwrap();
+        assert_eq!(both.impossible_record(), None);
+        assert_eq!(Req::parse("/usage/records/r", "").unwrap().impossible_record(), Some("r"));
+        assert_eq!(Req::parse("/usage/records/rq_nope", "").unwrap().impossible_record(), Some("rq_nope"));
+        assert_eq!(Req::parse("/usage", "before=t").unwrap().impossible_record(), Some("t"));
+        assert_eq!(Req::parse("/usage", "").unwrap().impossible_record(), None);
+        assert_eq!(Req::parse("/quota", "before=t").unwrap().impossible_record(), None, "only Usage reads records");
     }
 
     #[test]

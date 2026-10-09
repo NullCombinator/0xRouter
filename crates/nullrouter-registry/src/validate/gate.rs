@@ -181,6 +181,17 @@ fn semantic_errors(p: &PluginFile) -> Found {
     if let Some(v) = p.schema.filter(|v| !(1..=2).contains(v)) {
         err(FieldPath::of("schema"), format!("unsupported schema version {v}; expected 1 or 2"));
     }
+    for (i, r) in p.rejections.iter().enumerate() {
+        let at = FieldPath::of("rejections").index(i).key("status");
+        if r.status.iter().any(|s| matches!(s, 402 | 408 | 429)) {
+            err(at, "402, 408 and 429 are never a rejection".into());
+        } else if r.status.is_empty() || r.status.iter().any(|s| !(400..=499).contains(s)) {
+            err(at, "only 400–499 can be a rejection".into());
+        } else if r.body_contains.is_none() && r.status.iter().any(|s| matches!(s, 400 | 422)) {
+            // A bare 400 or 422 is as often the request's own fault as the model's.
+            err(at, "a 400 or 422 rejection needs body_contains".into());
+        }
+    }
     if p.schema_version() < 2 {
         for key in ["endpoints", "forwarding", "session"] {
             let present = match key {

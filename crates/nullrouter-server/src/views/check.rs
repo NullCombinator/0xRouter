@@ -29,8 +29,8 @@ pub const NEEDS: &[&str] = &["routing.health", "server.status"];
 
 /// The `--json` object. `notices` has every line the text prints after `unified models:`, in
 /// print order, each with the page it concerns (spec 009 research R5). The check fails (exit 1)
-/// when `skipped`, `dropped_unified_models` or `signin.errors` is non-empty or a file mode is an
-/// error.
+/// when `skipped`, `dropped_unified_models`, `dropped_combos` or `signin.errors` is non-empty or a
+/// file mode is an error.
 pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, ViewError> {
     let handle = open_registry(home)?;
     let reg = handle.snapshot();
@@ -59,6 +59,8 @@ pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, Vi
         "logos_ignored": r.logos_ignored.iter().map(|l| json!({ "id": l.id, "reason": l.reason })).collect::<Vec<_>>(),
         "dropped_unified_models": r.dropped_unified_models.iter()
             .map(|d| json!({ "name": d.name, "provider": d.provider })).collect::<Vec<_>>(),
+        "dropped_combos": r.dropped_combos.iter()
+            .map(|d| json!({ "name": d.name, "unified": d.unified })).collect::<Vec<_>>(),
         "limits_notes": r.notes.iter().map(note_json).collect::<Vec<_>>(),
         "journal": journal,
         "unmetered_windows": unmetered.iter().map(|(p, w)| json!({ "provider": p, "window": w })).collect::<Vec<_>>(),
@@ -182,6 +184,9 @@ fn notices(
         let text = format!("dropped unified model {}: member provider {} was skipped", d.name, d.provider);
         out.push(Notice::new("error", "combo", text));
     }
+    for d in &r.dropped_combos {
+        out.push(Notice::new("error", "combo", d.to_string()));
+    }
     for n in &r.notes {
         out.push(Notice::new("note", "combo", format!("note: {n}")));
     }
@@ -191,6 +196,10 @@ fn notices(
             j["since"].as_str().unwrap_or("?"),
             j["unkept_requests"]
         );
+        out.push(Notice::new("warning", "usage", text));
+        // One writer keeps records and verdicts (spec 011): a verdict change made meanwhile is held
+        // and retried, and lost if the server stops first.
+        let text = format!("warning: verdicts not being kept since {}", j["since"].as_str().unwrap_or("?"));
         out.push(Notice::new("warning", "usage", text));
     }
     for (provider, window) in unmetered {
@@ -545,6 +554,7 @@ mod tests {
             ("error", "combo", "dropped unified model lost: member provider broken was skipped"),
             ("note", "combo", "note: unified model mixed: members differ in context_length: a 1, b undeclared"),
             ("warning", "usage", "warning: records not kept since 2026-10-03T14:00:00Z (disk full): 3 requests"),
+            ("warning", "usage", "warning: verdicts not being kept since 2026-10-03T14:00:00Z"),
             ("note", "quota", "note: grok-cli reports window prepaid, which no [[routing.window]] meter names;"),
             ("warning", "quota", "warning: anthropic/main is pay-as-you-go"),
             ("error", "quota", "error: accounts.toml: bad"),

@@ -392,6 +392,7 @@ pub fn decorate(record: &mut serde_json::Value, now: Option<f64>) {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            member: None,
             timing,
         });
     }
@@ -433,6 +434,7 @@ mod tests {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            member: None,
             timing: t,
         }
     }

@@ -44,6 +44,12 @@ pub(crate) enum Command {
         /// Only records older than this one: the next page back. The id must name a record.
         #[arg(long, value_name = "ID")]
         before: Option<String>,
+        /// Only test calls (`nullrouter test`, retests, combo tests).
+        #[arg(long, conflicts_with = "no_test")]
+        test: bool,
+        /// Only client requests, no test calls.
+        #[arg(long)]
+        no_test: bool,
     },
     Show {
         id: String,
@@ -84,10 +90,11 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
     let running = views::server_runs(&home);
     match cmd {
-        Command::List { provider, account, agent, model, reason, since, limit, before } => {
+        Command::List { provider, account, agent, model, reason, since, limit, before, test, no_test } => {
+            let test = (test || no_test).then_some(test);
             let args = json!({
                 "provider": provider, "account": account, "agent": agent, "model": model,
-                "reason": reason, "since": since, "limit": limit, "before": before,
+                "reason": reason, "since": since, "limit": limit, "before": before, "test": test,
             });
             let view = super::read(&home, views::records::NEEDS, &args, views::records::build)?;
             if as_json {
@@ -217,11 +224,15 @@ fn who(v: &Value) -> String {
     }
 }
 
-/// One `records list` line.
+/// One `records list` line; a test call ends with its `test` tag and run id.
 fn line(r: &Value) -> String {
     let served = if r["served_by"].is_null() { "-".into() } else { who(&r["served_by"]) };
+    let test = match r["test"]["run"].as_str() {
+        Some(run) => format!("  test {run}"),
+        None => String::new(),
+    };
     let line = format!(
-        "{}  {}  {:<10} {:<20} {:<24} {}",
+        "{}  {}  {:<10} {:<20} {:<24} {}{test}",
         s(&r["id"]),
         when(&r["arrived"]),
         s(&r["outcome"]).replace('_', " "),
@@ -475,6 +486,12 @@ fn show(r: &Value, names: &std::collections::HashMap<String, String>) -> String 
         let unified = if r["unified_model"].is_null() { "" } else { " (unified)" };
         let _ = writeln!(o, "target      {t}{unified}");
     }
+    if let Some(c) = r["combo"].as_str() {
+        let _ = writeln!(o, "combo       {c}");
+    }
+    if let Some(t) = r["test"].as_object() {
+        let _ = writeln!(o, "test        {}  run {}", s(&t["source"]).replace('_', " "), s(&t["run"]));
+    }
     if !r["served_by"].is_null() {
         let _ = writeln!(o, "served by   {}  {}", who(&r["served_by"]), s(&r["served_by"]["model"]));
     }
@@ -510,6 +527,9 @@ fn show(r: &Value, names: &std::collections::HashMap<String, String>) -> String 
         if let (Some(from), Some(to)) = (a["started"].as_f64(), a["ended"].as_f64()) {
             let used = attempt_usage(&a["usage"]);
             let _ = writeln!(o, "       {:.2} s{used}", (to - from) / 1000.0);
+        }
+        if let Some(m) = a["member"].as_str() {
+            let _ = writeln!(o, "       member {m}");
         }
         for d in a["dropped"].as_array().into_iter().flatten() {
             let _ = writeln!(o, "       dropped {}: {}", s(&d["path"]), s(&d["reason"]));
@@ -687,5 +707,32 @@ mod tests {
         }
         let old = timed(json!({"attempts": [{"n": 1, "provider": "p", "model": "m", "outcome": {"state": "ok"}, "dropped": [], "phases": "not_recorded"}]}));
         assert!(show(&old, &Default::default()).contains("phases  not recorded"));
+    }
+
+    /// Spec 011: a test call's tag and run id, its combo and each attempt's member path.
+    #[test]
+    fn a_test_call_shows_its_run_combo_and_members() {
+        let r = json!({
+            "id": "rq_07", "arrived": "2026-10-07T09:20:00Z", "outcome": "succeeded", "style": "openai-chat",
+            "op": "generate", "model_type": "text", "target": "coder", "combo": "coder",
+            "test": {"run": "tr_01", "source": "combo_test"},
+            "served_by": {"provider": "beta", "account": "a", "model": "m1"},
+            "break_handling": {"kind": "none"},
+            "attempts": [
+                {"n": 1, "provider": "alpha", "account": "a", "model": "m1", "member": "coder › ua",
+                 "outcome": {"state": "failed", "status": 503, "class": "transient", "reason": "overloaded"}},
+                {"n": 2, "provider": "beta", "account": "a", "model": "m1", "member": "coder › chain › ub",
+                 "outcome": {"state": "ok"}}
+            ]
+        });
+        assert!(line(&r).ends_with("beta/a  test tr_01"), "{}", line(&r));
+        let text = show(&r, &Default::default());
+        for want in ["combo       coder\n", "test        combo test  run tr_01\n", "       member coder › ua\n",
+                     "       member coder › chain › ub\n"] {
+            assert!(text.contains(want), "{want:?} missing from:\n{text}");
+        }
+        let mut client = r.clone();
+        client.as_object_mut().unwrap().remove("test");
+        assert!(line(&client).ends_with("beta/a"), "a client request has no tag");
     }
 }

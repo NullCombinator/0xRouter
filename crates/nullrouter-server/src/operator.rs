@@ -17,6 +17,10 @@
 //! | `{"op":"proxy.fixed","name"}` | `{"ok":true,"reachable":true}` and the pause cleared, or `{"ok":true,"reachable":false,"reason"}`; an unknown name is `{"ok":false,"error"}` listing the known ones |
 //! | `{"op":"connection.view","provider"?}` | `{"ok":true,"providers":[{id,timeouts:{connect,headers,first_token,stall}:{ms\|null,source},models:[{id,timeouts}]}]}`: the effective timeouts and where each came from, and the models whose timeouts differ; an unknown provider is `{"ok":false,"error"}` listing the known ones |
 //! | `{"op":"quota.list"}`, `{"op":"quota.poll"}`, `{"op":"quota.checkpoint"}` | see [`crate::quota`] |
+//! | `{"op":"test.plan","target"?,"account"?,"all"?}` | `{"ok":true,"pairs":[{provider,account,model,type,skip?}],"calls":{"<type>":N}}` (spec 011); a combo target adds `"combo":NAME` and counts as 1 call of its kind |
+//! | `{"op":"test.run","target"?,"account"?,"all"?}` | streamed: one `{"event":"result","result":TestResult}` line per pair (a combo: one `{"event":"combo","result":ComboResult}`), then `{"ok":true,"done":{pass,broken,unknown,skipped}}`. Closing the connection cancels calls not yet sent |
+//! | `{"op":"verdicts.list","provider"?,"account"?,"model"?,"state"?}` | `{"ok":true,"verdicts":[{provider,account,model,…Verdict,"waiting"?}],"combos":[{combo,…,"waiting"?}]}`: `waiting` says why a due retest can't run yet |
+//! | `{"op":"verdicts.set","provider","account","model","state":"broken"\|"clear","note"?}` | `{"ok":true}`, or `{"ok":false,"error":"no verdict for …"}` on clearing an untested pair |
 
 use std::future::Future;
 use std::io::{BufRead, BufReader, Write};
@@ -28,10 +32,15 @@ use std::time::Duration;
 use nullrouter_engine::journal::records;
 use nullrouter_engine::records::Query;
 use nullrouter_engine::state::Engine;
+use nullrouter_engine::tests::{self as model_tests, Planned};
+use nullrouter_engine::verdict::{Source, State};
 use nullrouter_registry::OperatorHome;
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader, Lines};
+use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 /// The socket's path under the operator home.
 pub fn socket_path(home: &OperatorHome) -> PathBuf {
@@ -78,18 +87,146 @@ pub async fn serve(engine: Arc<Engine>, listener: UnixListener, shutdown: impl F
 
 async fn connection(engine: Arc<Engine>, stream: UnixStream) {
     let (read, mut write) = stream.into_split();
-    let mut lines = tokio::io::BufReader::new(read).lines();
+    let mut lines = AsyncBufReader::new(read).lines();
     while let Ok(Some(line)) = lines.next_line().await {
         let answer = match serde_json::from_str::<Value>(&line) {
+            Ok(req) if req.get("op").and_then(Value::as_str) == Some("test.run") => {
+                match test_run(&engine, &req, &mut lines, &mut write).await {
+                    Some(done) => done,
+                    None => return,
+                }
+            }
             Ok(req) => handle(&engine, &req).await,
             Err(e) => json!({"ok": false, "error": format!("not JSON: {e}")}),
         };
-        let mut out = answer.to_string();
-        out.push('\n');
-        if write.write_all(out.as_bytes()).await.is_err() {
+        if send(&mut write, &answer).await.is_err() {
             return;
         }
     }
+}
+
+async fn send(write: &mut OwnedWriteHalf, v: &Value) -> std::io::Result<()> {
+    let mut out = v.to_string();
+    out.push('\n');
+    write.write_all(out.as_bytes()).await
+}
+
+/// The pairs a `test.plan` or `test.run` request names.
+fn planned(engine: &Engine, req: &Value) -> Result<Vec<Planned>, String> {
+    let target = req.get("target").and_then(Value::as_str);
+    let account = req.get("account").and_then(Value::as_str);
+    let all = req.get("all").and_then(Value::as_bool).unwrap_or(false);
+    if target.is_some() == all {
+        return Err("name a target, or all".into());
+    }
+    model_tests::expand(engine, &engine.snapshot(), target, account)
+}
+
+/// The combo `req` targets, if it names one, with the type of its call: its test is one call
+/// through it (research R14).
+fn combo_target(engine: &Engine, req: &Value) -> Option<Result<(String, String), String>> {
+    let target = req.get("target").and_then(Value::as_str)?;
+    let st = engine.snapshot();
+    let combo = st.registry.combo(target)?;
+    if req.get("account").is_some_and(|a| !a.is_null()) {
+        return Some(Err(format!("{target} is a combo: its test isn't per account")));
+    }
+    Some(Ok((combo.name.clone(), model_tests::combo::kind(combo).to_string())))
+}
+
+fn test_plan(engine: &Engine, req: &Value) -> Value {
+    match combo_target(engine, req) {
+        Some(Ok((name, ty))) => return json!({"ok": true, "pairs": [], "combo": name, "calls": {ty: 1}}),
+        Some(Err(e)) => return json!({"ok": false, "error": e}),
+        None => {}
+    }
+    match planned(engine, req) {
+        Ok(p) => json!({"ok": true, "pairs": p, "calls": model_tests::calls(&p)}),
+        Err(e) => json!({"ok": false, "error": e}),
+    }
+}
+
+/// Streams `test.run`'s results; returns the closing line, or `None` once the client has gone
+/// (the calls not yet sent are cancelled; those in flight finish and keep their verdicts).
+async fn test_run(
+    engine: &Arc<Engine>,
+    req: &Value,
+    lines: &mut Lines<AsyncBufReader<OwnedReadHalf>>,
+    write: &mut OwnedWriteHalf,
+) -> Option<Value> {
+    match combo_target(engine, req) {
+        Some(Ok((name, _))) => return combo_run(engine, name, lines, write).await,
+        Some(Err(e)) => return Some(json!({"ok": false, "error": e})),
+        None => {}
+    }
+    let planned = match planned(engine, req) {
+        Ok(p) => p,
+        Err(e) => return Some(json!({"ok": false, "error": e})),
+    };
+    let stop = CancellationToken::new();
+    let (tx, mut rx) = mpsc::channel(16);
+    tokio::spawn({
+        let (engine, stop, run) = (engine.clone(), stop.clone(), model_tests::run_id());
+        async move { model_tests::run(&engine, planned, Source::Test, &run, stop, tx).await }
+    });
+    let (mut pass, mut broken, mut unknown, mut skipped) = (0, 0, 0, 0);
+    loop {
+        tokio::select! {
+            r = rx.recv() => {
+                let Some(r) = r else { break };
+                match r.state {
+                    Some(State::Pass) => pass += 1,
+                    Some(State::Broken) => broken += 1,
+                    Some(State::Unknown) => unknown += 1,
+                    None => skipped += 1,
+                }
+                if send(write, &json!({"event": "result", "result": r})).await.is_err() {
+                    stop.cancel();
+                    return None;
+                }
+            }
+            l = lines.next_line() => if !matches!(l, Ok(Some(_))) {
+                stop.cancel();
+                return None;
+            },
+        }
+    }
+    Some(json!({"ok": true, "done": {"pass": pass, "broken": broken, "unknown": unknown, "skipped": skipped}}))
+}
+
+/// `test.run` for a combo: one call through it, then its nested result as one line.
+async fn combo_run(
+    engine: &Arc<Engine>,
+    name: String,
+    lines: &mut Lines<AsyncBufReader<OwnedReadHalf>>,
+    write: &mut OwnedWriteHalf,
+) -> Option<Value> {
+    let stop = CancellationToken::new();
+    let mut task = tokio::spawn({
+        let (engine, stop, run) = (engine.clone(), stop.clone(), model_tests::run_id());
+        async move { model_tests::combo::run_combo(&engine, &name, Source::Test, &run, &stop).await }
+    });
+    let ended = loop {
+        tokio::select! {
+            r = &mut task => break r,
+            l = lines.next_line() => if !matches!(l, Ok(Some(_))) {
+                stop.cancel();
+                return None;
+            },
+        }
+    };
+    let r = match ended {
+        Ok(Ok(Some(r))) => r,
+        Ok(Ok(None)) => return Some(json!({"ok": false, "error": "the combo test was cancelled"})),
+        Ok(Err(e)) => return Some(json!({"ok": false, "error": e})),
+        Err(e) => return Some(json!({"ok": false, "error": format!("the combo test failed: {e}")})),
+    };
+    let mut done = json!({"pass": 0, "broken": 0, "unknown": 0, "skipped": 0});
+    done[r.state.as_str()] = json!(1);
+    if send(write, &json!({"event": "combo", "result": r})).await.is_err() {
+        return None;
+    }
+    Some(json!({"ok": true, "done": done}))
 }
 
 /// The listeners `serve` bound (spec 009, R8).
@@ -227,8 +364,95 @@ pub async fn handle(engine: &Arc<Engine>, req: &Value) -> Value {
         Some("quota.list") => crate::quota::list(engine, req),
         Some("quota.poll") => crate::quota::poll_now(engine, req).await,
         Some("quota.checkpoint") => crate::quota::checkpoint(engine).await,
+        Some("test.plan") => test_plan(engine, req),
+        Some("test.run") => json!({"ok": false, "error": "test.run streams: send it on its own connection"}),
+        Some("verdicts.list") => verdicts_list(engine, req),
+        Some("verdicts.set") => verdicts_set(engine, req),
         Some(op) => json!({"ok": false, "error": format!("unknown op {op:?}")}),
         None => json!({"ok": false, "error": "the request names no op"}),
+    }
+}
+
+/// `verdicts.list`: every verdict the filter keeps, with why its retest waits, and the combo
+/// results (those only with no provider, account or model filter). Reasons pass the redactor.
+fn verdicts_list(engine: &Engine, req: &Value) -> Value {
+    use nullrouter_engine::tests::retest;
+    use nullrouter_engine::verdict::{Filter, State, store};
+
+    let str_of = |k: &str| req.get(k).and_then(Value::as_str).map(str::to_owned);
+    let state = match str_of("state") {
+        Some(s) => match State::parse(&s) {
+            Some(s) => Some(s),
+            None => return json!({"ok": false, "error": "--state is pass, broken or unknown"}),
+        },
+        None => None,
+    };
+    let filter = Filter { provider: str_of("provider"), account: str_of("account"), model: str_of("model"), state };
+    let st = engine.snapshot();
+    let now = nullrouter_engine::clock::now();
+    let redact = |line: &mut Value| {
+        if let Some(r) = line["reason"].as_str() {
+            let shown = st.redactor.redact(r).into_owned();
+            line["reason"] = json!(shown);
+        }
+    };
+    let verdicts: Vec<Value> = engine
+        .verdicts
+        .list(&filter)
+        .into_iter()
+        .map(|(pair, v)| {
+            let mut line = store::set_line(&pair, &v);
+            if let Some(map) = line.as_object_mut() {
+                map.remove("basis");
+            }
+            redact(&mut line);
+            if let Some(why) = v.next.and_then(|_| retest::waiting(engine, &st, &pair, now)) {
+                line["waiting"] = json!(why);
+            }
+            line
+        })
+        .collect();
+    let by_pair = filter.provider.is_some() || filter.account.is_some() || filter.model.is_some();
+    let combos: Vec<Value> = if by_pair {
+        Vec::new()
+    } else {
+        let all = engine.verdicts.snapshot();
+        all.combos
+            .iter()
+            .filter(|(_, c)| state.is_none_or(|s| s == c.state))
+            .map(|(name, c)| {
+                let mut line = store::combo_line(name, c);
+                if let Some(map) = line.as_object_mut() {
+                    map.remove("definition");
+                }
+                redact(&mut line);
+                let combo = c.next.and_then(|_| st.registry.combo(name));
+                if let Some(why) = combo.and_then(|k| retest::combo_waiting(engine, &st, k)) {
+                    line["waiting"] = json!(why);
+                }
+                line
+            })
+            .collect()
+    };
+    json!({"ok": true, "verdicts": verdicts, "combos": combos})
+}
+
+/// `verdicts.set`: the operator marks a pair BROKEN (with an optional note) or clears it.
+fn verdicts_set(engine: &Engine, req: &Value) -> Value {
+    use nullrouter_engine::verdict::{self, Mark};
+
+    let str_of = |k: &str| req.get(k).and_then(Value::as_str).map(str::to_owned);
+    let (Some(provider), Some(account), Some(model)) = (str_of("provider"), str_of("account"), str_of("model")) else {
+        return json!({"ok": false, "error": "verdicts.set names a provider, an account and a model"});
+    };
+    let mark = match str_of("state").as_deref() {
+        Some("broken") => Mark::Broken { note: str_of("note").filter(|n| !n.trim().is_empty()) },
+        Some("clear") => Mark::Clear,
+        _ => return json!({"ok": false, "error": "state is broken or clear"}),
+    };
+    match verdict::mark(engine, &provider, &account, &model, mark) {
+        Ok(()) => json!({"ok": true}),
+        Err(e) => json!({"ok": false, "error": e}),
     }
 }
 
@@ -322,6 +546,7 @@ async fn records_list(engine: &Arc<Engine>, req: &Value) -> Value {
         since: str_of("since").and_then(|s| nullrouter_engine::clock::parse_rfc3339(&s)),
         limit,
         before: str_of("before"),
+        test: req.get("test").and_then(Value::as_bool),
     };
     let home = engine.home().path().to_owned();
     if let Some(id) = &filter.before {
@@ -431,6 +656,27 @@ pub fn call(home: &OperatorHome, req: &Value) -> Result<Value, CallError> {
     let mut answer = String::new();
     BufReader::new(stream).read_line(&mut answer)?;
     serde_json::from_str(&answer).map_err(|e| CallError::BadAnswer(e.to_string()))
+}
+
+/// [`call`] for a streamed answer: `event` is called with each line that carries an `event`,
+/// and the closing line is returned. No read timeout: a test may run for many minutes, and
+/// dropping the connection (the CLI exiting) cancels what is not yet sent.
+pub fn call_stream(home: &OperatorHome, req: &Value, mut event: impl FnMut(&Value)) -> Result<Value, CallError> {
+    let path = socket_path(home);
+    let mut stream =
+        std::os::unix::net::UnixStream::connect(&path).map_err(|_| CallError::NoServer(path.display().to_string()))?;
+    let mut line = req.to_string();
+    line.push('\n');
+    stream.write_all(line.as_bytes())?;
+    for line in BufReader::new(stream).lines() {
+        let v: Value = serde_json::from_str(&line?).map_err(|e| CallError::BadAnswer(e.to_string()))?;
+        if v.get("event").is_some() {
+            event(&v);
+        } else {
+            return Ok(v);
+        }
+    }
+    Err(CallError::BadAnswer("the server closed the connection".into()))
 }
 
 #[cfg(test)]

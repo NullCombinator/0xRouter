@@ -4,9 +4,10 @@
 //! `--json` shape (stable; the quickstart parses it):
 //! `{"kind":"direct","provider","requested","upstream_id","catalogued"}`,
 //! `{"kind":"unified","name","model_kind","members":[{"provider","requested","upstream_id","catalogued"}]}`,
-//! or `{"kind":"not_found","error"}`. A unified answer also carries `"limits_notes":[{"unified","limit",
-//! "values":[{"provider","value"}]}]`, empty when its members' limits agree. A target that isn't
-//! found is an answer, not an error: the CLI exits 2.
+//! a combo's entry as `combos NAME --json` prints it, or `{"kind":"not_found","error"}`. A
+//! unified answer also carries `"limits_notes":[{"unified","limit","values":[{"provider","value"}]}]`,
+//! empty when its members' limits agree. A target that isn't found is an answer, not an error:
+//! the CLI exits 2.
 
 use nullrouter_registry::{LimitsNote, OperatorHome, Registry, Resolution, UnifiedMember, UnifiedModel};
 use serde_json::{Value, json};
@@ -42,6 +43,7 @@ pub fn build(home: &OperatorHome, args: &Value, _live: &Live) -> Result<View, Vi
             "kind": "direct", "provider": provider.id, "requested": requested,
             "upstream_id": upstream_id, "catalogued": catalogued }),
         Ok(Resolution::Unified(u)) => unified_json(&reg, u),
+        Ok(Resolution::Combo(c)) => super::combos::combo_json(&reg, c),
         Err(e) => json!({ "kind": "not_found", "error": e.to_string() }),
     };
     let notes: Vec<String> =

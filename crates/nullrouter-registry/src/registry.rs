@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 
+use crate::combos::Combo;
 use crate::credentials::{self, ResolvedCredential};
 use crate::floor::Floor;
 use crate::load::{LoadReport, WithheldCredential, style_carriers};
@@ -12,7 +13,7 @@ use crate::resolve::NotFound;
 use crate::schema::{
     CapabilityKind, CapabilitySection, ContentKind, DashboardSettings, Endpoint, Model, ModelKind, ModelType,
     PipelineSettings, ProviderEntity, ProviderSettings, RoutingSettings, SectionModel, ServerSettings, StyleFile,
-    WireFormat,
+    TestSettings, WireFormat,
 };
 use crate::validate::FieldPath;
 
@@ -81,6 +82,9 @@ pub struct Registry {
     pub(crate) credentials: HashMap<String, ResolvedCredential>,
     unified: Vec<UnifiedModel>,
     unified_index: HashMap<Box<str>, usize>,
+    /// `[[combo]]` (spec 011).
+    combos: Vec<Combo>,
+    combo_index: HashMap<Box<str>, usize>,
     settings: BTreeMap<String, ProviderSettings>,
     report: LoadReport,
     styles: Vec<StyleFile>,
@@ -88,6 +92,8 @@ pub struct Registry {
     runtime: RuntimeSettings,
     /// Logos that passed the check at load, by provider id (spec 009 research R10).
     logos: BTreeMap<String, Logo>,
+    /// `sha256:<hex>` of each provider's plugin source, by provider id (spec 011 research R7).
+    plugin_digests: HashMap<String, String>,
 }
 
 /// The `config.toml` settings the request pipeline reads (spec 003).
@@ -100,6 +106,8 @@ pub struct RuntimeSettings {
     pub dashboard: DashboardSettings,
     /// `[routing]`, with target keys written as unified names or `provider-id/model`.
     pub routing: RoutingSettings,
+    /// `[tests]` (spec 011).
+    pub tests: TestSettings,
     /// `[connection] proxy`: the proxy every provider uses unless it or its account says
     /// otherwise (a name from `proxies.toml`, or `"none"`).
     pub connection_proxy: Option<String>,
@@ -170,12 +178,15 @@ impl Registry {
             credentials,
             unified: Vec::new(),
             unified_index: HashMap::new(),
+            combos: Vec::new(),
+            combo_index: HashMap::new(),
             settings: BTreeMap::new(),
             report: LoadReport::default(),
             styles: Vec::new(),
             floor: Floor::default(),
             runtime: RuntimeSettings::default(),
             logos: BTreeMap::new(),
+            plugin_digests: HashMap::new(),
         };
         registry.compute_floor();
         registry
@@ -197,9 +208,14 @@ impl Registry {
         self.logos = logos;
     }
 
+    pub(crate) fn set_plugin_digests(&mut self, digests: HashMap<String, String>) {
+        self.plugin_digests = digests;
+    }
+
     pub(crate) fn set_operator_state(
         &mut self,
         unified: Vec<UnifiedModel>,
+        combos: Vec<Combo>,
         settings: BTreeMap<String, ProviderSettings>,
         runtime: RuntimeSettings,
         report: LoadReport,
@@ -207,6 +223,8 @@ impl Registry {
         self.runtime = runtime;
         self.unified_index = unified.iter().enumerate().map(|(i, u)| (u.name.as_str().into(), i)).collect();
         self.unified = unified;
+        self.combo_index = combos.iter().enumerate().map(|(i, c)| (c.name.as_str().into(), i)).collect();
+        self.combos = combos;
         self.settings = settings;
         self.report = report;
     }
@@ -336,6 +354,21 @@ impl Registry {
         self.unified.iter()
     }
 
+    pub fn combo(&self, name: &str) -> Option<&Combo> {
+        self.combo_index.get(name).map(|&i| &self.combos[i])
+    }
+
+    /// In declaration order.
+    pub fn combos(&self) -> impl Iterator<Item = &Combo> {
+        self.combos.iter()
+    }
+
+    /// The unified models a request for `combo` tries, in order, each with its member path
+    /// (`coder › fallback-chain › gpt`).
+    pub fn combo_walk<'a>(&'a self, combo: &'a Combo) -> impl Iterator<Item = (&'a str, &'a UnifiedModel)> {
+        combo.flat.iter().map(|s| (s.path.as_str(), &self.unified[s.unified]))
+    }
+
     /// Operator settings for `provider_id`; the default when `config.toml` has none.
     pub fn settings(&self, provider_id: &str) -> ProviderSettings {
         self.settings.get(provider_id).cloned().unwrap_or_default()
@@ -352,6 +385,12 @@ impl Registry {
 
     pub fn runtime(&self) -> &RuntimeSettings {
         &self.runtime
+    }
+
+    /// `sha256:<hex>` of the plugin source `provider_id` was loaded from: a verdict's basis
+    /// (spec 011 research R7), so any change to the file resets that provider's verdicts.
+    pub fn plugin_digest(&self, provider_id: &str) -> Option<&str> {
+        self.plugin_digests.get(provider_id).map(String::as_str)
     }
 
     /// `provider_id`'s logo, when its plugin declared one that passed the check at load; `None`

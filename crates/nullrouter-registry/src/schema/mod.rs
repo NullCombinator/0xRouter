@@ -14,6 +14,7 @@ mod oauth_params;
 mod plugin;
 mod primitives;
 mod quota;
+mod rejection;
 mod routing;
 mod section_formats;
 mod session;
@@ -23,16 +24,19 @@ mod transport;
 
 pub use capability::{CapabilitySection, ModelRoute, SectionEndpoint, SectionLimits, SectionModel};
 pub use config::{
-    ConnectionSettings, GlobalConnection, MAX_TIMEOUT_MS, ModelConnection, ModelSettings, check_timeout_ms,
-    DashboardSettings, Decision, MemberDecl, OperatorConfig, PipelineSettings, ProviderSettings, RoutingSettings,
-    RetrySettings, ServerSettings, UnifiedModelDecl,
+    BROKEN_RETEST_ON, ComboDecl, ConnectionSettings, DashboardSettings, Decision, GlobalConnection, MAX_TIMEOUT_MS,
+    MemberDecl, ModelConnection, ModelSettings, OperatorConfig, PipelineSettings, ProviderSettings, RetrySettings,
+    RoutingSettings, ServerSettings, TEST_TYPES, TestSettings, TestTimeouts, UnifiedModelDecl, check_timeout_ms,
+    parse_broken_retest,
 };
 pub use duration::parse_duration;
 pub use endpoint::{
     Continuation, Endpoint, EndpointAuth, Endpoints, ErrorRule, ErrorRules, ForceMap, ForcedParam, JobMapping,
     JobState, MAX_RETRIES, MAX_RETRY_DELAY_MS, RetryOverride, TokenCount,
 };
-pub use enums::{AuthHook, AuthKind, AuthScheme, CapabilityKind, Category, ContentKind, ModelKind, Quirk, WireFormat};
+pub use enums::{
+    AuthHook, AuthKind, AuthScheme, CapabilityKind, Category, ContentKind, ModelKind, Quirk, RejectionReason, WireFormat,
+};
 pub use forwarding::{ForwardHeader, Forwarding, ToClient, ToUpstream};
 pub use identity::{HeaderValue, IdentityDecl, Placeholder};
 pub use model::{Model, ModelTimeouts};
@@ -50,6 +54,7 @@ pub use quota::{
     QuotaAccounts, QuotaBody, QuotaDecl, QuotaDecoder, QuotaRequest, QuotaSource, QuotaUnit, ResetsFormat, ValuePath,
     WindowRule,
 };
+pub use rejection::RejectionRule;
 pub use routing::*;
 pub use section_formats::KNOWN_SECTION_FORMATS;
 pub use session::ProviderSession;

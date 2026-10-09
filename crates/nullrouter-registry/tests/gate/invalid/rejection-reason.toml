@@ -1,0 +1,7 @@
+# expect: unknown reason "retired"
+id = "x"
+category = "apikey"
+
+[[rejections]]
+status = 404
+reason = "retired"

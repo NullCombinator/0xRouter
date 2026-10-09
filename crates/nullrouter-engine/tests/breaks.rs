@@ -118,6 +118,8 @@ fn streaming(s: &Setup, style: &str, target: &str, agent: &str, thinking: bool) 
         cancel: CancellationToken::new(),
         media: None,
         count: false,
+        pin: None,
+        test: None,
     }
 }
 

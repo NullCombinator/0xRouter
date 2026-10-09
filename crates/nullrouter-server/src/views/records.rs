@@ -52,7 +52,8 @@ pub fn build(home: &OperatorHome, args: &Value, live: &Live) -> Result<View, Vie
         since,
         limit: args["limit"].as_u64().map(|n| n as usize),
         before: text(args, "before"),
-        ..Default::default()
+        test: args["test"].as_bool(),
+        unified_model: None,
     };
     // The page back starts at a record that exists.
     if let Some(id) = &filter.before

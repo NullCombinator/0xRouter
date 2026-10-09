@@ -1,0 +1,7 @@
+# expect: rejections[0].status: a 400 or 422 rejection needs body_contains
+id = "x"
+category = "apikey"
+
+[[rejections]]
+status = [400, 404]
+reason = "model_not_found"
