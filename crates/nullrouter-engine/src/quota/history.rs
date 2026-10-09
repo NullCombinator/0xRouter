@@ -118,12 +118,12 @@ pub fn tally_file(home: &Path, provider: &str, account: &str) -> Result<PathBuf,
     Ok(dir.join(component(&dir, provider)?).join(format!("{}.tally.json", component(&dir, account)?)))
 }
 
-fn io_err(path: &Path) -> impl FnOnce(io::Error) -> FileError + '_ {
+pub(crate) fn io_err(path: &Path) -> impl FnOnce(io::Error) -> FileError + '_ {
     move |source| FileError::Io { path: path.to_owned(), source }
 }
 
 /// Creates the file's directories, 0700.
-fn private_dirs(path: &Path) -> Result<(), FileError> {
+pub(crate) fn private_dirs(path: &Path) -> Result<(), FileError> {
     match path.parent() {
         Some(dir) => DirBuilder::new().recursive(true).mode(0o700).create(dir).map_err(io_err(path)),
         None => Ok(()),
@@ -132,7 +132,7 @@ fn private_dirs(path: &Path) -> Result<(), FileError> {
 
 /// The history file opened for appending and locked; re-opened when a prune replaced it
 /// while this one waited for the lock.
-fn open_append(path: &Path) -> Result<File, FileError> {
+pub(crate) fn open_append(path: &Path) -> Result<File, FileError> {
     private_dirs(path)?;
     loop {
         let f = OpenOptions::new().append(true).create(true).mode(0o600).open(path).map_err(io_err(path))?;
@@ -155,7 +155,7 @@ pub fn append(home: &Path, provider: &str, account: &str, entry: &Entry) -> Resu
 
 /// Calls `each` with the file's lines, newest first, until it returns `false`. Reads only
 /// as much of the file's tail as needed.
-fn lines_backwards(f: &mut File, mut each: impl FnMut(&[u8]) -> bool) -> io::Result<()> {
+pub(crate) fn lines_backwards(f: &mut File, mut each: impl FnMut(&[u8]) -> bool) -> io::Result<()> {
     const CHUNK: u64 = 8 * 1024;
     let mut pos = f.metadata()?.len();
     let mut carry: Vec<u8> = Vec::new();
