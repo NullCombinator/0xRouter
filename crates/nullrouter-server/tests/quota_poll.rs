@@ -17,6 +17,7 @@ use common::{bundled_at_mock, reply_by_wire};
 use nullrouter_engine::accounts::{self, Accounts};
 use nullrouter_engine::keys::{self, Keys};
 use nullrouter_engine::maintenance;
+use nullrouter_engine::quota::fit::outside::{self, Line};
 use nullrouter_engine::quota::poll::{PollErrorClass, PollTiming, QuotaPoll};
 use nullrouter_engine::state::Engine;
 use nullrouter_engine::testkit::{MockUpstream, QuotaRoute, Received, Step};
@@ -393,6 +394,27 @@ async fn quota_interval_changes_only_that_account() {
     assert!(zen.len() >= 3, "the others keep the default: {zen:?}");
     let a = q.op(json!({"op": "quota.list", "provider": "opencode-go", "name": "main"})).await;
     assert_eq!(a["accounts"][0]["interval_s"], 1800);
+}
+
+#[tokio::test]
+async fn outside_use_alerts_list_until_acknowledged() {
+    let q = setup().await;
+    let raised = Line::Alert {
+        v: 1,
+        id: "alert-01".into(),
+        entry: "entry-01".into(),
+        raised_at: "2026-10-08T09:00:00.000Z".into(),
+    };
+    outside::append(q._dir.path(), "anthropic", "max", &[raised]).unwrap();
+    let a = q.op(json!({"op": "quota.alerts"})).await;
+    assert_eq!(a["ok"], true, "{a}");
+    let alerts = a["alerts"].as_array().unwrap();
+    assert_eq!(alerts.len(), 1, "{a}");
+    assert_eq!((&alerts[0]["provider"], &alerts[0]["account"]), (&json!("anthropic"), &json!("max")));
+    assert_eq!(alerts[0]["id"], "alert-01");
+    assert_eq!(q.op(json!({"op": "quota.ack"})).await, json!({"ok": true, "acknowledged": 1}));
+    assert_eq!(q.op(json!({"op": "quota.alerts"})).await, json!({"ok": true, "alerts": []}));
+    assert_eq!(q.op(json!({"op": "quota.outside", "since": "soon"})).await["ok"], false);
 }
 
 #[tokio::test]
