@@ -713,3 +713,206 @@ fn overrides_reach_the_meter_in_effect_and_removing_them_restores_the_declaratio
     let meters = meters_of(&dir);
     assert!(meters.get("keyco", "main").is_none() && meters.get("keyco", "spare").is_none());
 }
+
+// ---- a changed meter, an unreadable fit file, an outside-use burst (T048, T049) ----
+
+use std::io::{self, Write};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use nullrouter_engine::quota::fit::learner::METER_CHANGED;
+use nullrouter_engine::quota::fit::store::fit_file;
+use tracing_subscriber::fmt::MakeWriter;
+
+/// `keyco_home` with a second window, `weekly`, declared and polled beside `5-hour`.
+fn keyco_two_windows() -> tempfile::TempDir {
+    let dir = keyco_home();
+    let path = dir.path().join("plugins/keyco.toml");
+    let plugin = std::fs::read_to_string(&path).unwrap();
+    let weekly = "[[quota.window]]\npath = \"usage.weekly\"\nname = \"weekly\"\nunit = \"percent\"\nused = \"percent\"\n\
+                  [[routing.window]]\nname = \"weekly\"\nlength = \"7d\"\nunit = \"weighted_tokens\"\ncapacity = 1000000\n[[models]]";
+    let plugin = plugin.replace("[[models]]", weekly);
+    std::fs::write(&path, plugin).unwrap();
+    dir
+}
+
+/// Each poll of `history` with a copy of its `5-hour` window renamed `weekly`.
+fn with_weekly(history: Vec<Entry>) -> Vec<Entry> {
+    history
+        .into_iter()
+        .map(|mut e| {
+            let mut weekly = e.windows[0].clone();
+            weekly.name = "weekly".into();
+            e.windows.push(weekly);
+            e
+        })
+        .collect()
+}
+
+/// `history` with a burst at poll `at`: the window's level is `extra` percent lower from that
+/// poll on, with no traffic behind it. Every later poll is normal again.
+fn with_burst(mut history: Vec<Entry>, at: usize, extra: f64) -> Vec<Entry> {
+    for e in history.iter_mut().skip(at) {
+        for w in &mut e.windows {
+            if let Some(used) = w.used.as_mut() {
+                *used += extra;
+            }
+            if let Some(remaining) = w.remaining.as_mut() {
+                *remaining -= extra;
+            }
+        }
+    }
+    history
+}
+
+/// Collects what the tracing subscriber writes, for the warning a bad fit file raises.
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Captured {
+    fn text(&self) -> String {
+        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+    }
+}
+
+impl Write for Captured {
+    fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(b);
+        Ok(b.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> MakeWriter<'a> for Captured {
+    type Writer = Captured;
+    fn make_writer(&'a self) -> Captured {
+        self.clone()
+    }
+}
+
+#[test]
+fn a_changed_meter_restarts_its_window_and_leaves_the_others_alone() {
+    let dir = keyco_two_windows();
+    let (engine, _) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
+    let st = engine.snapshot();
+    let full = with_weekly(third_capacity_history(112));
+    let mut learner = Learner::default();
+    let mut fits = Fits::default();
+    for n in 4..=101 {
+        fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &full[..n], t(10 * (n as u64 - 1)));
+    }
+    let before_5h = learner.number_states("keyco", "5-hour");
+    let before_wk = learner.number_states("keyco", "weekly");
+    assert!(matches!(before_5h["capacity@main"], NumberState::Fitted { .. }), "{before_5h:?}");
+    assert!(matches!(before_wk["capacity@main"], NumberState::Fitted { .. }), "{before_wk:?}");
+
+    // Change the 5-hour meter's declared capacity (part of its hash) to the true value. The
+    // restarted numbers are then never rejected against their declaration.
+    let path = dir.path().join("plugins/keyco.toml");
+    let plugin = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, plugin.replacen("capacity = 1000000\n", "capacity = 333333\n", 1)).unwrap();
+    let (engine, _) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
+    let st = engine.snapshot();
+
+    // The restart is at the newest poll. Rows start there, so the window fits once polls arrive after it.
+    fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &full[..101], t(1000));
+    for n in 102..=112 {
+        fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &full[..n], t(10 * (n as u64 - 1)));
+    }
+
+    let after_5h = learner.number_states("keyco", "5-hour");
+    let restarted = NumberState::Restarted { since: t(1000), reason: METER_CHANGED.to_owned() };
+    assert_eq!(after_5h["capacity@main"], restarted, "{after_5h:?}");
+    for (key, state) in &after_5h {
+        // The weight yardstick is held, never fitted, so it is not restarted.
+        if *state != NumberState::Yardstick {
+            assert_eq!(*state, restarted, "{key}: {after_5h:?}");
+        }
+    }
+    let after_wk = learner.number_states("keyco", "weekly");
+    assert_eq!(after_wk, before_wk, "the other window's numbers moved");
+
+    let Loaded::Ok(saved) = store::load(dir.path(), "keyco").unwrap() else { panic!("fit state not saved") };
+    let restart = saved.windows["5-hour"].restarted.as_ref().expect("the changed window is stored as restarted");
+    assert_eq!(restart.reason, METER_CHANGED);
+    assert!(saved.windows["weekly"].restarted.is_none(), "{:?}", saved.windows["weekly"].restarted);
+}
+
+#[test]
+fn an_unparsable_fit_file_is_set_aside_warned_about_and_the_fit_restarts() {
+    let dir = keyco_home();
+    let (engine, _) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
+    let st = engine.snapshot();
+    let entries = third_capacity_history(100);
+    let mut learner = Learner::default();
+    let mut fits = Fits::default();
+    for n in 4..=entries.len() {
+        fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &entries[..n], t(10 * (n as u64 - 1)));
+    }
+    let before = learner.number_states("keyco", "5-hour");
+    assert!(matches!(before["capacity@main"], NumberState::Fitted { .. }), "{before:?}");
+
+    let path = store::fit_file(dir.path(), "keyco").unwrap();
+    let garbage = "{ this is not a fit file";
+    std::fs::write(&path, garbage).unwrap();
+
+    // A fresh learner reads the garbage, sets it aside and replays the history from its first poll.
+    let captured = Captured::default();
+    let sub = tracing_subscriber::fmt().with_writer(captured.clone()).with_ansi(false).finish();
+    let mut learner = Learner::default();
+    let mut fits = Fits::default();
+    tracing::subscriber::with_default(sub, || {
+        fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &entries[..4], t(30));
+    });
+
+    let dir_path: PathBuf = path.parent().unwrap().to_owned();
+    let set_aside: Vec<PathBuf> = std::fs::read_dir(&dir_path)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("keyco.json.bad-")))
+        .collect();
+    assert_eq!(set_aside.len(), 1, "{set_aside:?}");
+    assert_eq!(std::fs::read_to_string(&set_aside[0]).unwrap(), garbage);
+    let out = captured.text();
+    assert!(out.contains("fits restart"), "{out}");
+    assert!(out.contains(&set_aside[0].display().to_string()), "{out}");
+
+    // The numbers restart: nothing from the old file survives, and the window starts at its first poll.
+    let states = learner.number_states("keyco", "5-hour");
+    assert!(!matches!(states.get("capacity@main"), Some(NumberState::Fitted { .. })), "{states:?}");
+    let Loaded::Ok(saved) = store::load(dir.path(), "keyco").unwrap() else { panic!("the restarted fit state was not saved") };
+    let window = &saved.windows["5-hour"];
+    assert_eq!(window.epoch, nullrouter_engine::quota::extract::rfc3339_millis(t(0)));
+    assert!(window.restarted.is_none(), "{:?}", window.restarted);
+}
+
+#[test]
+fn an_outside_use_burst_against_a_fitted_model_raises_no_break() {
+    let dir = keyco_home();
+    let (engine, _) = Engine::open_parity(OperatorHome::new(dir.path())).unwrap();
+    let st = engine.snapshot();
+    // Poll 80 drops 12 percent more than its traffic explains, about 17 times a typical poll's use.
+    // Polls 81 to 99 are normal again.
+    let entries = with_burst(third_capacity_history(100), 80, 12.0);
+    let mut learner = Learner::default();
+    let mut fits = Fits::default();
+    for n in 4..=80 {
+        fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &entries[..n], t(10 * (n as u64 - 1)));
+    }
+    let before = learner.number_states("keyco", "5-hour");
+    let since = match &before["capacity@main"] {
+        NumberState::Fitted { since } => *since,
+        other => panic!("the model must be fitted before the burst: {other:?}"),
+    };
+    for n in 81..=entries.len() {
+        fits.observe(&mut learner, dir.path(), &st, "keyco", "main", &entries[..n], t(10 * (n as u64 - 1)));
+    }
+
+    let after = learner.number_states("keyco", "5-hour");
+    assert_eq!(after["capacity@main"], NumberState::Fitted { since }, "{after:?}");
+    let Loaded::Ok(saved) = store::load(dir.path(), "keyco").unwrap() else { panic!("fit state not saved") };
+    assert!(saved.windows["5-hour"].breaks.is_empty(), "{:?}", saved.windows["5-hour"].breaks);
+}

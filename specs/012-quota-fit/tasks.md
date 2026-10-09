@@ -164,8 +164,8 @@ priority").
 
 - [ ] T046 [P] [US5] In `crates/nullrouter-engine/tests/sim_week.rs`, halve the 3×-off account's true capacity on day 4. Assert a break is recorded within 1 simulated day, 0 placements after the report use the old fitted capacity (SC-006), only rows after the break count for the new fit (Story 5 scenario 2), and the busy rows around the halving are not listed as outside use and raise no alert
 - [ ] T047 [P] [US5] In `crates/nullrouter-engine/tests/sim_week.rs`, restart cleanly and crash (drop without shutdown) mid-week. Assert fits, states, breaks, outside-use entries, exclusive-use declarations and alerts are identical after replay (SC-008, Story 5 scenario 5)
-- [ ] T048 [P] [US5] In `crates/nullrouter-engine/tests/quota_fit.rs`, change one window's declared meter between loads. Assert that window's numbers become `Restarted` with reason `plugin meter changed` and no other number changes (SC-008, FR-017). Also cover the fit file that doesn't parse: it is renamed, the fit restarts, and a warning is raised
-- [ ] T049 [P] [US5] In `crates/nullrouter-engine/tests/quota_fit.rs`, inject an outside-use burst against a fitted model. Assert the break detector does not fire (Story 5 scenario 4)
+- [X] T048 [P] [US5] In `crates/nullrouter-engine/tests/quota_fit.rs`, change one window's declared meter between loads. Assert that window's numbers become `Restarted` with reason `plugin meter changed` and no other number changes (SC-008, FR-017). Also cover the fit file that doesn't parse: it is renamed, the fit restarts, and a warning is raised
+- [X] T049 [P] [US5] In `crates/nullrouter-engine/tests/quota_fit.rs`, inject an outside-use burst against a fitted model. Assert the break detector does not fire (Story 5 scenario 4)
 
 ### Implementation for US5
 
