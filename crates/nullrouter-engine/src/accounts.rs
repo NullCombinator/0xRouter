@@ -196,6 +196,9 @@ pub struct Account {
     /// A proxy name from `proxies.toml`, or `"none"` for a direct connection whatever the
     /// provider or `[connection]` says. `None`: inherit.
     pub proxy: Option<String>,
+    /// FR-023: from when the operator declared this account in exclusive use (no traffic
+    /// from 0router). `None`: not declared. Set only where the provider reports quota.
+    pub exclusive_use: Option<SystemTime>,
 }
 
 impl Account {
@@ -221,6 +224,7 @@ impl Account {
             routing: RoutingOverrides::default(),
             hosts,
             proxy: None,
+            exclusive_use: None,
         }
     }
 
@@ -234,6 +238,18 @@ impl Account {
 
     pub fn is_signin(&self) -> bool {
         self.kind == AccountKind::Signin
+    }
+
+    /// The refusal for exclusive use on this account (FR-023), or `None` when `provider`
+    /// reports quota for it. Load checks accounts that carry a declaration; the CLI checks
+    /// before it sets one.
+    pub fn exclusive_use_problem(&self, provider: &ProviderEntity) -> Option<String> {
+        crate::quota::poll::reported(provider, self).is_none().then(|| {
+            format!(
+                "account {}/{}: exclusive use needs quota polls; {} reports no quota for this account",
+                self.provider, self.name, self.provider
+            )
+        })
     }
 
     /// The effective quota polling interval: the account's own (never below
@@ -339,6 +355,8 @@ struct RawAccount {
     hosts: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     proxy: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    exclusive_use: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -510,13 +528,25 @@ impl Accounts {
                     || a.poll_interval.is_some()
                     || a.priority.is_some()
                     || a.routing.is_some()
-                    || a.proxy.is_some())
+                    || a.proxy.is_some()
+                    || a.exclusive_use.is_some())
             {
                 return Err(FileError::invalid(
                     path,
-                    format!("{who}: `kind`, `poll_interval`, `priority`, `routing` and `proxy` need schema 2"),
+                    format!(
+                        "{who}: `kind`, `poll_interval`, `priority`, `routing`, `proxy` and `exclusive_use` need schema 2"
+                    ),
                 ));
             }
+            let exclusive_use = a
+                .exclusive_use
+                .as_deref()
+                .map(|v| {
+                    crate::clock::parse_rfc3339(v)
+                        .ok_or_else(|| format!("{who}: exclusive_use must be an RFC 3339 time, not {v:?}"))
+                })
+                .transpose()
+                .map_err(|e| FileError::invalid(path, e))?;
             let proxy = a.proxy;
             if let Some(p) = &proxy
                 && p != crate::connection::proxy::NONE
@@ -578,6 +608,7 @@ impl Accounts {
                 routing,
                 hosts: a.hosts.into_iter().collect(),
                 proxy,
+                exclusive_use,
             });
         }
         Ok(Self { path: path.to_owned(), list })
@@ -605,6 +636,7 @@ impl Accounts {
                 routing: RawRouting::write(&a.routing),
                 hosts: if a.is_signin() { Vec::new() } else { a.hosts.iter().cloned().collect() },
                 proxy: a.proxy.clone(),
+                exclusive_use: a.exclusive_use.map(crate::clock::rfc3339),
             })
             .collect();
         toml::to_string(&RawFile { schema: SCHEMA, accounts }).expect("accounts serialise")
@@ -715,6 +747,11 @@ impl Accounts {
             if let Some(problem) = a.routing.meter_problem(&a.provider, declared.windows) {
                 let who = format!("account {}/{}", a.provider, a.name);
                 return Err(FileError::invalid(&self.path, format!("{who}: {problem}")));
+            }
+            if a.exclusive_use.is_some()
+                && let Some(problem) = a.exclusive_use_problem(p)
+            {
+                return Err(FileError::invalid(&self.path, problem));
             }
         }
         Ok(())
@@ -1166,5 +1203,66 @@ window."5-hour" = { token_weights = { output = 15.0 }, model_multiplier = { "cla
         a.save().unwrap();
         let b = Accounts::load(&a.path).unwrap();
         assert_eq!(b.iter().count(), 3);
+    }
+
+    const EXCLUSIVE: &str = r#"
+schema = 2
+[[account]]
+provider = "anthropic"
+name = "max"
+kind = "signin"
+exclusive_use = "2026-10-07T12:00:00Z"
+[[account]]
+provider = "anthropic"
+name = "pro"
+kind = "signin"
+"#;
+
+    #[test]
+    fn exclusive_use_round_trips_as_rfc_3339_and_stays_out_when_unset() {
+        let p = Path::new("accounts.toml");
+        let a = Accounts::parse(EXCLUSIVE, p, |_| None).unwrap();
+        let since = crate::clock::parse_rfc3339("2026-10-07T12:00:00Z");
+        assert!(since.is_some());
+        assert_eq!(a.get("anthropic", "max").unwrap().exclusive_use, since);
+        assert_eq!(a.get("anthropic", "pro").unwrap().exclusive_use, None);
+
+        let text = a.to_toml();
+        assert!(text.contains("exclusive_use = \"2026-10-07T12:00:00Z\""), "{text}");
+        let pro_part = text.split("[[account]]").last().unwrap();
+        assert!(!pro_part.contains("exclusive_use"), "{text}");
+        let b = Accounts::parse(&text, p, |_| None).unwrap();
+        assert_eq!(b.get("anthropic", "max").unwrap().exclusive_use, since);
+
+        let bad = "schema = 2\n[[account]]\nprovider=\"x\"\nname=\"m\"\nkind=\"signin\"\nexclusive_use=\"soon\"\n";
+        assert!(Accounts::parse(bad, p, |_| None).unwrap_err().to_string().contains("RFC 3339"));
+        let one = "schema = 1\n[[account]]\nprovider=\"x\"\nname=\"m\"\nsecret=\"sk-0000000000\"\nexclusive_use=\"2026-10-07T12:00:00Z\"\n";
+        assert!(Accounts::parse(one, p, |_| None).unwrap_err().to_string().contains("need schema 2"));
+    }
+
+    const ACME: &str = r#"
+schema = 2
+id = "acme"
+category = "apikey"
+[auth]
+header = "x-api-key"
+scheme = "raw"
+[[endpoints.text]]
+url = "https://api.acme.example/v1/messages"
+wire = "anthropic-messages"
+[[models]]
+id = "slow"
+kind = "llm"
+"#;
+
+    #[test]
+    fn exclusive_use_refused_when_the_provider_reports_no_quota() {
+        let acme = nullrouter_registry::validate_user_plugin(ACME, Path::new("acme.toml"))
+            .unwrap_or_else(|e| panic!("{e:#?}"));
+        let want = "account acme/main: exclusive use needs quota polls; acme reports no quota for this account";
+        let key = Account::key("acme", "main", SecretSource::Literal, None, 0, BTreeSet::new());
+        assert_eq!(key.exclusive_use_problem(&acme).as_deref(), Some(want));
+        let signin = Account::signin("acme", "main", 0);
+        assert_eq!(signin.exclusive_use_problem(&acme).as_deref(), Some(want));
     }
 }

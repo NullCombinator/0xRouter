@@ -193,7 +193,7 @@ priority").
 
 ### Implementation for US6
 
-- [ ] T058 [US6] Add `exclusive_use: Option<SystemTime>` to `Account` in `crates/nullrouter-engine/src/accounts.rs` (TOML key `exclusive_use`, RFC 3339). Refuse it at load and in the CLI for an account whose provider declares no quota report for it, with the FR-023 wording
+- [X] T058 [US6] Add `exclusive_use: Option<SystemTime>` to `Account` in `crates/nullrouter-engine/src/accounts.rs` (TOML key `exclusive_use`, RFC 3339). Refuse it at load and in the CLI for an account whose provider declares no quota report for it, with the FR-023 wording
 - [ ] T059 [US6] Raise alerts in `crates/nullrouter-engine/src/quota/fit/outside.rs`, only when the account was exclusive-use at the entry's `start`: idle `Outside` rows at once; busy rows when they become final `Outside` and their excess passes `test::rejects` against 0 (`m` = the account's windows); a steady rate when `b_a`'s confidence sequence excludes 0, once per established rate. Append `alert` lines with text built per data-model § Leak alert, and emit `WARN quota.alert: unexplained use …` (FR-024, FR-025, FR-027, clarify Q3)
 - [X] T060 [US6] Implement acknowledgement: `ack(provider, account, id | all)` appends `ack` lines in `crates/nullrouter-engine/src/quota/fit/outside.rs`; unacknowledged alerts are alerts with no `ack` line (FR-027)
 - [ ] T061 [US6] Add the `quota.outside`, `quota.alerts` and `quota.ack` ops in `crates/nullrouter-server/src/quota.rs` and `crates/nullrouter-server/src/operator.rs`, with shapes as in contracts/operator-socket.md
