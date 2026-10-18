@@ -45,6 +45,14 @@ impl Mat {
         t
     }
 
+    /// Every element times `f`.
+    pub fn scale(mut self, f: f64) -> Mat {
+        for v in &mut self.data {
+            *v *= f;
+        }
+        self
+    }
+
     pub fn mul(&self, other: &Mat) -> Mat {
         assert_eq!(self.cols, other.rows, "shape mismatch");
         let mut out = Mat::zeros(self.rows, other.cols);

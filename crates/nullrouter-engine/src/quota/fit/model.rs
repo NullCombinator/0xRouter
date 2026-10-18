@@ -1,4 +1,4 @@
-//! The per-window model: parameters, prediction, Gauss–Newton, sandwich covariance (research R3, R4).
+//! The per-window model: parameters, prediction, Gauss–Newton, generalised least squares (research R3, R4).
 //!
 //! ```text
 //! percent window:   E[y] = k_a · Σ_g μ_g · (I_g + ρ_o·O_g + ρ_r·R_g + ρ_w·W_g) + b_{a,q}·t
@@ -27,6 +27,10 @@ const ROW_VAR: f64 = 2.0 * READING_VAR;
 /// The longest Gauss–Newton run, and the deepest step halving.
 const MAX_ITER: usize = 20;
 const MAX_HALVINGS: u32 = 10;
+/// The most rounds of re-estimating `σ²_e` and refitting.
+const EXTRA_ROUNDS: usize = 4;
+/// Rows of serial correlation the ranges allow for: an hour at 10-minute polls.
+const HAC_LAGS: usize = 6;
 
 /// What the window counts and how it reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -360,8 +364,83 @@ impl Fit {
     }
 }
 
-fn rss_of(spec: &Spec, th: &Theta, rows: &[MRow]) -> f64 {
-    rows.iter().map(|r| (r.y - eval(spec, th, r, &[], None)).powi(2)).sum()
+/// The Cholesky factor of the rows' noise covariance (research R4). Within a run of touching rows
+/// of one account the covariance is tridiagonal: `1/6 + σ²_e` on the diagonal, `−1/12` between
+/// neighbours (they share a reading). The factor is lower bidiagonal: `diag[i]` on the diagonal,
+/// `sub[i]` below it (0 where a run starts).
+struct Whitener {
+    sub: Vec<f64>,
+    diag: Vec<f64>,
+}
+
+impl Whitener {
+    fn new(rows: &[MRow], extra: f64) -> Self {
+        let d = ROW_VAR + extra;
+        let (mut sub, mut diag) = (Vec::with_capacity(rows.len()), Vec::<f64>::with_capacity(rows.len()));
+        for (i, r) in rows.iter().enumerate() {
+            let joined = i > 0 && rows[i - 1].acct == r.acct && rows[i - 1].end == r.start;
+            let s = if joined { -READING_VAR / diag[i - 1] } else { 0.0 };
+            sub.push(s);
+            diag.push((d - s * s).sqrt());
+        }
+        Self { sub, diag }
+    }
+
+    /// `L⁻¹ v`, one row at a time.
+    fn residuals(&self, v: &mut [f64]) {
+        for i in 0..v.len() {
+            let prev = if i > 0 { v[i - 1] } else { 0.0 };
+            v[i] = (v[i] - self.sub[i] * prev) / self.diag[i];
+        }
+    }
+
+    /// `L⁻¹ G`, column by column, for row-major gradients.
+    fn gradients(&self, g: &mut [Vec<f64>]) {
+        for i in 0..g.len() {
+            let (done, rest) = g.split_at_mut(i);
+            let prev = done.last();
+            for (j, v) in rest[0].iter_mut().enumerate() {
+                *v = (*v - self.sub[i] * prev.map_or(0.0, |p| p[j])) / self.diag[i];
+            }
+        }
+    }
+}
+
+fn raw_residuals(spec: &Spec, th: &Theta, rows: &[MRow]) -> Vec<f64> {
+    rows.iter().map(|r| r.y - eval(spec, th, r, &[], None)).collect()
+}
+
+/// The generalised squared error: the whitened residuals' sum of squares.
+fn rss_of(spec: &Spec, th: &Theta, rows: &[MRow], wh: &Whitener) -> f64 {
+    let mut r = raw_residuals(spec, th, rows);
+    wh.residuals(&mut r);
+    r.iter().map(|v| v * v).sum()
+}
+
+/// The extra variance `σ²_e` that makes the whitened residuals' mean square 1 over `dof`
+/// degrees of freedom, floored at 0.
+fn extra_variance(rows: &[MRow], raw: &[f64], dof: f64) -> f64 {
+    let q = |extra: f64| {
+        let mut r = raw.to_vec();
+        Whitener::new(rows, extra).residuals(&mut r);
+        r.iter().map(|v| v * v).sum::<f64>()
+    };
+    if dof <= 0.0 || q(0.0) <= dof {
+        return 0.0;
+    }
+    let (mut lo, mut hi) = (0.0, ROW_VAR);
+    for _ in 0..60 {
+        if q(hi) <= dof {
+            break;
+        }
+        lo = hi;
+        hi *= 4.0;
+    }
+    for _ in 0..50 {
+        let mid = 0.5 * (lo + hi);
+        if q(mid) > dof { lo = mid } else { hi = mid }
+    }
+    hi
 }
 
 fn gradients(spec: &Spec, th: &Theta, rows: &[MRow], active: &[P]) -> Vec<Vec<f64>> {
@@ -403,7 +482,14 @@ pub fn fit(spec: &Spec, rows: &[MRow], start: &Theta) -> Option<Fit> {
 /// spec lacks is ignored. `None` when no parameter is informed, there are no more rows than
 /// parameters, or the information is singular.
 pub fn fit_with_prior(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&PriorTerm>) -> Option<Fit> {
-    fit_inner(spec, rows, start, prior).map(|(f, _)| f)
+    fit_inner(spec, rows, start, prior, None).map(|(f, _)| f)
+}
+
+/// Fits only `free` over `rows`, every other parameter held at its value in `start` (the break
+/// detector's one-number refit, research R9). `None` as for [`fit`], or when no row informs a
+/// parameter of `free`.
+pub fn fit_only(spec: &Spec, rows: &[MRow], start: &Theta, free: &[P]) -> Option<Fit> {
+    fit_inner(spec, rows, start, None, Some(free)).map(|(f, _)| f)
 }
 
 /// The best of the fits from each of `starts`, by the objective (squared error plus the prior's
@@ -413,7 +499,7 @@ pub fn fit_with_prior(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&
 pub fn fit_best(spec: &Spec, rows: &[MRow], starts: &[Theta], prior: Option<&PriorTerm>) -> Option<Fit> {
     let mut best: Option<(Fit, f64)> = None;
     for start in starts {
-        if let Some((f, obj)) = fit_inner(spec, rows, start, prior)
+        if let Some((f, obj)) = fit_inner(spec, rows, start, prior, None)
             && obj.is_finite()
             && best.as_ref().is_none_or(|(_, b)| obj < *b)
         {
@@ -423,13 +509,17 @@ pub fn fit_best(spec: &Spec, rows: &[MRow], starts: &[Theta], prior: Option<&Pri
     best.map(|(f, _)| f)
 }
 
-fn fit_inner(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&PriorTerm>) -> Option<(Fit, f64)> {
+fn fit_inner(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&PriorTerm>, free: Option<&[P]>) -> Option<(Fit, f64)> {
     let mut th = start.clone();
-    // Keep the parameters some row informs.
+    // Keep the parameters some row informs (of `free`, when given).
     let probe = candidates(spec, &th);
     let probe_grads = gradients(spec, &th, rows, &probe);
-    let active: Vec<P> =
-        probe.iter().enumerate().filter(|(i, _)| probe_grads.iter().any(|g| g[*i] != 0.0)).map(|(_, p)| *p).collect();
+    let active: Vec<P> = probe
+        .iter()
+        .enumerate()
+        .filter(|(i, p)| free.is_none_or(|f| f.contains(p)) && probe_grads.iter().any(|g| g[*i] != 0.0))
+        .map(|(_, p)| *p)
+        .collect();
     let p = active.len();
     if p == 0 || rows.len() <= p {
         return None;
@@ -445,22 +535,112 @@ fn fit_inner(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&PriorTerm
         let d: Vec<f64> = active.iter().zip(&pm).map(|(q, m)| fit_space(*q, t.get(*q)) - m).collect();
         d.iter().zip(pi.mul_vec(&d)).map(|(a, b)| a * b).sum()
     };
-    // The objective: the rows' squared error plus the prior's penalty.
-    let mut rss = rss_of(spec, &th, rows) + penalty(&th);
+    // Generalised least squares (R4): the rows' whitened squared error plus the prior's penalty.
+    // `σ²_e` is unknown, so the fit alternates: fit with the current `σ²_e`, re-estimate it from
+    // the residuals, refit while it moves.
+    let dof = (rows.len() - p) as f64;
+    let mut extra = 0.0;
     let mut converged = false;
+    for _ in 0..EXTRA_ROUNDS {
+        let wh = Whitener::new(rows, extra);
+        converged = gauss_newton(spec, rows, &active, &wh, &mut th, &penalty, &pi, &pm, has_prior)?;
+        let next = extra_variance(rows, &raw_residuals(spec, &th, rows), dof);
+        let settled = (next - extra).abs() <= 0.05 * next.max(0.01 * ROW_VAR);
+        extra = next;
+        if settled {
+            break;
+        }
+    }
+    // Covariance at the solution: the inverse of the whitened information plus the prior's.
+    let wh = Whitener::new(rows, extra);
+    let mut grads = gradients(spec, &th, rows, &active);
+    wh.gradients(&mut grads);
+    let rss = rss_of(spec, &th, rows, &wh);
+    let mut info = information(&grads, p);
+    for i in 0..p {
+        for j in 0..p {
+            info[(i, j)] += pi[(i, j)];
+        }
+    }
+    let mut ridged = info.clone();
+    let ridge = 1e-10 * (0..p).map(|i| info[(i, i)]).sum::<f64>() / p as f64 + 1e-300;
+    for i in 0..p {
+        ridged[(i, i)] += ridge;
+    }
+    let model_cov = ridged.inverse()?;
+    let mut res = raw_residuals(spec, &th, rows);
+    wh.residuals(&mut res);
+    let factor = serial_factor(rows, &active, &grads, &res, &model_cov);
+    let cov = model_cov.scale(factor);
+    // Starts are compared under the rounding noise alone, which doesn't depend on the fit.
+    let objective = rss_of(spec, &th, rows, &Whitener::new(rows, 0.0)) + penalty(&th);
+    Some((Fit { theta: th, active, cov, info, rows: rows.len(), rss, sigma_e2: extra, converged }, objective))
+}
+
+/// How much serial correlation left in the whitened residuals widens the ranges (R4): the
+/// largest ratio, over the meter numbers, of the Newey–West variance (Bartlett kernel over
+/// [`HAC_LAGS`] rows, never across a run's start) to the model's, floored at 1. One factor for
+/// every number keeps the covariance positive definite; the floor keeps a short, noisy early fit
+/// from claiming more than rounding alone allows.
+fn serial_factor(rows: &[MRow], active: &[P], grads: &[Vec<f64>], res: &[f64], cov: &Mat) -> f64 {
+    let p = active.len();
+    let scores: Vec<Vec<f64>> = grads.iter().zip(res).map(|(g, r)| g.iter().map(|v| v * r).collect()).collect();
+    let mut meat = Mat::zeros(p, p);
+    // How many rows back each row's run reaches.
+    let mut reach = vec![0usize; rows.len()];
+    for i in 1..rows.len() {
+        if rows[i - 1].acct == rows[i].acct && rows[i - 1].end == rows[i].start {
+            reach[i] = reach[i - 1] + 1;
+        }
+    }
+    for (i, si) in scores.iter().enumerate() {
+        outer_add(&mut meat, si, si, 1.0);
+        for l in 1..=HAC_LAGS.min(reach[i]) {
+            let w = 1.0 - l as f64 / (HAC_LAGS + 1) as f64;
+            outer_add(&mut meat, si, &scores[i - l], w);
+            outer_add(&mut meat, &scores[i - l], si, w);
+        }
+    }
+    let hac = cov.mul(&meat).mul(cov);
+    active
+        .iter()
+        .enumerate()
+        .filter(|(_, q)| !matches!(q, P::B(..)))
+        .map(|(i, _)| hac[(i, i)] / cov[(i, i)])
+        .filter(|r| r.is_finite())
+        .fold(1.0, f64::max)
+}
+
+/// Gauss–Newton under `wh` from `th`, with step halving. Returns whether it converged; `None`
+/// when the normal equations are singular.
+#[allow(clippy::too_many_arguments)]
+fn gauss_newton(
+    spec: &Spec,
+    rows: &[MRow],
+    active: &[P],
+    wh: &Whitener,
+    th: &mut Theta,
+    penalty: &dyn Fn(&Theta) -> f64,
+    pi: &Mat,
+    pm: &[f64],
+    has_prior: bool,
+) -> Option<bool> {
+    let p = active.len();
+    let mut rss = rss_of(spec, th, rows, wh) + penalty(th);
     for _ in 0..MAX_ITER {
-        let grads = gradients(spec, &th, rows, &active);
+        let mut grads = gradients(spec, th, rows, active);
+        wh.gradients(&mut grads);
+        let mut r = raw_residuals(spec, th, rows);
+        wh.residuals(&mut r);
         let mut a = information(&grads, p);
         let mut g = vec![0.0; p];
-        for (row, gr) in rows.iter().zip(&grads) {
-            let r = row.y - eval(spec, &th, row, &[], None);
+        for (ri, gr) in r.iter().zip(&grads) {
             for (gi, v) in g.iter_mut().zip(gr) {
-                *gi += v * r;
+                *gi += v * ri;
             }
         }
         if has_prior {
-            let toward: Vec<f64> =
-                active.iter().zip(&pm).map(|(q, m)| m - fit_space(*q, th.get(*q))).collect();
+            let toward: Vec<f64> = active.iter().zip(pm).map(|(q, m)| m - fit_space(*q, th.get(*q))).collect();
             for (gi, v) in g.iter_mut().zip(pi.mul_vec(&toward)) {
                 *gi += v;
             }
@@ -482,61 +662,24 @@ fn fit_inner(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&PriorTerm
             for (q, d) in active.iter().zip(&delta) {
                 next.step(*q, s * d);
             }
-            let r = rss_of(spec, &next, rows) + penalty(&next);
-            if r.is_finite() && r <= rss {
-                let rel = (rss - r) / rss.max(1e-300);
-                th = next;
-                rss = r;
+            let rn = rss_of(spec, &next, rows, wh) + penalty(&next);
+            if rn.is_finite() && rn <= rss {
+                let rel = (rss - rn) / rss.max(1e-300);
+                *th = next;
+                rss = rn;
                 moved = true;
                 if rel < 1e-12 || delta.iter().map(|d| d.abs()).fold(0.0, f64::max) * s < 1e-10 {
-                    converged = true;
+                    return Some(true);
                 }
                 break;
             }
             s *= 0.5;
         }
-        if !moved || converged {
-            converged = converged || !moved;
-            break;
+        if !moved {
+            return Some(true);
         }
     }
-    // Covariance at the solution: J⁻¹ (J_r + σ²_e J) J⁻¹.
-    let grads = gradients(spec, &th, rows, &active);
-    let rss = rss_of(spec, &th, rows);
-    let mut info = information(&grads, p);
-    for i in 0..p {
-        for j in 0..p {
-            info[(i, j)] += pi[(i, j)];
-        }
-    }
-    let mut ridged = info.clone();
-    let ridge = 1e-10 * (0..p).map(|i| info[(i, i)]).sum::<f64>() / p as f64 + 1e-300;
-    for i in 0..p {
-        ridged[(i, i)] += ridge;
-    }
-    let inv = ridged.inverse()?;
-    let mut jr = Mat::zeros(p, p);
-    for (i, g) in grads.iter().enumerate() {
-        outer_add(&mut jr, g, g, ROW_VAR);
-        if let Some(next) = rows.get(i + 1)
-            && next.acct == rows[i].acct
-            && next.start == rows[i].end
-        {
-            // Adjacent rows share a reading: covariance −1/12.
-            outer_add(&mut jr, g, &grads[i + 1], -READING_VAR);
-            outer_add(&mut jr, &grads[i + 1], g, -READING_VAR);
-        }
-    }
-    let sigma_e2 = (rss / (rows.len() - p) as f64 - ROW_VAR).max(0.0);
-    for i in 0..p {
-        for j in 0..p {
-            // The pruned rows count as rows: their share of the sandwich's middle.
-            jr[(i, j)] += ROW_VAR * pi[(i, j)] + sigma_e2 * info[(i, j)];
-        }
-    }
-    let cov = inv.mul(&jr).mul(&inv);
-    let objective = rss + penalty(&th);
-    Some((Fit { theta: th, active, cov, info, rows: rows.len(), rss, sigma_e2, converged }, objective))
+    Some(false)
 }
 
 /// The natural-unit values of every fitted parameter, keyed by parameter (for tests and views).

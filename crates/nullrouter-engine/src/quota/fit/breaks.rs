@@ -1,9 +1,10 @@
 //! The break detector: confidence sequences started each hour over the last 48 h (research R9).
 //!
 //! For each fitted number, a sequence starts at every whole hour of the last 48 hours. Each
-//! refits the window from the rows after its start alone and tests the number it gets against
-//! the value now in effect, with the always-valid test of R5 (`m` = 48 starts × numbers). The
-//! start with the strongest rejection is the break's `at`.
+//! refits that number alone from the rows after its start, every other parameter held at the
+//! fit in effect, and tests the value it gets against the value now in effect, with the
+//! always-valid test of R5 (`m` = 48 starts × numbers). The start with the strongest rejection
+//! is the break's `at`.
 //!
 //! Rows scored are the evidence rows and the busy rows classified as outside use, provisional or
 //! already final: a proportional excess (a rule change) must show as a break, not a leak, and a
@@ -93,7 +94,7 @@ fn survives_without_worst_row(spec: &Spec, sub: &[MRow], f: &Fit, t: &Target, nu
     if rest.len() < MIN_ROWS {
         return false;
     }
-    let Some(g) = model::fit(spec, &rest, &current.theta) else { return false };
+    let Some(g) = model::fit_only(spec, &rest, &current.theta, &[t.p]) else { return false };
     if g.rows < 2 * g.active.len() || !g.active.contains(&t.p) {
         return false;
     }
@@ -133,15 +134,17 @@ pub fn detect(
         if sub.len() < MIN_ROWS {
             continue;
         }
-        let Some(f) = model::fit(spec, &sub, &current.theta) else { continue };
-        if f.rows < 2 * f.active.len() {
-            continue;
-        }
         for (i, t) in targets.iter().enumerate() {
             if t.account.as_ref().and_then(|a| account_epochs.get(a)).is_some_and(|e| at < *e) {
                 continue;
             }
-            if !f.active.contains(&t.p) || !current.active.contains(&t.p) {
+            if !current.active.contains(&t.p) {
+                continue;
+            }
+            // Only the tested number moves; the rest stay at the fit in effect, so a few rows
+            // can't trade one number against another (R9).
+            let Some(f) = model::fit_only(spec, &sub, &current.theta, &[t.p]) else { continue };
+            if f.rows < 2 * f.active.len() || !f.active.contains(&t.p) {
                 continue;
             }
             let Some(se) = f.se(t.p) else { continue };

@@ -91,7 +91,7 @@ Pooled numbers (`ρ`, `μ`, and on counted or balance windows `w`) are shared by
 account of the plugin (FR-002). `k_a` (capacity) and `b_a` are per account. A split account
 (R8) gets its own `ρ`, `μ`.
 
-The estimate is weighted nonlinear least squares in log parameters (positivity), solved by
+The estimate is generalised nonlinear least squares (R4) in log parameters (positivity), solved by
 Gauss–Newton from the meter in effect as the starting point. Every poll refits from all rows of
 the current epoch (R11). Size: a plugin with 3 accounts, 2 multiplier globs and 4 classes has
 about 3 + 3 + 8 parameters. A month of 10-minute rows is about 4,300 rows per account, so a refit
@@ -114,22 +114,50 @@ variance `1/6`, and adjacent rows share a reading, with covariance `−1/12`. On
 unknown extra variance `σ²_e` (requests that span a poll, provider lag), estimated from the
 residuals and floored at 0.
 
-The covariance of the estimate is the sandwich `J⁻¹ (J_r + σ²_e · J₀) J⁻¹`, where:
-- `J₀ = Σ g_i g_iᵀ` over the row gradients;
-- `J_r` applies the known tridiagonal rounding covariance (`1/6` on the diagonal, `−1/12`
-  between adjacent rows of one account);
-- `J = J₀` (Gauss–Newton).
+The estimate is **generalised least squares** under that covariance. Within each run of touching
+rows of one account (each row starts where the previous one ended), the row-noise covariance is
+tridiagonal: `1/6 + σ²_e` on the diagonal, `−1/12` between neighbours. Its Cholesky factor is
+lower bidiagonal, so residuals and gradients are whitened row by row in `O(rows)`. Gauss–Newton
+runs on the whitened rows. `σ²_e` is unknown: the fit alternates between fitting with the
+current `σ²_e` and re-estimating it as the value that gives the whitened residuals a mean
+square of 1 over `rows − parameters`, floored at 0, and stops when it settles (at most 4
+rounds). A run ends at any row that isn't evidence (a reset, outside use, a set-aside row), so
+the next evidence row starts a new run.
+
+The covariance of the estimate is `φ · (J̃ᵀJ̃ + Π)⁻¹`, where `J̃` is the whitened gradient matrix
+and `Π` the folded prior's information (R11). `J̃ᵀJ̃` is also the information that separability (R7)
+and folding (R11) read. `φ ≥ 1` allows for serial correlation the rounding model misses. When use
+creeps up by less than a step between polls, consecutive readings round the same way, so their
+errors are positively correlated, not independent. On the simulated week, the whitened residuals
+at the true parameters had autocorrelation 0.15–0.23 at lag 1 and about 0.1 at lags 2–3, and none
+from lag 6 on. `φ` is the largest ratio, over the meter numbers, of the Newey–West variance
+(Bartlett kernel over 6 rows, about an hour at 10-minute polls, never across a run's start) to the
+model's variance. One factor keeps the covariance positive definite. The floor at 1 keeps a short,
+noisy early fit from claiming more than rounding alone allows. Starts (R3) are compared by the whitened squared error under rounding
+alone (`σ²_e = 0`), which is the same for every start.
 
 The **95% range** of a number is `exp(log θ̂ ± 1.96 · se)`. It is shown, and it is the range
 FR-004 and SC-003 talk about.
 
 **Rationale**: FR-004 requires rounding to be part of the noise. Its structure is known exactly,
-so it is modelled, not estimated. The `−1/12` covariance matters: ignoring it overstates the
-noise of sums of rows by about 2×, and so slows significance for nothing.
+so it is modelled, not estimated. Rounding errors telescope over a run: the sum of a run's rows
+carries one reading's error at each end, however long the run is. Ordinary least squares that
+treats the rows as independent throws most of that away. A 10-minute row typically moves a
+whole-percent reading by less than one point (0.77 on the simulated week), so its information is
+small. On the simulated week with the meter 3× off, the standard errors of `(log k, log ρ_o)` after
+seven days were `(0.19, 0.42)` with independent rows and `(0.067, 0.148)` with GLS: about ten times
+the information from the same polls (measured 2026-10-18). With the earlier estimator (OLS on rows
+with a sandwich covariance) the output weight could not be separated from capacity within the
+week (VIF 150–290). With GLS it is significant within days.
 
-**Alternatives considered**: (a) Regress cumulative levels within each reset period. The errors
-would be i.i.d., but one outside-use burst would shift every later level of the period. (b) An
-HAC (Newey–West) estimate. Unneeded when the dominant noise's structure is known.
+**Alternatives considered**: (a) OLS on rows with the sandwich `J⁻¹ (J_r + σ²_e · J₀) J⁻¹`. This
+was the first implementation. Its ranges were honest, but it was inefficient, as above. (b)
+Regress cumulative levels within each reset period. That is the same estimator when the run is
+the whole period, but one outside-use burst would shift every later level of the period. GLS on
+evidence rows ends the run at the burst instead. A smaller excess that stays inside the predictive
+range does get more weight under GLS than under OLS. The estimated `σ²_e` absorbs it, which moves the
+weights back toward independent rows. (c) An HAC (Newey–West) estimate. Unneeded when the
+dominant noise's structure is known.
 
 ## R5. The significance test (FR-010, clarify Q2)
 
@@ -241,14 +269,17 @@ chance.
 ## R9. Breaks (FR-015, FR-016)
 
 **Decision**: For each **significant** number, 0router keeps a **break detector**: confidence
-sequences of R5 started at each whole hour over the last 48 hours. Each tests the number fitted
-from rows after that hour alone against the current fitted value. `m` counts the 48 starts and
-the numbers. When one rejects:
+sequences of R5 started at each whole hour over the last 48 hours. Each refits that number
+alone from the rows after that hour, every other parameter held at the current fit, and tests
+it against the current fitted value. `m` counts the 48 starts and the numbers. When one rejects:
 
 - a **break** is recorded at that start ("provider rules changed around Tue 14:00");
 - every fitted number of that window (for capacity, only that account's) goes back to learning,
   and routing uses the override or declaration (FR-015);
-- the fit's new epoch starts at the break, and rows before it no longer count;
+- for a pooled number, the fit's new epoch starts at the break, and rows before it no longer
+  count. For a capacity, the account's rows before the break leave the window, but they still
+  count for the pooled numbers: they are folded into the prior (R11) with the account's own
+  parameters (`k_a`, `b_a`) marginalised out;
 - the break goes to the routing view and the `serve` log.
 
 Rows provisionally classified as outside use inside the settle span (R6) are scored by the
@@ -258,6 +289,14 @@ traffic moves the traffic-direction score little and doesn't fire (Story 5 scena
 **Rationale**: SC-006 asks for detection within a day of a halving. A halving is a factor-2 error
 on `k_a`, about as large as the corrections the fit is tuned for (R5), so hourly starts detect it
 within hours. 48 hours of starts bounds the cost and the `m` penalty.
+
+A start may have as few as 8 rows. Refitting every parameter on so few rows let the fit trade
+one number against another (the output weight toward 0, capacity up) into a degenerate optimum
+whose standard error looked small. On the simulated week that gave a false capacity break at
++157 h. With one account, dropping its rows also dropped all evidence for the pooled weights,
+which were then published from 9 rows (found 2026-10-18). A one-number refit is the usual form
+of a change test for one parameter. It is stable on few rows and has more power, because the
+other numbers are known to the precision of the whole epoch.
 
 **Alternatives considered**: (a) A CUSUM with a fixed shift size. It needs the shift known in
 advance. (b) Comparing the last N rows to the rest. Its error rate under repeated checks is

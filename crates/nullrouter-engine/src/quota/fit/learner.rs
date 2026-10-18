@@ -821,7 +821,7 @@ fn detect_breaks(win: &mut Win, spec: &Spec, meter: &MeterDecl, ov: &WindowOverr
     if found.is_empty() {
         return false;
     }
-    apply_breaks(win, &found, provider);
+    apply_breaks(win, &found, provider, spec, meter, now);
     true
 }
 
@@ -830,9 +830,11 @@ const KEEP_BREAKS: usize = 64;
 
 /// Records `found`: a pooled number's break restarts the whole window at its time (every fitted
 /// number goes to `Relearning`, rows and splits before it are dropped); a capacity's restarts
-/// only that account. Rows of the span that were set aside as busy outside use count as evidence
-/// again; the ones already listed get their `reclassified` line at the next listing pass.
-fn apply_breaks(win: &mut Win, found: &[Break], provider: &str) {
+/// only that account. The account's rows before its break leave the window but not the pooled
+/// numbers: they are folded into the prior with the account's own parameters marginalised out
+/// (R9, R11). Rows of the span that were set aside as busy outside use count as evidence again;
+/// the ones already listed get their `reclassified` line at the next listing pass.
+fn apply_breaks(win: &mut Win, found: &[Break], provider: &str, spec: &Spec, meter: &MeterDecl, now: SystemTime) {
     let relearn = |since| NumberState::Relearning { since, progress: Progress { intervals: 0, half_width: WIDE } };
     for b in found {
         breaks::log(provider, b);
@@ -867,7 +869,16 @@ fn apply_breaks(win: &mut Win, found: &[Break], provider: &str) {
         if pooled_at.is_some_and(|p| p >= b.at) {
             continue;
         }
-        win.rows.retain(|r| r.account != *account || r.start >= b.at);
+        let (before, kept): (Vec<Row>, Vec<Row>) =
+            std::mem::take(&mut win.rows).into_iter().partition(|r| r.account == *account && r.start < b.at);
+        win.rows = kept;
+        let old = win.base.prior.take().and_then(|p| drop_account_params(&p, account));
+        let evidence: Vec<Row> = before.into_iter().filter(|r| is_evidence(r.class)).collect();
+        let folded = fold_rows(win, evidence, spec, meter, b.at, now).and_then(|p| drop_account_params(&p, account));
+        win.base.prior = match (old, folded) {
+            (Some(o), Some(f)) => Some(combine(&o, &f)),
+            (o, f) => f.or(o),
+        };
         win.base.account_epochs.insert(account.clone(), rfc3339_millis(b.at));
         win.numbers.insert(b.key(), relearn(b.at));
         win.published.capacity.remove(account);
