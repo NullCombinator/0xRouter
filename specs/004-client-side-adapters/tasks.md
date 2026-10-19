@@ -1072,7 +1072,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
 - [X] T089 [US6] `adapters list` in full, in `crates/nullrouter-cli/src/cmd/adapters.rs`:
   harness, versions and states, the active version, `rebuilding` or `rebuild_failed` flags,
   and the unacknowledged alert count. hermes shows `built-in`.
-- [ ] T090 [US6] Make T085 and T086 pass.
+- [X] T090 [US6] Make T085 and T086 pass.
 
 **Checkpoint**: every adapter action is visible, and no content is stored.
 
