@@ -276,6 +276,22 @@ A key bound to a harness runs that harness's adapter on its requests. Installing
 approving and removing adapters, their alerts, the catalogue and the `[adapters]` settings are
 covered in [adapters/operating.md](adapters/operating.md).
 
+**Address space.** `serve` starts the adapter sandbox at startup, whether or not an adapter is
+installed. The sandbox reserves about 4 GiB of virtual address space per instance in its pool,
+which is about 258 GB at the default `max_instances = 64`. This is address space, not memory.
+The RAM actually in use is a few MB, plus about 14 MB for each loaded adapter as large as
+claude-code.
+
+A virtual-memory limit on the process, such as `ulimit -v` or a systemd `LimitAS=`, makes the
+reservation fail. `serve` then stops with `startup failed: the adapter store can't open: the
+adapter sandbox did not start: sandbox engine: failed to create memory pool mapping`. Lift the limit, or lower
+`max_instances` under `[adapters]` to fit it: about 4 GiB per instance, plus what the rest of
+the process needs.
+
+Strict overcommit (`vm.overcommit_memory = 2`) is not expected to fail it: the reserved range
+holds no writable memory until an instance uses it, and Linux charges only writable memory.
+This is untested.
+
 ## The dashboard
 
 `serve` also serves a read-only web dashboard on its own port, `127.0.0.1:20130`. It shows the

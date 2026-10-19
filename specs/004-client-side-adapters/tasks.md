@@ -360,6 +360,8 @@ mocks, then live, every turn completes and every change is recorded.
 
   Assert both in a parity test in `crates/nullrouter-adapters/tests/hermes.rs`.
 - [ ] T031 [US1] *operator-run* live check that fills the reject table.
+  - After the merge (user, 2026-10-19): part of the user's whole-system live run; it doesn't
+    gate T098.
   - Ask the user to run
     `! NR_LIVE=1 cargo test -p nullrouter-server --test harness_hermes -- --ignored --nocapture`,
     once with the table empty for the six chosen text providers. xai and grok-cli need
@@ -1025,6 +1027,8 @@ provider.
     `gh release create`.
 - [ ] T084 [US5] *operator-run* full pipeline, per
   [quickstart § 10](quickstart.md#10-claude-code-through-the-full-pipeline-us5-fr-027-fr-028-sc-008).
+  - After the merge (user, 2026-10-19): part of the user's whole-system live run; it doesn't
+    gate T098.
   - Ask the user to run the install, review with their review model, approve, key, and
     `NR_LIVE=1` harness commands with `! …`.
   - Record the result, the review report's risk level and the per-provider pass/fail in
@@ -1123,10 +1127,21 @@ each change by path, kind and reason, and each guardrail event, and never any co
   `specs/004-client-side-adapters/quickstart.md`. Record any gap they report in the commit
   message.
 - [ ] T098 Final gate.
+  - Merge order (user, 2026-10-19): 004 merges after T092, T097 and the published
+    claude-code archive. T031 and T084 move after the merge, into the user's whole-system
+    live run, so they don't gate the merge.
+  - The archive: the user publishes GitHub release `adapter-claude-code-v0.1.0` with
+    `claude-code-0.1.0.tar.gz` from `tools/package-adapter.sh`, before the merge, so the
+    catalogue entry never points at a missing file. Its sha256 must equal
+    `catalogue/index.toml`'s.
   - Push with the user's OK. CI's `cargo test --workspace` and
     `cargo clippy --workspace --all-targets -- -D warnings` must be green.
-  - Confirm that `unsafe` appears only in `crates/nullrouter-adapter-kit/src/abi.rs`:
-    `grep -rn "unsafe" crates/ --include='*.rs'` must list only that file.
+  - Confirm that `unsafe` code appears only in `crates/nullrouter-adapter-kit/src/abi.rs`.
+    The literal `grep -rn "unsafe" crates/ --include='*.rs'` also matches the word in comments,
+    strings and the gate's refusal fixtures, so check with
+    `grep -rnE '\bunsafe[[:space:]]*(\{|fn\b|impl\b|extern\b|trait\b)|#!?\[unsafe\(' crates/ --include='*.rs'`.
+    Outside `abi.rs` it may list only `gate.rs`'s message strings and the refusal fixtures
+    `adapters/tests/gate/invalid/unsafe_code` and `builder/tests/fixtures/unsafe_block`.
 
 ---
 

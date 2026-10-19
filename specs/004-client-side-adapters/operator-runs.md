@@ -4,6 +4,12 @@ What is left of slice 004 after the code tasks: what you run, with which account
 long it takes, and what counts as a pass. Times are estimates for this machine (4 threads,
 16 GB), not measurements.
 
+**Order** (your plan, 2026-10-19):
+
+1. Before the merge: T092 (benchmarks), T097 (quickstart), and publishing the claude-code
+   archive (below). Then T098, the final gate and the merge.
+2. After the merge: T031 and T084, in your whole-system live run.
+
 Run everything in a normal terminal, not inside `claude-0router`. The live runs need
 `~/.0router`, the network, and the `hermes` and `claude` binaries, and the sandbox denies all
 three.
@@ -25,7 +31,9 @@ Pause the 012 session's cargo runs while you do T092; the others don't mind shar
 
 ---
 
-## T031: hermes live run, fills the echoed-reasoning reject table
+## T031: hermes live run, fills the echoed-reasoning reject table (after the merge)
+
+Part of your whole-system live run. It doesn't gate the merge.
 
 **Needs**
 - hermes installed and on `PATH` (`hermes --version`). See T028 at the end.
@@ -59,7 +67,11 @@ replay, image). Each turn has a 300 s timeout.
 
 ---
 
-## T084: Claude Code through the full pipeline
+## T084: Claude Code through the full pipeline (after the merge)
+
+Part of your whole-system live run. It doesn't gate the merge. After the merge, with the
+archive published, you can also install from the catalogue (`$NR catalogue install
+claude-code`) instead of the local source; both take the same steps.
 
 **Needs**
 - `claude` (Claude Code) on `PATH`.
@@ -98,8 +110,8 @@ $NR keys issue cc-laptop --adapter claude-code         # prints the key once
 NR_LIVE=1 NR_KEY=0r-… cargo test -p nullrouter-server --test harness_claude_code -- --ignored --nocapture
 ```
 
-Install from the local source, not `catalogue install`. The catalogue's archive URL points at
-a GitHub release (`adapter-claude-code-v0.1.0`) that hasn't been published.
+Before the merge, install from the local source: the catalogue index is read from `main`,
+where `catalogue/` doesn't exist yet.
 
 **Takes** about 20 to 30 minutes:
 - install and build, 1 to 3 minutes;
@@ -174,7 +186,7 @@ done
 Follow `quickstart.md`'s prerequisites. They set a throwaway `NULLROUTER_HOME`, which
 replaces the common setup's `~/.0router` for this task only, and run the builder `setup` for
 it (network, about 3 minutes). Before § 3, put the builder on `PATH` as the quickstart says.
-Stop any `serve` left from T031 or T084 first: both listen on 127.0.0.1:20129.
+Stop any `serve` you already have running first: both listen on 127.0.0.1:20129.
 
 | § | Run | Pass |
 |---|---|---|
@@ -206,9 +218,40 @@ builder `setup` each new home needs.
 
 ---
 
+## Publishing the claude-code archive (before the merge)
+
+The catalogue entry in `catalogue/index.toml` names
+`https://github.com/NullCombinator/0xRouter/releases/download/adapter-claude-code-v0.1.0/claude-code-0.1.0.tar.gz`.
+Publish it before the merge, so that once the index is on `main` it never points at a
+missing file. You run it: it publishes under the repo's name.
+
+```sh
+cd ~/Desktop/0router/.worktrees/004
+tools/package-adapter.sh adapters/community/claude-code /tmp/claude-code-0.1.0.tar.gz
+sha256sum /tmp/claude-code-0.1.0.tar.gz   # must be 7a5527de96bbf921e885d68a8a73120eff4a955bcdb1fa018263a6a437e4ddab
+gh release create adapter-claude-code-v0.1.0 /tmp/claude-code-0.1.0.tar.gz \
+  --repo NullCombinator/0xRouter --target 004-client-side-adapters \
+  --title "claude-code adapter 0.1.0" \
+  --notes "Source: adapters/community/claude-code. sha256 7a5527de96bbf921e885d68a8a73120eff4a955bcdb1fa018263a6a437e4ddab"
+```
+
+**Takes** a minute.
+
+**Pass**: this prints the same sha256.
+
+```sh
+curl -sL https://github.com/NullCombinator/0xRouter/releases/download/adapter-claude-code-v0.1.0/claude-code-0.1.0.tar.gz | sha256sum
+```
+
+Any later change to the adapter's source needs a new version: a new archive, a new release
+and a new `[[entry.version]]` in the index.
+
+---
+
 ## T098: final gate
 
-**Needs**: T031, T084, T092 and T097 done, and your OK.
+**Needs**: T092 and T097 done, the archive published, and your OK. T031 and T084 come after
+the merge.
 
 **Run**: I push and read CI through the github MCP.
 
@@ -227,13 +270,14 @@ builder `setup` each new home needs.
   fixtures, adapter sources that must be refused:
   `adapters/tests/gate/invalid/unsafe_code` and `builder/tests/fixtures/unsafe_block`. That
   holds today.
+- The published archive's sha256 matches the index.
 - Then I ask you about the PR.
 
 **Takes** a CI run, about 30 minutes.
 
 ---
 
-## T028: hermes harness runner (not blocking the first release)
+## T028: hermes harness runner (after the merge, with T031)
 
 Its code is written: `tests/harness/hermes/run.sh` and
 `crates/nullrouter-server/tests/harness_hermes.rs`. The task is open because it has never run.
