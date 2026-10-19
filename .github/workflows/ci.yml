@@ -43,7 +43,7 @@ jobs:
       - name: Test
         run: cargo test --workspace --no-fail-fast 2>&1 | tee test.log
       - name: Sim suite
-        run: set -o pipefail; cargo test -p nullrouter-engine --release --test sim_suite --test sim_week -- --ignored 2>&1 | tee sim_suite.log
+        run: set -o pipefail; cargo test -p nullrouter-engine --release --test sim_suite --test sim_week -- --ignored --nocapture 2>&1 | tee sim_suite.log
       - name: Clippy
         if: ${{ !cancelled() }}
         run: cargo clippy --workspace --all-targets --keep-going --message-format=short -- -D warnings 2>&1 | tee clippy.log
