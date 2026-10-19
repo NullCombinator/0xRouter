@@ -84,6 +84,16 @@ pub fn edited_json(id: &str, edit: impl FnOnce(&mut Value)) -> Verdict {
     guard::check_request(&s, &before, &before_body, &body)
 }
 
+/// Where each style keeps its messages.
+pub fn message_list(id: &str) -> &'static str {
+    match id {
+        "anthropic-messages" | "openai-chat" => "messages",
+        "openai-responses" => "input",
+        "gemini" => "contents",
+        other => panic!("no message list for {other}"),
+    }
+}
+
 /// Where each style keeps a message's content array, and a block no template of it reads.
 fn opaque_slot(id: &str) -> (&'static str, Value) {
     match id {

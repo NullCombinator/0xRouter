@@ -40,8 +40,20 @@ fn dropping_the_function_list_while_still_forcing_a_call_is_a_violation() {
     violates(&calling_config(allowed(&["read", "write"]), Some(json!({"mode": "ANY"}))), R::ToolCallChanged);
 }
 
-/// Dropping the whole choice forces no call, so it passes, list and all.
+/// Dropping the whole choice with its list lets the model call any declared tool.
 #[test]
-fn removing_a_choice_with_its_function_list_passes() {
-    assert_eq!(calling_config(allowed(&["read", "write"]), None), Verdict::Ok);
+fn removing_a_choice_with_its_function_list_is_a_violation() {
+    violates(&calling_config(allowed(&["read", "write"]), None), R::ToolCallChanged);
+}
+
+/// The list moved to a top-level key spelled like its path still reads as the same locator.
+#[test]
+fn moving_the_function_list_to_a_key_spelled_like_its_path_is_a_violation() {
+    let (s, mut body, _) = original(ID);
+    body["toolConfig"]["functionCallingConfig"] = allowed(&["read", "write"]);
+    let ir = nullrouter_wire::codec::request::decode(&s, &body).unwrap();
+    let mut after = body.clone();
+    after["toolConfig"]["functionCallingConfig"] = json!({"mode": "ANY"});
+    after["toolConfig.functionCallingConfig.allowedFunctionNames"] = json!(["read", "write"]);
+    violates(&guard::check_request(&s, &ir, &body, &after), R::ToolCallChanged);
 }

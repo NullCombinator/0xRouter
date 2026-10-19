@@ -330,7 +330,10 @@ adapter list and alerts match what happened.
   tool definition, or a tool result, in the request or in the response, 0router MUST discard
   that adapter's changes, send the unmodified request or response, mark the adapter as suspect,
   alert the operator, and record what the adapter tried. Removing a tool call, definition or
-  result is not stopped; it is a content change under FR-024 and FR-025.
+  result is not stopped; it is a content change under FR-024 and FR-025. The request's tool
+  choice is the exception (user, 2026-10-19): adding or changing it is stopped like a tool call,
+  and so is removing it unless it was `auto`, or `required` with no list of allowed tools, since
+  removing a named, `none` or listed choice lets the model call any declared tool.
 - **FR-017**: A suspect adapter MUST stop serving every key until the operator clears it. Until
   then, keys bound to its harness work as plain clients (slice 003 behaviour), and each record
   notes that the adapter was held as suspect.

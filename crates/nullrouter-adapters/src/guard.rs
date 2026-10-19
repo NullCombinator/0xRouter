@@ -1,6 +1,7 @@
 //! The guardrail (research R6): a pure check that a third-party adapter's output adds or
 //! changes no tool call, tool definition, tool result, opaque block or unplaced key. Removals
-//! pass; additions and changes are violations.
+//! pass; additions and changes are violations. The tool choice is the exception: removing it
+//! is a change unless it restricted nothing (`auto`, or `required` with nothing beside it).
 //!
 //! The check compares the IR the client style decodes from the body before and after the
 //! edits, as multisets: the after-side must be a sub-multiset of the before-side. A body that
@@ -14,7 +15,7 @@
 use std::collections::BTreeMap;
 
 use nullrouter_wire::codec::{Style, request, response};
-use nullrouter_wire::ir::{BlockKind, Event, Part, ResultContent, Tool};
+use nullrouter_wire::ir::{BlockKind, Event, Part, ResultContent, Tool, ToolChoice};
 use nullrouter_wire::ir::{Request, Response};
 use nullrouter_wire::stream::{Frame, StreamReader};
 use serde_json::Value;
@@ -50,9 +51,12 @@ struct Groups {
     results: Vec<Item>,
     opaque: Vec<Item>,
     unplaced: Vec<Item>,
-    /// The request's `tool_choice`: removing it forces no call, so it may go (the same
-    /// sub-multiset rule as the other groups), but it may not appear or change.
+    /// The request's `tool_choice`, with the unplaced keys under it, or an opaque value at its
+    /// path: it may not appear or change.
     choice: Vec<Item>,
+    /// Whether removing the choice widens what the model may call: true unless it is `auto`, or
+    /// `required` with nothing beside it.
+    choice_strict: bool,
 }
 
 /// Checks the edited request body against the IR decoded from the original. The bodies are
@@ -61,14 +65,19 @@ pub fn check_request(style: &Style, before: &Request, before_body: &Value, after
     let Ok(after) = request::decode(style, after_body) else { return Verdict::Undecodable };
     let (b, a) = (request_groups(style, before, before_body), request_groups(style, &after, after_body));
     use GuardrailRule as R;
-    first_violation(&[
+    let verdict = first_violation(&[
         check(&b.calls, &a.calls, R::ToolCallAdded, R::ToolCallChanged),
         check(&b.defs, &a.defs, R::ToolDefAdded, R::ToolDefChanged),
         check(&b.results, &a.results, R::ToolResultAdded, R::ToolResultChanged),
         check(&b.opaque, &a.opaque, R::OpaqueAdded, R::OpaqueAdded),
         check(&b.unplaced, &a.unplaced, R::UnplacedAdded, R::UnplacedAdded),
         check(&b.choice, &a.choice, R::ToolCallAdded, R::ToolCallChanged),
-    ])
+    ]);
+    // A named, `none` or listed choice that is gone lets the model call any declared tool.
+    if verdict == Verdict::Ok && b.choice_strict && a.choice.is_empty() {
+        return Verdict::Violation { rule: R::ToolCallChanged, paths: b.choice.iter().map(|i| i.at.clone()).collect() };
+    }
+    verdict
 }
 
 /// Checks an edited non-stream answer against the IR decoded from the original.
@@ -164,11 +173,11 @@ fn request_groups(style: &Style, r: &Request, body: &Value) -> Groups {
     // Keys the choice template doesn't read but that sit inside the choice (gemini's
     // `allowedFunctionNames` with several names) narrow what a forced call may pick, so they
     // belong to the choice: dropping one alone is a change, not a removal.
-    let in_choice = |path: &str| {
-        r.tool_choice.is_some()
-            && choice_at.as_deref().is_some_and(|at| {
-                path.strip_prefix(at).is_some_and(|rest| rest.starts_with('.') || rest.starts_with('['))
-            })
+    let under_choice = |path: &str, exact: bool| {
+        choice_at.as_deref().is_some_and(|at| {
+            path.strip_prefix(at)
+                .is_some_and(|rest| (exact && rest.is_empty()) || rest.starts_with('.') || rest.starts_with('['))
+        })
     };
     let mut choice_keys = Vec::new();
     for (i, p) in r.system.iter().enumerate() {
@@ -183,17 +192,21 @@ fn request_groups(style: &Style, r: &Request, body: &Value) -> Groups {
         g.defs.push(def_item(t, format!("tools[{i}]")));
     }
     for o in &r.opaque {
-        g.opaque.push(Item { name: o.at.clone(), digest: digest(&["opaque", &canon(&o.value)]), at: o.at.clone() });
+        // A choice no template reads (Responses `allowed_tools`) is opaque at the choice path.
+        let group = if under_choice(&o.at, true) { &mut g.choice } else { &mut g.opaque };
+        group.push(Item { name: o.at.clone(), digest: digest(&["opaque", &canon(&o.value)]), at: o.at.clone() });
     }
+    g.choice_strict = !g.choice.is_empty();
     for path in &r.unplaced {
-        let value = resolve(body, path).map_or_else(|| "\u{0}unresolved".to_owned(), canon);
-        if in_choice(path) {
+        let value = canon(&Value::from(locations(body, path)));
+        if r.tool_choice.is_some() && under_choice(path, false) {
             choice_keys.extend([path.clone(), value]);
         } else {
             g.unplaced.push(Item { name: path.clone(), digest: digest(&["unplaced", path, &value]), at: path.clone() });
         }
     }
     if let Some(c) = &r.tool_choice {
+        g.choice_strict |= !choice_keys.is_empty() || !matches!(c, ToolChoice::Auto | ToolChoice::Required);
         let choice = format!("{c:?}");
         let parts: Vec<&str> =
             ["tool_choice", choice.as_str()].into_iter().chain(choice_keys.iter().map(String::as_str)).collect();
@@ -202,23 +215,40 @@ fn request_groups(style: &Style, r: &Request, body: &Value) -> Groups {
     g
 }
 
-/// The value an unplaced-key locator (`key`, `a.b`, `messages[0].k`) names in `body`. Keys that
-/// themselves hold dots or brackets are tried whole before the path is split.
-fn resolve<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
-    if path.is_empty() {
-        return Some(v);
+/// Every value an unplaced-key locator (`key`, `a.b`, `messages[0].k`) can name in `body`, each
+/// with the keys it was reached through. A key may itself hold dots or brackets, so a locator
+/// can have several readings; all of them count, so moving a value from `a.b` to a key named
+/// `"a.b"` is a change.
+fn locations(body: &Value, path: &str) -> Vec<String> {
+    /// `route` is the keys and indices taken so far; each reading is digested as `[route, value]`
+    /// in canonical JSON, so no key can spell another reading.
+    fn walk(v: &Value, path: &str, route: &[Value], out: &mut Vec<String>) {
+        let step = |seg: Value| [route, &[seg]].concat();
+        if path.is_empty() {
+            out.push(canon(&Value::Array(vec![Value::Array(route.to_vec()), v.clone()])));
+            return;
+        }
+        // A dot separates keys, but a key may also start with one: try both.
+        if let Some(rest) = path.strip_prefix('.') {
+            walk(v, rest, route, out);
+        }
+        if let (Some(rest), Some(items)) = (path.strip_prefix('['), v.as_array())
+            && let Some((idx, rest)) = rest.split_once(']')
+            && let Some((i, item)) = idx.parse::<usize>().ok().and_then(|i| Some((i, items.get(i)?)))
+        {
+            walk(item, rest, &step(Value::from(i)), out);
+        }
+        for (k, child) in v.as_object().into_iter().flatten() {
+            if let Some(rest) = path.strip_prefix(k.as_str())
+                && (rest.is_empty() || rest.starts_with('.') || rest.starts_with('['))
+            {
+                walk(child, rest, &step(Value::String(k.clone())), out);
+            }
+        }
     }
-    if let Some(rest) = path.strip_prefix('.') {
-        return resolve(v, rest);
-    }
-    if let Some(rest) = path.strip_prefix('[') {
-        let (idx, rest) = rest.split_once(']')?;
-        return resolve(v.as_array()?.get(idx.parse::<usize>().ok()?)?, rest);
-    }
-    v.as_object()?.iter().find_map(|(k, child)| {
-        let rest = path.strip_prefix(k.as_str())?;
-        if rest.is_empty() || rest.starts_with('.') || rest.starts_with('[') { resolve(child, rest) } else { None }
-    })
+    let mut out = Vec::new();
+    walk(body, path, &[], &mut out);
+    out
 }
 
 fn part_items(p: &Part, at: &str, g: &mut Groups) {

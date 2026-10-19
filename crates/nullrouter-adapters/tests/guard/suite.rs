@@ -188,6 +188,55 @@ macro_rules! suite {
             violates(&guard::check_request(&s, &before, &body, &body), R::ToolCallAdded);
         }
 
+        /// Removing an `auto` or bare `required` choice forces nothing new; removing a named or
+        /// `none` choice lets the model call any declared tool, so it is a change.
+        #[test]
+        fn removing_a_choice_passes_only_when_it_restricts_nothing() {
+            use nullrouter_wire::codec::request;
+            use nullrouter_wire::ir::ToolChoice;
+            let removed = |choice: ToolChoice| {
+                let (s, _, mut base) = original(ID);
+                base.tool_choice = Some(choice);
+                let body = request::encode(&base, &s, ID).unwrap().body;
+                let before = request::decode(&s, &body).unwrap();
+                let mut after = before.clone();
+                after.tool_choice = None;
+                guard::check_request(&s, &before, &body, &request::encode(&after, &s, ID).unwrap().body)
+            };
+            assert_eq!(removed(ToolChoice::Auto), Verdict::Ok);
+            assert_eq!(removed(ToolChoice::Required), Verdict::Ok);
+            violates(&removed(ToolChoice::Named("get_weather".into())), R::ToolCallChanged);
+            violates(&removed(ToolChoice::None), R::ToolCallChanged);
+        }
+
+        /// An unplaced key is named by a dotted path, and a key may itself hold dots: moving the
+        /// value from inside a message to a top-level key spelled like its path is a change.
+        #[test]
+        fn moving_an_unplaced_value_to_a_key_spelled_like_its_path_is_a_violation() {
+            let (s, mut body, _) = original(ID);
+            let list = message_list(ID);
+            body[list][0]["zz_extra"] = json!(["read"]);
+            let before = nullrouter_wire::codec::request::decode(&s, &body).unwrap();
+            let path = format!("{list}[0].zz_extra");
+            assert!(before.unplaced.contains(&path), "{:?}", before.unplaced);
+            let mut after = body.clone();
+            after[list][0].as_object_mut().unwrap().remove("zz_extra");
+            after[path.as_str()] = json!(["read"]);
+            violates(&guard::check_request(&s, &before, &body, &after), R::UnplacedAdded);
+        }
+
+        /// A key may start with a dot; its value is still digested.
+        #[test]
+        fn rewriting_an_unplaced_key_that_starts_with_a_dot_is_a_violation() {
+            let (s, mut body, _) = original(ID);
+            body[".zz"] = json!("https://good.example");
+            let before = nullrouter_wire::codec::request::decode(&s, &body).unwrap();
+            assert!(before.unplaced.iter().any(|p| p == ".zz"), "{:?}", before.unplaced);
+            let mut after = body.clone();
+            after[".zz"] = json!("https://evil.example");
+            violates(&guard::check_request(&s, &before, &body, &after), R::UnplacedAdded);
+        }
+
         #[test]
         fn a_body_that_no_longer_decodes_is_undecodable() {
             let (s, body, before) = original(ID);
