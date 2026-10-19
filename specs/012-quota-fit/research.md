@@ -252,6 +252,16 @@ reads, or a multiplier group whose model is the only one sent. Fitting them anyw
 ranges that the test would never reject, but the view would read as "learning forever". Naming
 the partner tells the operator why (Story 3 scenario 3).
 
+**Not caught, by design**: outside use that rises and falls with 0router's traffic *within* one
+part of the day breaks the model (one rate per part) without making any column collinear, so this
+check can't see it. The simulated week first shaped its office-hours outside rate like the agents'
+traffic, 7–21h: the hours 7–8 and 20–21 put a traffic-shaped rate inside the parts 4–8 and 20–24.
+On a right plugin the output weight absorbed it (14.1 for a true 5, then significant), and on the
+3×-off mock the capacity left the clean range. With the same rhythm on 8–20h, the part
+boundaries, both runs stay right. The spec names the within-part case as one no poll can resolve
+(edge case "outside use with a daily rhythm"; for pooled accounts, the split-off test keeps it out
+of the pool), so the sim's office rate uses the part boundaries.
+
 ## R8. Pooling and split-off (FR-002, FR-003)
 
 **Decision**: Weights and multipliers are fitted jointly over all non-split polled accounts of

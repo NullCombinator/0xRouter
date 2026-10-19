@@ -107,6 +107,19 @@ fn intensity(ms: u64) -> f64 {
     }
 }
 
+/// The agents' weekly rhythm with office hours on the fit's part-of-day boundaries (8–20h), for
+/// outside use. The agents' own 7–21h would put a rate that rises and falls with their traffic
+/// inside the parts 4–8h and 20–24h, which no poll can tell from a wrong number (spec, edge case
+/// "outside use with a daily rhythm").
+fn office_intensity(ms: u64) -> f64 {
+    match (weekday(ms) >= 5, (8..20).contains(&hour(ms))) {
+        (false, true) => 1.0,
+        (true, true) => 0.2,
+        (false, false) => 0.04,
+        (true, false) => 0.02,
+    }
+}
+
 /// The week's requests, in time order. About 60,000 of them.
 pub fn plan(seed: u64) -> Vec<Req> {
     let mut all: Vec<Req> = Vec::new();
@@ -499,8 +512,8 @@ fn round_to(rounding: Option<Rounding>, x: f64) -> f64 {
 pub enum OutsideUse {
     /// One drop at `at_ms`. `busy` only labels it: whether it falls in a stretch of traffic.
     Drop { account: usize, window: String, at_ms: u64, pct: f64, busy: bool },
-    /// A steady rate in percent per hour. `office` shapes it like the agents' traffic: the same
-    /// daily and weekly intensity, so it is high exactly when the router is busy.
+    /// A steady rate in percent per hour. `office` shapes it like the agents' traffic
+    /// ([`office_intensity`]), so it is high exactly when the router is busy.
     Rate { account: usize, window: String, pct_per_hour: f64, office: bool },
 }
 
@@ -557,7 +570,7 @@ impl World {
                     let mut pct = 0.0;
                     while at_ms < t {
                         let step = (10 * MIN).min(t - at_ms);
-                        let weight = if office { intensity(at_ms) } else { 1.0 };
+                        let weight = if office { office_intensity(at_ms) } else { 1.0 };
                         pct += pct_per_hour * weight * step as f64 / HOUR as f64;
                         at_ms += step;
                     }
