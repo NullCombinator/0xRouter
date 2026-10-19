@@ -37,6 +37,17 @@ stop and revisit the brief.
   all its accounts), or both? → A: Both. A plugin-level override covers all the plugin's accounts;
   an account-level override wins over it. Capacity overrides stay per account.
 
+### Session 2026-10-19
+
+- Q: SC-001 asks for the 3×-off mock's final values within 10% of the truth, but one simulated
+  week of whole-percent polls pins the output weight to only about ±30% at 95% (each 10-minute
+  poll moves the reading by 0.77% on average). Measured on the week's own rows: exact readings
+  give the true 15.000; over 40 rounding offsets the estimate averages 14.96 and every 95% range
+  holds 15, but only 15 of 40 land within 10%; every output weight from 12.55 to 17.5 reproduces
+  the week's readings exactly, so no estimator can promise 10%. Keep 10%, or ask for what the
+  evidence supports? → A: Amend SC-001: the numbers become significant within 7 days and each
+  final 95% range contains the true value. The 10% figure is dropped (research R4).
+
 ## User Scenarios & Testing *(mandatory)*
 
 This slice has two kinds of user:
@@ -512,8 +523,9 @@ rounding noise, and only on the declared account.
 ### Measurable Outcomes
 
 - **SC-001**: In the simulated week, for the 3×-off mock, capacity and the output weight become
-  significant within 7 simulated days, and each final fitted value is within 10% of the true
-  value (the output weight measured relative to the input weight, the yardstick).
+  significant within 7 simulated days, and each final 95% range contains the true value (the
+  output weight measured relative to the input weight, the yardstick). Amended 2026-10-19: it
+  asked for each final value within 10%, which a week of whole-percent polls can't support.
 - **SC-002**: Over a seeded suite of at least 100 simulated weeks with a right plugin, with and
   without outside use, 0 meter numbers become significant, and 100% of placements equal those
   0router makes without this slice.
@@ -553,7 +565,7 @@ rounding noise, and only on the declared account.
   user's failure condition ("a right plugin gets corrected") is measured as SC-002 (no number
   becomes significant on a right plugin across the seeded suite); a 95% range, by its nature,
   misses the truth in about 5% of checks, which SC-003 measures and does not count as a failure.
-- "Within 10% of the true value" (SC-001), "within 1 simulated day" (SC-006), the 100-week suite
+- "Within 10% of the true value" (SC-001, replaced on 2026-10-19 by the 95% range), "within 1 simulated day" (SC-006), the 100-week suite
   (SC-002) and "90% of injected intervals" (SC-004) were chosen in this spec, not by the brief, as
   were three behaviours: acknowledging a leak alert (FR-027), the request record naming each
   meter number's source (FR-013), and refusing an exclusive-use declaration on an account that

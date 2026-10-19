@@ -14,7 +14,7 @@ Expected table rows (one per check, each `ok`):
 
 | Check | Expected |
 |---|---|
-| 3×-off: capacity, weight.output significant | both by day 7; final values within 10% of truth (SC-001) |
+| 3×-off: capacity, weight.output significant | both by day 7; final 95% ranges hold the truth (SC-001) |
 | 3×-off: placements before first significance | 100% equal to the fitting-off baseline (SC-005) |
 | right plugin: significant numbers | 0 |
 | outside use injected: fitted values | inside the no-outside-use run's 95% ranges; ≥ 90% of injected intervals listed (SC-004) |

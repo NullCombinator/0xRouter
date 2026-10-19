@@ -80,7 +80,7 @@ priority").
 **Goal (US1)**: Wrong numbers are corrected once significant, right ones never; weights are pooled per plugin, capacity per account, and a disagreeing account is split off.
 **Goal (US2)**: Use 0router didn't cause is listed as outside use, moves no fitted number, and raises nothing.
 
-**Independent test**: The extended simulated week: the 3×-off mock is corrected (capacity and `weight.output` significant by day 7, within 10%); the right mock never is; with injected outside use the fitted values stay within the clean run's ranges and ≥ 90% of injected intervals are listed.
+**Independent test**: The extended simulated week: the 3×-off mock is corrected (capacity and `weight.output` significant by day 7, 95% ranges holding the truth; SC-001 amended 2026-10-19); the right mock never is; with injected outside use the fitted values stay within the clean run's ranges and ≥ 90% of injected intervals are listed.
 
 ### Tests for US1 + US2
 

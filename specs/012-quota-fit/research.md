@@ -150,6 +150,14 @@ the information from the same polls (measured 2026-10-18). With the earlier esti
 with a sandwich covariance) the output weight could not be separated from capacity within the
 week (VIF 150–290). With GLS it is significant within days.
 
+How close a week gets is set by the evidence, not by the estimator (measured 2026-10-19, which
+led to amending SC-001). On the 3×-off week's rows, exact readings give the true output weight,
+15.000. Re-rounding the same rows from 40 start offsets gives a geometric mean of 14.96, a spread
+(sd of the log) of 0.158 against a mean reported standard error of 0.178, 95% ranges that all
+hold 15, and only 15 of 40 estimates within 10%. Set membership bounds what any estimator could
+do: every output weight from 12.55 to 17.5 reproduces each of the week's readings exactly. The
+sim's own week lands at 17.7, inside its range.
+
 **Alternatives considered**: (a) OLS on rows with the sandwich `J⁻¹ (J_r + σ²_e · J₀) J⁻¹`. This
 was the first implementation. Its ranges were honest, but it was inefficient, as above. (b)
 Regress cumulative levels within each reset period. That is the same estimator when the run is
