@@ -298,6 +298,22 @@ which were then published from 9 rows (found 2026-10-18). A one-number refit is 
 of a change test for one parameter. It is stable on few rows and has more power, because the
 other numbers are known to the precision of the whole epoch.
 
+Three details of the one-number test, each found on the pooled simulated week (2026-10-19),
+where three accounts gave 7 false breaks and the output weight ended not separable:
+
+- A capacity is tested on its own account's rows only. The other accounts' rows inform nothing
+  about it, but they let a start pass the 8-row minimum when the account had a few rows: a2's
+  capacity was "broken" at 9 % of its value from 9 of its rows.
+- The standard error is the larger of the refit's and the one at the value in effect. In log
+  space the gradient grows with the value, so a refit that a few rows drive far off claims
+  information it doesn't have: one rounding step on 21 rows, one of them with cache reads,
+  moved the cache-read weight from 0.29 to 3.1, with a standard error a third of what the same
+  rows give at 0.29. At the value in effect the error is what the null hypothesis implies, the
+  usual score-test form.
+- The numbers held at the current fit carry its error, which adds `sᵀΣs` to the variance
+  (`s` is how far each held number moves the refit). That is small next to a week of evidence,
+  and conservative.
+
 **Alternatives considered**: (a) A CUSUM with a fixed shift size. It needs the shift known in
 advance. (b) Comparing the last N rows to the rest. Its error rate under repeated checks is
 uncontrolled.

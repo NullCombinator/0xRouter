@@ -1,10 +1,10 @@
 //! The break detector: confidence sequences started each hour over the last 48 h (research R9).
 //!
 //! For each fitted number, a sequence starts at every whole hour of the last 48 hours. Each
-//! refits that number alone from the rows after its start, every other parameter held at the
-//! fit in effect, and tests the value it gets against the value now in effect, with the
-//! always-valid test of R5 (`m` = 48 starts × numbers). The start with the strongest rejection
-//! is the break's `at`.
+//! refits that number alone from the rows after its start (a capacity, from its account's rows),
+//! every other parameter held at the fit in effect, and tests the value it gets against the
+//! value now in effect, with the always-valid test of R5 (`m` = 48 starts × numbers). The start
+//! with the strongest rejection is the break's `at`.
 //!
 //! Rows scored are the evidence rows and the busy rows classified as outside use, provisional or
 //! already final: a proportional excess (a rule change) must show as a break, not a leak, and a
@@ -98,7 +98,7 @@ fn survives_without_worst_row(spec: &Spec, sub: &[MRow], f: &Fit, t: &Target, nu
     if g.rows < 2 * g.active.len() || !g.active.contains(&t.p) {
         return false;
     }
-    g.se(t.p).is_some_and(|se| rejects(t.natural(&g).ln(), null, se, m))
+    model::held_se(spec, &rest, &g, t.p, current).is_some_and(|se| rejects(t.natural(&g).ln(), null, se, m))
 }
 
 /// The breaks among `targets` as of `now`. `rows` are the epoch's rows; `current` is the fit in
@@ -130,8 +130,8 @@ pub fn detect(
         let from = start.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs_f64();
         let at = start;
         start += Duration::from_secs(3600);
-        let sub: Vec<MRow> = all.iter().filter(|r| r.start >= from).cloned().collect();
-        if sub.len() < MIN_ROWS {
+        let since: Vec<MRow> = all.iter().filter(|r| r.start >= from).cloned().collect();
+        if since.len() < MIN_ROWS {
             continue;
         }
         for (i, t) in targets.iter().enumerate() {
@@ -141,13 +141,23 @@ pub fn detect(
             if !current.active.contains(&t.p) {
                 continue;
             }
+            // A capacity is tested on its own account's rows: in a pooled window the others
+            // inform nothing about it, and would let a start pass the row minimum on a few of its.
+            let own = t.account.as_ref().and_then(|a| spec.accounts.iter().position(|x| x == a));
+            let sub: Vec<MRow> = match own {
+                Some(a) => since.iter().filter(|r| r.acct == a).cloned().collect(),
+                None => since.clone(),
+            };
+            if sub.len() < MIN_ROWS {
+                continue;
+            }
             // Only the tested number moves; the rest stay at the fit in effect, so a few rows
             // can't trade one number against another (R9).
             let Some(f) = model::fit_only(spec, &sub, &current.theta, &[t.p]) else { continue };
             if f.rows < 2 * f.active.len() || !f.active.contains(&t.p) {
                 continue;
             }
-            let Some(se) = f.se(t.p) else { continue };
+            let Some(se) = model::held_se(spec, &sub, &f, t.p, current) else { continue };
             let (est, null) = (t.natural(&f).ln(), t.natural(current).ln());
             if rejects(est, null, se, m) && survives_without_worst_row(spec, &sub, &f, t, null, m, current) {
                 let v = 1.0 / (se * se);

@@ -492,6 +492,53 @@ pub fn fit_only(spec: &Spec, rows: &[MRow], start: &Theta, free: &[P]) -> Option
     fit_inner(spec, rows, start, None, Some(free)).map(|(f, _)| f)
 }
 
+/// The standard error of `p` in `only`, a [`fit_only`] of `p` alone on `rows`, for testing it
+/// against `held`, the fit it held every other number at (R9). Two corrections to `only.se`:
+///
+/// - The curvature is also taken at `held`'s value, and the smaller one counts. In log space
+///   the gradient grows with the value, so a refit that a few rows drive 10× up (one rounding
+///   step on rows with little traffic) would otherwise claim 10× the information it has.
+/// - A held number off by `δ` moves the refit by `−δ·(g̃ₚ·g̃_q)/(g̃ₚ·g̃ₚ)` over the whitened
+///   gradients, so their covariance in `held` adds `sᵀ·Σ·s`. The rows are also in `held`, which
+///   makes the two agree more, not less: leaving that out keeps the test conservative.
+pub fn held_se(spec: &Spec, rows: &[MRow], only: &Fit, p: P, held: &Fit) -> Option<f64> {
+    if only.active != [p] {
+        return None;
+    }
+    let mut se = only.se(p)?;
+    let wh = Whitener::new(rows, only.sigma_e2);
+    let mut at_null = gradients(spec, &held.theta, rows, &[p]);
+    wh.gradients(&mut at_null);
+    let info_null: f64 = at_null.iter().map(|g| g[0] * g[0]).sum();
+    // `only` has one parameter: its covariance over its information is the serial factor.
+    let factor = (only.cov[(0, 0)] * only.info[(0, 0)]).max(1.0);
+    if info_null > 0.0 {
+        se = se.max((factor / info_null).sqrt());
+    } else {
+        return None;
+    }
+    let others: Vec<(usize, P)> = held.active.iter().copied().enumerate().filter(|(_, q)| *q != p).collect();
+    if others.is_empty() {
+        return Some(se);
+    }
+    let cols: Vec<P> = std::iter::once(p).chain(others.iter().map(|(_, q)| *q)).collect();
+    let mut g = gradients(spec, &only.theta, rows, &cols);
+    wh.gradients(&mut g);
+    let gpp: f64 = g.iter().map(|r| r[0] * r[0]).sum();
+    if gpp <= 0.0 {
+        return Some(se);
+    }
+    let s: Vec<f64> = (1..cols.len()).map(|j| -g.iter().map(|r| r[0] * r[j]).sum::<f64>() / gpp).collect();
+    let mut var = 0.0;
+    for (a, (ia, _)) in others.iter().enumerate() {
+        for (b, (ib, _)) in others.iter().enumerate() {
+            var += s[a] * s[b] * held.cov[(*ia, *ib)];
+        }
+    }
+    let total = se * se + var.max(0.0);
+    total.is_finite().then(|| total.sqrt())
+}
+
 /// The best of the fits from each of `starts`, by the objective (squared error plus the prior's
 /// penalty). Gauss–Newton in log space cannot climb back from a parameter that earlier, thin
 /// evidence drove to nearly 0 (its gradient vanishes with it), so a warm start is always

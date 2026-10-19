@@ -986,7 +986,9 @@ const DOUBLE_OUTPUT_WEIGHTS: &str = "token_weights = { input = 1.0, output = 30.
 const POOL_SHARES: [f64; 3] = [0.30, 0.40, 0.50];
 
 /// Three subscription accounts of one plugin that declares the weights wrong (the true ones are
-/// 3x on output and cache) and each capacity 1/0.6 too high, over two overflow keys.
+/// 3x on output and cache) and one capacity for all three, 1/0.6 above the middle account's,
+/// over two overflow keys. The plugin's meter is the same for every account, as in the engine:
+/// a different declaration per account would read as a changed meter on every poll (FR-017).
 fn pooled_week(reqs: &[Req], odd_account_weights: &'static str) -> Week {
     pooled_run(reqs, odd_account_weights, Vec::new(), |_, _| {}).0
 }
@@ -1013,13 +1015,12 @@ fn pooled_run(
     };
     let mut accounts: Vec<AccountDef> = POOL_ACCOUNTS
         .iter()
-        .zip(POOL_SHARES)
         .enumerate()
-        .map(|(i, (name, share))| AccountDef {
+        .map(|(i, name)| AccountDef {
             key: CandidateKey::new(FIT_PROVIDER, *name, "m"),
             order: i as i64,
             priority: 1.0,
-            meters: vec![five_hour((base * share / 0.6).round(), DECLARED_WEIGHTS)],
+            meters: vec![five_hour((base * POOL_SHARES[1] / 0.6).round(), DECLARED_WEIGHTS)],
             reported: true,
             price: PriceSpec::default(),
         })
@@ -1743,3 +1744,4 @@ fn alerts_follow_idle_drops_and_busy_bursts_on_an_exclusive_account_and_nothing_
     }
     println!("alerts: {} on the exclusive account for {} idle drops and {} bursts, {} noise steps; none on the other", alerts.len(), drops.len(), bursts.len(), noise.len());
 }
+
