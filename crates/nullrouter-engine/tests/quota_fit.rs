@@ -73,6 +73,13 @@ fn a_reset_is_set_aside() {
     assert_eq!(rows_from("a", &reset_by_time, &meter(""), t(0))[0].class, Class::SetAside(SetAside::Reset));
     let reset_by_fall = vec![entry(0, true, Some(window(40.0, 300)), &[]), entry(10, true, Some(window(3.0, 300)), &[])];
     assert_eq!(rows_from("a", &reset_by_fall, &meter(""), t(0))[0].class, Class::SetAside(SetAside::Reset));
+    // A window that showed nothing used hides nothing behind a reset: an idle row opening a new
+    // window is kept. With traffic, the old window may have taken some of it, so it is set aside.
+    let opened = vec![entry(0, true, Some(window(0.0, 300)), &[]), entry(10, true, Some(window(6.0, 310)), &[])];
+    let r = &rows_from("a", &opened, &meter(""), t(0))[0];
+    assert_eq!((r.y, r.class), (6.0, Class::Evidence));
+    let busy = vec![entry(0, true, Some(window(0.0, 300)), &[]), entry(10, true, Some(window(6.0, 310)), &[("m", model(1, 0, 100, 10))])];
+    assert_eq!(rows_from("a", &busy, &meter(""), t(0))[0].class, Class::SetAside(SetAside::Reset));
 }
 
 #[test]

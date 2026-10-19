@@ -24,7 +24,8 @@ pub enum Group {
 /// Why a row is neither evidence nor outside use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetAside {
-    /// The window reset inside the interval: `resets_at` changed, or `used` fell.
+    /// The window reset inside the interval: `resets_at` changed, or `used` fell. An idle row
+    /// from a reading of 0 is kept: the reset hid nothing.
     Reset,
     /// An attempt in the interval has usage the provider didn't report.
     UsageUnreported,
@@ -165,7 +166,10 @@ fn row_of(
             }
         }
     }
-    let reset = u1 < u0 || (before.resets_at.is_some() && after.resets_at.is_some() && before.resets_at != after.resets_at);
+    // A window that showed nothing used and saw no traffic loses nothing to a reset: whatever it
+    // shows after was used inside the interval, typically outside use opening a new window.
+    let moved = before.resets_at.is_some() && after.resets_at.is_some() && before.resets_at != after.resets_at;
+    let reset = u1 < u0 || (moved && !(u0 == 0.0 && requests == 0));
     let class = if reset {
         Class::SetAside(SetAside::Reset)
     } else if unreported > 0 {
