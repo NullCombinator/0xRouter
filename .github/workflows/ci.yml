@@ -23,7 +23,7 @@ jobs:
     # Branches of this repo are tested on push; a PR event only adds runs for forks.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
       # The runner's 14 GB SSD is tight for target/; drop toolchains we never use.
@@ -43,7 +43,7 @@ jobs:
       - name: Test
         run: cargo test --workspace --no-fail-fast 2>&1 | tee test.log
       - name: Sim suite
-        run: set -o pipefail; cargo test -p nullrouter-engine --release --test sim_suite -- --ignored 2>&1 | tee sim_suite.log
+        run: set -o pipefail; cargo test -p nullrouter-engine --release --test sim_suite --test sim_week -- --ignored 2>&1 | tee sim_suite.log
       - name: Clippy
         if: ${{ !cancelled() }}
         run: cargo clippy --workspace --all-targets --keep-going --message-format=short -- -D warnings 2>&1 | tee clippy.log

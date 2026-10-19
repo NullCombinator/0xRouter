@@ -6,6 +6,9 @@
 //! middle (SC-005), and prints one table.
 //!
 //! `nice cargo test -p nullrouter-engine --release --test sim_week -j 2 -- --nocapture`
+//!
+//! The fitted weeks of spec 012 are `#[ignore]`: each refits on every poll and takes minutes
+//! even in release. CI runs them in release with `--ignored`; add `--include-ignored` locally.
 
 #[path = "sim_week/fit.rs"]
 mod fit;
@@ -932,6 +935,7 @@ fn assert_fitted(fit: &FitRun, scenario: &Scenario, weights: bool) {
 }
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn a_meter_three_times_off_is_fitted_within_the_week_and_placements_agree_until_then() {
     let started = std::time::Instant::now();
     let reqs = plan(SEED);
@@ -954,6 +958,7 @@ fn a_meter_three_times_off_is_fitted_within_the_week_and_placements_agree_until_
 }
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn a_right_plugin_places_exactly_as_with_the_fit_off() {
     let reqs = plan(SEED);
     let scenario = Scenario::right(&reqs);
@@ -967,6 +972,7 @@ fn a_right_plugin_places_exactly_as_with_the_fit_off() {
 }
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn a_capacity_declared_at_half_the_truth_is_fitted_within_the_week() {
     let reqs = plan(SEED);
     let scenario = Scenario::half_capacity(&reqs);
@@ -1061,6 +1067,7 @@ fn assert_in_range(fit: &FitRun, key: &str, want: f64) {
 }
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn accounts_with_equal_weights_pool_them_and_fit_each_capacity_alone() {
     let reqs = plan(SEED);
     let week = pooled_week(&reqs, THREE_TIMES_WEIGHTS);
@@ -1086,6 +1093,7 @@ fn accounts_with_equal_weights_pool_them_and_fit_each_capacity_alone() {
 }
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn an_account_with_twice_the_output_weight_is_split_off_and_leaves_the_pooled_fit() {
     let reqs = plan(SEED);
     let week = pooled_week(&reqs, DOUBLE_OUTPUT_WEIGHTS);
@@ -1194,6 +1202,7 @@ fn assert_inside_clean_ranges(clean: &FitRun, run: &FitRun, what: &str) {
 }
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn a_meter_three_times_off_is_fitted_inside_the_clean_range_with_outside_use() {
     let reqs = plan(SEED);
     let scenario = Scenario::three_times_off(&reqs);
@@ -1227,6 +1236,7 @@ fn a_meter_three_times_off_is_fitted_inside_the_clean_range_with_outside_use() {
 }
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn a_right_plugin_gets_no_number_from_outside_use_and_a_steady_rate_is_reported() {
     let reqs = plan(SEED);
     let scenario = Scenario::right(&reqs);
@@ -1242,6 +1252,7 @@ fn a_right_plugin_gets_no_number_from_outside_use_and_a_steady_rate_is_reported(
 }
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn an_idle_change_of_one_step_is_not_listed() {
     let reqs = plan(SEED);
     let scenario = Scenario::right(&reqs);
@@ -1348,6 +1359,7 @@ fn override_week(reqs: &[Req], scenario: &Scenario, when: SetWhen) -> (FitRun, D
 }
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn an_account_override_is_used_before_and_after_significance_and_removing_it_returns_the_fit() {
     let reqs = plan(SEED);
     let scenario = Scenario::three_times_off(&reqs);
@@ -1379,6 +1391,7 @@ fn an_account_override_is_used_before_and_after_significance_and_removing_it_ret
 }
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn an_override_removed_before_anything_is_significant_returns_the_declaration() {
     let reqs = plan(SEED);
     let scenario = Scenario::three_times_off(&reqs);
@@ -1393,6 +1406,7 @@ fn an_override_removed_before_anything_is_significant_returns_the_declaration() 
 const WITH_MULTIPLIERS: &str = "token_weights = { input = 1.0, output = 5.0, cache_read = 0.1, cache_write = 1.25 }\nmodel_multiplier = { \"m\" = 1.0, \"other-*\" = 1.0 }";
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn a_multiplier_override_applies_only_to_the_models_it_names() {
     // The week's accounts serve one model, so this checks the meter the fit hands routing directly.
     let meter = five_hour(1.0e9, WITH_MULTIPLIERS);
@@ -1419,6 +1433,7 @@ fn a_multiplier_override_applies_only_to_the_models_it_names() {
 }
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn a_plugin_override_applies_to_every_account_but_one_with_its_own() {
     let reqs = plan(SEED);
     let (week, _, defs) = pooled_run(&reqs, THREE_TIMES_WEIGHTS, Vec::new(), |defs, fit| {
@@ -1463,6 +1478,7 @@ const HALVE_AT: u64 = 3 * DAY + 6 * HOUR;
 const LATEST_HALVING: u64 = 6 * DAY;
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn a_halved_capacity_is_a_break_found_within_a_day_and_relearned_from_the_rows_after_it() {
     let reqs = plan(SEED);
     let scenario = Scenario::three_times_off(&reqs);
@@ -1675,6 +1691,7 @@ fn restart_week(reqs: &[Req], mode: Restart) -> Outcome {
 }
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn a_clean_restart_and_a_crash_mid_week_replay_to_the_same_fits_entries_and_alerts() {
     let reqs = plan(SEED);
     let reference = restart_week(&reqs, Restart::Never);
@@ -1703,6 +1720,7 @@ fn overlaps(e: &OutsideEntry, t: std::time::SystemTime) -> bool {
 }
 
 #[test]
+#[ignore = "a fitted week (spec 012); CI runs it in release"]
 fn alerts_follow_idle_drops_and_busy_bursts_on_an_exclusive_account_and_nothing_else() {
     let reqs = plan(SEED);
     let bursts = [(2, 10), (2, 16), (3, 11), (3, 15), (4, 10), (4, 16)];
