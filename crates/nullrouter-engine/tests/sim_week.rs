@@ -5,10 +5,10 @@
 //! only HTTP is left out. The run checks SC-001 to SC-006, restarts from the journal files in the
 //! middle (SC-005), and prints one table.
 //!
-//! `nice cargo test -p nullrouter-engine --release --test sim_week -j 2 -- --nocapture`
+//! `nice cargo test -p nullrouter-engine --release --test sim_week -j 2 -- --include-ignored --nocapture`
 //!
 //! The fitted weeks of spec 012 are `#[ignore]`: each refits on every poll and takes minutes
-//! even in release. CI runs them in release with `--ignored`; add `--include-ignored` locally.
+//! even in release. CI runs them in release with `--ignored`.
 
 #[path = "sim_week/fit.rs"]
 mod fit;

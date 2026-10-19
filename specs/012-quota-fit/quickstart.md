@@ -7,7 +7,7 @@ with the user's OK, and read the results with the github MCP.
 ## 1. The simulated week (FR-033; SC-001, SC-004 – SC-008)
 
 ```bash
-nice cargo test -p nullrouter-engine --release --test sim_week -j 2 -- --nocapture
+nice cargo test -p nullrouter-engine --release --test sim_week -j 2 -- --include-ignored --nocapture
 ```
 
 Expected table rows (one per check, each `ok`):
