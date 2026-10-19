@@ -2,8 +2,9 @@
 //!
 //! Weights and multipliers are pooled per plugin. Each account is also fitted alone, and its own
 //! `ρ`/`w`/`μ` are tested with the always-valid test against the pool of the other accounts,
-//! fitted without its rows. An account that disagrees is split off: its rows leave the pool and
-//! it keeps its own numbers.
+//! fitted without its rows. The account that disagrees most is split off: its rows leave the pool
+//! and it keeps its own numbers. One per round, because a disagreeing account sits in every other
+//! account's pool and pulls it off too; the next round retests the rest without it.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::SystemTime;
@@ -48,8 +49,9 @@ fn number_name(spec: &Spec, p: P) -> String {
 }
 
 /// Tests each non-split account's own numbers against the other accounts' pooled fit, started
-/// from `pooled`. Returns the accounts to split off, each with its reason. Empty when fewer than
-/// two non-split accounts have rows (research R8: a lone account has nothing to disagree with).
+/// from `pooled`. Returns the account that disagrees most, with its reason, or nothing. Empty
+/// when fewer than two non-split accounts have rows (research R8: a lone account has nothing to
+/// disagree with).
 pub fn test_splits(
     spec: &Spec,
     rows: &[MRow],
@@ -58,6 +60,8 @@ pub fn test_splits(
     now: SystemTime,
 ) -> BTreeMap<usize, Split> {
     let mut out = BTreeMap::new();
+    // (|z|, account, reason) of the account that disagrees most.
+    let mut worst: Option<(f64, usize, String)> = None;
     let numbers = pooled_numbers(spec);
     let with_rows: BTreeSet<usize> =
         rows.iter().map(|r| r.acct).filter(|a| !already_split.contains(a) && *a < spec.accounts.len()).collect();
@@ -103,10 +107,15 @@ pub fn test_splits(
                 }
             }
         }
-        if let Some((_, p, ratio)) = best {
+        if let Some((z, p, ratio)) = best
+            && worst.as_ref().is_none_or(|(wz, ..)| z > *wz)
+        {
             let ratio = if ratio >= 1.0 { ratio } else { 1.0 / ratio };
-            out.insert(a, Split { since: now, reason: format!("{} {ratio:.1}× the pooled value", number_name(spec, p)) });
+            worst = Some((z, a, format!("{} {ratio:.1}× the pooled value", number_name(spec, p))));
         }
+    }
+    if let Some((_, a, reason)) = worst {
+        out.insert(a, Split { since: now, reason });
     }
     out
 }
