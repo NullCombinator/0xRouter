@@ -176,7 +176,9 @@ impl Queue {
             }
             keep
         });
-        let now = SystemTime::now();
+        // The engine clock: a home served under a pinned test clock sees its fixture tokens
+        // as fresh, instead of refreshing them against the real provider.
+        let now = crate::clock::now();
         let mut next = now + IDLE_WAKE;
         for (key, due) in wanted {
             let slot = self.slots.entry(key.clone()).or_default();
@@ -228,7 +230,7 @@ impl Queue {
     async fn run(&mut self) {
         loop {
             let next = self.tick();
-            let wait = next.duration_since(SystemTime::now()).unwrap_or_default();
+            let wait = next.duration_since(crate::clock::now()).unwrap_or_default();
             let engine = self.engine.clone();
             tokio::select! {
                 () = tokio::time::sleep(wait) => {}
