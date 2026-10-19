@@ -1037,9 +1037,6 @@ fn an_idle_alert_states_facts_and_changes_nothing_until_the_declaration_is_withd
     }
     let fitted = learner.number_states("keyco", "5-hour");
     assert!(matches!(fitted["capacity@main"], NumberState::Fitted { .. }), "{fitted:?}");
-    // DIAG(012): which alert was written before the idle drop
-    eprintln!("DIAG(012) alerts {:?}", outside::alerts(dir.path(), "keyco", "main"));
-    eprintln!("DIAG(012) entries {:?}", outside::read(dir.path(), "keyco", "main", None, None));
     assert!(outside::alerts(dir.path(), "keyco", "main").is_empty());
 
     // The idle interval before poll 80 is listed and alerted once, while the account is in exclusive use.
