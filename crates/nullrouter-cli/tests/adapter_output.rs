@@ -99,6 +99,39 @@ fn records_show_prints_the_adapter_runs_with_changes_none_and_blocked() {
     three_adapter_records(dir.path());
     let text = show_text(dir.path());
 
+    // The whole text, in order: the contract's layout exactly (T085).
+    let want = "\
+rq_01  2026-09-28 11:04:52  succeeded
+agent       hermes-desktop / session 44ab   harness hermes (built-in)
+door        openai-chat  generate  text
+target      deepseek-r1
+served by   openrouter/main  deepseek/deepseek-r1
+ttft        120.0 ms     total 900.0 ms
+usage       not reported
+break       none
+attempts
+  1  openrouter/main  deepseek/deepseek-r1       ok
+     adapter hermes built-in: ran, 3 changes
+       converted  messages[4].images         format_conversion
+       converted  messages[4].content        format_conversion
+       removed    messages[3].reasoning_content  target_rejects_field
+       0.90 s
+       phases  not recorded
+  2  anthropic/main   claude-sonnet-4-5          ok
+     adapter claude-code v0.1.0-1a2b3c4d: ran, 0 changes
+       0.90 s
+       phases  not recorded
+  3  anthropic/main   claude-sonnet-4-5          transient: overloaded
+     adapter claude-code v0.1.0-1a2b3c4d: blocked by guardrail
+       rule tool_call_added  paths messages[7].content[2]
+       sent unmodified; adapter marked suspect
+       0.90 s
+       phases  not recorded
+response adapter: hermes built-in: ran, 1 change
+       converted  messages[4].images         format_conversion
+";
+    assert_eq!(text, want);
+
     // Header and the attempt header, as the contract lays them out.
     assert!(text.starts_with("rq_01  2026-09-28 11:04:52  succeeded\n"), "{text}");
     assert!(text.contains("\n  1  openrouter/main"), "{text}");
