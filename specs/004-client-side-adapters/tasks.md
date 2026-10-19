@@ -976,7 +976,7 @@ provider.
     - empty text and empty messages;
     - duplicate built-in and MCP tools.
   - Regenerate, and commit the fixtures alone, naming the `ref/9router` SHA.
-- [ ] T080 [P] [US5] Parity test in `crates/nullrouter-adapters/tests/claude_code_parity.rs`.
+- [X] T080 [P] [US5] Parity test in `crates/nullrouter-adapters/tests/claude_code_parity.rs`.
   - Run the adapter as production does: build `adapters/community/claude-code` with the
     builder through T045's `tools/build-adapter-fixtures.sh` (*operator-run*), and check in
     the resulting `.wasm` and its `build.json` as

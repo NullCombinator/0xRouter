@@ -530,3 +530,21 @@ reason = "client identity headers apply to signed-in accounts only, as [identity
 # - echoed reasoning: removed by the adapter per its reject table, not in core
 #   (paramSupport.js `dropMessageFields`). The table is seeded with 9router's groq, mistral and
 #   cerebras; any other provider keeps the field.
+
+# Claude Code adapter (spec 004, T080), compared in crates/nullrouter-adapters/tests/
+# claude_code_parity.rs. 9router's prepareClaudeRequest (open-sse/translator/formats/claude.js)
+# puts a signed "." thinking placeholder at the head of a tool-use turn with no kept thinking.
+# An adapter only removes or converts, so 0router leaves the turn as the client sent it, minus
+# the foreign thinking block.
+
+[[deviation]]
+harness = "claude-code"
+fixture = "thinking-placeholder"
+field = "messages.1.content"
+reason = "no thinking placeholder inserted into a tool-use turn: an adapter only removes or converts"
+
+[[deviation]]
+harness = "claude-code"
+fixture = "thinking-placeholder"
+field = "messages.3.content"
+reason = "the foreign-signature thinking block is removed, not replaced by a placeholder"
