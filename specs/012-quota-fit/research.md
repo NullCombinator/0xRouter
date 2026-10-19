@@ -256,8 +256,12 @@ the partner tells the operator why (Story 3 scenario 3).
 
 **Decision**: Weights and multipliers are fitted jointly over all non-split polled accounts of
 the plugin (R3). For each account, a **split test** asks whether its own rows reject the pooled
-`ρ` and `μ`. It compares the account's own fit of `ρ, μ` with the pooled fit, using the
-confidence sequence of R5 with `m` covering every account and number tested. When it rejects:
+`ρ` and `μ`. It compares the account's own fit of `ρ, μ` with the pool of the other accounts,
+fitted without its rows, using the confidence sequence of R5 with `m` covering every account and
+number tested. The two fits share no rows, so their errors are independent and the variances
+add. Against the whole pool, the account pulls the pooled value toward its own: on the simulated
+week, an account with twice the output weight (own 32.1) faced a pooled 20.4 instead of the
+others' 15, and was never split. When it rejects:
 
 - the account is split off from that time, with the reason ("output weight 2.1× the pooled
   value");

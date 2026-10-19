@@ -1,8 +1,9 @@
 //! Pooling and split-off of an account that disagrees with the pooled weights (research R8).
 //!
 //! Weights and multipliers are pooled per plugin. Each account is also fitted alone, and its own
-//! `ρ`/`w`/`μ` are tested against the pooled values with the always-valid test. An account that
-//! disagrees is split off: its rows leave the pool and it keeps its own numbers.
+//! `ρ`/`w`/`μ` are tested with the always-valid test against the pool of the other accounts,
+//! fitted without its rows. An account that disagrees is split off: its rows leave the pool and
+//! it keeps its own numbers.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::SystemTime;
@@ -46,9 +47,9 @@ fn number_name(spec: &Spec, p: P) -> String {
     }
 }
 
-/// Tests each non-split account's own numbers against the pooled fit. Returns the accounts to
-/// split off, each with its reason. Empty when fewer than two non-split accounts have rows
-/// (research R8: a lone account has nothing to disagree with).
+/// Tests each non-split account's own numbers against the other accounts' pooled fit, started
+/// from `pooled`. Returns the accounts to split off, each with its reason. Empty when fewer than
+/// two non-split accounts have rows (research R8: a lone account has nothing to disagree with).
 pub fn test_splits(
     spec: &Spec,
     rows: &[MRow],
@@ -82,6 +83,10 @@ pub fn test_splits(
         start.w = pooled.theta.w;
         start.mu = pooled.theta.mu.clone();
         let Some(own) = model::fit(&own_spec, &own_rows, &start) else { continue };
+        // The pool it is compared with leaves its rows out: with them, the pooled value leans
+        // toward the account's own and the two errors are not independent.
+        let others: Vec<MRow> = rows.iter().filter(|r| r.acct != a && !already_split.contains(&r.acct)).cloned().collect();
+        let Some(pooled) = model::fit(spec, &others, &pooled.theta) else { continue };
         // (|z|, number, own/pooled ratio) of the strongest rejection.
         let mut best: Option<(f64, P, f64)> = None;
         for &p in &numbers {
