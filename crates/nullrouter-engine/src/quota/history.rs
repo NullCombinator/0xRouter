@@ -11,6 +11,10 @@
 //! each entry, it is discarded at start when the history holds a newer entry: that entry
 //! already carries the checkpoint's tokens (a crash between the two writes).
 //!
+//! Checkpoints and entries keep the [tally sequence](super::tally) they were read at (`seq`):
+//! after a crash, the journal's attempts numbered after it are counted again, and none before.
+//! Files written before the sequence existed have none, and fall back to comparing times.
+//!
 //! Writers serialize on the history file's advisory lock, so a `prune` from the CLI and the
 //! server's appends never interleave; an appender that waited re-opens the file a prune
 //! replaced.
@@ -66,6 +70,9 @@ pub struct Entry {
     /// The traffic since the previous entry, by upstream model.
     #[serde(default)]
     pub tally: AccountTally,
+    /// The tally sequence `tally` holds every attempt up to. `None` on entries written before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
 }
 
 impl Entry {
@@ -82,6 +89,7 @@ impl Entry {
             error,
             windows: poll.windows.clone(),
             tally,
+            seq: None,
         }
     }
 
@@ -98,6 +106,10 @@ struct Checkpoint {
     /// The `at` of the newest history entry when written.
     base: Option<String>,
     tally: AccountTally,
+    /// The tally sequence `tally` holds every attempt up to. `None` on checkpoints written
+    /// before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    seq: Option<u64>,
 }
 
 /// A name usable as one path component.
@@ -313,9 +325,9 @@ pub fn forget(home: &Path, provider: &str, account: &str) -> Result<bool, FileEr
     Ok(found)
 }
 
-/// The checkpointed tally to reload: none when the history holds an entry newer than the
+/// The checkpoint to reload: none when the history holds an entry newer than the
 /// checkpoint's base (that entry already carries it).
-fn load_checkpoint(home: &Path, provider: &str, account: &str) -> Result<Option<AccountTally>, FileError> {
+fn load_checkpoint(home: &Path, provider: &str, account: &str) -> Result<Option<Checkpoint>, FileError> {
     let path = tally_file(home, provider, account)?;
     let Some(text) = files::read_private(&path)? else { return Ok(None) };
     let cp: Checkpoint = serde_json::from_str(&text).map_err(|e| FileError::invalid(&path, e.to_string()))?;
@@ -326,16 +338,22 @@ fn load_checkpoint(home: &Path, provider: &str, account: &str) -> Result<Option<
         (Some(_), None) => true,
         (Some(n), Some(b)) => n > b,
     };
-    Ok((!stale).then_some(cp.tally))
+    Ok((!stale).then_some(cp))
 }
 
-fn write_checkpoint(home: &Path, provider: &str, account: &str, tally: &AccountTally) -> Result<(), FileError> {
+fn write_checkpoint(
+    home: &Path,
+    provider: &str,
+    account: &str,
+    (tally, seq): (AccountTally, u64),
+) -> Result<(), FileError> {
     let path = tally_file(home, provider, account)?;
     let cp = Checkpoint {
         v: VERSION,
         at: super::extract::rfc3339_millis(SystemTime::now()),
         base: newest_at(home, provider, account)?,
-        tally: tally.clone(),
+        tally,
+        seq: Some(seq),
     };
     let text = serde_json::to_string(&cp).map_err(|e| FileError::invalid(&path, e.to_string()))?;
     private_dirs(&path)?;
@@ -353,7 +371,7 @@ pub struct History {
     /// Every account's running tally.
     pub tally: Tally,
     /// Polls waiting to be written, in order, each with the tally taken when it landed.
-    queue: Mutex<VecDeque<(QuotaPoll, AccountTally)>>,
+    queue: Mutex<VecDeque<(QuotaPoll, (AccountTally, u64))>>,
     /// Held by whoever writes files: one writer at a time, in queue order.
     writer: Mutex<()>,
     checkpoint_ms: AtomicU64,
@@ -374,10 +392,11 @@ impl History {
             Ok(list) => {
                 for (p, a) in list {
                     match load_checkpoint(home, &p, &a) {
-                        Ok(Some(t)) => h.tally.restore(&p, &a, &t),
+                        Ok(Some(cp)) => h.tally.restore(&p, &a, &cp.tally),
                         Ok(None) => {}
                         Err(e) => tracing::warn!("tally checkpoint not reloaded: {e}"),
                     }
+                    h.tally.seen(resume_point(home, &p, &a).seq.unwrap_or(0));
                 }
             }
             Err(e) => tracing::warn!("tally checkpoints not reloaded: {e}"),
@@ -437,14 +456,14 @@ impl History {
 
     /// Appends the entry with the tally taken for it, then rewrites the checkpoint past it. A
     /// failed append puts the tally back for the next entry.
-    fn record_locked(&self, poll: &QuotaPoll, taken: AccountTally) -> Result<Entry, FileError> {
+    fn record_locked(&self, poll: &QuotaPoll, (taken, seq): (AccountTally, u64)) -> Result<Entry, FileError> {
         let (p, a) = (poll.provider.as_str(), poll.account.as_str());
-        let entry = Entry::from_poll(poll, taken);
+        let entry = Entry { seq: Some(seq), ..Entry::from_poll(poll, taken) };
         if let Err(e) = append(&self.home, p, a, &entry) {
             self.tally.restore(p, a, &entry.tally);
             return Err(e);
         }
-        if let Err(e) = write_checkpoint(&self.home, p, a, &self.tally.get(p, a)) {
+        if let Err(e) = write_checkpoint(&self.home, p, a, self.tally.get_seq(p, a)) {
             // The entry holds the taken tally; an old checkpoint is stale against it.
             tracing::warn!(provider = p, account = a, "tally checkpoint not written: {e}");
             self.tally.mark_dirty(p, a);
@@ -459,7 +478,7 @@ impl History {
         let _w = lock(&self.writer);
         let mut written = 0;
         for (p, a) in self.tally.take_dirty() {
-            match write_checkpoint(&self.home, &p, &a, &self.tally.get(&p, &a)) {
+            match write_checkpoint(&self.home, &p, &a, self.tally.get_seq(&p, &a)) {
                 Ok(()) => written += 1,
                 Err(e) => {
                     tracing::warn!(provider = p, account = a, "tally checkpoint not written: {e}");
@@ -479,8 +498,7 @@ impl History {
     pub fn recover_counters(&self, now: SystemTime) -> usize {
         let since = now.checked_sub(super::tally::HORIZON);
         let filter = crate::journal::records::Filter { since, ..Default::default() };
-        let mut resume: std::collections::HashMap<(String, String), Option<SystemTime>> =
-            std::collections::HashMap::new();
+        let mut resume: std::collections::HashMap<(String, String), Resume> = std::collections::HashMap::new();
         let mut counted = 0;
         // Oldest first, so each hour's counters and the sliding list fill in order.
         for r in crate::journal::records::read(&self.home, &filter).iter().rev() {
@@ -494,6 +512,7 @@ impl History {
                 // A skipped attempt sent nothing; one still running when the process died has no usage.
                 let sent = matches!(a["outcome"]["state"].as_str(), Some("ok" | "failed" | "cancelled"));
                 let Some(ended) = a["ended"].as_f64().filter(|_| sent) else { continue };
+                let seq = a["tally_seq"].as_u64();
                 let at = arrived + Duration::from_secs_f64((ended / 1000.0).max(0.0));
                 let usage = usage_of(&a["usage"]);
                 if usage.is_some_and(|u| u.estimated) {
@@ -501,7 +520,8 @@ impl History {
                 }
                 let from =
                     *resume.entry((p.to_owned(), acct.to_owned())).or_insert_with(|| resume_point(&self.home, p, acct));
-                self.tally.recover_attempt(p, acct, model, usage.as_ref(), at, from.is_none_or(|f| at > f));
+                self.tally.recover_attempt(p, acct, model, usage.as_ref(), at, !from.holds(at, seq));
+                self.tally.seen(seq.unwrap_or(0));
                 counted += 1;
             }
         }
@@ -529,16 +549,33 @@ fn usage_of(v: &serde_json::Value) -> Option<crate::records::Usage> {
     })
 }
 
-/// The time the account's reloaded tally is current to: its checkpoint, or its newest poll
-/// entry when that is later. `None`: it has neither, so every journal attempt counts.
-fn resume_point(home: &Path, provider: &str, account: &str) -> Option<SystemTime> {
-    let checkpoint = tally_file(home, provider, account)
-        .ok()
-        .and_then(|p| files::read_private(&p).ok().flatten())
-        .and_then(|t| serde_json::from_str::<Checkpoint>(&t).ok())
-        .and_then(|c| clock::parse_rfc3339(&c.at));
-    let entry = newest_at(home, provider, account).ok().flatten().and_then(|s| clock::parse_rfc3339(&s));
-    checkpoint.max(entry)
+/// What the account's reloaded tally is current to: the checkpoint it was reloaded from, or else
+/// its newest poll entry. Neither: every journal attempt counts.
+#[derive(Debug, Clone, Copy, Default)]
+struct Resume {
+    at: Option<SystemTime>,
+    seq: Option<u64>,
+}
+
+impl Resume {
+    /// Whether the reloaded tally already holds the attempt that ended at `at` with sequence
+    /// `seq`. By sequence when both sides have one; by time for files written before it.
+    fn holds(&self, at: SystemTime, seq: Option<u64>) -> bool {
+        match (self.seq, seq) {
+            (Some(r), Some(s)) => s <= r,
+            _ => self.at.is_some_and(|f| at <= f),
+        }
+    }
+}
+
+fn resume_point(home: &Path, provider: &str, account: &str) -> Resume {
+    if let Ok(Some(cp)) = load_checkpoint(home, provider, account) {
+        return Resume { at: clock::parse_rfc3339(&cp.at), seq: cp.seq };
+    }
+    match read(home, provider, account, None, Some(1)).ok().and_then(|mut e| e.pop()) {
+        Some(e) => Resume { at: e.time(), seq: e.seq },
+        None => Resume::default(),
+    }
 }
 
 /// Lists the accounts with a history under `home`: `(provider, account)` sorted.

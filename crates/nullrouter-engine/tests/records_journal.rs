@@ -287,6 +287,7 @@ fn timed_attempt(timing: Option<nullrouter_engine::records::AttemptTiming>) -> n
         adapter: None,
         member: None,
         timing,
+        tally_seq: None,
     }
 }
 

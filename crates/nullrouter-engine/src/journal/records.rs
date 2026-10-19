@@ -780,6 +780,7 @@ mod tests {
             adapter: None,
             member: None,
             timing: None,
+            tally_seq: None,
         }
     }
 

@@ -176,6 +176,11 @@ pub struct Attempt {
     /// The attempt's marks (spec 013). `None` on records written before that slice.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timing: Option<AttemptTiming>,
+    /// Its number in the tally's counting order ([`crate::quota::tally`]): recovery after a
+    /// crash counts it again only if the checkpoint doesn't hold it. `None` when nothing was
+    /// tallied, and on records written before it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tally_seq: Option<u64>,
 }
 
 /// How an attempt got its connection.
@@ -591,6 +596,7 @@ mod tests {
             adapter: None,
             member: None,
             timing: None,
+            tally_seq: None,
         });
         r
     }

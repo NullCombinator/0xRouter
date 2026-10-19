@@ -2002,6 +2002,7 @@ impl Run {
             },
             member: self.member.clone(),
             timing: None,
+            tally_seq: None,
         };
         let connect = self.eff.map_or(DEFAULT_CONNECT_TIMEOUT, |e| e.connect.duration());
         let clock = Arc::new(AttemptClock::new(self.req.arrived, connect));
@@ -2021,14 +2022,15 @@ impl Run {
     /// tokens.
     fn end_attempt(&self, outcome: AttemptOutcome, usage: Option<Usage>) {
         let at = self.now();
+        let mut tally_seq = None;
         if let Some((p, a, m)) = &self.sent
             && !usage.is_some_and(|u| u.estimated)
         {
-            if self.req.count {
-                self.engine.history.tally.attempt_without_tokens(p, a, m);
+            tally_seq = Some(if self.req.count {
+                self.engine.history.tally.attempt_without_tokens(p, a, m)
             } else {
-                self.engine.history.tally.attempt(p, a, m, usage.as_ref());
-            }
+                self.engine.history.tally.attempt(p, a, m, usage.as_ref())
+            });
         }
         if let Some(routed) = &self.routed {
             let tokens = usage.as_ref().map_or(0, crate::route::plain_tokens);
@@ -2047,6 +2049,7 @@ impl Run {
                 a.outcome = Some(outcome);
                 a.usage = usage;
                 a.timing = timing;
+                a.tally_seq = tally_seq;
             }
         });
         if let Some(rec) = self.engine.records.get(self.id())
@@ -2176,6 +2179,7 @@ impl Run {
             adapter: None,
             member: self.member.clone(),
             timing: Some(AttemptTiming::default()),
+            tally_seq: None,
         };
         self.engine.records.update(self.id(), |r| r.attempts.push(a));
         tried.push(Tried {

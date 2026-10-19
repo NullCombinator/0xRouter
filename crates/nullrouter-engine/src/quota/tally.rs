@@ -13,8 +13,14 @@
 //!
 //! Each account has its own short mutex; the map of accounts is read-locked on the hot path
 //! and write-locked only when an account first tallies.
+//!
+//! Every counted attempt gets the next number of one sequence, under its account's mutex, and
+//! the record keeps it. A checkpoint or poll entry keeps the number it was read at, so recovery
+//! after a crash tells the attempts it holds from those after it by counting order, not by the
+//! clock (research R15).
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -151,6 +157,8 @@ type Key = (String, String);
 #[derive(Debug, Default)]
 pub struct Tally {
     cells: RwLock<HashMap<Key, Arc<Mutex<Cell>>>>,
+    /// The last sequence number given to a counted attempt, across accounts.
+    seq: AtomicU64,
 }
 
 fn lock(m: &Mutex<Cell>) -> MutexGuard<'_, Cell> {
@@ -177,19 +185,28 @@ impl Tally {
     }
 
     /// Tallies one attempt sent through `provider/account` to upstream `model`, with the
-    /// usage its provider reported (`None`: not reported).
-    pub fn attempt(&self, provider: &str, account: &str, model: &str, usage: Option<&Usage>) {
-        self.attempt_at(provider, account, model, usage, SystemTime::now());
+    /// usage its provider reported (`None`: not reported). Returns its sequence number.
+    pub fn attempt(&self, provider: &str, account: &str, model: &str, usage: Option<&Usage>) -> u64 {
+        self.attempt_at(provider, account, model, usage, SystemTime::now())
     }
 
     /// [`attempt`](Self::attempt) for an attempt that ended at `at`.
-    pub fn attempt_at(&self, provider: &str, account: &str, model: &str, usage: Option<&Usage>, at: SystemTime) {
-        lock(&self.cell(provider, account)).count(model, usage, at);
+    pub fn attempt_at(&self, provider: &str, account: &str, model: &str, usage: Option<&Usage>, at: SystemTime) -> u64 {
+        let cell = self.cell(provider, account);
+        let mut c = lock(&cell);
+        c.count(model, usage, at);
+        self.seq.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    /// Makes every later sequence number greater than `seq` (one a checkpoint, a poll entry or
+    /// the journal already holds).
+    pub fn seen(&self, seq: u64) {
+        self.seq.fetch_max(seq, Ordering::SeqCst);
     }
 
     /// Tallies one attempt that consumes no tokens (a count-tokens call): a request, with
     /// usage known to be zero.
-    pub fn attempt_without_tokens(&self, provider: &str, account: &str, model: &str) {
+    pub fn attempt_without_tokens(&self, provider: &str, account: &str, model: &str) -> u64 {
         let zero = Usage {
             input: Some(0),
             output: None,
@@ -199,7 +216,7 @@ impl Tally {
             input_semantics: InputSemantics::ExcludesCache,
             estimated: false,
         };
-        self.attempt(provider, account, model, Some(&zero));
+        self.attempt(provider, account, model, Some(&zero))
     }
 
     /// The account's hourly counters from the hour of `from` on, oldest first.
@@ -242,6 +259,14 @@ impl Tally {
         self.existing(provider, account).map(|c| lock(&c).models.clone()).unwrap_or_default()
     }
 
+    /// [`get`](Self::get) with the sequence number it holds every attempt up to.
+    pub fn get_seq(&self, provider: &str, account: &str) -> (AccountTally, u64) {
+        // Under the account's mutex, so no attempt of it can take a number without being in it.
+        let cell = self.cell(provider, account);
+        let c = lock(&cell);
+        (c.models.clone(), self.seq.load(Ordering::SeqCst))
+    }
+
     /// What was sent since the last good poll: the running tally and what failed polls took.
     pub fn since_good_poll(&self, provider: &str, account: &str) -> AccountTally {
         let Some(cell) = self.existing(provider, account) else { return AccountTally::new() };
@@ -252,10 +277,12 @@ impl Tally {
     }
 
     /// [`take`](Self::take) for a poll that landed: a good one also forgets what failed polls
-    /// took, since its figure already includes it.
-    pub fn take_poll(&self, provider: &str, account: &str, good: bool) -> AccountTally {
-        let Some(cell) = self.existing(provider, account) else { return AccountTally::new() };
+    /// took, since its figure already includes it. Returns the taken tally with the sequence
+    /// number it holds every attempt up to.
+    pub fn take_poll(&self, provider: &str, account: &str, good: bool) -> (AccountTally, u64) {
+        let cell = self.cell(provider, account);
         let mut c = lock(&cell);
+        let seq = self.seq.load(Ordering::SeqCst);
         let taken = std::mem::take(&mut c.models);
         if good {
             c.carried.clear();
@@ -263,7 +290,7 @@ impl Tally {
             let t = taken.clone();
             merge(&mut c.carried, &t);
         }
-        taken
+        (taken, seq)
     }
 
     /// Takes the account's tally and resets it (a poll entry is being written).

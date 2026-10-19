@@ -178,6 +178,7 @@ fn with_history(dir: &Path) {
         error: (!ok).then(|| EntryError { class: "status".into(), status: Some(500), reason: "down".into() }),
         windows: if ok { vec![window.clone()] } else { Vec::new() },
         tally,
+        seq: None,
     };
     history::append(dir, "opencode-go", "main", &entry("2026-10-01T10:00:00.000Z", true, tally)).unwrap();
     history::append(dir, "opencode-go", "main", &entry("2026-10-03T14:20:00.000Z", false, AccountTally::new()))
