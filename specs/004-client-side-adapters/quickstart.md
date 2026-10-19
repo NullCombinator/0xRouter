@@ -6,20 +6,33 @@ slice 003's quickstart passes.
 
 ## Prerequisites
 
+Run from the checkout that holds the slice, here the 004 worktree. Builds go to the HDD
+target directory, never `./target`:
+
 ```bash
-cd ~/Desktop/0router
-export CARGO_HOME=$PWD/.cargo-home
+cd ~/Desktop/0router/.worktrees/004
+export CARGO_HOME=$HOME/Desktop/0router/.cargo-home
+export CARGO_TARGET_DIR=/mnt/storage/0router/target/004
 cargo build --workspace
 export NULLROUTER_HOME=$(mktemp -d)
-alias nr=./target/debug/nullrouter
+alias nr=$CARGO_TARGET_DIR/debug/nullrouter
 ```
 
-For builder checks (sections 3 onwards), the builder needs its pinned toolchain:
+For builder checks (sections 3 onwards), the builder needs its pinned toolchain. The core
+runs the builder with `--home $NULLROUTER_HOME`, so every new home needs its own `setup`.
+It uses the network, once per home:
 
 ```bash
 rustup target add wasm32-unknown-unknown --toolchain 1.93.1
 cargo build -p nullrouter-builder
-./target/debug/nullrouter-builder setup      # unpacks the embedded kit; fetches serde once
+$CARGO_TARGET_DIR/debug/nullrouter-builder setup   # into $NULLROUTER_HOME/builder: kit, pinned toolchain, vendored serde
+```
+
+Installs look for `nullrouter-builder` on `PATH`. Section 1 checks the server without it, so
+put it there only when you reach section 3:
+
+```bash
+export PATH=$CARGO_TARGET_DIR/debug:$PATH
 ```
 
 ## 0. Whole suite (no network, no builder needed)
@@ -34,7 +47,7 @@ fixtures), the scrambler audit, tamper tests, the update lifecycle and hermes on
 ## 1. No adapters, no builder (FR-013, SC-011)
 
 ```bash
-PATH=/usr/bin:/bin cargo test -p nullrouter-server     # the slice 003 suite, builder not on PATH
+PATH=/usr/bin:/bin $(command -v cargo) test -p nullrouter-server   # the slice 003 suite, builder not on PATH
 nr serve &                                             # starts; `adapters list` shows hermes only
 ```
 
@@ -81,7 +94,7 @@ cargo test -p nullrouter-adapters --test gate
 nr adapters install crates/nullrouter-adapters/tests/gate/invalid/multi_reason   # exit 3
 ```
 
-**Expected**: one line per reason, matching `multi_reason/.expected`. The expected codes
+**Expected**: one line per reason, matching `gate/invalid/multi_reason.expected`. The expected codes
 include `foreign_dependency`, `build_script` and `opaque_blob`.
 
 ## 5. Hostile adapters and the guardrail (US3, SC-002, SC-003)
