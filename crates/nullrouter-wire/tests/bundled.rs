@@ -134,6 +134,33 @@ fn a_conversation_survives_every_style_pair() {
     }
 }
 
+#[test]
+fn every_tool_choice_survives_every_style() {
+    let choices = [ToolChoice::Auto, ToolChoice::Required, ToolChoice::None, ToolChoice::Named("get_weather".into())];
+    for a in IDS {
+        let sa = bundled(a);
+        for choice in &choices {
+            let mut req = conversation();
+            req.tool_choice = Some(choice.clone());
+            let body =
+                request::encode(&req, &sa, "ir").unwrap_or_else(|e| panic!("encode {choice:?} into {a}: {e}")).body;
+            let read = request::decode(&sa, &body).unwrap();
+            assert_eq!(read.tool_choice.as_ref(), Some(choice), "{a}\n{body:#}");
+            assert!(read.unplaced.is_empty(), "{a} {choice:?}: {:?}", read.unplaced);
+        }
+    }
+}
+
+#[test]
+fn a_gemini_choice_of_several_functions_keeps_the_list_unplaced() {
+    let s = bundled("gemini");
+    let mut body = request::encode(&conversation(), &s, "ir").unwrap().body;
+    body["toolConfig"]["functionCallingConfig"] = json!({"mode": "ANY", "allowedFunctionNames": ["a", "b"]});
+    let read = request::decode(&s, &body).unwrap();
+    assert_eq!(read.tool_choice, Some(ToolChoice::Required));
+    assert_eq!(read.unplaced, ["toolConfig.functionCallingConfig.allowedFunctionNames"]);
+}
+
 fn answer() -> Response {
     Response {
         id: Some("r1".into()),

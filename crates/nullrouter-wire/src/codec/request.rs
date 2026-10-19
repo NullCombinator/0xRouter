@@ -21,7 +21,7 @@ use serde_json::{Map, Value};
 use super::{CodecError, Dropped, PartTpl, Style, TextStyle};
 use crate::ir::{Media, MediaSource, Message, Opaque, Part, Request, ResultContent, Role, Tool, ToolChoice};
 use crate::primitives::{forms, media, repairs};
-use crate::template::{Bindings, match_value, render, select_one, set_path, take_path, unmatched_keys};
+use crate::template::{Bindings, match_all, match_value, render, select_one, set_path, take_path, unmatched_keys};
 
 /// The field that carries tool calls in the `message_field` layout.
 const TOOL_CALLS_FIELD: &str = "tool_calls";
@@ -468,13 +468,18 @@ impl<'a> Decoder<'a> {
             (Some(&c.required), ToolChoice::Required),
             (c.none.as_ref(), ToolChoice::None),
         ];
-        let choice = fixed
-            .into_iter()
-            .find_map(|(tpl, ch)| Some((ch, tpl.filter(|tpl| match_value(tpl, v).is_some())?)))
-            .or_else(|| {
-                let name = match_value(&c.named, v)?.str("tool.name")?.to_owned();
-                Some((ToolChoice::Named(name), &c.named))
-            });
+        // Named first: a template matches a value with extra keys, so gemini's `required`
+        // (`{mode: ANY}`) would also take a named choice and leave its name unplaced. Only a
+        // single binding is a named choice: gemini's `allowedFunctionNames` binds once per
+        // name, and keeping the first would drop the others unrecorded. A longer list reads as
+        // `required`, with the list kept as an unplaced key.
+        let named = || {
+            let [b] = match_all(&c.named, v).try_into().ok()?;
+            Some((ToolChoice::Named(b.str("tool.name")?.to_owned()), &c.named))
+        };
+        let choice = named().or_else(|| {
+            fixed.into_iter().find_map(|(tpl, ch)| Some((ch, tpl.filter(|tpl| match_value(tpl, v).is_some())?)))
+        });
         match choice {
             Some((ch, tpl)) => {
                 self.leftovers(tpl, v, &c.path.to_string());
