@@ -493,15 +493,18 @@ pub fn fit_only(spec: &Spec, rows: &[MRow], start: &Theta, free: &[P]) -> Option
 }
 
 /// The standard error of `p` in `only`, a [`fit_only`] of `p` alone on `rows`, for testing it
-/// against `held`, the fit it held every other number at (R9). Two corrections to `only.se`:
+/// against `held`, the fit over `base` it held every other number at (R9). Two corrections to
+/// `only.se`:
 ///
 /// - The curvature is also taken at `held`'s value, and the smaller one counts. In log space
 ///   the gradient grows with the value, so a refit that a few rows drive 10× up (one rounding
 ///   step on rows with little traffic) would otherwise claim 10× the information it has.
-/// - A held number off by `δ` moves the refit by `−δ·(g̃ₚ·g̃_q)/(g̃ₚ·g̃ₚ)` over the whitened
-///   gradients, so their covariance in `held` adds `sᵀ·Σ·s`. The rows are also in `held`, which
-///   makes the two agree more, not less: leaving that out keeps the test conservative.
-pub fn held_se(spec: &Spec, rows: &[MRow], only: &Fit, p: P, held: &Fit) -> Option<f64> {
+/// - A held number off by `δ` moves a one-number refit by `s·δ`, `s = −(g̃ₚ·g̃_q)/(g̃ₚ·g̃ₚ)` over
+///   the whitened gradients. It moves the refit on `rows` by `s_rows·δ` and `held`'s own value of
+///   `p` by about `s_base·δ`, so the difference tested moves by `(s_rows − s_base)·δ`, and
+///   `held`'s covariance adds `dᵀ·Σ·d` with `d = s_rows − s_base`. Rows with the same mix of
+///   traffic as `base` cancel the held numbers' error; only a different mix leaves some of it.
+pub fn held_se(spec: &Spec, rows: &[MRow], base: &[MRow], only: &Fit, p: P, held: &Fit) -> Option<f64> {
     if only.active != [p] {
         return None;
     }
@@ -522,21 +525,28 @@ pub fn held_se(spec: &Spec, rows: &[MRow], only: &Fit, p: P, held: &Fit) -> Opti
         return Some(se);
     }
     let cols: Vec<P> = std::iter::once(p).chain(others.iter().map(|(_, q)| *q)).collect();
-    let mut g = gradients(spec, &only.theta, rows, &cols);
-    wh.gradients(&mut g);
-    let gpp: f64 = g.iter().map(|r| r[0] * r[0]).sum();
-    if gpp <= 0.0 {
-        return Some(se);
-    }
-    let s: Vec<f64> = (1..cols.len()).map(|j| -g.iter().map(|r| r[0] * r[j]).sum::<f64>() / gpp).collect();
+    let Some(s_rows) = sensitivity(spec, rows, &only.theta, only.sigma_e2, &cols) else { return Some(se) };
+    let s_base = sensitivity(spec, base, &held.theta, held.sigma_e2, &cols).unwrap_or_else(|| vec![0.0; s_rows.len()]);
+    let d: Vec<f64> = s_rows.iter().zip(&s_base).map(|(a, b)| a - b).collect();
     let mut var = 0.0;
     for (a, (ia, _)) in others.iter().enumerate() {
         for (b, (ib, _)) in others.iter().enumerate() {
-            var += s[a] * s[b] * held.cov[(*ia, *ib)];
+            var += d[a] * d[b] * held.cov[(*ia, *ib)];
         }
     }
     let total = se * se + var.max(0.0);
     total.is_finite().then(|| total.sqrt())
+}
+
+/// How a one-number refit of `cols[0]` on `rows` at `theta` moves per unit error in each of
+/// `cols[1..]`: `−(g̃₀·g̃_j)/(g̃₀·g̃₀)` over the whitened gradients. `None` when no row informs
+/// `cols[0]`.
+fn sensitivity(spec: &Spec, rows: &[MRow], theta: &Theta, sigma_e2: f64, cols: &[P]) -> Option<Vec<f64>> {
+    let wh = Whitener::new(rows, sigma_e2);
+    let mut g = gradients(spec, theta, rows, cols);
+    wh.gradients(&mut g);
+    let gpp: f64 = g.iter().map(|r| r[0] * r[0]).sum();
+    (gpp > 0.0).then(|| (1..cols.len()).map(|j| -g.iter().map(|r| r[0] * r[j]).sum::<f64>() / gpp).collect())
 }
 
 /// The best of the fits from each of `starts`, by the objective (squared error plus the prior's

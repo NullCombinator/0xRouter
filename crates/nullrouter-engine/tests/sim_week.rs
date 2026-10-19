@@ -1459,8 +1459,10 @@ fn a_plugin_override_applies_to_every_account_but_one_with_its_own() {
 // ---------------------------------------------------------------------------------------------
 // A provider that changes its rules (T046; US5 scenario 2; SC-006)
 
-/// Thursday 06:00: the fourth day, before its working hours.
+/// Thursday 06:00: the fourth day, before its working hours. The restart run's rule change.
 const HALVE_AT: u64 = 3 * DAY + 6 * HOUR;
+/// The latest the halving run may halve and still have a day to report it in the week.
+const LATEST_HALVING: u64 = 6 * DAY;
 
 #[test]
 fn a_halved_capacity_is_a_break_found_within_a_day_and_relearned_from_the_rows_after_it() {
@@ -1468,7 +1470,6 @@ fn a_halved_capacity_is_a_break_found_within_a_day_and_relearned_from_the_rows_a
     let scenario = Scenario::three_times_off(&reqs);
     let (defs, mut world) = scenario.week();
     let new_capacity = (scenario.true_capacity / 2.0).round();
-    world.set_true_capacity(HALVE_AT, 0, FIT_WINDOW, new_capacity);
     let dir = tempfile::tempdir().unwrap();
     let mut sim = Sim::new(&defs, dir.path()).with_fit(FitRun::new(defs.accounts.len()));
     // Exclusive-use, so that a busy row wrongly called outside use would raise an alert.
@@ -1478,12 +1479,27 @@ fn a_halved_capacity_is_a_break_found_within_a_day_and_relearned_from_the_rows_a
     let mut old: Option<f64> = None;
     let mut known_at: Option<u64> = None;
     let mut after = 0u64;
+    // Story 5 starts from a fitted capacity: the provider halves it at the first whole hour two
+    // hours after the fit has one, so the old value is the fit's and not the declaration's.
+    let mut halve_at: Option<u64> = None;
+    let mut fitted_since: Option<std::time::SystemTime> = None;
     for r in &reqs {
         sim.handle(&mut world, r);
         let fit = sim.fit.as_ref().expect("a fit run");
         match fit.learner.number_states(FIT_PROVIDER, FIT_WINDOW).get(&cap_key) {
-            Some(NumberState::Fitted { .. }) if known_at.is_none() => {
+            // A break whose rows already reject the declaration is fitted again in the same
+            // poll: the report shows as a new `since`.
+            Some(NumberState::Fitted { since }) if known_at.is_none() && fitted_since.is_some_and(|s| s != *since) => {
+                known_at = Some(r.at_ms)
+            }
+            Some(NumberState::Fitted { since }) if known_at.is_none() => {
                 old = fit.fits.window(FIT_PROVIDER, FIT_WINDOW).capacity.get(FIT_ACCOUNT).copied().or(old);
+                if halve_at.is_none() {
+                    let t = (r.at_ms + 2 * HOUR).div_ceil(HOUR) * HOUR;
+                    world.set_true_capacity(t, 0, FIT_WINDOW, new_capacity);
+                    halve_at = Some(t);
+                    fitted_since = Some(*since);
+                }
             }
             Some(NumberState::Relearning { .. }) if known_at.is_none() => known_at = Some(r.at_ms),
             _ => {}
@@ -1497,9 +1513,11 @@ fn a_halved_capacity_is_a_break_found_within_a_day_and_relearned_from_the_rows_a
     }
     sim.journal.flush_blocking();
     let fit = sim.fit.as_ref().expect("a fit run");
+    let halve = halve_at.expect("the capacity was never fitted, so there was nothing to halve");
+    assert!(halve <= LATEST_HALVING, "the capacity was first fitted too late to halve: +{:.1}h", halve as f64 / HOUR as f64);
     let known = known_at.expect("the halving was never reported as a break");
     assert!(after > 0);
-    assert!((HALVE_AT..=HALVE_AT + DAY).contains(&known), "the break was reported at +{:.1}h, the halving was at +{:.1}h", known as f64 / HOUR as f64, HALVE_AT as f64 / HOUR as f64);
+    assert!((halve..=halve + DAY).contains(&known), "the break was reported at +{:.1}h, the halving was at +{:.1}h", known as f64 / HOUR as f64, halve as f64 / HOUR as f64);
 
     let Loaded::Ok(stored) = store::load(fit.home(), FIT_PROVIDER).expect("the fit state reads") else { panic!("no fit state saved") };
     let breaks = &stored.windows.get(FIT_WINDOW).expect("the window is stored").breaks;
@@ -1507,8 +1525,8 @@ fn a_halved_capacity_is_a_break_found_within_a_day_and_relearned_from_the_rows_a
     assert_eq!(found.len(), 1, "breaks recorded: {breaks:?}");
     let b = found[0];
     let (b_at, detected) = (clock::parse_rfc3339(&b.at).expect("a time"), clock::parse_rfc3339(&b.detected_at).expect("a time"));
-    assert!(b_at >= at(HALVE_AT - 3 * HOUR) && b_at <= detected, "the break is placed at {}", b.at);
-    assert!(detected <= at(HALVE_AT + DAY), "detected at {}", b.detected_at);
+    assert!(b_at >= at(halve - 3 * HOUR) && b_at <= detected, "the break is placed at {}", b.at);
+    assert!(detected <= at(halve + DAY), "detected at {}", b.detected_at);
     let was = old.expect("a capacity was fitted before the break");
     assert!((b.replaced / was - 1.0).abs() <= 1e-9, "the replaced value {} was not the old fitted capacity {was}", b.replaced);
 
@@ -1527,12 +1545,12 @@ fn a_halved_capacity_is_a_break_found_within_a_day_and_relearned_from_the_rows_a
     let stray: Vec<_> = entries
         .iter()
         .filter(|e| matches!(e.ty, OutsideType::Idle | OutsideType::Busy))
-        .filter(|e| e.start_time().is_some_and(|t| t >= at(HALVE_AT - HOUR) && t <= detected))
+        .filter(|e| e.start_time().is_some_and(|t| t >= at(halve - HOUR) && t <= detected))
         .collect();
     assert!(stray.is_empty(), "rows around the halving were listed as outside use: {stray:?}");
     let alerts = outside::alerts(fit.home(), FIT_PROVIDER, FIT_ACCOUNT);
     assert!(alerts.is_empty(), "the halving raised alerts: {alerts:?}");
-    println!("halved capacity: reported +{:.1}h after the halving; {after} requests placed after the report", (known - HALVE_AT) as f64 / HOUR as f64);
+    println!("halved capacity: reported +{:.1}h after the halving; {after} requests placed after the report", (known - halve) as f64 / HOUR as f64);
 }
 
 // ---------------------------------------------------------------------------------------------

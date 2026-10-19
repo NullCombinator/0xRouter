@@ -318,9 +318,14 @@ where three accounts gave 7 false breaks and the output weight ended not separab
   moved the cache-read weight from 0.29 to 3.1, with a standard error a third of what the same
   rows give at 0.29. At the value in effect the error is what the null hypothesis implies, the
   usual score-test form.
-- The numbers held at the current fit carry its error, which adds `sᵀΣs` to the variance
-  (`s` is how far each held number moves the refit). That is small next to a week of evidence,
-  and conservative.
+- The numbers held at the current fit carry its error, but the value in effect carries the
+  same error: an output weight off by `δ` moves the start's refit by `s_rows·δ` and the fitted
+  capacity by about `s_fit·δ` (`s` is how far each held number moves a one-number refit, over
+  the start's rows and over the rows the fit used). Only the difference is tested, so the
+  variance adds `dᵀΣd` with `d = s_rows − s_fit`, which is small when the start's traffic mix
+  is like the week's. Adding the whole `sᵀΣs` was too conservative: the capacity and the
+  output weight are nearly collinear, so it gave a standard error of 0.23–0.63 in log space
+  to a halving the refit found at −0.69 ± 0.015, and the halving was never reported.
 
 **Alternatives considered**: (a) A CUSUM with a fixed shift size. It needs the shift known in
 advance. (b) Comparing the last N rows to the rest. Its error rate under repeated checks is

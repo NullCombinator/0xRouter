@@ -3,8 +3,10 @@
 //! For each fitted number, a sequence starts at every whole hour of the last 48 hours. Each
 //! refits that number alone from the rows after its start (a capacity, from its account's rows),
 //! every other parameter held at the fit in effect, and tests the value it gets against the
-//! value now in effect, with the always-valid test of R5 (`m` = 48 starts × numbers). The start
-//! with the strongest rejection is the break's `at`.
+//! value now in effect, with the always-valid test of R5 (`m` = 48 starts × numbers). The held
+//! numbers' error counts only where it moves the refit and the value in effect differently
+//! ([`model::held_se`] over the start's rows and the fit's). The start with the strongest
+//! rejection is the break's `at`; of the numbers that break, only the strongest is reported.
 //!
 //! Rows scored are the evidence rows and the busy rows classified as outside use, provisional or
 //! already final: a proportional excess (a rule change) must show as a break, not a leak, and a
@@ -85,7 +87,8 @@ fn ceil_hour(t: SystemTime) -> SystemTime {
 /// Whether the rejection of `t` still stands with the one row the start's fit explains worst
 /// left out. A rule change shows in many rows; a burst that doesn't track traffic is one row, and
 /// a few-row fit can bend to it (research R9: it must not move the traffic-direction score).
-fn survives_without_worst_row(spec: &Spec, sub: &[MRow], f: &Fit, t: &Target, null: f64, m: usize, current: &Fit) -> bool {
+#[allow(clippy::too_many_arguments)]
+fn survives_without_worst_row(spec: &Spec, sub: &[MRow], base: &[MRow], f: &Fit, t: &Target, null: f64, m: usize, current: &Fit) -> bool {
     let miss = |r: &MRow| (r.y - f.predict(spec, r).0).abs();
     let Some(worst) = (0..sub.len()).max_by(|a, b| miss(&sub[*a]).partial_cmp(&miss(&sub[*b])).unwrap_or(std::cmp::Ordering::Equal)) else {
         return false;
@@ -98,12 +101,13 @@ fn survives_without_worst_row(spec: &Spec, sub: &[MRow], f: &Fit, t: &Target, nu
     if g.rows < 2 * g.active.len() || !g.active.contains(&t.p) {
         return false;
     }
-    model::held_se(spec, &rest, &g, t.p, current).is_some_and(|se| rejects(t.natural(&g).ln(), null, se, m))
+    model::held_se(spec, &rest, base, &g, t.p, current).is_some_and(|se| rejects(t.natural(&g).ln(), null, se, m))
 }
 
-/// The breaks among `targets` as of `now`. `rows` are the epoch's rows; `current` is the fit in
-/// effect (over evidence only), `skip` the split-off account indices left out of the pool, and
-/// `account_epochs` the time a capacity's account last restarted (no start precedes it).
+/// The break among `targets` as of `now`, if any: at most one per poll. `rows` are the epoch's
+/// rows; `current` is the fit in effect (over evidence only), `skip` the split-off account indices
+/// left out of the pool, and `account_epochs` the time a capacity's account last restarted (no
+/// start precedes it).
 #[allow(clippy::too_many_arguments)]
 pub fn detect(
     window: &str,
@@ -122,6 +126,9 @@ pub fn detect(
     let lookback = now.checked_sub(Duration::from_secs(LOOKBACK_HOURS * 3600)).unwrap_or(UNIX_EPOCH);
     let counted: Vec<Row> = rows.iter().filter(|r| scored(r)).cloned().collect();
     let all: Vec<MRow> = split::without(&model::prepare(spec, &counted), skip);
+    // The rows `current` is fitted on.
+    let evidence: Vec<Row> = rows.iter().filter(|r| is_evidence(r.class)).cloned().collect();
+    let fitted: Vec<MRow> = split::without(&model::prepare(spec, &evidence), skip);
     let m = LOOKBACK_HOURS as usize * targets.len();
     // Per target, the strongest rejection: (score / boundary, start).
     let mut best: Vec<Option<(f64, SystemTime)>> = vec![None; targets.len()];
@@ -144,9 +151,12 @@ pub fn detect(
             // A capacity is tested on its own account's rows: in a pooled window the others
             // inform nothing about it, and would let a start pass the row minimum on a few of its.
             let own = t.account.as_ref().and_then(|a| spec.accounts.iter().position(|x| x == a));
-            let sub: Vec<MRow> = match own {
-                Some(a) => since.iter().filter(|r| r.acct == a).cloned().collect(),
-                None => since.clone(),
+            let (sub, base): (Vec<MRow>, Vec<MRow>) = match own {
+                Some(a) => (
+                    since.iter().filter(|r| r.acct == a).cloned().collect(),
+                    fitted.iter().filter(|r| r.acct == a).cloned().collect(),
+                ),
+                None => (since.clone(), fitted.clone()),
             };
             if sub.len() < MIN_ROWS {
                 continue;
@@ -157,9 +167,9 @@ pub fn detect(
             if f.rows < 2 * f.active.len() || !f.active.contains(&t.p) {
                 continue;
             }
-            let Some(se) = model::held_se(spec, &sub, &f, t.p, current) else { continue };
+            let Some(se) = model::held_se(spec, &sub, &base, &f, t.p, current) else { continue };
             let (est, null) = (t.natural(&f).ln(), t.natural(current).ln());
-            if rejects(est, null, se, m) && survives_without_worst_row(spec, &sub, &f, t, null, m, current) {
+            if rejects(est, null, se, m) && survives_without_worst_row(spec, &sub, &base, &f, t, null, m, current) {
                 let v = 1.0 / (se * se);
                 let score = ((est - null) * v).abs() / boundary(v, m);
                 if best[i].is_none_or(|(b, _)| score > b) {
@@ -168,21 +178,20 @@ pub fn detect(
             }
         }
     }
-    targets
-        .iter()
-        .zip(best)
-        .filter_map(|(t, b)| {
-            let (_, at) = b?;
-            Some(Break {
-                at,
-                detected_at: now,
-                window: window.to_owned(),
-                number: t.number.clone(),
-                account: t.account.clone(),
-                replaced: t.natural(current),
-            })
-        })
-        .collect()
+    // One rule change shows in every number collinear with it: refit alone with the capacity
+    // held at its old value, the output weight takes up a halved capacity. The strongest
+    // rejection names the change; the others are tested again against the relearned fit.
+    let strongest = best.into_iter().enumerate().filter_map(|(i, b)| Some((i, b?))).max_by(|a, b| a.1.0.total_cmp(&b.1.0));
+    let Some((i, (_, at))) = strongest else { return Vec::new() };
+    let t = &targets[i];
+    vec![Break {
+        at,
+        detected_at: now,
+        window: window.to_owned(),
+        number: t.number.clone(),
+        account: t.account.clone(),
+        replaced: t.natural(current),
+    }]
 }
 
 /// A value as the log prints it: `13.8M`.
@@ -299,6 +308,17 @@ mod tests {
         assert_eq!(b.number, MeterNumber::Capacity);
         assert_eq!(b.key(), "capacity@a");
         assert!((b.replaced / 1e5 - 1.0).abs() < 0.1, "replaced {}", b.replaced);
+    }
+
+    #[test]
+    fn a_halved_capacity_is_one_break_on_the_capacity_not_on_the_output_weight_too() {
+        let h = 72 * 6;
+        let mut rows = make(h + 18, |i| if i < h { 1e-3 } else { 2e-3 });
+        for r in rows.iter_mut().skip(h) {
+            r.class = Class::Outside;
+        }
+        let found = run(&rows, &targets());
+        assert_eq!(found.iter().map(Break::key).collect::<Vec<_>>(), vec!["capacity@a"], "{found:?}");
     }
 
     #[test]
