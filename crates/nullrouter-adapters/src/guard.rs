@@ -59,7 +59,7 @@ struct Groups {
 /// needed because an unplaced key is digested with its value, which the IR does not hold.
 pub fn check_request(style: &Style, before: &Request, before_body: &Value, after_body: &Value) -> Verdict {
     let Ok(after) = request::decode(style, after_body) else { return Verdict::Undecodable };
-    let (b, a) = (request_groups(before, before_body), request_groups(&after, after_body));
+    let (b, a) = (request_groups(style, before, before_body), request_groups(style, &after, after_body));
     use GuardrailRule as R;
     first_violation(&[
         check(&b.calls, &a.calls, R::ToolCallAdded, R::ToolCallChanged),
@@ -158,8 +158,19 @@ fn excess(
     Some((rule, extra.iter().take(MAX_PATHS).map(|i| i.at.clone()).collect()))
 }
 
-fn request_groups(r: &Request, body: &Value) -> Groups {
+fn request_groups(style: &Style, r: &Request, body: &Value) -> Groups {
     let mut g = Groups::default();
+    let choice_at = style.text.as_ref().and_then(|t| t.tools.as_ref()?.choice.as_ref()).map(|c| c.path.to_string());
+    // Keys the choice template doesn't read but that sit inside the choice (gemini's
+    // `allowedFunctionNames` with several names) narrow what a forced call may pick, so they
+    // belong to the choice: dropping one alone is a change, not a removal.
+    let in_choice = |path: &str| {
+        r.tool_choice.is_some()
+            && choice_at.as_deref().is_some_and(|at| {
+                path.strip_prefix(at).is_some_and(|rest| rest.starts_with('.') || rest.starts_with('['))
+            })
+    };
+    let mut choice_keys = Vec::new();
     for (i, p) in r.system.iter().enumerate() {
         part_items(p, &format!("system[{i}]"), &mut g);
     }
@@ -176,14 +187,17 @@ fn request_groups(r: &Request, body: &Value) -> Groups {
     }
     for path in &r.unplaced {
         let value = resolve(body, path).map_or_else(|| "\u{0}unresolved".to_owned(), canon);
-        g.unplaced.push(Item { name: path.clone(), digest: digest(&["unplaced", path, &value]), at: path.clone() });
+        if in_choice(path) {
+            choice_keys.extend([path.clone(), value]);
+        } else {
+            g.unplaced.push(Item { name: path.clone(), digest: digest(&["unplaced", path, &value]), at: path.clone() });
+        }
     }
     if let Some(c) = &r.tool_choice {
-        g.choice.push(Item {
-            name: "tool_choice".into(),
-            digest: digest(&["tool_choice", &format!("{c:?}")]),
-            at: "tool_choice".into(),
-        });
+        let choice = format!("{c:?}");
+        let parts: Vec<&str> =
+            ["tool_choice", choice.as_str()].into_iter().chain(choice_keys.iter().map(String::as_str)).collect();
+        g.choice.push(Item { name: "tool_choice".into(), digest: digest(&parts), at: "tool_choice".into() });
     }
     g
 }
