@@ -292,14 +292,17 @@ async fn legit_removal_records_hold_no_removed_value() {
 
 const CC_MODEL: &str = "claude-sonnet-4-5-20250929";
 
-fn claude_fixture() -> Option<Vec<u8>> {
+/// The built Claude Code module. Missing is a failure, not a skip: these cases are T086's
+/// evidence for SC-009 (user, 2026-10-19).
+fn claude_fixture() -> Vec<u8> {
     let path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../nullrouter-adapters/tests/fixtures/claude-code/module.wasm");
-    let wasm = std::fs::read(path).ok();
-    if wasm.is_none() {
-        eprintln!("skipped: build the claude-code fixture (T080)");
-    }
-    wasm
+    std::fs::read(&path).unwrap_or_else(|e| {
+        panic!(
+            "{}: {e}. Build the claude-code fixture: nullrouter-builder setup, then tools/build-adapter-fixtures.sh (T080)",
+            path.display()
+        )
+    })
 }
 
 fn oracle(name: &str) -> Value {
@@ -316,7 +319,7 @@ fn oracle(name: &str) -> Value {
 /// Runs the Claude Code adapter over `body`, checks the record's changes, and searches for
 /// `sentinels` (plus the account secret).
 async fn claude_case(case: &str, body: Value, sentinels: Vec<String>, secret: String, expected: &[(&str, &str, &str)]) {
-    let Some(wasm) = claude_fixture() else { return };
+    let wasm = claude_fixture();
     let log = logs();
     let manifest_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../adapters/community/claude-code/adapter.toml");
