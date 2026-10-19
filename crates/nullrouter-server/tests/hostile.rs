@@ -200,6 +200,7 @@ async fn run_case(case: &str) {
         other => panic!("{case}: unknown side {other}"),
     };
 
+    let mut records = Vec::new();
     let mut blocked_before = false;
     let mut sent = 0;
     // The last mode runs once more for a guardrail case, to see the version stopped serving.
@@ -208,8 +209,9 @@ async fn run_case(case: &str) {
         rounds.push(*modes.last().unwrap());
     }
     for stream in rounds {
-        let (base_text, _) = send(&s, &plain, stream, &client_body).await;
+        let (base_text, base_rec) = send(&s, &plain, stream, &client_body).await;
         let (text, rec) = send(&s, &s.key, stream, &client_body).await;
+        records.extend([base_rec, rec.clone()]);
         sent += 2;
         let got = s.mock.received();
         assert_eq!(got.len(), sent, "{case}: the mock saw an unexpected number of requests");
@@ -247,6 +249,8 @@ async fn run_case(case: &str) {
         assert!(!String::from_utf8_lossy(&r.body).contains(SENTINEL), "{case}: the upstream body carries the secret");
     }
     assert_eq!(accepted.load(Ordering::SeqCst), 0, "{case}: the decoy listener was reached");
+    let stored = serde_json::to_string(&records).unwrap();
+    assert!(!stored.contains(SENTINEL), "{case}: a record carries the secret");
 
     let alerts = AlertLog::open(&Store::open(s.home()).unwrap()).list().unwrap();
     assert!(!format!("{alerts:?}").contains(SENTINEL), "{case}: an alert carries the secret");
