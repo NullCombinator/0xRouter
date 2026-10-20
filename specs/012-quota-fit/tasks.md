@@ -213,7 +213,7 @@ priority").
 - [X] T067 [P] Add a placement case with meters in effect to `crates/nullrouter-engine/benches/engine.rs`, compared against the `slice-006` baseline locally only (SC-011)
 - [X] T068 [P] Add a CI step in `.github/workflows/ci.yml` after the workspace tests: `cargo test -p nullrouter-engine --release --test sim_suite -- --ignored 2>&1 | tee sim_suite.log`, and pass its log to `tools/ci/annotate.sh`
 - [X] T069 [P] Document quota fit, outside use, exclusive use and alerts, the new override keys and `set-plugin`, and the meter block in `docs/operator-config.md` (§ Quota, § Account overrides, § The routing view), following contracts/cli.md
-- [ ] T070 Run quickstart.md's checks in CI (push once, with the user's OK) and record the sim-week table and suite counts in the PR description
+- [X] T070 Run quickstart.md's checks in CI (push once, with the user's OK) and record the sim-week table and suite counts in the PR description (CI #215, PR #7)
 
 **Left for the user** (2026-10-20):
 
