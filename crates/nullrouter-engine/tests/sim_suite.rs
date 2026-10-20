@@ -51,6 +51,7 @@ fn five_hour(capacity: f64) -> MeterDecl {
 fn peak_five_hours(reqs: &[Req]) -> f64 {
     let meter = five_hour(1.0e12);
     let mut world = World::new(vec![TrueAccount { windows: vec![TrueWindow::new(&meter, Reset::FirstUse, false, 0.0)] }]);
+    world.cache_writes = true;
     let mut costs: Vec<(u64, f64)> = Vec::with_capacity(reqs.len());
     let mut swept = 0;
     for r in reqs {
@@ -120,6 +121,8 @@ struct Week {
 fn run(capacity: f64, reqs: &[Req], outside: &[OutsideUse], fitting: bool) -> Week {
     let (defs, mut world) = week(capacity);
     world.outside = outside.to_vec();
+    // Every number the plugin declares is in the traffic, so each run checks four ranges.
+    world.cache_writes = true;
     let dir = tempfile::tempdir().unwrap();
     let mut sim = Sim::new(&defs, dir.path());
     if fitting {

@@ -406,6 +406,9 @@ pub struct World {
     capacity_at: Vec<(u64, usize, String, f64)>,
     /// The instant the injector and the capacity schedule have been applied up to.
     outside_t: u64,
+    /// Bills the newly cached part of a prompt as `cache_write`, not `input`; off by default, so
+    /// slice 006's checks see what they always saw.
+    pub cache_writes: bool,
 }
 
 /// What the provider reports for one served request.
@@ -463,7 +466,13 @@ impl World {
     pub fn serve(&mut self, account: usize, req: &Req, t: u64) -> Option<Usage> {
         self.roll(t);
         let read = self.cached(account, req, t);
-        let usage = Usage { input: req.prompt - read, output: req.output, cache_read: read, cache_write: 0 };
+        let write = if self.cache_writes {
+            let longest = req.chain.iter().map(|(_, tokens)| *tokens).filter(|tokens| *tokens >= 1024).max().unwrap_or(0);
+            longest.saturating_sub(read)
+        } else {
+            0
+        };
+        let usage = Usage { input: req.prompt - read - write, output: req.output, cache_read: read, cache_write: write };
         if !self.accounts[account].admits(t, &usage.spent()) {
             return None;
         }
