@@ -909,7 +909,7 @@ fn settle(win: &mut Win, spec: &Spec, meter: &MeterDecl, now: SystemTime) -> boo
         }
         starts.push(start_theta(spec, meter));
         let prior = win.base.prior.as_ref().map(prior_term);
-        let Some(fit) = model::fit_best(spec, &pool, &starts, prior.as_ref()) else { return fitted };
+        let Some(fit) = model::fit_best(spec, &pool, &starts, prior.as_ref(), &start_theta(spec, meter)) else { return fitted };
         let before: Vec<Class> = win.rows.iter().map(|r| r.class).collect();
         reclassify_epoch(&mut win.rows, spec, Some(&fit), STEP, now);
         win.last = Some((spec.clone(), fit));
@@ -1485,6 +1485,7 @@ fn update_numbers(win: &mut Win, spec: &Spec, meter: &MeterDecl, ov: &WindowOver
         } else if let Some(i) = insep.get(&n.p) {
             NumberState::NotSeparable { partner: i.partner.map_or_else(|| "the other numbers".to_owned(), |p| name_of(spec, p)) }
         } else if informed
+            && fit.converged
             && let (Some(null), Some(se)) = (n.null_log, fit.se(n.p))
             && rejects(n.natural(fit).ln(), null, se, m)
         {

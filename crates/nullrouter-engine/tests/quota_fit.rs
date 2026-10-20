@@ -202,14 +202,16 @@ fn gauss_newton_recovers_noiseless_parameters() {
     let rows = model::prepare(&spec, &synthetic(600, false, 7));
     let fit = model::fit(&spec, &rows, &start_theta()).expect("fit");
     let rel = |got: f64, want: f64| ((got - want) / want).abs();
-    assert!(rel(fit.theta.k[0], TRUE_K) < 1e-6, "k {}", fit.theta.k[0]);
+    // The weak anchor at the start (research R4) pulls a start three times off by about 5e-4 on
+    // these rows, far below the se whole-step rounding gives them.
+    assert!(rel(fit.theta.k[0], TRUE_K) < 1e-3, "k {}", fit.theta.k[0]);
     for (c, want) in TRUE_RHO.iter().enumerate() {
-        assert!(rel(fit.theta.rho[c], *want) < 1e-6, "rho[{c}] {}", fit.theta.rho[c]);
+        assert!(rel(fit.theta.rho[c], *want) < 1e-3, "rho[{c}] {}", fit.theta.rho[c]);
     }
     // The steady rate is spread over the parts of the day the rows cover.
     for q in 0..6 {
         let b = fit.theta.b[0][q];
-        assert!((b - TRUE_B).abs() < 1e-6 || !fit.active.contains(&P::B(0, q)), "b[{q}] {b}");
+        assert!((b - TRUE_B).abs() < 1e-3 * TRUE_B.max(1.0) || !fit.active.contains(&P::B(0, q)), "b[{q}] {b}");
     }
     assert!(fit.converged);
 }

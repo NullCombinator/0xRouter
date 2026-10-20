@@ -31,6 +31,12 @@ const MAX_HALVINGS: u32 = 10;
 const EXTRA_ROUNDS: usize = 4;
 /// Rows of serial correlation the ranges allow for: an hour at 10-minute polls.
 const HAC_LAGS: usize = 6;
+/// The weight of the anchor at the declaration, in fit space: a factor of 1,000 either way is one
+/// standard deviation.
+const ANCHOR_INFORMATION: f64 = 1.0 / (6.907_755_278_982_137 * 6.907_755_278_982_137);
+/// The smallest value a log number's natural unit is taken at, so that one driven to 0 keeps a
+/// finite covariance.
+const UNIT_FLOOR: f64 = 1e-100;
 
 /// What the window counts and how it reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -404,6 +410,87 @@ impl Whitener {
             }
         }
     }
+
+    /// `L⁻ᵀ G`, column by column, for row-major gradients: with [`Self::gradients`], `Ω⁻¹ G`.
+    fn back(&self, g: &mut [Vec<f64>]) {
+        for i in (0..g.len()).rev() {
+            let (head, tail) = g.split_at_mut(i + 1);
+            let next = tail.first();
+            let sub = self.sub.get(i + 1).copied().unwrap_or(0.0);
+            for (j, v) in head[i].iter_mut().enumerate() {
+                *v = (*v - sub * next.map_or(0.0, |n| n[j])) / self.diag[i];
+            }
+        }
+    }
+}
+
+/// Terms of the sawtooth's Fourier series the rounding sandwich keeps (R4).
+const SAWTOOTH_TERMS: usize = 32;
+
+/// `Σ Hᵀ S H` over the runs of touching rows: the meat of the rounding sandwich (R4). A reading
+/// rounded to whole steps is its true level `l` plus a sawtooth of `l`. Over a uniform phase, two
+/// readings' errors have covariance `1/12 − f(1−f)/2`, `f` the fractional part of their levels'
+/// distance; readings within a step of each other share nearly the same error, which the
+/// [`Whitener`]'s independent readings would count as new evidence each. The levels follow the
+/// fitted increments `pred` from each run's first reading. `h` is `Ω⁻¹ G` under the Whitener the
+/// fit used; row `a` of a run is reading `a + 1` less reading `a`, so reading `j` carries
+/// `u_j = h_{j−1} − h_j`. The covariance is `Σₙ cos(2πn·d)/(2π²n²)`: each term factors over the
+/// readings, so a run costs `O(len · SAWTOOTH_TERMS)`, and the tail past the kept terms (about 1%
+/// of the variance) is counted as independent so that each reading's own variance stays `1/12`.
+/// `extra` adds the rows' variance beyond rounding on the diagonal.
+fn rounding_meat(rows: &[MRow], pred: &[f64], h: &[Vec<f64>], extra: f64, p: usize) -> Mat {
+    use std::f64::consts::PI;
+    let weight = |n: usize| 1.0 / (2.0 * PI * PI * (n * n) as f64);
+    let tail = READING_VAR - (1..=SAWTOOTH_TERMS).map(weight).sum::<f64>();
+    let mut meat = Mat::zeros(p, p);
+    for ha in h {
+        outer_add(&mut meat, ha, ha, extra);
+    }
+    let mut from = 0;
+    while from < rows.len() {
+        let mut to = from + 1;
+        while to < rows.len() && rows[to - 1].acct == rows[to].acct && rows[to - 1].end == rows[to].start {
+            to += 1;
+        }
+        let len = to - from;
+        let mut level = vec![0.0; len + 1];
+        for a in 0..len {
+            level[a + 1] = level[a] + pred[from + a];
+        }
+        let u: Vec<Vec<f64>> = (0..=len)
+            .map(|j| {
+                (0..p)
+                    .map(|c| {
+                        let before = if j > 0 { h[from + j - 1][c] } else { 0.0 };
+                        let after = if j < len { h[from + j][c] } else { 0.0 };
+                        before - after
+                    })
+                    .collect()
+            })
+            .collect();
+        for uj in &u {
+            outer_add(&mut meat, uj, uj, tail);
+        }
+        // Term `n` at reading `j` is `e^{2πi·n·l_j}`: the first term's powers, by rotation.
+        let (mut cos, mut sin) = (vec![vec![0.0; p]; SAWTOOTH_TERMS], vec![vec![0.0; p]; SAWTOOTH_TERMS]);
+        for (uj, l) in u.iter().zip(&level) {
+            let (s1, c1) = (2.0 * PI * l).sin_cos();
+            let (mut s, mut c) = (s1, c1);
+            for n in 0..SAWTOOTH_TERMS {
+                for k in 0..p {
+                    cos[n][k] += uj[k] * c;
+                    sin[n][k] += uj[k] * s;
+                }
+                (s, c) = (s * c1 + c * s1, c * c1 - s * s1);
+            }
+        }
+        for n in 0..SAWTOOTH_TERMS {
+            outer_add(&mut meat, &cos[n], &cos[n], weight(n + 1));
+            outer_add(&mut meat, &sin[n], &sin[n], weight(n + 1));
+        }
+        from = to;
+    }
+    meat
 }
 
 fn raw_residuals(spec: &Spec, th: &Theta, rows: &[MRow]) -> Vec<f64> {
@@ -479,17 +566,18 @@ pub fn fit(spec: &Spec, rows: &[MRow], start: &Theta) -> Option<Fit> {
 
 /// Fits the window from `start`, over `rows` (evidence only; the caller filters), with the
 /// folded `prior` of pruned rows as one more Gaussian term. A prior that names a parameter this
-/// spec lacks is ignored. `None` when no parameter is informed, there are no more rows than
-/// parameters, or the information is singular.
+/// spec lacks is ignored. Every fit is held weakly at its start (see [`fit_best`]). `None` when
+/// no parameter is informed, there are no more rows than parameters, or the information is
+/// singular.
 pub fn fit_with_prior(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&PriorTerm>) -> Option<Fit> {
-    fit_inner(spec, rows, start, prior, None).map(|(f, _)| f)
+    fit_inner(spec, rows, start, prior, None, start, true).map(|(f, ..)| f)
 }
 
 /// Fits only `free` over `rows`, every other parameter held at its value in `start` (the break
 /// detector's one-number refit, research R9). `None` as for [`fit`], or when no row informs a
 /// parameter of `free`.
 pub fn fit_only(spec: &Spec, rows: &[MRow], start: &Theta, free: &[P]) -> Option<Fit> {
-    fit_inner(spec, rows, start, None, Some(free)).map(|(f, _)| f)
+    fit_inner(spec, rows, start, None, Some(free), start, true).map(|(f, ..)| f)
 }
 
 /// The standard error of `p` in `only`, a [`fit_only`] of `p` alone on `rows`, for testing it
@@ -552,21 +640,37 @@ fn sensitivity(spec: &Spec, rows: &[MRow], theta: &Theta, sigma_e2: f64, cols: &
 /// The best of the fits from each of `starts`, by the objective (squared error plus the prior's
 /// penalty). Gauss–Newton in log space cannot climb back from a parameter that earlier, thin
 /// evidence drove to nearly 0 (its gradient vanishes with it), so a warm start is always
-/// compared with a fresh one. `None` when no start gives a fit.
-pub fn fit_best(spec: &Spec, rows: &[MRow], starts: &[Theta], prior: Option<&PriorTerm>) -> Option<Fit> {
-    let mut best: Option<(Fit, f64)> = None;
+/// compared with a fresh one. Each fit is held near `anchor`, the declaration, by
+/// [`ANCHOR_INFORMATION`] on every meter number: on rows whose best fit lies at no finite value
+/// (a number the rows push to 0 or to infinity, trading with another), it keeps the estimate
+/// finite, where a linearised range means something. The anchor is left out of the information
+/// the ranges and the test use. `None` when no start gives a fit.
+pub fn fit_best(spec: &Spec, rows: &[MRow], starts: &[Theta], prior: Option<&PriorTerm>, anchor: &Theta) -> Option<Fit> {
+    // The starts are compared on the objective; only the kept fit's covariance is widened for
+    // rounding, the costliest part of a fit.
+    let mut best: Option<(Fit, f64, Mat)> = None;
     for start in starts {
-        if let Some((f, obj)) = fit_inner(spec, rows, start, prior, None)
+        if let Some((f, obj, pi)) = fit_inner(spec, rows, start, prior, None, anchor, false)
             && obj.is_finite()
-            && best.as_ref().is_none_or(|(_, b)| obj < *b)
+            && best.as_ref().is_none_or(|(_, b, _)| obj < *b)
         {
-            best = Some((f, obj));
+            best = Some((f, obj, pi));
         }
     }
-    best.map(|(f, _)| f)
+    let (mut fit, _, pi) = best?;
+    (fit.cov, fit.info, fit.rss) = covariance(spec, rows, &fit.theta, &fit.active, fit.sigma_e2, &pi, true)?;
+    Some(fit)
 }
 
-fn fit_inner(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&PriorTerm>, free: Option<&[P]>) -> Option<(Fit, f64)> {
+fn fit_inner(
+    spec: &Spec,
+    rows: &[MRow],
+    start: &Theta,
+    prior: Option<&PriorTerm>,
+    free: Option<&[P]>,
+    anchor: &Theta,
+    rounding: bool,
+) -> Option<(Fit, f64, Mat)> {
     let mut th = start.clone();
     // Keep the parameters some row informs (of `free`, when given).
     let probe = candidates(spec, &th);
@@ -585,12 +689,22 @@ fn fit_inner(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&PriorTerm
         .and_then(|t| t.lay_over(spec, &probe, &active))
         .unwrap_or_else(|| (Mat::zeros(p, p), vec![0.0; p]));
     let has_prior = pi.data.iter().any(|v| *v != 0.0);
+    // (index in `active`, fit-space value) of each anchored meter number.
+    let anchored: Vec<(usize, f64)> = active
+        .iter()
+        .enumerate()
+        .filter(|(_, q)| q.is_log())
+        .map(|(i, q)| (i, anchor.get(*q)))
+        .filter(|(_, v)| v.is_finite() && *v > 0.0)
+        .map(|(i, v)| (i, v.ln()))
+        .collect();
     let penalty = |t: &Theta| -> f64 {
+        let held: f64 = anchored.iter().map(|(i, m)| (fit_space(active[*i], t.get(active[*i])) - m).powi(2)).sum::<f64>() * ANCHOR_INFORMATION;
         if !has_prior {
-            return 0.0;
+            return held;
         }
         let d: Vec<f64> = active.iter().zip(&pm).map(|(q, m)| fit_space(*q, t.get(*q)) - m).collect();
-        d.iter().zip(pi.mul_vec(&d)).map(|(a, b)| a * b).sum()
+        held + d.iter().zip(pi.mul_vec(&d)).map(|(a, b)| a * b).sum::<f64>()
     };
     // Generalised least squares (R4): the rows' whitened squared error plus the prior's penalty.
     // `σ²_e` is unknown, so the fit alternates: fit with the current `σ²_e`, re-estimate it from
@@ -600,7 +714,7 @@ fn fit_inner(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&PriorTerm
     let mut converged = false;
     for _ in 0..EXTRA_ROUNDS {
         let wh = Whitener::new(rows, extra);
-        converged = gauss_newton(spec, rows, &active, &wh, &mut th, &penalty, &pi, &pm, has_prior)?;
+        converged = gauss_newton(spec, rows, &active, &wh, &mut th, &penalty, &pi, &pm, has_prior, &anchored)?;
         let next = extra_variance(rows, &raw_residuals(spec, &th, rows), dof);
         let settled = (next - extra).abs() <= 0.05 * next.max(0.01 * ROW_VAR);
         extra = next;
@@ -608,30 +722,101 @@ fn fit_inner(spec: &Spec, rows: &[MRow], start: &Theta, prior: Option<&PriorTerm
             break;
         }
     }
-    // Covariance at the solution: the inverse of the whitened information plus the prior's.
+    // Covariance at the solution.
+    let (cov, info, rss) = covariance(spec, rows, &th, &active, extra, &pi, rounding)?;
+    // Starts are compared under the rounding noise alone, which doesn't depend on the fit.
+    let objective = rss_of(spec, &th, rows, &Whitener::new(rows, 0.0)) + penalty(&th);
+    Some((Fit { theta: th, active, cov, info, rows: rows.len(), rss, sigma_e2: extra, converged }, objective, pi))
+}
+
+/// The covariance at `th`: the inverse of the whitened information plus the prior's, widened for
+/// serial correlation and, with `rounding`, for readings that share their rounding error. Returns
+/// `(cov, info, rss)`; `None` when the information is singular.
+#[allow(clippy::too_many_arguments)]
+fn covariance(spec: &Spec, rows: &[MRow], th: &Theta, active: &[P], extra: f64, pi: &Mat, rounding: bool) -> Option<(Mat, Mat, f64)> {
+    let p = active.len();
     let wh = Whitener::new(rows, extra);
-    let mut grads = gradients(spec, &th, rows, &active);
+    let mut grads = gradients(spec, th, rows, active);
     wh.gradients(&mut grads);
-    let rss = rss_of(spec, &th, rows, &wh);
+    let rss = rss_of(spec, th, rows, &wh);
     let mut info = information(&grads, p);
     for i in 0..p {
         for j in 0..p {
             info[(i, j)] += pi[(i, j)];
         }
     }
-    let mut ridged = info.clone();
-    let ridge = 1e-10 * (0..p).map(|i| info[(i, i)]).sum::<f64>() / p as f64 + 1e-300;
+    // The covariance is taken in natural units and carried back to fit space. The two agree while
+    // the information is well conditioned. When a log number runs toward 0, its fit-space column
+    // vanishes and a ridge would hold it fixed, so the others' ranges would leave out how far they
+    // can trade with it; its natural column still carries that (research R4).
+    let unit: Vec<f64> = active.iter().map(|q| if q.is_log() { th.get(*q).max(UNIT_FLOOR) } else { 1.0 }).collect();
+    let natural: Vec<Vec<f64>> = grads.iter().map(|g| g.iter().zip(&unit).map(|(v, u)| v / u).collect()).collect();
+    let mut natural_info = information(&natural, p);
     for i in 0..p {
-        ridged[(i, i)] += ridge;
+        for j in 0..p {
+            natural_info[(i, j)] += pi[(i, j)] / (unit[i] * unit[j]);
+        }
     }
-    let model_cov = ridged.inverse()?;
-    let mut res = raw_residuals(spec, &th, rows);
+    let natural_cov = scaled_inverse(&natural_info)?;
+    let mut res = raw_residuals(spec, th, rows);
     wh.residuals(&mut res);
-    let factor = serial_factor(rows, &active, &grads, &res, &model_cov);
-    let cov = model_cov.scale(factor);
-    // Starts are compared under the rounding noise alone, which doesn't depend on the fit.
-    let objective = rss_of(spec, &th, rows, &Whitener::new(rows, 0.0)) + penalty(&th);
-    Some((Fit { theta: th, active, cov, info, rows: rows.len(), rss, sigma_e2: extra, converged }, objective))
+    let serial = serial_factor(rows, active, &natural, &res, &natural_cov);
+    // A percent reading is rounded to whole steps, and where the level moves less than a step
+    // between polls, neighbouring readings share their rounding error. The estimate stays the
+    // generalised least squares one; each number's variance is widened to the sandwich
+    // `A⁻¹ (Hᵀ S H + prior) A⁻¹` with the rows' rounding covariance `S` where that is larger (R4).
+    // Only widened: on a short or degenerate fit the fitted levels hardly move, and the sandwich
+    // would then claim readings with no rounding error at all. Request counts aren't rounded.
+    let mut factor = vec![serial; p];
+    if rounding && spec.kind == Kind::Percent {
+        let pred: Vec<f64> = rows.iter().map(|r| eval(spec, th, r, &[], None)).collect();
+        let mut h = natural.clone();
+        wh.back(&mut h);
+        let mut meat = rounding_meat(rows, &pred, &h, extra, p);
+        for i in 0..p {
+            for j in 0..p {
+                meat[(i, j)] += pi[(i, j)] / (unit[i] * unit[j]);
+            }
+        }
+        let sandwich = natural_cov.mul(&meat).mul(&natural_cov);
+        for (i, f) in factor.iter_mut().enumerate() {
+            let r = sandwich[(i, i)] / natural_cov[(i, i)];
+            if r.is_finite() {
+                *f = f.max(r);
+            }
+        }
+    }
+    let mut cov = Mat::zeros(p, p);
+    for i in 0..p {
+        for j in 0..p {
+            cov[(i, j)] = (factor[i] * factor[j]).sqrt() * natural_cov[(i, j)] / (unit[i] * unit[j]);
+        }
+    }
+    Some((cov, info, rss))
+}
+
+
+/// The inverse of a positive semi-definite `m`, scaled to a unit diagonal first so that numbers
+/// of very different sizes are regularised alike: a ridge of 1e-10 on the unit diagonal keeps a
+/// direction no row informs finite, and huge.
+fn scaled_inverse(m: &Mat) -> Option<Mat> {
+    let p = m.rows;
+    let s: Vec<f64> = (0..p).map(|i| if m[(i, i)] > 0.0 { m[(i, i)].sqrt() } else { 1.0 }).collect();
+    let mut r = Mat::zeros(p, p);
+    for i in 0..p {
+        for j in 0..p {
+            r[(i, j)] = m[(i, j)] / (s[i] * s[j]);
+        }
+        r[(i, i)] += 1e-10;
+    }
+    let inv = r.inverse()?;
+    let mut out = Mat::zeros(p, p);
+    for i in 0..p {
+        for j in 0..p {
+            out[(i, j)] = inv[(i, j)] / (s[i] * s[j]);
+        }
+    }
+    Some(out)
 }
 
 /// How much serial correlation left in the whitened residuals widens the ranges (R4): the
@@ -681,6 +866,7 @@ fn gauss_newton(
     pi: &Mat,
     pm: &[f64],
     has_prior: bool,
+    anchored: &[(usize, f64)],
 ) -> Option<bool> {
     let p = active.len();
     let mut rss = rss_of(spec, th, rows, wh) + penalty(th);
@@ -706,6 +892,10 @@ fn gauss_newton(
                     a[(i, j)] += pi[(i, j)];
                 }
             }
+        }
+        for &(i, m) in anchored {
+            g[i] += ANCHOR_INFORMATION * (m - fit_space(active[i], th.get(active[i])));
+            a[(i, i)] += ANCHOR_INFORMATION;
         }
         let ridge = 1e-10 * (0..p).map(|i| a[(i, i)]).sum::<f64>() / p as f64 + 1e-300;
         for i in 0..p {
