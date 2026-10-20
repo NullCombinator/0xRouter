@@ -39,6 +39,10 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
         Command::Uninstall { id } => {
             let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
             let path = community::uninstall(&id, &home).map_err(refused)?;
+            // The plugin's fits go with it; reinstalling starts from nothing (spec 012).
+            if let Err(e) = nullrouter_engine::quota::fit::store::remove(home.path(), &id) {
+                eprintln!("fit state of {id} not removed: {e}");
+            }
             done(&home, "uninstalled", &id, &path, as_json)
         }
     }

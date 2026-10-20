@@ -1,14 +1,32 @@
 //! `nullrouter check`: prints the `views::check` report; exit 1 when it found errors.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use nullrouter_engine::accounts::{self, Accounts};
+use nullrouter_engine::quota::fit::outside::{Alert, alerts};
 use nullrouter_registry::OperatorHome;
 use nullrouter_server::views;
 use serde_json::{Value, json};
 
 fn lines(v: &Value) -> impl Iterator<Item = &str> {
     v.as_array().into_iter().flatten().filter_map(Value::as_str)
+}
+
+/// One `warn` line per unacknowledged usage alert of every account in `accounts.toml`, newest
+/// first within an account (FR-026, FR-027). The id is whole, so the command can be pasted: ULIDs
+/// raised minutes apart share their first characters. An unreadable accounts file: none.
+fn alert_warnings(home: &Path) -> Vec<String> {
+    let Ok(list) = Accounts::load(&home.join(accounts::FILE)) else { return Vec::new() };
+    list.iter()
+        .flat_map(|a| {
+            alerts(home, &a.provider, &a.name).into_iter().map(move |alert: Alert| {
+                let Alert { id, text, .. } = alert;
+                let text = text.unwrap_or_else(|| format!("{}/{}: usage alert {id}", a.provider, a.name));
+                format!("warn  {text} (nullrouter quota ack {id})")
+            })
+        })
+        .collect()
 }
 
 pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, ExitCode> {
@@ -34,6 +52,9 @@ pub(crate) fn run(home: Option<PathBuf>, as_json: bool) -> Result<ExitCode, Exit
         println!("unified models: {}", r["unified_models"]);
         for n in r["notices"].as_array().into_iter().flatten().filter_map(|n| n["text"].as_str()) {
             println!("{n}");
+        }
+        for w in alert_warnings(home.path()) {
+            println!("{w}");
         }
     }
     let errors = !list("skipped").is_empty()

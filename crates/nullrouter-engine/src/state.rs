@@ -98,7 +98,7 @@ pub struct StateReport {
 
 pub struct Engine {
     registry: RegistryHandle,
-    state: ArcSwap<EngineState>,
+    state: Arc<ArcSwap<EngineState>>,
     /// Shared with the log writer, so log lines follow reloads.
     redactor: Arc<ArcSwap<Redactor>>,
     /// The redactor every snapshot holds; swapped together with [`redactor`](Self::redactor).
@@ -131,6 +131,12 @@ pub struct Engine {
     /// Poll history and the running per-account traffic tally (research R15). Every
     /// completed poll is written to it through a [`quota`](Self::quota) hook.
     pub history: Arc<crate::quota::history::History>,
+    /// The quota fit's significant numbers (spec 012).
+    pub fits: Arc<ArcSwap<crate::quota::fit::Fits>>,
+    /// The meters in effect, rebuilt at start, on reload and when a fit changes (spec 012, R15).
+    pub meters: Arc<crate::quota::fit::Meters>,
+    /// The quota fit's learner, fed by the history's entries (spec 012).
+    pub fit_learner: Arc<crate::quota::fit::learner::Shared>,
     /// Live model lists, shared with every snapshot.
     pub live_models: Arc<LiveModels>,
     /// Model verdicts per account (spec 011). Kept across reloads.
@@ -259,9 +265,19 @@ impl Engine {
         let proxy_board = ProxyBoard::open(registry.home().path());
         proxy_board.reconcile(&crate::connection::fingerprints(&state));
         let redactor = Arc::new(ArcSwap::new(shared_redactor.current()));
+        let state = Arc::new(ArcSwap::from_pointee(state));
+        let fits: Arc<ArcSwap<crate::quota::fit::Fits>> = Arc::default();
+        let meters: Arc<crate::quota::fit::Meters> = Arc::default();
+        let fit_learner = crate::quota::fit::learner::Shared::new(
+            registry.home().path(),
+            state.clone(),
+            fits.clone(),
+            meters.clone(),
+        );
+        history.on_entry(fit_learner.observer());
         let engine = Self {
             registry,
-            state: ArcSwap::from_pointee(state),
+            state,
             redactor,
             shared_redactor,
             retired: Mutex::new(Vec::new()),
@@ -277,6 +293,9 @@ impl Engine {
             refresher: Default::default(),
             quota,
             history,
+            fits,
+            meters,
+            fit_learner,
             live_models,
             verdicts,
             test_gate: Default::default(),
@@ -287,6 +306,9 @@ impl Engine {
             reload: Mutex::new(()),
         };
         let st = engine.snapshot();
+        engine.rebuild_meters();
+        // Rebuild the fits from the history of the current epochs (research R11).
+        engine.fit_learner.replay();
         let restored = crate::route::restore(&engine, &st, crate::clock::now());
         tracing::info!("routing state restored: {} fingerprints, {} ledgers", restored.fingerprints, restored.ledgers);
         engine.recheck_verdicts(&st);
@@ -302,6 +324,11 @@ impl Engine {
         let closed = crate::journal::records::recover(self.home().path(), now)?;
         self.history.recover_counters(now);
         Ok(closed)
+    }
+
+    /// Recomputes the meters in effect from the current snapshot and fits (spec 012).
+    pub fn rebuild_meters(&self) {
+        self.meters.rebuild(&self.snapshot(), &self.fits.load());
     }
 
     /// The snapshot to hold for one request.
@@ -393,6 +420,15 @@ impl Engine {
         }
         let state = Arc::new(state);
         self.state.store(state.clone());
+        // A removed account's quota fit is folded into the priors and dropped; an added one
+        // (new, or added again) starts its own history now (spec 012, research R11).
+        for (provider, name) in &removed {
+            self.fit_learner.account_removed(provider, name);
+        }
+        for a in state.accounts.iter().filter(|a| old.accounts.get(&a.provider, &a.name).is_none()) {
+            self.fit_learner.account_added(&a.provider, &a.name);
+        }
+        self.rebuild_meters();
         self.recheck_verdicts(&state);
         self.changed.notify_one();
         Ok(report)

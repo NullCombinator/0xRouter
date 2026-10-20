@@ -14,6 +14,7 @@ use serde_json::json;
 use crate::attempt::TextRequest;
 use crate::journal::Target;
 use crate::plan::{self, RequestPlan, Step};
+use crate::quota::fit::{AccountMeters, Source};
 use crate::records::Usage;
 use crate::routing::fingerprint::{Chain, Hash};
 use crate::routing::ledger::Debit;
@@ -140,9 +141,10 @@ pub(crate) fn account_quota(
     } else {
         Vec::new()
     };
+    let in_effect = engine.meters.get(&a.provider, &a.name);
     meter::quota_for(
         &MeterInput {
-            declared: routing.windows,
+            declared: in_effect.as_ref().map_or(routing.windows, |m| &m.windows[..]),
             overrides: &a.routing,
             report_declared: reported,
             polled,
@@ -155,6 +157,25 @@ pub(crate) fn account_quota(
     )
 }
 
+/// The non-declared numbers in effect for one account, per window, as a decision record lists
+/// them (FR-013). `None` when every number in effect is declared.
+fn meter_sources_of(meters: Option<&AccountMeters>) -> Option<BTreeMap<String, BTreeMap<String, Source>>> {
+    let meters = meters?;
+    let out: BTreeMap<String, BTreeMap<String, Source>> = meters
+        .sources
+        .iter()
+        .filter_map(|(window, numbers)| {
+            let kept: BTreeMap<String, Source> = numbers
+                .iter()
+                .filter(|(_, source)| **source != Source::Declared)
+                .map(|(number, source)| (number.to_string(), *source))
+                .collect();
+            (!kept.is_empty()).then(|| (window.clone(), kept))
+        })
+        .collect();
+    (!out.is_empty()).then_some(out)
+}
+
 fn candidate_of(engine: &Engine, c: &plan::Candidate<'_>, order: i64, now: SystemTime) -> Candidate {
     let account = c.account;
     let name = account.map_or("", |a| a.name.as_str());
@@ -164,6 +185,7 @@ fn candidate_of(engine: &Engine, c: &plan::Candidate<'_>, order: i64, now: Syste
         .cooling(&c.provider.id, name, &c.upstream_id)
         .map(|until| until.saturating_duration_since(tokio::time::Instant::now()));
     let quota = account.map_or_else(AccountQuota::payg, |a| account_quota(engine, c.provider, a, now));
+    let meter_sources = account.and_then(|a| meter_sources_of(engine.meters.get(&a.provider, &a.name).as_deref()));
     Candidate {
         key: CandidateKey::new(&c.provider.id, name, &c.upstream_id),
         order,
@@ -173,6 +195,7 @@ fn candidate_of(engine: &Engine, c: &plan::Candidate<'_>, order: i64, now: Syste
         quota,
         cache: cache_of(c.provider, account),
         price: PriceSpec { schedule: routing.prices.to_vec(), flat: account.and_then(|a| a.routing.price) },
+        meter_sources,
     }
 }
 
@@ -206,6 +229,7 @@ fn candidates_of(
                     min_tokens: 1024,
                 },
                 price: PriceSpec::default(),
+                meter_sources: None,
             }),
         }
         step_of.push(i);
@@ -232,6 +256,7 @@ pub fn view_targets(engine: &Engine, st: &EngineState, only: Option<&str>) -> Ve
 /// target that has no plan (no endpoint, no account) is left out.
 pub fn view_all(engine: &Engine, st: &EngineState, only: Option<&str>, now: SystemTime) -> Vec<view::TargetView> {
     let routing = &st.settings().routing;
+    let fit = view::FitInputs::build(engine, st, now);
     let mut out = Vec::new();
     for target in view_targets(engine, st, only) {
         let verdicts = engine.verdicts.snapshot();
@@ -266,7 +291,7 @@ pub fn view_all(engine: &Engine, st: &EngineState, only: Option<&str>, now: Syst
             deficits,
         };
         let window = AmortizationWindow { start: crate::routing::ledger::window_start(now, length), length };
-        out.push(view::view(&input, window, now));
+        out.push(view::view(&input, window, &fit, now));
     }
     out
 }
@@ -321,6 +346,7 @@ pub fn decide(engine: &Engine, st: &EngineState, req: &TextRequest, plan: &Reque
                 quota: AccountQuota::payg(),
                 cache,
                 price: PriceSpec::default(),
+                meter_sources: None,
             });
         }
     }
