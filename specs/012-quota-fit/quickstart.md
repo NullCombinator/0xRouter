@@ -48,11 +48,34 @@ investigated, never replaced (research R5).
 
 ## 4. Routing benchmark (SC-011)
 
+This is a local bench; cloud timings aren't comparable. The `slice-006` baseline lives only in a
+criterion directory, never in git, and none is left on this machine (checked 2026-10-20), so it is
+rebuilt from main before this slice (`f7518cd`). Main's bench has no `placement` case, so
+`bench-baseline.patch` adds it there: the same `fitco` plugin, two accounts and request as 012's
+`placement/meters_in_effect`, with the declared meters only, since main has no fit. Run both
+halves back to back on an otherwise idle machine, with the same
+`CARGO_TARGET_DIR`, so criterion finds the baseline. Start in a checkout of `012-quota-fit`
+(`.worktrees/012`):
+
 ```bash
+export CARGO_HOME=$PWD/.cargo-home CARGO_TARGET_DIR=/mnt/storage/0router/target/bench
+B=/mnt/storage/0router/target/bench/main-f7518cd
+
+# 1. The baseline: main at f7518cd, with the placement case.
+git worktree add --detach "$B" f7518cd
+git -C "$B" apply "$PWD/specs/012-quota-fit/bench-baseline.patch"
+(cd "$B" && nice cargo bench -p nullrouter-engine --bench engine -- placement --save-baseline slice-006)
+
+# 2. This slice, right after, against it, from the same checkout.
 nice cargo bench -p nullrouter-engine --bench engine -- placement --baseline slice-006
+
+git worktree remove --force "$B"
 ```
 
-Expected: no measurable regression. This is a local bench; cloud timings aren't comparable.
+**Pass**: criterion's comparison for `placement/meters_in_effect` reads "No change in performance
+detected" or "Change within noise threshold" (or "Performance has improved"), never "Performance
+has regressed". Its `per-request median …, p95 …` line stays at p95 ≤ 10 ms, the bench's own target (`benches/engine.rs`).
+On a regression, rerun both halves once, back to back; if it regresses again, it is a finding.
 
 ## 5. Operator walk-through (manual, on a built binary)
 
@@ -71,6 +94,8 @@ nullrouter check
 ```
 
 ## 6. Live check (FR-034, SC-012)
+
+Run after 012 merges, in the whole-system live run, not on the slice branch (tasks.md T072).
 
 ```bash
 NR_LIVE=1 NULLROUTER_HOME=~/.0router nice cargo test -p nullrouter-engine --test live live_fit_progress -j 2 -- --nocapture

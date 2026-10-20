@@ -1,0 +1,54 @@
+diff --git a/crates/nullrouter-engine/benches/engine.rs b/crates/nullrouter-engine/benches/engine.rs
+index 6bcd33e..3dfce93 100644
+--- a/crates/nullrouter-engine/benches/engine.rs
++++ b/crates/nullrouter-engine/benches/engine.rs
+@@ -25,6 +25,7 @@ use std::time::{Duration, Instant};
+ use common::{Setup, chat_body, chat_chunks, chat_plugin, request, setup, setup_signin};
+ use criterion::{Criterion, criterion_group, criterion_main};
+ use nullrouter_engine::attempt::Answer;
++use nullrouter_engine::testkit::SimQuota;
+ use serde_json::json;
+ use tokio::runtime::Runtime;
+ use tokio_util::sync::CancellationToken;
+@@ -149,6 +150,41 @@ fn bench(c: &mut Criterion) {
+     group.finish();
+ 
+     plan_bench(c, &rt);
++    placement_bench(c, &rt);
++}
++
++/// `placement/meters_in_effect` as spec 012's bench has it, before 012: the same plugin, accounts
++/// and request, with the declared meters only (main has no fit). Applied to main only to save the
++/// `slice-006` baseline SC-011 compares against (specs/012-quota-fit/quickstart.md § 4).
++fn placement_bench(c: &mut Criterion, rt: &Runtime) {
++    let s = rt.block_on(setup(|m| vec![("fitco", metered_plugin(m))], &[("fitco", "main"), ("fitco", "spare")], ""));
++    s.mock.respond(|_| chat_chunks());
++    let mut group = c.benchmark_group("placement");
++    let mut all = Vec::new();
++    group.bench_function("meters_in_effect", |b| {
++        b.iter_custom(|iters| {
++            rt.block_on(async {
++                let mut total = Duration::ZERO;
++                for _ in 0..iters {
++                    let took = first_piece(&s, "openai-chat", "fitco/m1", chat_body("fitco/m1", true)).await;
++                    all.push(took);
++                    total += took;
++                }
++                total
++            })
++        })
++    });
++    report("placement/meters_in_effect", std::mem::take(&mut all));
++    group.finish();
++}
++
++fn metered_plugin(mock: &nullrouter_engine::testkit::MockUpstream) -> String {
++    let mut toml = chat_plugin(mock, "fitco", "");
++    toml += "[[routing.window]]\nname = \"5h\"\nlength = \"5h\"\nunit = \"weighted_tokens\"\ncapacity = 1000000\n";
++    toml += "token_weights = { input = 1.0, output = 5.0, cache_read = 0.1, cache_write = 1.25 }\n";
++    toml += "model_multiplier = { \"m1\" = 1.0 }\n";
++    toml += &SimQuota::quota_toml(&mock.url("/fitco/usage"), &[("5h", "weighted_tokens")]);
++    toml
+ }
+ 
+ fn plan_bench(c: &mut Criterion, rt: &Runtime) {

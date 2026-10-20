@@ -215,6 +215,13 @@ priority").
 - [X] T069 [P] Document quota fit, outside use, exclusive use and alerts, the new override keys and `set-plugin`, and the meter block in `docs/operator-config.md` (§ Quota, § Account overrides, § The routing view), following contracts/cli.md
 - [ ] T070 Run quickstart.md's checks in CI (push once, with the user's OK) and record the sim-week table and suite counts in the PR description
 
+**Left for the user** (2026-10-20):
+
+- [ ] T071 Run the placement bench locally, as quickstart.md § 4 has it: rebuild the `slice-006` baseline from main (`f7518cd`, with `bench-baseline.patch`) into `/mnt/storage/0router/target/bench`, then run 012's bench against it right after. Pass: no "Performance has regressed" for `placement/meters_in_effect` (SC-011)
+- [ ] T072 Run the live check (`NR_LIVE=1`, quickstart.md § 6, T066's `live_fit_progress`) after the merge, in the user's whole-system live run (SC-012), not before it
+
+012 merges into main before 004; 004 rebases onto it.
+
 ---
 
 ## Dependencies & Execution Order
@@ -225,7 +232,7 @@ priority").
 - **US4 (T039–T045)**: needs `in_effect` (T013) and `rebuild_meters` (T014). It can run in parallel with US3.
 - **US5 (T046–T054)**: needs the MVP (T027, T030).
 - **US6 (T055–T064)**: needs the outside-use list (T029) and the test (T012). It can run in parallel with US5.
-- **Polish (T065–T070)**: after the stories it touches. T070 is last.
+- **Polish (T065–T070)**: after the stories it touches. T070 is last. T071 is local; T072 waits for the merge.
 
 ```text
 Setup → Foundational → US1+US2 (MVP) ─┬─ US3
