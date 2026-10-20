@@ -4,11 +4,14 @@ What is left of slice 004 after the code tasks: what you run, with which account
 long it takes, and what counts as a pass. Times are estimates for this machine (4 threads,
 16 GB), not measurements.
 
-**Order** (your plan, 2026-10-19):
+**Order** (your plan, 2026-10-19; changed 2026-10-20: 012 merges first):
 
-1. Before the merge: T092 (benchmarks), T097 (quickstart), and publishing the claude-code
-   archive (below). Then T098, the final gate and the merge.
-2. After the merge: T031 and T084, in your whole-system live run.
+1. Now, on the branch as it is: T092 (benchmarks), and T097 (quickstart).
+2. When you say 012 is merged, I rebase 004 onto `main`, resolve, run the engine and CLI
+   tests, push, and read CI.
+3. On the rebased branch, just before the merge: publishing the claude-code archive (below),
+   then T098, the final gate and the merge.
+4. After the merge: T031 and T084, in your whole-system live run.
 
 Run everything in a normal terminal, not inside `claude-0router`. The live runs need
 `~/.0router`, the network, and the `hermes` and `claude` binaries, and the sandbox denies all
@@ -130,7 +133,11 @@ where `catalogue/` doesn't exist yet.
 
 ---
 
-## T092: benchmarks
+## T092: benchmarks (before the rebase)
+
+Run it on the branch as it is now. The pre-004 baseline (`f7518cd`) is valid against this
+branch: the only difference is 004. After the rebase, the branch also holds 012, and the
+comparison would mix the two.
 
 No slice-003 baseline is left on this machine: it lived in the old `target/`, from before
 builds moved to `/mnt/storage`. The baseline comes from `f7518cd`, main's head and the commit
@@ -218,19 +225,22 @@ builder `setup` each new home needs.
 
 ---
 
-## Publishing the claude-code archive (before the merge)
+## Publishing the claude-code archive (after the rebase, just before the merge)
 
 The catalogue entry in `catalogue/index.toml` names
 `https://github.com/NullCombinator/0xRouter/releases/download/adapter-claude-code-v0.1.0/claude-code-0.1.0.tar.gz`.
-Publish it before the merge, so that once the index is on `main` it never points at a
-missing file. You run it: it publishes under the repo's name.
+Publish it after the rebase is pushed and CI is green, just before the merge, so the release
+tag points at the rebased head (the commit that merges) and, once the index is on `main`, it
+never points at a missing file. You run it: it publishes under the repo's name. The rebase
+doesn't touch the adapter's source, so the sha256 stays the same.
 
 ```sh
 cd ~/Desktop/0router/.worktrees/004
+git status -sb | head -1                    # must read: ## 004-client-side-adapters...origin/004-client-side-adapters (no ahead/behind)
 tools/package-adapter.sh adapters/community/claude-code /tmp/claude-code-0.1.0.tar.gz
 sha256sum /tmp/claude-code-0.1.0.tar.gz   # must be 7a5527de96bbf921e885d68a8a73120eff4a955bcdb1fa018263a6a437e4ddab
 gh release create adapter-claude-code-v0.1.0 /tmp/claude-code-0.1.0.tar.gz \
-  --repo NullCombinator/0xRouter --target 004-client-side-adapters \
+  --repo NullCombinator/0xRouter --target "$(git rev-parse HEAD)" \
   --title "claude-code adapter 0.1.0" \
   --notes "Source: adapters/community/claude-code. sha256 7a5527de96bbf921e885d68a8a73120eff4a955bcdb1fa018263a6a437e4ddab"
 ```
@@ -250,8 +260,8 @@ and a new `[[entry.version]]` in the index.
 
 ## T098: final gate
 
-**Needs**: T092 and T097 done, the archive published, and your OK. T031 and T084 come after
-the merge.
+**Needs**: T092 and T097 done before the rebase; the rebase pushed with CI green; the archive
+published from the rebased head; and your OK. T031 and T084 come after the merge.
 
 **Run**: I push and read CI through the github MCP.
 

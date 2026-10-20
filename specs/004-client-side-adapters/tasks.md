@@ -1127,12 +1127,14 @@ each change by path, kind and reason, and each guardrail event, and never any co
   `specs/004-client-side-adapters/quickstart.md`. Record any gap they report in the commit
   message.
 - [ ] T098 Final gate.
-  - Merge order (user, 2026-10-19): 004 merges after T092, T097 and the published
-    claude-code archive. T031 and T084 move after the merge, into the user's whole-system
-    live run, so they don't gate the merge.
+  - Merge order (user, 2026-10-19; changed 2026-10-20): T092 and T097 run on the branch
+    before the rebase. 012 merges first; then 004 is rebased onto `main`, with CI green. The
+    claude-code archive is published from the rebased head, just before the merge. T031
+    and T084 move after the merge, into the user's whole-system live run, so they don't
+    gate the merge.
   - The archive: the user publishes GitHub release `adapter-claude-code-v0.1.0` with
-    `claude-code-0.1.0.tar.gz` from `tools/package-adapter.sh`, before the merge, so the
-    catalogue entry never points at a missing file. Its sha256 must equal
+    `claude-code-0.1.0.tar.gz` from `tools/package-adapter.sh`, targeting the rebased head,
+    so the catalogue entry never points at a missing file. Its sha256 must equal
     `catalogue/index.toml`'s.
   - Push with the user's OK. CI's `cargo test --workspace` and
     `cargo clippy --workspace --all-targets -- -D warnings` must be green.
