@@ -136,6 +136,54 @@ model's variance. One factor keeps the covariance positive definite. The floor a
 noisy early fit from claiming more than rounding alone allows. Starts (R3) are compared by the whitened squared error under rounding
 alone (`σ²_e = 0`), which is the same for every start.
 
+**Degenerate fits** (measured 2026-10-19). The first CI run of the suite (e09af27) had 51 of 100
+clean seeds with a falsely significant number, most within the first hours. Their fits were
+degenerate, not unlucky: on early rows one log number runs toward 0 or infinity, trading with
+another (an absurd `ρ_r`, or `b` going negative), its fit-space column vanishes with it, and the
+ridge then holds it fixed, so the other numbers' ranges left out how far they could trade with
+it. Three changes, none of them a clock:
+
+- The covariance is taken in natural units (`θ`, not `log θ`) and carried back. The two agree
+  while the information is well conditioned; when a number runs toward 0 its natural column
+  keeps the trade the fit-space one lost.
+- Every fit is held near its start, the declaration, by a weak anchor: information
+  `1/(ln 1000)²` per log number, a factor of 1,000 either way being one standard deviation. On
+  rows whose best fit lies at no finite value it keeps the estimate finite, where a linearised
+  range means something. The anchor is left out of the information the ranges and the test use.
+  Its bias on 2,000 noiseless rows with a start 3× off is about `5·10⁻⁴` in the log, far below
+  the se whole-step rounding gives those rows.
+- A number is tested only on a fit that converged.
+
+Together they cleared 44 of the 51 seeds, and the detection times didn't move: the 3×-off week's
+first significant number at +19.7 h (request 10,116 of 56,664), as before, and the halving
+reported +1.8 h after it.
+
+**Readings that share their rounding error** (measured 2026-10-19). The tridiagonal model treats
+each reading's error as independent. A reading is its true level plus a sawtooth of that level,
+so two readings whose levels are less than a step apart carry almost the same error, however many
+polls lie between them. Off-peak, a 10-minute row moves a percent reading by a fraction of a step,
+and such stretches gave the first CI run of the suite (e09af27) 7 clean seeds with a number
+falsely significant after 26–92 hours: five times `ρ_r` (0.10–0.145 for a true 0.1), once `ρ_o`
+and once capacity. Seeds 8 and 72
+with exact readings, or with each reading's rounding dithered (an independent error), give no
+significant number and every range holds the truth. So the estimate is right for rounding with
+independent errors, and its standard error is what's understated. Newey–West sees little of it
+(`φ` near 1): the shared error spans hours of rows, beyond 6 lags.
+
+The covariance of a percent window is widened per number to the sandwich
+`A⁻¹ (Hᵀ S H + Π) A⁻¹`, where `A` is the information above, `H = Ω⁻¹ J` the gradients under the
+tridiagonal `Ω` the estimate uses, and `S` the rows' covariance when each reading's error is the
+sawtooth of its level. Over a uniform phase, two readings' errors have covariance
+`1/12 − f(1−f)/2`, `f` the fractional part of their levels' distance. The levels follow the fitted
+increments from each run's first reading. The covariance's Fourier series `Σₙ cos(2πn·d)/(2π²n²)`
+factors over the readings, so a run costs `O(len · 32)` with 32 terms, and the tail beyond them
+(1.2% of the variance) is counted as independent. Number `i`'s variance is multiplied by
+`fᵢ = max(φ, Sᵢᵢ/Vᵢᵢ)`, and covariances by `√(fᵢ f_j)`, which keeps the matrix positive definite.
+The sandwich only widens a variance. On a short or degenerate fit the fitted levels hardly move,
+and the sandwich would then claim the readings share one error and carry no rounding noise:
+unfloored, seed 72's capacity became significant after 63 requests. The estimate itself is
+unchanged. Only the kept start's fit is widened. Request windows aren't rounded and keep `φ`.
+
 The **95% range** of a number is `exp(log θ̂ ± 1.96 · se)`. It is shown, and it is the range
 FR-004 and SC-003 talk about.
 
@@ -445,8 +493,11 @@ clock, true accounts that charge exactly by their meters, 10-minute polls) with:
   SC-002/SC-005.
 
 A second test target, `sim_suite`, runs 100 fixed seeds of right-plugin weeks, with and without
-outside use, and counts significances and range coverage (SC-002, SC-003). It is gated behind
-`--ignored` and runs in CI in release mode. Locally, cargo isn't run (project rule).
+outside use, and counts significances and range coverage (SC-002, SC-003). Its provider bills the
+newly cached part of a prompt as a cache write (the sim week's provider doesn't, so slice 006's
+checks see what they always saw), so every number the plugin declares is in the traffic: each of
+the 300 runs checks four ranges, 1,200 in all, where the first CI run counted 900 with no cache
+writes. It is gated behind `--ignored` and runs in CI in release mode. Locally, cargo isn't run (project rule).
 
 **Rationale**: The world already exists and is trusted (slice 006's SC-001 – SC-006). Reusing it
 keeps the evidence comparable.
