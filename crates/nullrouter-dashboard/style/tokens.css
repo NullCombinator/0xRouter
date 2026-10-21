@@ -63,6 +63,8 @@
   --text-xl-leading: calc(1.75 / 1.25);
   --text-2xl: 1.5rem;
   --text-2xl-leading: calc(2 / 1.5);
+  --text-3xl: 1.875rem;
+  --text-3xl-leading: calc(2.25 / 1.875);
   --text-10: 10px;
   --text-11: 11px;
   --text-13: 13px;
@@ -89,6 +91,7 @@
   --space-2-5: 0.625rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
+  --space-5: 1.25rem;
   --space-6: 1.5rem;
   --space-8: 2rem;
   --space-10: 2.5rem;
@@ -100,6 +103,7 @@
   --size-8: 2rem;
   --size-9: 2.25rem;
   --size-10: 2.5rem;
+  --size-12: 3rem;
   --size-14: 3.5rem;
   --size-16: 4rem;
   --landscape-width: 1000px;
@@ -107,8 +111,10 @@
   --screen-height: 100vh;
   --sidebar-width: 18rem;
   --drawer-width: 400px;
+  --rail-width: 20rem;
   --container-7xl: 80rem;
   --modal-width: 56rem;
+  --modal-narrow-width: 48rem;
   --panel-width: 24rem;
   --modal-body-height: calc(85vh - 100px);
   --quota-name-width: 9rem;

@@ -36,14 +36,17 @@ async fn add_agent_is_disabled_and_names_the_cli_command() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_adapters_panel_says_they_are_not_built_and_lists_none() {
+async fn the_adapters_panel_lists_the_built_in_ones_and_points_to_the_cli() {
     let d = Dash::dashboard().await;
     let html = d.ok("/endpoint").await;
     let from = html.find("<details class=\"side-panel\"").expect("the panel is drawn");
     let panel = &html[from..from + html[from..].find("</details>").unwrap()];
     let text = text_of(panel);
-    assert!(text.contains("Client adapters") && text.contains(endpoint::ADAPTERS), "{text}");
-    assert!(!panel.contains("plugin-row") && !panel.contains("<li") && !panel.contains("<table"), "no rows: {panel}");
+    assert!(text.contains("Client adapters") && text.contains("In the CLI: nullrouter adapters list"), "{text}");
+    assert!(text.contains("Built in · 1") && text.contains("hermes") && text.contains("built-in"), "{text}");
+    assert!(panel.contains(&format!("for=\"{}\"", endpoint::SETTINGS)), "the gear opens the settings window");
+    let settings = text_of(&html[html.find(&format!("id=\"{}\"", endpoint::SETTINGS)).expect("the settings window")..]);
+    assert!(settings.contains("Client adapter settings") && settings.contains("nullrouter adapters install"), "{settings}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

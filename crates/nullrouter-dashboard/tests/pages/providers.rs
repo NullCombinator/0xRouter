@@ -142,7 +142,7 @@ async fn a_provider_without_accounts_says_no_connections() {
     assert!(card.contains("No connections"), "{card}");
 
     let window = text_of(&d.ok(&format!("/providers/{id}")).await);
-    assert!(window.contains("Accounts No connections"), "{window}");
+    assert!(window.contains("Connections") && window.contains("No connections · "), "{window}");
 }
 
 /// A provider that has accounts shows the count and the states that aren't active.

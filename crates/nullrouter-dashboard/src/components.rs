@@ -276,16 +276,27 @@ pub fn modal(title: &str, close: &str, body: Markup) -> Markup {
     }
 }
 
+/// The hint on a panel's search, which isn't built yet.
+pub const SEARCH_HINT: &str = "Not built yet: the search comes with the functional dashboard.";
+
 /// The right side panel (Client adapters, Provider plugins), always rendered and closed at first,
 /// as the mockups draw it: a chevron tab at the page's edge. The tab is a `<details>` summary, so
-/// it opens and closes without a script.
-pub fn side_panel(icon_name: &str, title: &str, sections: Markup) -> Markup {
+/// it opens and closes without a script. Under the title: a search (disabled) and the gear that
+/// opens the [`settings`] window `gear`.
+pub fn side_panel(icon_name: &str, title: &str, search: &str, gear: &str, sections: Markup) -> Markup {
     html! {
         details class="side-panel" {
             summary class="side-panel__head" {
                 (icon(icon_name)) b class="side-panel__title" { (title) }
                 span class="side-panel__chevron side-panel__chevron--open" { (icon("chevron_right")) }
                 span class="side-panel__chevron side-panel__chevron--closed" { (icon("chevron_left")) }
+            }
+            div class="side-panel__tools" {
+                label class="side-panel__search" title=(SEARCH_HINT) {
+                    (icon("search"))
+                    input class="side-panel__input" type="search" placeholder=(search) aria-label=(search) disabled;
+                }
+                label class="side-panel__gear" for=(gear) title="Settings" aria-label="Settings" { (icon("settings")) }
             }
             div class="side-panel__body" { (sections) }
         }
@@ -295,6 +306,60 @@ pub fn side_panel(icon_name: &str, title: &str, sections: Markup) -> Markup {
 /// A titled group inside a side panel.
 pub fn side_section(heading: &str, body: Markup) -> Markup {
     html! { div class="side-section" { h5 class="side-section__heading" { (heading) } (body) } }
+}
+
+/// One row of a side panel: a logo tile, the name, a short line under it, and a status badge.
+pub fn side_row(tile: Markup, title: &str, line: &str, state: Markup) -> Markup {
+    html! {
+        div class="plugin-row" {
+            span class="plugin-row__logo" { (tile) }
+            div class="plugin-row__text" {
+                b class="plugin-row__id" { (name(title)) }
+                span class="plugin-row__source" { (line) }
+            }
+            (state)
+        }
+    }
+}
+
+/// A settings window opened by a panel's gear, over the page and the open panel: a hidden
+/// checkbox `id` that the gear, the backdrop, the close button and Cancel are labels for (the
+/// mockups' CSS toggle). There is no script and no form, and Save is disabled.
+pub fn settings(id: &str, title: &str, body: Markup) -> Markup {
+    html! {
+        input class="modal-toggle" type="checkbox" id=(id) aria-label=(title);
+        div class="modal modal--toggled" role="dialog" aria-modal="true" aria-label=(title) {
+            label class="modal__backdrop" for=(id) {}
+            div class="modal__box" {
+                div class="modal__head" {
+                    h2 class="modal__title" { (title) }
+                    label class="modal__close" for=(id) aria-label="Close" { (icon("close")) }
+                }
+                div class="modal__body" { (body) }
+                div class="modal__foot" {
+                    label class="button button--secondary" for=(id) { "Cancel" }
+                    (disabled_button("Save", None, true))
+                }
+            }
+        }
+    }
+}
+
+/// [`modal`] wide, with a slim head that holds only a muted line (`what`) and the close link;
+/// the body carries its own title.
+pub fn wide_modal(title: &str, what: &str, close: &str, body: Markup) -> Markup {
+    html! {
+        div class="modal" role="dialog" aria-modal="true" aria-label=(title) {
+            a class="modal__backdrop" href=(close) aria-label="Close" {}
+            div class="modal__box modal__box--wide" {
+                div class="modal__head modal__head--slim" {
+                    span class="modal__what" { (what) }
+                    a class="modal__close" href=(close) aria-label="Close" { (icon("close")) }
+                }
+                div class="modal__body modal__body--wide" { (body) }
+            }
+        }
+    }
 }
 
 /// What a slot says (research R12).

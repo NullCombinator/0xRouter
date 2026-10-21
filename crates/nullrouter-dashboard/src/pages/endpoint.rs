@@ -4,11 +4,13 @@
 //! shown beyond the last four characters the CLI prints.
 
 use maud::{Markup, html};
+use nullrouter_adapters::BUILTIN;
 use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
 use crate::components::{
-    Head, Tone, agent_colour, badge, bare_card, card, disabled_button, empty, name, prose, section_bar_noted, side_panel, side_section,
+    self, Head, Tone, agent_colour, badge, bare_card, card, disabled_button, disabled_switch, empty, icon, inset, name, prose,
+    section_bar, section_bar_noted, side_panel, side_row, side_section,
 };
 use crate::landscape;
 use crate::page::{ViewName, Want};
@@ -20,7 +22,18 @@ pub const VIEWS: &[ViewName] =
 pub const ADD_HINT: &str = "In the CLI: `nullrouter keys issue <name>`";
 pub const NO_AGENTS: &str = "No agent keys.";
 pub const NO_AGENTS_HINT: &str = "Run `nullrouter keys issue <name>`.";
-pub const ADAPTERS: &str = "Client-side adapters are not built yet.";
+/// Where the third-party adapters are listed today.
+pub const ADAPTERS: &str = "In the CLI: `nullrouter adapters list`.";
+/// What the panel says about adapters.
+pub const HOW: &str = "An adapter handles one client harness's quirks. A new version goes live only after you review \
+                       it, and the previous version keeps serving meanwhile.";
+/// How an adapter is added today.
+pub const ADD_ADAPTER: &str = "In the CLI: `nullrouter adapters install <package>`. The review follows, and a version \
+                               goes live when you run `nullrouter adapters approve <harness> <version>`.";
+/// The hint on an adapter's switch.
+pub const SWITCH_HINT: &str = "Not built yet: a built-in adapter serves every key of its harness.";
+/// The id of the "Client adapter settings" window: the checkbox the panel's gear toggles.
+pub const SETTINGS: &str = "adapter-settings";
 /// What the traffic card says under its title.
 pub const TRAFFIC: &str = "Each colour is one agent: one pipe per agent into the router, one per provider out of it. \
                            The gauge on a pipe is its latency.";
@@ -61,8 +74,42 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
             }
         }
     };
-    let adapters = side_section("Adapters", html! { p class="hint" { (ADAPTERS) } });
-    Ok(Body { content, side: Some(side_panel("extension", "Client adapters", adapters)), window: None })
+    Ok(Body { content, side: Some(side()), window: None })
+}
+
+/// "Client adapters": the built-in ones, where the third-party ones are listed, and how an
+/// adapter goes live; the gear opens the settings window.
+fn side() -> Markup {
+    let tile = || html! { span class="plugin-row__tile" { (icon("terminal")) } };
+    let sections = html! {
+        (side_section(&format!("Built in · {}", BUILTIN.len()), html! {
+            @for h in BUILTIN { (side_row(tile(), h, "core code", badge(Tone::Success, "built-in"))) }
+        }))
+        (side_section("Third party · sandboxed", html! { p class="side-section__text" { (prose(ADAPTERS)) } }))
+        (side_section("How adapters work", html! { p class="side-section__text" { (HOW) } }))
+    };
+    let settings = html! {
+        table class="settings-table" {
+            thead { tr { th { "Adapter" } th { "Source" } th { "State" } th { "Enabled" } } }
+            tbody {
+                @for h in BUILTIN {
+                    tr {
+                        td { b { (name(h)) } }
+                        td class="settings-table__muted" { "core code" }
+                        td { (badge(Tone::Success, "built-in")) }
+                        td { (disabled_switch("Enabled", SWITCH_HINT)) }
+                    }
+                }
+            }
+        }
+        p class="settings-table__note" { (SWITCH_HINT) " " (prose(ADAPTERS)) }
+        (section_bar("Add an adapter", html! {}))
+        (inset(html! { p class="settings-table__note" { (prose(ADD_ADAPTER)) } }))
+    };
+    html! {
+        (side_panel("terminal", "Client adapters", "Search adapters...", SETTINGS, sections))
+        (components::settings(SETTINGS, "Client adapter settings", settings))
+    }
 }
 
 /// The "API Endpoint" card: the URL as selectable text, and the note when it is only configured.

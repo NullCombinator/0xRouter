@@ -138,8 +138,12 @@ async fn the_plugins_panel_agrees_with_plugins_list_community() {
     let available = rows(&plugins).iter().filter(|r| r["set"] == "community" && r["status"] != "installed").count();
     assert!(text.contains(&format!("Bundled · {}", bundled.len())), "{text}");
     assert!(text.contains(&format!("Installed from community · {}", installed.len())), "{text}");
-    assert!(text.contains(&format!("Community · not installed: {available} available.")), "{text}");
-    assert!(text.contains("In the CLI: nullrouter plugins list --community"), "{text}");
+    assert!(text.contains(&format!("Community · not installed {available} available.")), "{text}");
+    // The settings window the gear opens names the CLI command that lists them.
+    let settings = text_of(&html[html.find("id=\"plugin-settings\"").expect("the settings window")..]);
+    assert!(settings.contains("Provider plugin settings"), "{settings}");
+    assert!(settings.contains(&format!("Search {available} community plugins")) || html.contains(&format!("Search {available} community plugins")));
+    assert!(settings.contains("In the CLI: nullrouter plugins list --community"), "{settings}");
 
     // Each bundled plugin: its source and its state.
     for r in bundled {

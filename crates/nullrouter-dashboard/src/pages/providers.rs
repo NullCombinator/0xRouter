@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use super::{Body, Ctx, Failure, Req};
 use crate::access::encode_component;
 use crate::components::{
-    self, Tone, badge, disabled, disabled_button, disabled_switch, empty, icon, kv, modal, name, prose, status,
+    self, Tone, badge, disabled_button, disabled_switch, empty, icon, kv, name, prose, side_row, side_section, status,
 };
 use crate::page::{ViewName, Want};
 
@@ -263,6 +263,9 @@ fn window(ctx: &Ctx<'_>, providers: &[Value], accounts: &[Value], token: &str) -
                 span class="provider-window__logo" { (components::logo(ctx.logos.href(id), alias)) }
                 div class="provider-window__titles" {
                     h3 class="provider-window__name" { (id) }
+                    p class="provider-window__count" {
+                        (accounts_line(&mine)) " · " (models.len()) (if models.len() == 1 { " model" } else { " models" })
+                    }
                     div class="provider-window__facts" {
                         @if let Some(a) = p["alias"].as_str() { (kv("alias", html! { (a) })) }
                         (kv("category", html! { (p["category"].as_str().unwrap_or_default()) }))
@@ -270,16 +273,19 @@ fn window(ctx: &Ctx<'_>, providers: &[Value], accounts: &[Value], token: &str) -
                     }
                 }
             }
-            section class="provider-window__section" {
-                h4 class="provider-window__heading" { "Accounts" }
+            section class="provider-window__card" {
+                div class="provider-window__card-head" {
+                    h4 class="provider-window__heading" { "Connections" }
+                    (last_response(ctx, id))
+                }
                 @if mine.is_empty() {
                     p class="provider-window__none" { "No connections" }
                 } @else {
                     @for a in &mine { (account_row(ctx, a)) }
                 }
             }
-            section class="provider-window__section" {
-                h4 class="provider-window__heading" { "Models" }
+            section class="provider-window__card" {
+                div class="provider-window__card-head" { h4 class="provider-window__heading" { "Available Models" } }
                 (kind_filter(req, providers, models, chosen))
                 @if shown.is_empty() {
                     p class="provider-window__none" {
@@ -289,13 +295,10 @@ fn window(ctx: &Ctx<'_>, providers: &[Value], accounts: &[Value], token: &str) -
                     div class="provider-window__models" { @for m in &shown { (model_row(m)) } }
                 }
             }
-            section class="provider-window__section" {
-                h4 class="provider-window__heading" { "Last response" }
-                (last_response(ctx, id))
-            }
         }
     };
-    Ok(modal(id, &req.close_href(), body))
+    let what = format!("provider plugin · {}", p["source"].as_str().unwrap_or_default());
+    Ok(components::wide_modal(id, &what, &req.close_href(), body))
 }
 
 /// The provider's last response in the last 24 hours (`latency`'s `last`): "resolved · <time>",
@@ -306,13 +309,14 @@ fn last_response(ctx: &Ctx<'_>, id: &str) -> Markup {
     let row = rows(&ctx.json(ViewName::Latency)["providers"]).iter().find(|r| r["id"] == id);
     let last = row.map(|r| &r["last"]).filter(|l| l["at"].is_string());
     html! {
-        @if let Some(l) = last {
-            p {
-                (l["result"].as_str().unwrap_or_default()) " · " (ctx.time(l["at"].as_str().unwrap_or_default()))
+        span class="provider-window__last" {
+            "Last response "
+            @if let Some(l) = last {
+                (status(l["result"].as_str().unwrap_or_default())) " · " (ctx.time(l["at"].as_str().unwrap_or_default()))
                 @if let Some(status) = l["status"].as_u64() { " · " (status) }
+            } @else {
+                (NO_RESPONSE)
             }
-        } @else {
-            p class="provider-window__none" { (NO_RESPONSE) }
         }
     }
 }
@@ -326,27 +330,31 @@ fn account_row(ctx: &Ctx<'_>, a: &Value) -> Markup {
         Some(t) => ctx.time(t),
         None => html! { "-" },
     };
+    let signin = a["kind"] == "signin";
     let command = format!("Run: `nullrouter accounts signin {} {}`", text("provider"), text("name"));
     html! {
         div class="provider-window__account" {
-            div class="provider-window__account-head" {
+            span class="provider-window__account-icon" { (icon(if signin { "lock" } else { "key" })) }
+            div class="provider-window__account-main" {
                 b class="provider-window__account-name" { (name(&text("name"))) }
-                (status(&text("state_text")))
-            }
-            div class="provider-window__account-facts" {
-                (kv("kind", html! { (text("kind")) }))
-                (kv("order", html! { (a["order"].to_string()) }))
-                (kv("priority", html! { (priority) }))
-                (kv("secret", html! { (text("secret")) }))
-                @if a["kind"] == "signin" {
-                    (kv("email", html! { (text("email")) }))
-                    (kv("tier", html! { (text("tier")) }))
-                    (kv("expires", when("expires_at")))
-                    (kv("refreshed", when("last_refresh_at")))
+                div class="provider-window__account-badges" {
+                    (status(&text("state_text")))
+                    (badge(Tone::Default, &text("kind")))
+                    span class="provider-window__account-order" { "order " (a["order"].to_string()) }
                 }
-            }
-            @if matches!(a["state"].as_str(), Some("needs_sign_in" | "refused")) {
-                p class="provider-window__account-run" { (prose(&command)) }
+                div class="provider-window__account-facts" {
+                    (kv("priority", html! { (priority) }))
+                    (kv("secret", html! { (text("secret")) }))
+                    @if signin {
+                        (kv("email", html! { (text("email")) }))
+                        (kv("tier", html! { (text("tier")) }))
+                        (kv("expires", when("expires_at")))
+                        (kv("refreshed", when("last_refresh_at")))
+                    }
+                }
+                @if matches!(a["state"].as_str(), Some("needs_sign_in" | "refused")) {
+                    p class="provider-window__account-run" { (prose(&command)) }
+                }
             }
         }
     }
@@ -360,11 +368,11 @@ fn kind_filter(req: &Req, providers: &[Value], models: &[Value], chosen: Option<
     let all = req.href(&path, &["kind"], &[]);
     html! {
         nav class="kind-filter" aria-label="Model kinds" {
-            (kind_link(&all, "All", models.len(), chosen.is_none()))
+            (kind_link(&all, "All", None, models.len(), chosen.is_none()))
             @for kind in kinds.iter().copied() {
                 @let href = req.href(&path, &[], &[("kind", kind)]);
                 @let count = models.iter().filter(|m| in_kind(m, kind)).count();
-                (kind_link(&href, kind, count, chosen == Some(kind)))
+                (kind_link(&href, kind, Some(kind_icon(kind)), count, chosen == Some(kind)))
             }
         }
     }
@@ -379,10 +387,31 @@ fn in_kind(m: &Value, kind: &str) -> bool {
     }
 }
 
-fn kind_link(href: &str, label: &str, count: usize, current: bool) -> Markup {
-    let class = if current { "kind-filter__item kind-filter__item--current" } else { "kind-filter__item" };
+/// The icon of a model kind, as the mockups draw the kind chips.
+fn kind_icon(kind: &str) -> &'static str {
+    match kind {
+        "image" => "brush",
+        "image_to_text" => "monitor",
+        "video" => "movie",
+        "tts" => "record_voice_over",
+        "stt" => "mic",
+        "embedding" => "data_array",
+        "web_search" => "search",
+        "web_fetch" => "link",
+        "systemone" => "psychology",
+        _ => "smart_toy",
+    }
+}
+
+fn kind_link(href: &str, label: &str, icon_name: Option<&str>, count: usize, current: bool) -> Markup {
+    let class = match (current, count) {
+        (true, _) => "kind-filter__item kind-filter__item--current",
+        (false, 0) => "kind-filter__item kind-filter__item--none",
+        (false, _) => "kind-filter__item",
+    };
     html! {
         a class=(class) href=(href) aria-current=[current.then_some("true")] {
+            @if let Some(i) = icon_name { (icon(i)) }
             (label) " " span class="kind-filter__count" { (count) }
         }
     }
@@ -392,29 +421,38 @@ fn kind_link(href: &str, label: &str, count: usize, current: bool) -> Markup {
 fn model_row(m: &Value) -> Markup {
     let list = |k: &str| m[k].as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "));
     let fact = |label: &str, value: Option<String>| html! { @if let Some(v) = value { (kv(label, html! { (v) })) } };
+    let kind = m["kind"].as_str();
     html! {
         div class="model-row" {
-            div class="model-row__head" {
+            span class="model-row__icon" { (icon(kind_icon(kind.unwrap_or("llm")))) }
+            div class="model-row__main" {
                 @let id = m["model"].as_str().unwrap_or_default();
                 code class="code model-row__id" title=(id) { (id) }
-                @if let Some(k) = m["kind"].as_str() { (badge(Tone::Primary, k)) } @else { (badge(Tone::Default, "untyped")) }
-            }
-            div class="model-row__facts" {
-                (fact("name", m["name"].as_str().map(str::to_owned)))
-                (fact("declared", m["declared"].as_bool().map(|d| d.to_string())))
-                (fact("target format", m["target_format"].as_str().map(str::to_owned)))
-                (fact("supported formats", list("supported_formats")))
-                (fact("quota family", m["quota_family"].as_str().map(str::to_owned)))
-                (fact("strip", list("strip")))
-                (fact("upstream id", m["upstream_id"].as_str().map(str::to_owned)))
+                div class="model-row__head" {
+                    @if let Some(n) = m["name"].as_str() { i class="model-row__name" { (n) } }
+                    @if let Some(k) = kind { (badge(Tone::Primary, k)) } @else { (badge(Tone::Default, "untyped")) }
+                }
+                div class="model-row__facts" {
+                    (fact("declared", m["declared"].as_bool().map(|d| d.to_string())))
+                    (fact("target format", m["target_format"].as_str().map(str::to_owned)))
+                    (fact("supported formats", list("supported_formats")))
+                    (fact("quota family", m["quota_family"].as_str().map(str::to_owned)))
+                    (fact("strip", list("strip")))
+                    (fact("upstream id", m["upstream_id"].as_str().map(str::to_owned)))
+                }
             }
         }
     }
 }
 
-/// "Provider plugins": what `plugins list --community` lists, with the switches disabled.
+/// The id of the "Provider plugin settings" window: the checkbox the panel's gear toggles.
+pub const SETTINGS: &str = "plugin-settings";
+
+/// "Provider plugins": what `plugins list --community` lists, each row with its source, the
+/// provider's category and its state; the gear opens the settings window.
 fn side(ctx: &Ctx<'_>) -> Markup {
     let plugins = rows(ctx.json(ViewName::Plugins));
+    let providers = rows(ctx.json(ViewName::Providers));
     let installed: Vec<&Value> = of(plugins, "community").filter(|r| r["status"] == "installed").collect();
     let not_installed = of(plugins, "community").filter(|r| r["status"] != "installed").count();
     let is_installed = |r: &Value| installed.iter().any(|i| i["id"] == r["id"]);
@@ -429,44 +467,78 @@ fn side(ctx: &Ctx<'_>) -> Markup {
             .unwrap_or_default()
             .to_owned()
     };
+    let row = |r: &Value, state: &str| {
+        let id = r["id"].as_str().unwrap_or_default();
+        let set = r["set"].as_str().unwrap_or_default();
+        let line = match providers.iter().find(|p| p["id"] == id).and_then(|p| p["category"].as_str()) {
+            Some(category) => format!("{set} · {category}"),
+            None => set.to_owned(),
+        };
+        side_row(components::logo(ctx.logos.href(id), id), id, &line, status(state))
+    };
     let sections = html! {
-        p class="plugin-row__note" { (prose(SWITCH_HINT)) }
-        (components::side_section(&format!("Bundled · {}", bundled.len()), html! {
-            @for r in &bundled { (plugin_row(ctx, r, r["status"].as_str().unwrap_or_default(), false)) }
+        (side_section(&format!("Bundled · {}", bundled.len()), html! {
+            @for r in &bundled { (row(r, r["status"].as_str().unwrap_or_default())) }
         }))
-        (components::side_section(&format!("Installed from community · {}", installed.len()), html! {
-            @for r in &installed { (plugin_row(ctx, r, &state_of(r), true)) }
+        (side_section(&format!("Installed from community · {}", installed.len()), html! {
+            @for r in &installed { (row(r, &state_of(r))) }
         }))
         @if !own.is_empty() {
-            (components::side_section(&format!("Your own · {}", own.len()), html! {
-                @for r in &own { (plugin_row(ctx, r, r["status"].as_str().unwrap_or_default(), false)) }
+            (side_section(&format!("Your own · {}", own.len()), html! {
+                @for r in &own { (row(r, r["status"].as_str().unwrap_or_default())) }
             }))
         }
-        (components::side_section(&format!("Community · not installed: {not_installed} available."), html! {
-            p { (prose(COMMUNITY_HINT)) }
-            (disabled("Install", None, INSTALL_HINT))
+        (side_section("Community · not installed", html! {
+            p class="side-section__text" { (not_installed) " available. Open settings to install one." }
         }))
     };
-    components::side_panel("extension", "Provider plugins", sections)
+    let listed: Vec<(&Value, bool)> = bundled
+        .iter()
+        .map(|r| (*r, false))
+        .chain(installed.iter().map(|r| (*r, true)))
+        .chain(own.iter().map(|r| (*r, false)))
+        .collect();
+    html! {
+        (components::side_panel("extension", "Provider plugins", "Search plugins...", SETTINGS, sections))
+        (components::settings(SETTINGS, "Provider plugin settings", settings_body(&listed, not_installed)))
+    }
 }
 
-/// One plugin: its source and state as `plugins list` shows them, the two
-/// disabled switches, and for a community plugin the uninstall hint.
-fn plugin_row(ctx: &Ctx<'_>, r: &Value, state: &str, uninstall: bool) -> Markup {
-    let id = r["id"].as_str().unwrap_or_default();
+/// "Provider plugin settings": each plugin with its two switches (disabled) and, for a
+/// community plugin, Uninstall; then the install row. Every control says where it lives today.
+fn settings_body(listed: &[(&Value, bool)], available: usize) -> Markup {
     html! {
-        div class="plugin-row" {
-            span class="plugin-row__logo" { (components::logo(ctx.logos.href(id), id)) }
-            div class="plugin-row__text" {
-                b class="plugin-row__id" { (name(id)) }
-                span class="plugin-row__source" { (r["set"].as_str().unwrap_or_default()) }
+        table class="settings-table" {
+            thead { tr { th { "Plugin" } th { "Source" } th { "Show on page" } th { "Enabled" } th {} } }
+            tbody {
+                @for (r, community) in listed {
+                    @let id = r["id"].as_str().unwrap_or_default();
+                    tr {
+                        td { b { (name(id)) } }
+                        td class="settings-table__muted" { (r["set"].as_str().unwrap_or_default()) }
+                        td { (disabled_switch("Show on page", SWITCH_HINT)) }
+                        td { (disabled_switch("Enabled", SWITCH_HINT)) }
+                        td class="settings-table__action" {
+                            @if *community {
+                                span class="control" title=(UNINSTALL_HINT.replace("<id>", id).replace('`', "")) {
+                                    (disabled_button("Uninstall", None, false))
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            (status(state))
-            div class="plugin-row__switches" {
-                (disabled_switch("Enabled", SWITCH_HINT))
-                (disabled_switch("Shown", SWITCH_HINT))
-            }
-            @if uninstall { (disabled("Uninstall", None, &UNINSTALL_HINT.replace("<id>", id))) }
         }
+        p class="settings-table__note" { (prose(SWITCH_HINT)) " " (prose(UNINSTALL_HINT)) }
+        (components::section_bar("Install a community plugin", html! {}))
+        div class="settings-install" {
+            label class="side-panel__search settings-install__search" title=(components::SEARCH_HINT) {
+                (icon("search"))
+                @let placeholder = format!("Search {available} community plugins...");
+                input class="side-panel__input" type="search" placeholder=(placeholder) aria-label=(placeholder) disabled;
+            }
+            (disabled_button("Install", None, true))
+        }
+        p class="settings-table__note" { (prose(INSTALL_HINT)) " " (prose(COMMUNITY_HINT)) }
     }
 }
