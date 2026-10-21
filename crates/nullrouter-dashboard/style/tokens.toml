@@ -714,6 +714,10 @@ source = "src/shared/components/Header.js:230"
 uses = ["space-2"]
 source = "src/shared/components/layouts/DashboardLayout.js:12"
 
+[component.notices-fold]
+uses = ["space-2", "space-1-5", "space-3", "border-width", "color-border", "radius-brand", "color-surface", "color-text-muted", "text-xs", "text-xs-leading", "icon-badge"]
+source = "src/shared/components/layouts/DashboardLayout.js:12"
+
 [component.notice]
 uses = ["space-3", "border-width", "radius-lg", "text-sm", "text-sm-leading", "color-red-500-30", "color-red-500-10", "color-red-600", "color-yellow-500-30", "color-yellow-500-10", "color-yellow-600", "color-blue-500-30", "color-blue-500-10", "color-blue-600", "space-2", "text-xs", "text-xs-leading"]
 source = "src/shared/components/layouts/DashboardLayout.js:12"
@@ -819,7 +823,7 @@ uses = ["space-1-5", "size-8", "space-2", "border-width", "color-black-10", "rad
 source = "src/app/(dashboard)/dashboard/providers/page.js:393"
 
 [component.quota-grid]
-uses = ["grid-cols-2", "space-3", "color-text-muted", "text-xs", "text-xs-leading"]
+uses = ["grid-cols-2", "space-3", "color-text-muted", "text-xs", "text-xs-leading", "space-2", "space-3", "border-width", "color-border-subtle", "radius-lg", "color-surface-2"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/index.js:1049"
 
 [component.quota-card]
@@ -839,7 +843,7 @@ uses = ["space-3", "space-1", "color-text-muted", "text-xs", "text-xs-leading", 
 source = "src/app/(dashboard)/dashboard/usage/components/OverviewCards.js:12"
 
 [component.usage-recent]
-uses = ["size-full", "space-3", "color-text-muted", "text-sm", "text-sm-leading", "space-1-5", "space-1", "text-xs", "text-xs-leading", "size-1-5", "radius-full", "color-green-500", "color-red-500", "color-blue-500"]
+uses = ["size-full", "space-3", "color-text-muted", "text-sm", "text-sm-leading", "space-1-5", "space-1", "text-xs", "text-xs-leading", "size-1-5", "radius-full", "color-green-500", "color-red-500", "color-blue-500", "space-2", "weight-semibold"]
 source = "src/app/(dashboard)/dashboard/usage/components/UsageTable.js:163"
 
 [component.usage-table]

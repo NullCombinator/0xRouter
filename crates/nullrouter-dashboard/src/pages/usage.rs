@@ -312,7 +312,7 @@ fn recent(ctx: &Ctx<'_>, records: &[Value]) -> Markup {
             }
         }
     };
-    html! { div class="usage-recent" { (card(Some(Head::new("schedule", "Recent Requests")), body)) } }
+    html! { div class="usage-recent" { (card(None, html! { h3 class="usage-recent__title" { "Recent Requests" } (body) })) } }
 }
 
 fn dot(r: &Value) -> &'static str {

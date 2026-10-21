@@ -23,6 +23,17 @@ pub fn time_element(rfc3339: &str, tz: &TimeZone) -> Markup {
     }
 }
 
+/// As `time_element`, but an instant on the same local day as `now` shows only its clock,
+/// `HH:MM:SS`; the element keeps the full instant either way.
+pub fn time_element_since(rfc3339: &str, tz: &TimeZone, now: Timestamp) -> Markup {
+    match rfc3339.parse::<Timestamp>() {
+        Ok(at) if at.to_zoned(tz.clone()).date() == now.to_zoned(tz.clone()).date() => {
+            html! { time datetime=(at.to_string()) { (at.to_zoned(tz.clone()).strftime("%H:%M:%S").to_string()) } }
+        }
+        _ => time_element(rfc3339, tz),
+    }
+}
+
 /// An instant as plain text in `tz`, `YYYY-MM-DD HH:MM:SS`; `None` when it isn't an RFC 3339 time.
 /// For places an element can't go (SVG text).
 pub fn local_text(rfc3339: &str, tz: &TimeZone) -> Option<String> {
@@ -44,6 +55,15 @@ mod tests {
 
     fn berlin() -> TimeZone {
         TimeZone::get("Europe/Berlin").expect("the system has tzdata")
+    }
+
+    #[test]
+    fn an_instant_from_today_shows_only_its_clock() {
+        let now: Timestamp = "2026-10-05T20:00:00Z".parse().unwrap();
+        let today = time_element_since("2026-10-05T11:50:00Z", &berlin(), now).into_string();
+        assert_eq!(today, r#"<time datetime="2026-10-05T11:50:00Z">13:50:00</time>"#);
+        let before = time_element_since("2026-10-04T11:50:00Z", &berlin(), now).into_string();
+        assert_eq!(before, r#"<time datetime="2026-10-04T11:50:00Z">2026-10-04 13:50:00</time>"#);
     }
 
     #[test]

@@ -69,8 +69,14 @@ pub fn document(f: &Frame<'_>, body: Body) -> Markup {
                         }
                     }
                     div class="main__column" {
-                        @if !own.is_empty() {
+                        @if own.len() == 1 {
                             div class="notices" { @for (level, text) in &own { (notice(level, text)) } }
+                        } @else if !own.is_empty() {
+                            // Several notices fold under one line that counts them; an error keeps it open.
+                            details class="notices-fold" open[own.iter().any(|(l, _)| *l == "error")] {
+                                summary class="notices-fold__summary" { (icon("info")) (counts(&own)) }
+                                div class="notices" { @for (level, text) in &own { (notice(level, text)) } }
+                            }
                         }
                         (body.content)
                     }
@@ -338,4 +344,16 @@ mod tests {
         let html = document(&frame(&req, &c, &a), Body::new(html! {})).into_string();
         assert!(html.contains("No notices."));
     }
+}
+
+/// `3 notes · 3 warnings`: the page's notices counted by level, errors first.
+fn counts(own: &[(&str, &str)]) -> String {
+    let n = |want: &str| own.iter().filter(|(l, _)| *l == want).count();
+    let plural = |k: usize, word: &str| if k == 1 { format!("1 {word}") } else { format!("{k} {word}s") };
+    [("error", n("error")), ("warning", n("warning")), ("note", own.len() - n("error") - n("warning"))]
+        .into_iter()
+        .filter(|(_, k)| *k > 0)
+        .map(|(w, k)| plural(k, w))
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
