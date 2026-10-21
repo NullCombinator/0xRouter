@@ -47,6 +47,7 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
             latency: ctx.json(ViewName::Latency),
             tz: ctx.tz,
             as_of: ctx.page.as_of,
+            logos: ctx.logos,
         })))
         (endpoint(ctx.json(ViewName::Check)))
         div class="key-grid" {

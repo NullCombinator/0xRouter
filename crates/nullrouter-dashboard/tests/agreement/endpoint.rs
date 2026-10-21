@@ -193,7 +193,7 @@ async fn an_agents_colour_is_the_same_on_two_loads_and_after_a_key_is_appended()
     let path = dir.path().join("keys.toml");
     let d = Dash::start(dir).await;
     let colours = |html: &str| -> Vec<String> {
-        html.split("landscape__dot landscape__dot--")
+        html.split("landscape__ring landscape__ring--")
             .skip(1)
             .map(|s| s.split('"').next().unwrap_or_default().to_owned())
             .collect()

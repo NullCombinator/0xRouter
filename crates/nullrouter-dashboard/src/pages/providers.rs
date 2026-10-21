@@ -62,10 +62,15 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
         None => None,
     };
     let q = ctx.req.get("q").map(str::to_lowercase);
-    let shown: Vec<&Value> = providers.iter().filter(|p| q.as_deref().is_none_or(|q| matches(p, q))).collect();
+    let has = ctx.req.get("has");
+    let shown: Vec<&Value> = providers
+        .iter()
+        .filter(|p| q.as_deref().is_none_or(|q| matches(p, q)))
+        .filter(|p| has.is_none_or(|k| rows(&p["capabilities"]).iter().any(|c| c == k)))
+        .collect();
 
     let content = html! {
-        (search(ctx.req))
+        (search(ctx.req, providers))
         (custom_section(ctx, &shown, accounts))
         @for (title, categories) in SECTIONS {
             @let mine: Vec<&Value> = shown.iter().copied().filter(|p| section_of(p) == *title && is_in(p, categories)).collect();
@@ -73,7 +78,7 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
                 (section(ctx, title, test_all(), &mine, accounts))
             }
         }
-        @if shown.is_empty() && q.is_some() {
+        @if shown.is_empty() && (q.is_some() || has.is_some()) {
             (empty("search", "No provider matches", "Search by provider id or alias."))
         }
     };
@@ -112,14 +117,36 @@ fn matches(p: &Value, q: &str) -> bool {
 
 /// The `q` search, a `GET` form (research R4) at the top right, as the mockup draws it: Enter
 /// submits it.
-fn search(req: &Req) -> Markup {
+fn search(req: &Req, providers: &[Value]) -> Markup {
+    let has = req.get("has");
     html! {
         form class="provider-grid__search" method="get" action=(req.base()) role="search" {
             @if req.notices_open() { input type="hidden" name="notices" value=""; }
+            @if let Some(k) = has { input type="hidden" name="has" value=(k); }
             label class="provider-grid__field" {
                 (icon("search"))
                 input class="provider-grid__input" type="search" name="q" value=(req.get("q").unwrap_or_default())
                     placeholder="Search providers..." aria-label="Search providers";
+            }
+            (kinds_menu(req, providers, has))
+        }
+    }
+}
+
+/// "All kinds": a menu of the model kinds the loaded plugins declare, as links; a provider is
+/// listed under a kind when its `capabilities` (as `providers` prints them) include it.
+fn kinds_menu(req: &Req, providers: &[Value], has: Option<&str>) -> Markup {
+    let kinds: BTreeSet<&str> =
+        providers.iter().flat_map(|p| rows(&p["capabilities"])).filter_map(Value::as_str).collect();
+    let path = req.path();
+    html! {
+        details class="pick" {
+            summary class="pick__button" { (has.unwrap_or("All kinds")) (icon("expand_more")) }
+            div class="pick__menu" {
+                a class=(if has.is_none() { "pick__item pick__item--current" } else { "pick__item" }) href=(req.href(&path, &["has"], &[])) { "All kinds" }
+                @for kind in kinds {
+                    a class=(if has == Some(kind) { "pick__item pick__item--current" } else { "pick__item" }) href=(req.href(&path, &[], &[("has", kind)])) { (kind) }
+                }
             }
         }
     }

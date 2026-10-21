@@ -81,7 +81,7 @@ async fn recent_requests_lists_the_newest_ten_of_the_tables_read() {
         .collect();
     let want: Vec<&str> = list.as_array().unwrap().iter().take(10).map(|r| r["id"].as_str().unwrap()).collect();
     assert_eq!(ids, want, "the newest 10, in the table's order");
-    assert!(text_of(section).contains("in 1 204 out 388") || text_of(section).contains("not reported"));
+    assert!(text_of(section).contains("1,204↑ 388↓") || text_of(section).contains("not reported"));
 }
 
 #[tokio::test(flavor = "multi_thread")]

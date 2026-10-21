@@ -14,7 +14,9 @@ use jiff::tz::TimeZone;
 use maud::{Markup, html};
 use serde_json::Value;
 
+use crate::assets;
 use crate::components::agent_colour;
+use crate::logos::Index;
 use crate::time::local_text;
 
 /// Router overhead dial: full scale, in ms.
@@ -51,6 +53,7 @@ pub struct Inputs<'a> {
     pub latency: &'a Value,
     pub tz: &'a TimeZone,
     pub as_of: Timestamp,
+    pub logos: &'a Index,
 }
 
 /// "Agent traffic · last 24 h · as of HH:MM:SS".
@@ -208,12 +211,67 @@ fn card(x: f64, y: f64, title: &str, lines: &[String]) -> Markup {
     }
 }
 
+/// What a node shows before its name: an agent's avatar or a provider's logo.
+enum Mark<'a> {
+    Avatar(usize),
+    Logo(&'a str),
+    Letters(String),
+}
+
+/// An agent's avatar, as the mockup draws it: two soft blobs in its colour and the next one on a
+/// pale disc, ringed in its colour.
+fn avatar(cx: f64, cy: f64, n: usize) -> Markup {
+    let (cx, cy) = (format!("{cx:.1}"), format!("{cy:.1}"));
+    html! {
+        circle class="landscape__avatar" cx=(cx) cy=(cy) r="11" {}
+        circle cx=(cx) cy=(cy) r="11" fill=(format!("url(#avatar-{n}-a)")) {}
+        circle cx=(cx) cy=(cy) r="11" fill=(format!("url(#avatar-{n}-b)")) {}
+        circle class=(format!("landscape__ring landscape__ring--{}", agent_colour(n))) cx=(cx) cy=(cy) r="11" {}
+    }
+}
+
+/// The two gradients behind agent colour `n`'s avatar.
+fn avatar_defs(n: usize) -> Markup {
+    let next = (n + 1) % 7;
+    html! {
+        radialGradient id=(format!("avatar-{n}-a")) cx="20%" cy="25%" r="60%" {
+            stop class=(format!("landscape__stop--{}", agent_colour(n))) offset="0" {}
+            stop class=(format!("landscape__stop--{} landscape__stop--clear", agent_colour(n))) offset="1" {}
+        }
+        radialGradient id=(format!("avatar-{n}-b")) cx="80%" cy="85%" r="55%" {
+            stop class=(format!("landscape__stop--{}", agent_colour(next))) offset="0" {}
+            stop class=(format!("landscape__stop--{} landscape__stop--clear", agent_colour(next))) offset="1" {}
+        }
+    }
+}
+
+fn mark(x: f64, y: f64, m: &Mark<'_>) -> Markup {
+    match m {
+        Mark::Avatar(n) => avatar(x + 22.0, y, *n),
+        Mark::Logo(href) => html! {
+            rect class="landscape__logo-tile" x=(format!("{:.1}", x + 10.0)) y=(format!("{:.1}", y - 13.0)) width="26" height="26" rx="6" {}
+            image href=(href) x=(format!("{:.1}", x + 11.0)) y=(format!("{:.1}", y - 12.0)) width="24" height="24" {}
+        },
+        Mark::Letters(t) => html! {
+            rect class="landscape__letters-tile" x=(format!("{:.1}", x + 10.0)) y=(format!("{:.1}", y - 13.0)) width="26" height="26" rx="6" {}
+            text class="landscape__letters" x=(format!("{:.1}", x + 23.0)) y=(format!("{:.1}", y + 4.0)) text-anchor="middle" { (t) }
+        },
+    }
+}
+
+fn provider_mark<'a>(id: &str, logos: &'a Index) -> Mark<'a> {
+    logos.href(id).map_or_else(
+        || Mark::Letters(id.chars().filter(|c| c.is_alphanumeric()).take(2).collect::<String>().to_uppercase()),
+        Mark::Logo,
+    )
+}
+
 fn node(
     x: f64,
     y: f64,
     name: &str,
     sub: Option<&str>,
-    dot: Option<usize>,
+    m: &Mark<'_>,
     revoked: bool,
     card_lines: &[String],
 ) -> Markup {
@@ -223,12 +281,10 @@ fn node(
         g class=(class) tabindex="0" {
             title { (name) }
             rect x=(format!("{x:.1}")) y=(format!("{top:.1}")) width=(format!("{NODE_W:.0}")) height=(format!("{NODE_H:.0}")) rx="8" {}
-            @if let Some(n) = dot {
-                circle class=(format!("landscape__dot landscape__dot--{}", agent_colour(n))) cx=(format!("{:.1}", x + 18.0)) cy=(format!("{y:.1}")) r="9" {}
-            }
-            text class="landscape__name" x=(format!("{:.1}", x + if dot.is_some() { 36.0 } else { 12.0 })) y=(format!("{:.1}", if sub.is_some() { y - 3.0 } else { y + 4.0 })) { (short(name)) }
+            (mark(x, y, m))
+            text class="landscape__name" x=(format!("{:.1}", x + 44.0)) y=(format!("{:.1}", if sub.is_some() { y - 3.0 } else { y + 5.0 })) { (short(name)) }
             @if let Some(sub) = sub {
-                text class="landscape__tag" x=(format!("{:.1}", x + if dot.is_some() { 36.0 } else { 12.0 })) y=(format!("{:.1}", y + 11.0)) { (short(sub)) }
+                text class="landscape__tag" x=(format!("{:.1}", x + 44.0)) y=(format!("{:.1}", y + 11.0)) { (short(sub)) }
             }
             (card(x, top + NODE_H + 4.0, name, card_lines))
         }
@@ -380,6 +436,7 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
     html! {
         div class="landscape" {
             svg class="landscape__svg" viewBox=(format!("0 0 {WIDTH:.0} {height:.0}")) role="img" aria-label="Agent traffic in the last 24 hours" {
+                defs { @for n in 0..7 { (avatar_defs(n)) } }
                 // Wall, glass, liquid, shine: each layer over the whole network, so joints stay clean.
                 @for t in &tubes { (t.line("pipe__wall", BORE + 4.0)) }
                 @for t in &tubes { (t.line("pipe__glass", BORE)) }
@@ -391,13 +448,14 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
                 @for g in &gauges { (g) }
                 g class="landscape__node" {
                     rect class="landscape__router" x=(format!("{rx:.1}")) y=(format!("{:.1}", mid - ROUTER_H / 2.0)) width=(format!("{ROUTER_W:.0}")) height=(format!("{ROUTER_H:.0}")) rx="10" {}
-                    text class="landscape__name landscape__name--router" x=(format!("{:.1}", rx + ROUTER_W / 2.0)) y=(format!("{:.1}", mid + 5.0)) text-anchor="middle" { "0router" }
+                    image href=(assets::href("logo-mark.png")) x=(format!("{:.1}", rx + 14.0)) y=(format!("{:.1}", mid - 11.0)) width="22" height="22" {}
+                    text class="landscape__name landscape__name--router" x=(format!("{:.1}", rx + 42.0)) y=(format!("{:.1}", mid + 5.0)) { "0Router" }
                 }
                 @for (n, a) in agents.iter().enumerate() {
-                    (node(AGENT_X, ay[n], &a.name, sub_of(a).as_deref(), Some(a.colour), a.revoked, &agent_lines(a, i)))
+                    (node(AGENT_X, ay[n], &a.name, sub_of(a).as_deref(), &Mark::Avatar(a.colour), a.revoked, &agent_lines(a, i)))
                 }
                 @for (n, p) in providers.iter().enumerate() {
-                    (node(PROVIDER_X, py[n], p.id, None, None, false, &provider_lines(p, i)))
+                    (node(PROVIDER_X, py[n], p.id, None, &provider_mark(p.id, i.logos), false, &provider_lines(p, i)))
                 }
             }
             @if !agents.is_empty() {
@@ -457,7 +515,7 @@ mod tests {
 
     fn render(keys: &Value, accounts: &Value, latency: &Value) -> String {
         let tz = tz();
-        landscape(&Inputs { keys, accounts, latency, tz: &tz, as_of: at() }).into_string()
+        landscape(&Inputs { keys, accounts, latency, tz: &tz, as_of: at(), logos: &Index::default() }).into_string()
     }
 
     #[test]
@@ -544,10 +602,17 @@ mod tests {
     #[test]
     fn the_drawing_has_no_script_animation_or_external_reference() {
         let html = render(&keys(), &accounts(), &latency());
-        for banned in
-            ["<script", "<animate", "<style", "href=", "xlink", "url(", "http://", "https://", "onclick", "onload"]
-        {
+        for banned in ["<script", "<animate", "<style", "xlink", "http://", "https://", "onclick", "onload"] {
             assert!(!html.contains(banned), "{banned}\n{html}");
+        }
+        // Images only from this server's assets and logos; paint only from the drawing's own gradients.
+        for (at, _) in html.match_indices("href=\"") {
+            let to = &html[at + 6..];
+            assert!(to.starts_with("/assets/") || to.starts_with("/logos/"), "{}", &to[..40.min(to.len())]);
+        }
+        for (at, _) in html.match_indices("url(#") {
+            let id = &html[at + 5..at + 5 + html[at + 5..].find(')').unwrap()];
+            assert!(id.starts_with("avatar-") && html.contains(&format!("id=\"{id}\"")), "url(#{id}) names no gradient here");
         }
     }
 

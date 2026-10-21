@@ -10,6 +10,8 @@ use jiff::tz::TimeZone;
 use maud::{Markup, html};
 use serde_json::Value;
 
+use crate::assets;
+use crate::logos::Index;
 use crate::time::local_text;
 
 pub const LABEL: &str = "last response · last 24 h";
@@ -103,7 +105,7 @@ fn node_class(edge: &str) -> &'static str {
 }
 
 /// The graph; the empty text instead when no provider had a request in the period.
-pub fn topology(usage: &Value, latency: &Value, tz: &TimeZone) -> Markup {
+pub fn topology(usage: &Value, latency: &Value, tz: &TimeZone, logos: &Index) -> Markup {
     let nodes = nodes(usage, latency);
     if nodes.is_empty() {
         return html! { p class="landscape__empty" { (EMPTY) } };
@@ -119,7 +121,8 @@ pub fn topology(usage: &Value, latency: &Value, tz: &TimeZone) -> Markup {
                 path class=(class) d=(format!("M0,0 L{cx:.1},{cy:.1}")) {}
             }
             rect class="topology__router" x=(format!("{:.0}", -ROUTER_W / 2.0)) y=(format!("{:.0}", -ROUTER_H / 2.0)) width=(format!("{ROUTER_W:.0}")) height=(format!("{ROUTER_H:.0}")) rx="10" {}
-            text class="topology__name" x="0" y="5" text-anchor="middle" { "0router" }
+            image href=(assets::href("logo-mark.png")) x="-44" y="-11" width="22" height="22" {}
+            text class="topology__name topology__name--router" x="-16" y="5" { "0Router" }
             @for (i, n) in nodes.iter().enumerate() {
                 @let (cx, cy) = position(i, nodes.len());
                 @let class = node_class(edge_class(n, newest));
@@ -127,7 +130,13 @@ pub fn topology(usage: &Value, latency: &Value, tz: &TimeZone) -> Markup {
                 g {
                     title { (n.id) }
                     rect class=(class) x=(format!("{:.1}", cx - NODE_W / 2.0)) y=(format!("{:.1}", cy - NODE_H / 2.0)) width=(format!("{NODE_W:.0}")) height=(format!("{NODE_H:.0}")) rx="8" {}
-                    text class="topology__name" x=(format!("{:.1}", cx - NODE_W / 2.0 + 10.0)) y=(format!("{:.1}", cy + 5.0)) { (n.id) }
+                    @match logos.href(n.id) {
+                        Some(href) => image href=(href) x=(format!("{:.1}", cx - NODE_W / 2.0 + 8.0)) y=(format!("{:.1}", cy - 10.0)) width="20" height="20" {},
+                        None => text class="topology__letters" x=(format!("{:.1}", cx - NODE_W / 2.0 + 18.0)) y=(format!("{:.1}", cy + 4.0)) text-anchor="middle" {
+                            (n.id.chars().filter(|c| c.is_alphanumeric()).take(2).collect::<String>().to_uppercase())
+                        },
+                    }
+                    text class="topology__name" x=(format!("{:.1}", cx - NODE_W / 2.0 + 34.0)) y=(format!("{:.1}", cy + 5.0)) { (n.id) }
                     text class="topology__count" x=(format!("{:.1}", cx + NODE_W / 2.0 - 10.0)) y=(format!("{:.1}", cy + 5.0)) text-anchor="end" { (n.requests) }
                     text class="topology__last" x=(format!("{cx:.1}")) y=(format!("{:.1}", cy + NODE_H / 2.0 + 12.0)) text-anchor="middle" {
                         "last response " (last.as_deref().unwrap_or(NONE))
@@ -173,14 +182,14 @@ mod tests {
 
     #[test]
     fn the_router_is_centred_and_there_are_no_agent_nodes() {
-        let html = topology(&usage(), &latency(), &TimeZone::UTC).into_string();
-        assert!(html.contains("topology__router") && html.contains(">0router<"));
+        let html = topology(&usage(), &latency(), &TimeZone::UTC, &Index::default()).into_string();
+        assert!(html.contains("topology__router") && html.contains(">0Router<"));
         assert_eq!(html.matches("<title>").count(), 3, "one node per provider and nothing else: {html}");
     }
 
     #[test]
     fn failed_is_red_the_newest_is_amber_and_the_rest_idle() {
-        let html = topology(&usage(), &latency(), &TimeZone::UTC).into_string();
+        let html = topology(&usage(), &latency(), &TimeZone::UTC, &Index::default()).into_string();
         assert_eq!(html.matches("topology__edge--failed").count(), 1, "{html}");
         assert_eq!(html.matches("topology__edge--last").count(), 1, "{html}");
         let u = usage();
@@ -197,13 +206,13 @@ mod tests {
     fn a_failed_newest_is_red_not_amber() {
         let l = json!({"providers": [{"id": "xai", "last": {"result": "failed", "at": "2026-10-06T15:00:00Z", "status": 503}}]});
         let u = json!({"providers": [{"id": "xai", "requests": 1}]});
-        let html = topology(&u, &l, &TimeZone::UTC).into_string();
+        let html = topology(&u, &l, &TimeZone::UTC, &Index::default()).into_string();
         assert!(html.contains("topology__edge--failed") && !html.contains("topology__edge--last"), "{html}");
     }
 
     #[test]
     fn labels_print_the_counts_and_the_last_response() {
-        let html = topology(&usage(), &latency(), &TimeZone::UTC).into_string();
+        let html = topology(&usage(), &latency(), &TimeZone::UTC, &Index::default()).into_string();
         for text in [
             ">900<",
             ">384<",
@@ -219,15 +228,19 @@ mod tests {
 
     #[test]
     fn no_animation_script_or_external_reference() {
-        let html = topology(&usage(), &latency(), &TimeZone::UTC).into_string();
-        for banned in ["<script", "<animate", "<style", "href=", "xlink", "http://", "https://", "onclick", "onload"] {
+        let html = topology(&usage(), &latency(), &TimeZone::UTC, &Index::default()).into_string();
+        for banned in ["<script", "<animate", "<style", "xlink", "url(", "http://", "https://", "onclick", "onload"] {
             assert!(!html.contains(banned), "{banned}\n{html}");
+        }
+        for (at, _) in html.match_indices("href=\"") {
+            let to = &html[at + 6..];
+            assert!(to.starts_with("/assets/") || to.starts_with("/logos/"), "{}", &to[..40.min(to.len())]);
         }
     }
 
     #[test]
     fn no_providers_says_so() {
-        let html = topology(&json!({"providers": []}), &json!({}), &TimeZone::UTC).into_string();
+        let html = topology(&json!({"providers": []}), &json!({}), &TimeZone::UTC, &Index::default()).into_string();
         assert!(html.contains(EMPTY) && !html.contains("<svg"));
     }
 }

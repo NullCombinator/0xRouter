@@ -190,10 +190,18 @@ fn why(r: &Value) -> String {
     by.and_then(|a| a["placement"]["reason"].as_str()).map_or_else(|| "-".to_owned(), clean)
 }
 
-/// `in 1 204 out 388`, or `not reported`.
-fn tokens(r: &Value) -> String {
+/// `1,204↑ 388↓` (in, then out), as the mockup's recent list draws it, or `not reported`.
+fn tokens(r: &Value) -> Markup {
     let u = &r["usage"];
-    if u.is_null() { "not reported".into() } else { format!("in {} out {}", count(&u["input"]), count(&u["output"])) }
+    let side = |v: &Value| v.as_u64().map_or_else(|| "-".to_owned(), grouped_comma);
+    if u.is_null() {
+        html! { "not reported" }
+    } else {
+        html! {
+            span class="usage-recent__in" { (side(&u["input"])) "↑" } " "
+            span class="usage-recent__out" { (side(&u["output"])) "↓" }
+        }
+    }
 }
 
 fn record_href(req: &Req, id: &str) -> String {
@@ -205,14 +213,21 @@ fn record_href(req: &Req, id: &str) -> String {
 
 fn overview(ctx: &Ctx<'_>, records: &[Value]) -> Markup {
     html! {
-        div class="usage-overview" {
+        div class="usage-overview" id="overview" {
             @if ctx.req.get("period").is_some_and(|p| PERIODS.iter().all(|(v, _)| *v != p)) {
                 (notice("warning", UNKNOWN_PERIOD))
             }
-            div class="usage-overview__period" { (period_filter(ctx)) }
+            div class="usage-overview__period" {
+                // Overview is this summary; Details is the Requests table further down the page.
+                nav class="kind-filter" aria-label="View" {
+                    a class="kind-filter__item kind-filter__item--current" href=(format!("{}#overview", ctx.req.href("/usage", &[], &[]))) aria-current="true" { "Overview" }
+                    a class="kind-filter__item" href=(format!("{}#requests", ctx.req.href("/usage", &[], &[]))) { "Details" }
+                }
+                (period_filter(ctx))
+            }
             div class="usage-overview__stats" { (stats(ctx.json(ViewName::Usage))) }
             div class="usage-overview__pair" {
-                div class="usage-overview__graph" { (crate::topology::topology(ctx.json(ViewName::Usage), ctx.json(ViewName::Latency), ctx.tz)) }
+                div class="usage-overview__graph" { (crate::topology::topology(ctx.json(ViewName::Usage), ctx.json(ViewName::Latency), ctx.tz, ctx.logos)) }
                 (recent(ctx, records))
             }
         }
@@ -297,15 +312,15 @@ fn recent(ctx: &Ctx<'_>, records: &[Value]) -> Markup {
             p class="usage-recent__none" { (EMPTY) }
         } @else {
             table class="usage-recent__table" {
-                thead { tr { th {} th { "Model" } th { "Tokens" } th { "When" } } }
+                thead { tr { th {} th { "Model" } th class="usage-recent__num" { "In / Out" } th class="usage-recent__num" { "When" } } }
                 tbody {
                     @for r in rows {
                         @let id = r["id"].as_str().unwrap_or_default();
                         tr class="usage-recent__row" {
                             td { span class=(dot(r)) title=(result_words(r)) {} }
                             td { a href=(record_href(ctx.req, id)) { (text(&r["target"])) } }
-                            td { (tokens(r)) }
-                            td { (ctx.time(r["arrived"].as_str().unwrap_or_default())) }
+                            td class="usage-recent__num" { (tokens(r)) }
+                            td class="usage-recent__num" { (ctx.time(r["arrived"].as_str().unwrap_or_default())) }
                         }
                     }
                 }
@@ -352,7 +367,7 @@ fn requests(ctx: &Ctx<'_>, records: &[Value]) -> Markup {
             p class="usage-table__older" { a href=(href) { "Older" } }
         }
     };
-    card(Some(head), body)
+    html! { div id="requests" { (card(Some(head), body)) } }
 }
 
 fn row(ctx: &Ctx<'_>, r: &Value) -> Markup {

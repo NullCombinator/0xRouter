@@ -177,3 +177,25 @@ async fn the_search_filters_cards_by_id() {
     let none = text_of(&d.ok("/providers?q=zzzz-nothing").await);
     assert!(none.contains("No provider matches"), "{none}");
 }
+
+/// "All kinds" lists the providers whose capabilities (as `providers` prints them) include the
+/// chosen kind, and the search keeps it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_kinds_menu_lists_the_providers_that_declare_the_kind() {
+    let d = Dash::dashboard().await;
+    let providers = d.view(ViewName::Providers, json!({})).await;
+    let kind = rows(&providers)
+        .iter()
+        .flat_map(|p| rows(&p["capabilities"]))
+        .filter_map(Value::as_str)
+        .find(|k| *k != "llm")
+        .expect("a fixture plugin declares a kind other than llm")
+        .to_owned();
+    let page = d.ok(&format!("/providers?has={kind}")).await;
+    for p in rows(&providers) {
+        let id = p["id"].as_str().unwrap();
+        let has = rows(&p["capabilities"]).iter().any(|c| c == kind.as_str());
+        assert_eq!(page.contains(&format!("href=\"/providers/{id}?")) || page.contains(&format!("href=\"/providers/{id}\"")), has, "{id} under {kind}");
+    }
+    assert!(page.contains(&format!("name=\"has\" value=\"{kind}\"")), "the search keeps the kind");
+}
