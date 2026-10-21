@@ -210,7 +210,7 @@ fn metered_plugin(mock: &nullrouter_engine::testkit::MockUpstream) -> String {
     toml += "[[routing.window]]\nname = \"5h\"\nlength = \"5h\"\nunit = \"weighted_tokens\"\ncapacity = 1000000\n";
     toml += "token_weights = { input = 1.0, output = 5.0, cache_read = 0.1, cache_write = 1.25 }\n";
     toml += "model_multiplier = { \"m1\" = 1.0 }\n";
-    toml += &SimQuota::quota_toml(&mock.url("/fitco/usage"), &[("5h", "weighted_tokens")]);
+    toml += &SimQuota::quota_toml(&mock.url("/fitco/usage"), &[("5h", "tokens")]);
     toml
 }
 
