@@ -148,6 +148,31 @@ value = "color-mix(in oklab, var(--color-yellow-500) 10%, transparent)"
 source = "src/shared/components/Badge.js:9"
 class = "bg-yellow-500/10"
 
+[token.color-red-50]
+value = "oklch(97.1% 0.013 17.38)"
+source = "src/app/(dashboard)/dashboard/providers/new/page.js:199"
+class = "bg-red-50"
+
+[token.color-red-100]
+value = "oklch(93.6% 0.032 17.717)"
+source = "src/shared/components/KiroSocialOAuthModal.js:189"
+class = "bg-red-100"
+
+[token.color-red-200]
+value = "oklch(88.5% 0.062 18.334)"
+source = "src/app/(dashboard)/dashboard/profile/page.js:1631"
+class = "border-red-200"
+
+[token.color-red-300]
+value = "oklch(80.8% 0.114 19.571)"
+source = "src/app/(dashboard)/dashboard/endpoint/EndpointPageClient.js:790"
+class = "border-red-300"
+
+[token.color-red-400]
+value = "oklch(70.4% 0.191 22.216)"
+source = "src/app/(dashboard)/dashboard/console-log/ConsoleLogClient.js:11"
+class = "text-red-400"
+
 [token.color-red-500]
 value = "oklch(63.7% 0.237 25.331)"
 source = "src/shared/components/Badge.js:43"
@@ -326,6 +351,18 @@ source = "src/app/globals.css:336"
 [token.nav-item-leading]
 value = "24px"
 source = "src/app/globals.css:336"
+
+[token.flow-step]
+value = "36"
+source = "src/app/globals.css:505"
+
+[token.flow-offset]
+value = "-36"
+source = "src/app/globals.css:505"
+
+[token.flow-duration]
+value = "0.75s"
+source = "src/app/globals.css:514"
 
 [token.icon-page]
 value = "1.5rem"
@@ -907,11 +944,11 @@ uses = ["space-3", "color-text-muted", "text-sm", "text-sm-leading", "font-mono"
 source = "src/shared/components/Card.js:76"
 
 [component.gauge]
-uses = ["color-green-500", "color-yellow-500", "color-red-500", "size-1-5", "color-text-main", "border-width", "color-text-muted", "text-10", "text-11", "weight-medium", "color-surface", "color-text-subtle"]
+uses = ["color-text-subtle", "color-surface-3", "color-text-muted", "border-width", "color-surface", "color-border", "color-red-50", "color-red-100", "color-red-200", "color-red-300", "color-red-400", "color-red-500", "color-red-600", "color-text-main", "color-white", "edge-last-opacity", "text-11", "text-10", "weight-medium"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:35"
 
 [component.pipe]
-uses = ["color-border", "border-width", "edge-idle-opacity", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "size-1-5", "color-border-subtle", "space-4", "edge-last-opacity", "color-text-subtle", "color-surface-2", "color-white", "color-surface-3", "color-primary"]
+uses = ["color-border", "border-width", "edge-idle-opacity", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "size-1-5", "color-border-subtle", "space-4", "edge-last-opacity", "color-text-subtle", "color-surface-2", "color-white", "color-surface-3", "color-primary", "flow-step", "flow-offset", "flow-duration"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:294"
 
 [component.topology]

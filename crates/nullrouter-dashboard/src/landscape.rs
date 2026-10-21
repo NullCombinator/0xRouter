@@ -1,8 +1,10 @@
 //! The traffic landscape on Endpoint & Key (spec 010 US3, research R9): agents on the left, the
-//! router in the centre, providers on the right, one pipe per hop with a half-dial gauge on it.
+//! router in the centre, providers on the right, one pipe per hop with a pressure gauge on it.
 //! Pipes are glass tubes that run straight into a manifold on each side of the router; the liquid
-//! in each is its agent's colour, one lane per agent on a provider's pipe.
-//! Inline SVG drawn on the server: no script, no animation, no external reference. Every number
+//! in each is its agent's colour, one lane per agent on a provider's pipe, and bubbles
+//! move through it in the direction of the traffic (a stylesheet animation, as 9router's
+//! `topology-edge-dash`; still under `prefers-reduced-motion`).
+//! Inline SVG drawn on the server: no script, no external reference. Every number
 //! on a gauge is printed as text beside it, so neither a zone nor the needle carries a fact
 //! alone (FR-027), and the `:hover`/`:focus-within` card only repeats what the page prints.
 //!
@@ -35,10 +37,15 @@ const PROVIDER_X: f64 = 680.0;
 const ROUTER_W: f64 = 110.0;
 const ROUTER_H: f64 = 44.0;
 const PITCH: f64 = 96.0;
-const DIAL_R: f64 = 14.0;
-/// The dial's face around the zones, and the neck that screws it into its pipe.
-const FACE_R: f64 = 19.0;
-const NECK: f64 = 6.0;
+/// The dial: the scale's radius, the bezel's, and the stem that screws it into its pipe. The
+/// scale sweeps `SWEEP` degrees clockwise from `START`, as a pressure gauge's does.
+const DIAL_R: f64 = 15.0;
+const FACE_R: f64 = 22.0;
+const NECK: f64 = 12.0;
+const START: f64 = 225.0;
+const SWEEP: f64 = 270.0;
+/// The scale's bands, pale to deep: 9router's red spectrum.
+const BANDS: [&str; 7] = ["red-50", "red-100", "red-200", "red-300", "red-400", "red-500", "red-600"];
 /// The manifolds: where agent pipes turn towards the router, and provider pipes leave it.
 const MANIFOLD_L: f64 = 340.0;
 const MANIFOLD_R: f64 = 570.0;
@@ -157,29 +164,51 @@ fn point(cx: f64, cy: f64, r: f64, deg: f64) -> (f64, f64) {
     (cx + r * deg.to_radians().cos(), cy - r * deg.to_radians().sin())
 }
 
-fn arc(cx: f64, cy: f64, from: f64, to: f64, class: &str) -> Markup {
-    let (x0, y0) = point(cx, cy, DIAL_R, from);
-    let (x1, y1) = point(cx, cy, DIAL_R, to);
-    html! { path class=(format!("gauge__zone gauge__zone--{class}")) d=(format!("M{x0:.1},{y0:.1} A{DIAL_R},{DIAL_R} 0 0 1 {x1:.1},{y1:.1}")) {} }
+/// The angle of `frac` (0 to 1) of full scale.
+fn scale_deg(frac: f64) -> f64 {
+    START - SWEEP * frac.clamp(0.0, 1.0)
 }
 
-/// A half dial on a hop: green to half scale, amber to 80%, red above; the needle at the median
-/// and pinned at full scale beyond it. The pair is printed above the face, the count inside it.
+fn arc(cx: f64, cy: f64, r: f64, from: f64, to: f64) -> String {
+    let (x0, y0) = point(cx, cy, r, from);
+    let (x1, y1) = point(cx, cy, r, to);
+    let large = u8::from(from - to > 180.0);
+    format!("M{x0:.1},{y0:.1} A{r},{r} 0 {large} 1 {x1:.1},{y1:.1}")
+}
+
 fn gauge(x: f64, y: f64, p50: Option<f64>, full: f64, pair_text: &str, requests: u64) -> Markup {
-    let needle = p50.map(|v| point(x, y, DIAL_R - 2.0, 180.0 - 180.0 * (v / full).clamp(0.0, 1.0)));
+    let needle = p50.map(|v| point(x, y, DIAL_R - 2.0, scale_deg(v / full)));
+    let band = SWEEP / BANDS.len() as f64;
+    let f = |v: f64| format!("{v:.1}");
     html! {
         g class="gauge" {
-            rect class="gauge__neck" x=(format!("{:.1}", x - 3.0)) y=(format!("{:.1}", y + FACE_R - 1.0)) width="6" height=(format!("{:.0}", NECK + 2.0)) {}
-            circle class="gauge__face" cx=(format!("{x:.1}")) cy=(format!("{y:.1}")) r=(format!("{FACE_R:.0}")) {}
-            (arc(x, y, 180.0, 90.0, "ok"))
-            (arc(x, y, 90.0, 36.0, "warn"))
-            (arc(x, y, 36.0, 0.0, "hot"))
-            @if let Some((nx, ny)) = needle {
-                line class="gauge__needle" x1=(format!("{x:.1}")) y1=(format!("{y:.1}")) x2=(format!("{nx:.1}")) y2=(format!("{ny:.1}")) {}
-                circle class="gauge__hub" cx=(format!("{x:.1}")) cy=(format!("{y:.1}")) r="2" {}
+            // The stem, its hex nut and the thread below it.
+            rect class="gauge__stem" x=(f(x - 3.0)) y=(f(y + FACE_R - 1.0)) width="6" height=(f(NECK + 1.0)) {}
+            rect class="gauge__nut" x=(f(x - 7.0)) y=(f(y + FACE_R + 2.0)) width="14" height="5" rx="1" {}
+            @for k in 0..2 {
+                line class="gauge__thread" x1=(f(x - 3.0)) y1=(f(y + FACE_R + 9.0 + 2.0 * f64::from(k))) x2=(f(x + 3.0)) y2=(f(y + FACE_R + 9.0 + 2.0 * f64::from(k))) {}
             }
-            text class="gauge__value" x=(format!("{x:.1}")) y=(format!("{:.1}", y - FACE_R - 5.0)) text-anchor="middle" { (pair_text) }
-            text class="gauge__small" x=(format!("{x:.1}")) y=(format!("{:.1}", y + 12.0)) text-anchor="middle" { (requests) " req" }
+            circle class="gauge__bezel" cx=(f(x)) cy=(f(y)) r=(f(FACE_R)) stroke-width="2" {}
+            circle class="gauge__face" cx=(f(x)) cy=(f(y)) r=(f(FACE_R - 3.0)) {}
+            path class="gauge__track" d=(arc(x, y, DIAL_R, START, START - SWEEP)) stroke-width="5" {}
+            @for (n, shade) in BANDS.iter().enumerate() {
+                @let from = START - band * n as f64;
+                path class=(format!("gauge__band gauge__band--{shade}")) d=(arc(x, y, DIAL_R, from, from - band)) stroke-width="3.5" {}
+            }
+            @for k in 0..=9 {
+                @let deg = START - SWEEP * f64::from(k) / 9.0;
+                @let (x0, y0) = point(x, y, DIAL_R - 3.5, deg);
+                @let (x1, y1) = point(x, y, DIAL_R - (if k % 3 == 0 { 6.5 } else { 5.0 }), deg);
+                line class="gauge__tick" x1=(f(x0)) y1=(f(y0)) x2=(f(x1)) y2=(f(y1)) {}
+            }
+            @if let Some((nx, ny)) = needle {
+                line class="gauge__needle" x1=(f(x)) y1=(f(y)) x2=(f(nx)) y2=(f(ny)) stroke-width="1.6" {}
+                circle class="gauge__hub" cx=(f(x)) cy=(f(y)) r="2.5" {}
+            }
+            path class="gauge__glare" d=(arc(x, y, FACE_R - 5.0, 160.0, 100.0)) stroke-width="2" {}
+            text class="gauge__value" x=(f(x)) y=(f(y - FACE_R - 5.0)) text-anchor="middle" {
+                (pair_text) tspan class="gauge__small" { " · " (requests) " req" }
+            }
         }
     }
 }
@@ -369,8 +398,8 @@ fn pipe_gauge(x: f64, y: f64, stat: &Value, full: f64, requests: &Value) -> Mark
 pub fn landscape(i: &Inputs<'_>) -> Markup {
     let (agents, providers) = (agents(i), providers(i));
     let rows_n = agents.len().max(providers.len()).max(1);
-    let height = rows_n as f64 * PITCH + 24.0;
-    let mid = height / 2.0 + 12.0;
+    let height = rows_n as f64 * PITCH + 48.0;
+    let mid = height / 2.0 + 24.0;
     let rx = (WIDTH - ROUTER_W) / 2.0;
     let none = rows(&i.latency["agents"]).is_empty() && rows(&i.latency["providers"]).is_empty();
     let ay: Vec<f64> = (0..agents.len()).map(|n| column_y(n, agents.len(), mid)).collect();
@@ -441,6 +470,10 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
                 @for t in &tubes { (t.line("pipe__wall", BORE + 4.0)) }
                 @for t in &tubes { (t.line("pipe__glass", BORE)) }
                 @for f in &fills { (f.run.line(&f.class, f.width)) }
+                // Traffic moving through the liquid: bubbles in it.
+                @for f in fills.iter().filter(|f| !f.class.ends_with("--idle")) {
+                    (f.run.line("pipe__bubbles", (f.width * 0.35).clamp(1.5, 3.5)))
+                }
                 @for t in tubes.iter().filter(|t| t.1 == t.3) {
                     (Run(t.0, t.1 - BORE / 2.0 + 3.5, t.2, t.3 - BORE / 2.0 + 3.5).line("pipe__shine", 2.0))
                 }
@@ -545,19 +578,20 @@ mod tests {
     #[test]
     fn the_numbers_are_printed_as_text_beside_every_gauge() {
         let html = render(&keys(), &accounts(), &latency());
-        for text in ["5 ms / 9 ms", "612 req", "5.0 s / 6.0 s", "614 req", "90 ms / 90 ms", "2 req"] {
-            assert!(html.contains(&format!(">{text}<")), "{text}\n{html}");
+        for (pair, req) in [("5 ms / 9 ms", 612), ("5.0 s / 6.0 s", 614), ("90 ms / 90 ms", 2)] {
+            let text = format!(">{pair}<tspan class=\"gauge__small\"> · {req} req<");
+            assert!(html.contains(&text), "{text}\n{html}");
         }
     }
 
     #[test]
     fn the_needle_sits_at_the_median_and_pins_beyond_full_scale() {
-        // 5 ms of 40 is 1/8: 180 - 22.5 = 157.5 degrees; 5 s of 3 s pins at 0 degrees.
-        let (x, y) = point(100.0, 100.0, DIAL_R - 2.0, 157.5);
+        // 5 ms of 40 is 1/8 of the sweep: 225 - 33.75 = 191.25 degrees; 5 s of 3 s pins at the end.
+        let (x, y) = point(100.0, 100.0, DIAL_R - 2.0, 191.25);
         let g = gauge(100.0, 100.0, Some(5.0), OVERHEAD_FULL_MS, "x", 1).into_string();
         assert!(g.contains(&format!("x2=\"{x:.1}\"")) && g.contains(&format!("y2=\"{y:.1}\"")), "{g}");
         let pinned = gauge(100.0, 100.0, Some(5000.0), TTFT_FULL_MS, "5.0 s", 1).into_string();
-        let (px, py) = point(100.0, 100.0, DIAL_R - 2.0, 0.0);
+        let (px, py) = point(100.0, 100.0, DIAL_R - 2.0, START - SWEEP);
         assert!(pinned.contains(&format!("x2=\"{px:.1}\"")) && pinned.contains(&format!("y2=\"{py:.1}\"")), "{pinned}");
         assert!(pinned.contains(">5.0 s<"), "the value beyond full scale is still printed");
         let none = gauge(100.0, 100.0, None, TTFT_FULL_MS, "none", 3).into_string();

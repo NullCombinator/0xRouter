@@ -948,16 +948,26 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .settings-list__path { font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--text-sm-leading); overflow-wrap: anywhere; }
 
 .gauge { display: block; }
-.gauge__face { fill: var(--color-surface); stroke: var(--color-text-subtle); stroke-width: var(--border-width); }
-.gauge__neck { fill: var(--color-text-subtle); }
-.gauge__zone { fill: none; stroke-width: var(--size-1-5); }
-.gauge__zone--ok { stroke: var(--color-green-500); }
-.gauge__zone--warn { stroke: var(--color-yellow-500); }
-.gauge__zone--hot { stroke: var(--color-red-500); }
-.gauge__needle { stroke: var(--color-text-main); stroke-width: var(--border-width); }
+.gauge__stem { fill: var(--color-text-subtle); }
+.gauge__nut { fill: var(--color-surface-3); stroke: var(--color-text-muted); stroke-width: var(--border-width); }
+.gauge__thread { stroke: var(--color-text-muted); stroke-width: var(--border-width); }
+.gauge__bezel { fill: var(--color-surface-3); stroke: var(--color-text-muted); }
+.gauge__face { fill: var(--color-surface); stroke: var(--color-border); stroke-width: var(--border-width); }
+.gauge__track { fill: none; stroke: var(--color-border); }
+.gauge__band { fill: none; }
+.gauge__band--red-50 { stroke: var(--color-red-50); }
+.gauge__band--red-100 { stroke: var(--color-red-100); }
+.gauge__band--red-200 { stroke: var(--color-red-200); }
+.gauge__band--red-300 { stroke: var(--color-red-300); }
+.gauge__band--red-400 { stroke: var(--color-red-400); }
+.gauge__band--red-500 { stroke: var(--color-red-500); }
+.gauge__band--red-600 { stroke: var(--color-red-600); }
+.gauge__tick { stroke: var(--color-text-subtle); stroke-width: var(--border-width); }
+.gauge__needle { stroke: var(--color-text-main); stroke-linecap: round; }
 .gauge__hub { fill: var(--color-text-main); }
+.gauge__glare { fill: none; stroke: var(--color-white); stroke-opacity: var(--edge-last-opacity); stroke-linecap: round; }
 .gauge__value { fill: var(--color-text-main); font-size: var(--text-11); font-weight: var(--weight-medium); }
-.gauge__small { fill: var(--color-text-muted); font-size: var(--text-10); }
+.gauge__small { fill: var(--color-text-muted); font-size: var(--text-10); font-weight: var(--weight-medium); }
 .pipe { fill: none; stroke: var(--color-border); stroke-opacity: var(--edge-last-opacity); }
 .pipe__wall { stroke: var(--color-text-subtle); stroke-opacity: var(--edge-last-opacity); stroke-linecap: round; }
 .pipe__glass { stroke: var(--color-surface-2); stroke-linecap: round; }
@@ -965,6 +975,20 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .pipe__collar { fill: var(--color-surface-3); stroke: var(--color-text-subtle); stroke-width: var(--border-width); }
 .pipe--router { stroke: var(--color-primary); stroke-opacity: var(--edge-idle-opacity); }
 .pipe--idle { stroke: var(--color-border); stroke-opacity: var(--edge-idle-opacity); }
+.pipe__bubbles {
+  fill: none;
+  stroke: var(--color-white);
+  stroke-opacity: var(--edge-last-opacity);
+  stroke-linecap: round;
+  stroke-dasharray: 0 var(--flow-step);
+  animation: pipe__flow var(--flow-duration) linear infinite;
+}
+@keyframes pipe__flow {
+  to { stroke-dashoffset: var(--flow-offset); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pipe__bubbles { animation: none; }
+}
 .pipe--agent-1 { stroke: var(--agent-1); }
 .pipe--agent-2 { stroke: var(--agent-2); }
 .pipe--agent-3 { stroke: var(--agent-3); }
