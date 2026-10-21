@@ -110,7 +110,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .nav-item:hover .icon { color: var(--color-primary); }
 .nav-item--current, .nav-item--current:hover { background: var(--color-primary-10); color: var(--color-primary); }
 .nav-item .icon { width: var(--icon-nav); height: var(--icon-nav); }
-.nav-item__label { font-size: var(--text-13); font-weight: var(--weight-medium); }
+.nav-item__label { font-size: var(--text-13); line-height: var(--nav-item-leading); font-weight: var(--weight-medium); }
 
 /* main: DashboardLayout.js, the content column max-w-7xl p-10 gap-8 */
 .main { position: relative; display: flex; flex: var(--flex-1); flex-direction: column; min-width: 0; }
@@ -121,7 +121,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
   width: 100%;
   max-width: var(--container-7xl);
   margin: 0 auto;
-  padding: var(--space-10);
+  padding: var(--space-6) var(--space-10) var(--space-10);
 }
 
 /* page-header: Header.js, with the "as of" line */
@@ -406,7 +406,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
   justify-content: center;
   width: var(--size-14);
   height: var(--size-14);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
   border-radius: var(--radius-brand-lg);
   background: var(--color-primary-10);
   color: var(--color-primary);
@@ -414,6 +414,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .empty__tile .icon { width: var(--icon-empty); height: var(--icon-empty); }
 .empty__title { margin-bottom: var(--space-1); color: var(--color-text-main); font-size: var(--text-base); line-height: var(--text-base-leading); font-weight: var(--weight-semibold); }
 .empty__hint { margin-bottom: var(--space-4); color: var(--color-text-muted); font-size: var(--text-sm); line-height: var(--text-sm-leading); }
+.empty__hint:last-child { margin-bottom: 0; }
 .empty__action { display: flex; justify-content: center; }
 
 /* modal: Modal.js, opened by its address; the backdrop and the close button are links */
@@ -745,7 +746,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 
 /* provider-grid, provider-card, provider-window, kind-filter, model-row, plugin-row: Providers */
 .provider-grid { display: flex; flex-direction: column; }
-.provider-grid__cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-min), var(--fr))); gap: var(--space-4); }
+.provider-grid__cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-min), var(--fr))); gap: var(--space-3); }
 .provider-grid__search { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
 .provider-grid__field {
   display: flex;
@@ -767,7 +768,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
-  padding: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border: var(--border-width) solid var(--color-border-subtle);
   border-radius: var(--radius-brand-lg);
   background: var(--color-surface);
@@ -777,8 +778,8 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .provider-card:hover { border-color: var(--color-brand-500-30); box-shadow: var(--shadow-warm); text-decoration: none; }
 .provider-card--open { border-color: var(--color-brand-500); box-shadow: var(--shadow-warm); }
 .provider-card__logo { display: flex; flex: none; }
-.provider-card__text { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
-.provider-card__id { font-size: var(--text-base); line-height: var(--text-base-leading); font-weight: var(--weight-semibold); }
+.provider-card__text { display: flex; flex-direction: column; gap: var(--space-0-5); min-width: 0; }
+.provider-card__id { font-size: var(--text-sm); line-height: var(--text-sm-leading); font-weight: var(--weight-semibold); }
 .provider-card__accounts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); color: var(--color-text-muted); font-size: var(--text-xs); line-height: var(--text-xs-leading); }
 .provider-window { display: flex; flex-direction: column; gap: var(--space-6); }
 .provider-window__head { display: flex; align-items: center; gap: var(--space-4); }
@@ -898,10 +899,11 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .key-card__key { overflow: hidden; color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--text-xs-leading); text-overflow: ellipsis; white-space: nowrap; }
 .key-card__state { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); color: var(--color-text-muted); font-size: var(--text-xs); line-height: var(--text-xs-leading); }
 .key-card__line { color: var(--color-text-muted); font-size: var(--text-xs); line-height: var(--text-xs-leading); }
-.settings-list { display: flex; flex-direction: column; }
+.settings-list { display: flex; flex-direction: column; border-top: var(--border-width) solid var(--color-border-subtle); }
 .settings-list .kv__label { color: var(--color-text-main); font-weight: var(--weight-semibold); }
 .settings-list .kv__value { padding: var(--space-1) var(--space-2-5); border-radius: var(--radius-full); background: var(--color-surface-2); font-size: var(--text-xs); line-height: var(--text-xs-leading); font-weight: var(--weight-medium); }
-.settings-list__note { margin-top: var(--space-3); color: var(--color-text-muted); font-size: var(--text-sm); line-height: var(--text-sm-leading); }
+.settings-list--plain .kv__value { padding: 0; background: transparent; font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--text-sm-leading); font-weight: var(--weight-medium); }
+.settings-list__note { display: block; color: var(--color-text-muted); font-size: var(--text-xs); line-height: var(--text-xs-leading); font-weight: var(--weight-medium); }
 .settings-list__path { font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--text-sm-leading); overflow-wrap: anywhere; }
 
 .gauge { display: block; }

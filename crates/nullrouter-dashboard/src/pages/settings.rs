@@ -73,14 +73,21 @@ fn dashboard(ctx: &Ctx<'_>, v: &Value) -> Markup {
     card(
         Some(head),
         html! {
-            div class="settings-list" {
+            div class="settings-list settings-list--plain" {
                 (kv("Status", html! { (state(v)) }))
-                (kv("Address", html! { code class="code" { (v["listen"].as_str().unwrap_or_default()) } }))
-                (kv("Token issued", match v["token_issued"].as_str() {
-                    Some(at) => ctx.time(at),
-                    None => html! { "none" },
-                }))
-                p class="settings-list__note" { (prose(CHANGE_TOKEN)) }
+                (kv("Address", html! { (v["listen"].as_str().unwrap_or_default()) }))
+                div class="kv" {
+                    span class="kv__label" {
+                        "Token issued"
+                        span class="settings-list__note" { (prose(CHANGE_TOKEN)) }
+                    }
+                    span class="kv__value" {
+                        @match v["token_issued"].as_str() {
+                            Some(at) => (ctx.time(at)),
+                            None => "none",
+                        }
+                    }
+                }
             }
         },
     )

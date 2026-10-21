@@ -10,7 +10,7 @@ use crate::page::{ViewName, Want};
 
 pub const VIEWS: &[ViewName] = &[ViewName::Check];
 
-pub const TITLE: &str = "Combos are not built yet.";
+pub const TITLE: &str = "Combos are not built yet";
 pub const HINT: &str =
     "Declare unified models today with `[[unified_model]]` in config.toml and list them with `nullrouter unified`.";
 

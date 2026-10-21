@@ -8,7 +8,7 @@ use crate::page::{ViewName, Want};
 
 pub const VIEWS: &[ViewName] = &[];
 
-pub const TITLE: &str = "Proxy pools are not built yet.";
+pub const TITLE: &str = "Proxy pools are not built yet";
 pub const HINT: &str = "0router has no proxy pool feature today.";
 
 pub fn wants(_req: &Req) -> Vec<Want> {
