@@ -29,11 +29,11 @@ pub const EMPTY: &str = "No requests in the last 24 hours";
 /// Longest name drawn in a node before it is shortened (the full text stays in the card).
 pub const SHOWN_CHARS: usize = 16;
 
-const WIDTH: f64 = 960.0;
-const NODE_W: f64 = 200.0;
+const WIDTH: f64 = 1200.0;
+const NODE_W: f64 = 190.0;
 const NODE_H: f64 = 52.0;
-const AGENT_X: f64 = 10.0;
-const PROVIDER_X: f64 = 750.0;
+const AGENT_X: f64 = 105.0;
+const PROVIDER_X: f64 = 905.0;
 const ROUTER_W: f64 = 130.0;
 const ROUTER_H: f64 = 52.0;
 const PITCH: f64 = 110.0;
@@ -42,16 +42,16 @@ const PITCH: f64 = 110.0;
 const DIAL_R: f64 = 18.0;
 const FACE_R: f64 = 25.0;
 const NECK: f64 = 10.0;
-const START: f64 = 225.0;
-const SWEEP: f64 = 270.0;
+const START: f64 = 210.0;
+const SWEEP: f64 = 240.0;
 /// The scale's bands, pale to deep: 9router's red spectrum.
 const BANDS: [&str; 7] = ["red-50", "red-100", "red-200", "red-300", "red-400", "red-500", "red-600"];
 /// The manifolds: where agent pipes turn towards the router, and provider pipes leave it.
-const MANIFOLD_L: f64 = 372.0;
-const MANIFOLD_R: f64 = 588.0;
+const MANIFOLD_L: f64 = 490.0;
+const MANIFOLD_R: f64 = 710.0;
 /// The pipe's bore, and the liquid inside it.
-const BORE: f64 = 18.0;
-const LIQUID: f64 = 12.0;
+const BORE: f64 = 20.0;
+const LIQUID: f64 = 14.0;
 /// The sheen's wavelength and period, as the mockup's `flowR`.
 const SHEEN: f64 = 80.0;
 const SHEEN_DUR: &str = "1.3s";
@@ -230,24 +230,69 @@ fn last_text(last: &Value, i: &Inputs<'_>) -> Option<String> {
     Some(format!("{} {when}{status}", last["result"].as_str()?))
 }
 
-/// The hover card over the item spanning `top`..`bottom` around `cx`: the title and every number
-/// the page prints for it. It opens towards the drawing's middle, so it covers only what is drawn
-/// before it (see the order in `landscape`), and a shade under it lifts it off the drawing.
-fn tip(cx: f64, (top, bottom): (f64, f64), mid: f64, title: &str, lines: &[String]) -> Markup {
-    let longest = lines.iter().map(|l| l.chars().count()).chain([title.chars().count()]).max().unwrap_or(0);
-    let w = (longest as f64 * 6.8 + 28.0).min(WIDTH - 8.0);
-    let h = 20.0 + 17.0 * (lines.len() as f64 + 1.0);
+/// One line of a hover card.
+enum Row {
+    /// A label on the left and its value on the right.
+    Stat(&'static str, String),
+    /// The last response, coloured by its result.
+    Last(String, bool),
+    /// A small heading over the rows after it.
+    Section(&'static str),
+    /// One agent's share: its colour, its name and its count.
+    Share(usize, String, String),
+}
+
+fn last_row(last: &Value, i: &Inputs<'_>) -> Option<Row> {
+    Some(Row::Last(last_text(last, i)?, last["result"] == "resolved"))
+}
+
+/// A hover card: title, the window it reads, a rule, then the rows. Cards are drawn in their
+/// own layer after everything else (see `landscape`), and placed towards the drawing's middle so
+/// they stay inside it.
+fn tip(cx: f64, (top, bottom): (f64, f64), mid: f64, title: &str, window: &str, rows: &[Row]) -> Markup {
+    // Text widths, near enough for the sans at 12 px.
+    let chars = |t: &str| t.chars().count() as f64;
+    let (mut label_w, mut value_w): (f64, f64) = (0.0, 0.0);
+    for r in rows {
+        let (l, v) = match r {
+            Row::Stat(l, v) => (chars(l), chars(v)),
+            Row::Last(v, _) => (chars("Last response"), chars(v)),
+            Row::Section(l) => (chars(l), 0.0),
+            Row::Share(_, l, v) => (chars(l) + 2.0, chars(v)),
+        };
+        label_w = label_w.max(l);
+        value_w = value_w.max(v);
+    }
+    let w = (32.0 + (label_w + value_w) * 6.4 + 24.0).max(chars(title) * 7.2 + 32.0).max(chars(window) * 6.0 + 32.0).min(WIDTH - 8.0);
+    let h = 62.0 + 19.0 * rows.len() as f64;
     let x = (cx - w / 2.0).clamp(4.0, WIDTH - 4.0 - w);
     let y = if (top + bottom) / 2.0 < mid { bottom + 8.0 } else { top - 8.0 - h };
     let f = |v: f64| format!("{v:.1}");
+    let (left, right) = (x + 16.0, x + w - 16.0);
     html! {
-        g class="landscape__card" {
-            rect class="landscape__shade" x=(f(x - 2.0)) y=(f(y + 6.0)) width=(f(w + 4.0)) height=(f(h)) rx="12" {}
-            rect class="landscape__shade" x=(f(x)) y=(f(y + 2.0)) width=(f(w)) height=(f(h)) rx="10" {}
-            rect class="landscape__tip" x=(f(x)) y=(f(y)) width=(f(w)) height=(f(h)) rx="10" {}
-            text class="landscape__tip-title" x=(f(x + 14.0)) y=(f(y + 22.0)) { (title) }
-            @for (n, l) in lines.iter().enumerate() {
-                text class="landscape__text" x=(f(x + 14.0)) y=(f(y + 39.0 + 17.0 * n as f64)) { (l) }
+        rect class="landscape__tip" x=(f(x)) y=(f(y)) width=(f(w)) height=(f(h)) rx="10" filter="url(#card-shadow)" {}
+        text class="landscape__tip-title" x=(f(left)) y=(f(y + 22.0)) { (title) }
+        text class="landscape__tip-window" x=(f(left)) y=(f(y + 38.0)) { (window) }
+        line class="landscape__tip-rule" x1=(f(left)) y1=(f(y + 48.0)) x2=(f(right)) y2=(f(y + 48.0)) {}
+        @for (n, r) in rows.iter().enumerate() {
+            @let ry = y + 66.0 + 19.0 * n as f64;
+            @match r {
+                Row::Stat(l, v) => {
+                    text class="landscape__tip-label" x=(f(left)) y=(f(ry)) { (l) }
+                    text class="landscape__tip-value" x=(f(right)) y=(f(ry)) text-anchor="end" { (v) }
+                }
+                Row::Last(v, ok) => {
+                    text class="landscape__tip-label" x=(f(left)) y=(f(ry)) { "Last response" }
+                    text class=(if *ok { "landscape__tip-value landscape__tip-value--ok" } else { "landscape__tip-value landscape__tip-value--failed" }) x=(f(right)) y=(f(ry)) text-anchor="end" { (v) }
+                }
+                Row::Section(l) => {
+                    text class="landscape__tip-section" x=(f(left)) y=(f(ry)) { (l) }
+                }
+                Row::Share(colour, l, v) => {
+                    circle class=(format!("landscape__swatch-dot landscape__ring--{}", agent_colour(*colour))) cx=(f(left + 3.5)) cy=(f(ry - 4.0)) r="3.5" {}
+                    text class="landscape__tip-label" x=(f(left + 12.0)) y=(f(ry)) { (l) }
+                    text class="landscape__tip-value" x=(f(right)) y=(f(ry)) text-anchor="end" { (v) }
+                }
             }
         }
     }
@@ -324,40 +369,54 @@ fn node(x: f64, y: f64, name: &str, sub: Option<&str>, m: &Mark<'_>) -> Markup {
     }
 }
 
-/// Something that shows a card while hovered or focused: its drawing, then the card over it.
-fn hot(class: &str, body: Markup, card: Markup) -> Markup {
-    html! { g class=(format!("landscape__hot {class}")) tabindex="0" { (body) (card) } }
+/// How many hover cards the stylesheet can raise to the top layer (`landscape__hot--N`); a
+/// drawing with more keeps the rest of its cards inside their items.
+const RAISED: usize = 64;
+
+/// Something that shows a card while hovered or focused, the `n`th in the drawing. Returns the
+/// item, and its card for the top layer (or `None` when the card stays in the item).
+fn hot(n: usize, class: &str, body: Markup, card: Markup) -> (Markup, Option<Markup>) {
+    if n < RAISED {
+        (
+            html! { g class=(format!("landscape__hot landscape__hot--{n} {class}")) tabindex="0" { (body) } },
+            Some(html! { g class=(format!("landscape__card landscape__card--{n}")) { (card) } }),
+        )
+    } else {
+        (html! { g class=(format!("landscape__hot {class}")) tabindex="0" { (body) g class="landscape__card" { (card) } } }, None)
+    }
 }
 
-fn agent_lines(a: &Agent<'_>, i: &Inputs<'_>) -> Vec<String> {
-    let mut lines = vec![format!("id {}", a.id)];
+fn agent_rows(a: &Agent<'_>, i: &Inputs<'_>) -> Vec<Row> {
+    let mut out = vec![Row::Stat("Key", a.id.to_owned())];
     if let Some(t) = a.tag {
-        lines.push(format!("harness {t}"));
+        out.push(Row::Stat("Harness", t.to_owned()));
     }
     if let Some(r) = a.row {
-        lines.push(format!("{} requests", r["requests"]));
-        lines.push(format!("overhead p50/p95 {}", pair(&r["overhead"])));
-        lines.push(format!("ttft p50/p95 {}", pair(&r["ttft"])));
-        if let Some(l) = last_text(&r["last"], i) {
-            lines.push(format!("last response {l}"));
-        }
+        out.push(Row::Stat("Requests", r["requests"].to_string()));
+        out.push(Row::Stat("Overhead p50 / p95", pair(&r["overhead"])));
+        out.push(Row::Stat("TTFT p50 / p95", pair(&r["ttft"])));
+        out.extend(last_row(&r["last"], i));
     }
-    lines
+    out
 }
 
-fn provider_lines(p: &Provider<'_>, i: &Inputs<'_>) -> Vec<String> {
-    let mut lines = Vec::new();
+fn provider_rows(p: &Provider<'_>, agents: &[Agent<'_>], i: &Inputs<'_>) -> Vec<Row> {
+    let mut out = Vec::new();
     if let Some(r) = p.row {
-        lines.push(format!("{} requests", r["requests"]));
-        lines.push(format!("own ttft p50/p95 {}", pair(&r["own_ttft"])));
-        if let Some(l) = last_text(&r["last"], i) {
-            lines.push(format!("last response {l}"));
+        out.push(Row::Stat("Requests", r["requests"].to_string()));
+        out.push(Row::Stat("Own TTFT p50 / p95", pair(&r["own_ttft"])));
+        out.extend(last_row(&r["last"], i));
+        let shares = rows(&r["agents"]);
+        if !shares.is_empty() {
+            out.push(Row::Section("By agent"));
         }
-        for a in rows(&r["agents"]) {
-            lines.push(format!("{} {}", a["name"].as_str().or(a["id"].as_str()).unwrap_or("?"), a["requests"]));
+        for u in shares {
+            let colour = agents.iter().find(|a| u["id"] == a.id).map_or(0, |a| a.colour);
+            let name = u["name"].as_str().or(u["id"].as_str()).unwrap_or("?").to_owned();
+            out.push(Row::Share(colour, name, u["requests"].to_string()));
         }
     }
-    lines
+    out
 }
 
 /// The line under an agent's name: its harness tag, "revoked" for a revoked key, and its
@@ -466,14 +525,20 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
     let span = |ys: &[f64]| {
         ys.iter().fold((mid, mid), |(lo, hi), y| (lo.min(*y), hi.max(*y)))
     };
-    let as_of = format!("last 24 h · as of {}", i.as_of.to_zoned(i.tz.clone()).strftime("%H:%M:%S"));
+    let window = format!("Last 24 h · as of {}", i.as_of.to_zoned(i.tz.clone()).strftime("%H:%M:%S"));
 
-    // The tubes, then the liquid in them; then everything that shows a card on hover, as
-    // (distance from the middle, drawing).
+    // The tubes, then the liquid in them; then everything that shows a card on hover, and the
+    // cards themselves, drawn last so each opens over the whole drawing.
     let mut tubes = Vec::new();
     let mut fills = Vec::new();
     let mut collars = Vec::new();
-    let mut hots: Vec<(f64, Markup)> = Vec::new();
+    let mut hots: Vec<Markup> = Vec::new();
+    let mut cards: Vec<Markup> = Vec::new();
+    let mut add = |class: &str, body: Markup, card: Markup| {
+        let (item, raised) = hot(hots.len(), class, body, card);
+        hots.push(item);
+        cards.extend(raised);
+    };
     let node_span = |y: f64| (y - NODE_H / 2.0, y + NODE_H / 2.0);
     let x0 = AGENT_X + NODE_W;
     for (a, &y) in agents.iter().zip(&ay) {
@@ -487,14 +552,13 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
         collars.push(collar(MANIFOLD_L - BORE / 2.0 - 6.0, y));
         if let Some(r) = a.row {
             let (gx, gy) = gauge_centre((x0 + MANIFOLD_L) / 2.0 - 6.0, y);
-            let lines = [format!("router overhead p50/p95 {}", pair(&r["overhead"])), format!("{} requests", r["requests"]), as_of.clone()];
+            let stats = [Row::Stat("Router overhead p50 / p95", pair(&r["overhead"])), Row::Stat("Requests", r["requests"].to_string())];
             let body = gauge(gx, gy, r["overhead"]["p50"].as_f64(), r["overhead"]["p95"].as_f64(), OVERHEAD_FULL_MS);
-            hots.push(((gy - mid).abs(), hot("gauge", body, tip(gx, gauge_span(gy), mid, &format!("{} → router", a.name), &lines))));
+            add("gauge", body, tip(gx, gauge_span(gy), mid, &format!("{} → router", a.name), &window, &stats));
         }
         let class = if a.revoked { "landscape__node landscape__node--revoked" } else { "landscape__node" };
         let body = node(AGENT_X, y, &a.name, sub_of(a).as_deref(), &Mark::Avatar(a.colour));
-        let card = tip(AGENT_X + NODE_W / 2.0, node_span(y), mid, &a.name, &agent_lines(a, i));
-        hots.push(((y - mid).abs(), hot(class, body, card)));
+        add(class, body, tip(AGENT_X + NODE_W / 2.0, node_span(y), mid, &a.name, &window, &agent_rows(a, i)));
     }
     let (lo, hi) = span(&ay);
     tubes.push(Run(MANIFOLD_L, lo, MANIFOLD_L, hi));
@@ -528,20 +592,15 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
         collars.push(collar(PROVIDER_X - 5.0, y));
         if let Some(r) = p.row {
             let (gx, gy) = gauge_centre((MANIFOLD_R + PROVIDER_X) / 2.0 + 6.0, y);
-            let mut lines = vec![format!("own ttft p50/p95 {}", pair(&r["own_ttft"])), format!("{} requests", r["requests"])];
-            lines.extend(last_text(&r["last"], i).map(|l| format!("last response {l}")));
-            lines.push(as_of.clone());
+            let mut stats = vec![Row::Stat("Own TTFT p50 / p95", pair(&r["own_ttft"])), Row::Stat("Requests", r["requests"].to_string())];
+            stats.extend(last_row(&r["last"], i));
             let body = gauge(gx, gy, r["own_ttft"]["p50"].as_f64(), r["own_ttft"]["p95"].as_f64(), TTFT_FULL_MS);
-            hots.push(((gy - mid).abs(), hot("gauge", body, tip(gx, gauge_span(gy), mid, &format!("router → {}", p.id), &lines))));
+            add("gauge", body, tip(gx, gauge_span(gy), mid, &format!("router → {}", p.id), &window, &stats));
         }
         let sub = p.row.map(|r| format!("{} req", r["requests"]));
         let body = node(PROVIDER_X, y, p.id, sub.as_deref(), &provider_mark(p.id, i.logos));
-        let card = tip(PROVIDER_X + NODE_W / 2.0, node_span(y), mid, p.id, &provider_lines(p, i));
-        hots.push(((y - mid).abs(), hot("landscape__node", body, card)));
+        add("landscape__node", body, tip(PROVIDER_X + NODE_W / 2.0, node_span(y), mid, p.id, &window, &provider_rows(p, &agents, i)));
     }
-    // Cards open towards the middle, so drawing from the middle out puts each card over
-    // everything it can reach.
-    hots.sort_by(|a, b| a.0.total_cmp(&b.0));
     let flowing: Vec<&Fill> = fills.iter().filter(|f| !f.class.ends_with("--idle")).collect();
 
     html! {
@@ -553,6 +612,10 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
                     (sheen_def("flow-left", (-SHEEN, 0.0)))
                     (sheen_def("flow-down", (0.0, SHEEN)))
                     (sheen_def("flow-up", (0.0, -SHEEN)))
+                    filter id="card-shadow" x="-20%" y="-20%" width="140%" height="160%" {
+                        feDropShadow class="landscape__shadow" dx="0" dy="8" stdDeviation="9" flood-opacity="0.16" {}
+                        feDropShadow class="landscape__shadow" dx="0" dy="1" stdDeviation="1" flood-opacity="0.06" {}
+                    }
                 }
                 // Wall, glass, liquid, shine: each layer over the whole network, so joints stay clean.
                 @for t in &tubes { (t.line("pipe__wall", BORE + 4.0)) }
@@ -573,7 +636,8 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
                     image href=(assets::href("logo-mark.png")) x=(format!("{:.1}", rx + 16.0)) y=(format!("{:.1}", mid - 14.0)) width="28" height="28" {}
                     text class="landscape__name landscape__name--router" x=(format!("{:.1}", rx + 52.0)) y=(format!("{:.1}", mid + 5.5)) { "0Router" }
                 }
-                @for (_, h) in &hots { (h) }
+                @for h in &hots { (h) }
+                g class="landscape__cards" { @for c in &cards { (c) } }
             }
             @if !agents.is_empty() {
                 ul class="landscape__legend" {
@@ -669,26 +733,29 @@ mod tests {
             assert!(html.contains(sub), "{sub}\n{html}");
         }
         // The gauge's card names the hop and both percentiles.
-        for text in [">claude-code → router<", "router overhead p50/p95 5 ms / 9 ms", ">router → anthropic<", "own ttft p50/p95 5.0 s / 6.0 s"] {
+        for text in [">claude-code → router<", ">Router overhead p50 / p95<", ">5 ms / 9 ms<", ">router → anthropic<", ">Own TTFT p50 / p95<", ">5.0 s / 6.0 s<"] {
             assert!(html.contains(text), "{text}\n{html}");
         }
         assert_eq!(html.matches("class=\"gauge__peak\"").count(), 3, "every dial marks its 95th percentile");
     }
 
     #[test]
-    fn cards_are_drawn_from_the_middle_out_and_open_towards_it() {
+    fn every_card_is_drawn_after_everything_and_shows_with_its_item() {
         let html = render(&keys(), &accounts(), &latency());
-        let svg_end = html.find("</svg>").unwrap();
-        let router = html.find("landscape__router").unwrap();
-        let first_hot = html.find("landscape__hot").unwrap();
-        assert!(router < first_hot && first_hot < svg_end, "the router is under every card");
-        assert!(!html[html.rfind("landscape__hot").unwrap()..svg_end].contains("pipe__"), "no pipe after the cards");
+        let layer = html.find("class=\"landscape__cards\"").unwrap();
+        assert!(html.rfind("landscape__hot ").unwrap() < layer, "the cards come after every item");
+        let items = html.matches("class=\"landscape__hot landscape__hot--").count();
+        assert_eq!(html[layer..].matches("class=\"landscape__card landscape__card--").count(), items);
+        for n in 0..items {
+            assert!(html.contains(&format!("landscape__hot--{n} ")) && html.contains(&format!("landscape__card--{n}\"")), "{n}");
+        }
+        assert!(items < RAISED, "the stylesheet raises every card of this drawing");
     }
 
     #[test]
     fn the_needle_sits_at_the_median_and_pins_beyond_full_scale() {
-        // 5 ms of 40 is 1/8 of the sweep: 225 - 33.75 = 191.25 degrees; 5 s of 3 s pins at the end.
-        let (x, y) = point(100.0, 100.0, DIAL_R - 2.0, 191.25);
+        // 5 ms of 40 is 1/8 of the sweep: 210 - 30 = 180 degrees; 5 s of 3 s pins at the end.
+        let (x, y) = point(100.0, 100.0, DIAL_R - 2.0, 180.0);
         let g = gauge(100.0, 100.0, Some(5.0), Some(9.0), OVERHEAD_FULL_MS).into_string();
         assert!(g.contains(&format!("x2=\"{x:.1}\"")) && g.contains(&format!("y2=\"{y:.1}\"")), "{g}");
         let pinned = gauge(100.0, 100.0, Some(5000.0), Some(6000.0), TTFT_FULL_MS).into_string();
@@ -730,8 +797,8 @@ mod tests {
     #[test]
     fn the_last_response_names_the_date_only_when_it_isnt_the_read_date() {
         let html = render(&keys(), &accounts(), &latency());
-        assert!(html.contains("last response resolved 14:01:58"), "{html}");
-        assert!(html.contains("last response failed 2026-10-05 13:00:31 (503)"), "{html}");
+        assert!(html.contains("landscape__tip-value--ok\" x=") && html.contains(">resolved 14:01:58<"), "{html}");
+        assert!(html.contains("landscape__tip-value--failed\" x=") && html.contains(">failed 2026-10-05 13:00:31 (503)<"), "{html}");
     }
 
     #[test]
@@ -753,7 +820,7 @@ mod tests {
         for (at, _) in html.match_indices("url(#") {
             let id = &html[at + 5..at + 5 + html[at + 5..].find(')').unwrap()];
             assert!(
-                (id.starts_with("avatar-") || id.starts_with("flow-")) && html.contains(&format!("id=\"{id}\"")),
+                (id.starts_with("avatar-") || id.starts_with("flow-") || id == "card-shadow") && html.contains(&format!("id=\"{id}\"")),
                 "url(#{id}) names no gradient here"
             );
         }

@@ -176,7 +176,7 @@ async fn the_landscape_prints_what_latency_prints() {
         assert!(text.contains(&latency_pair(&p["own_ttft"])), "{what}: own ttft\n{text}");
         assert!(text.contains(&format!("{} req", p["requests"])), "{what}: requests");
         assert!(
-            text.contains(&format!("last response {}", p["last"]["result"].as_str().unwrap())),
+            text.contains(&format!("Last response {}", p["last"]["result"].as_str().unwrap())),
             "{what}: last response\n{text}"
         );
         for per in p["agents"].as_array().unwrap() {

@@ -78,6 +78,11 @@ value = "#fff"
 source = "src/shared/components/Button.js:6"
 class = "text-white"
 
+[token.color-black-1]
+value = "color-mix(in oklab, #000 1%, transparent)"
+source = "src/app/(dashboard)/dashboard/media-providers/web/page.js:41"
+class = "hover:bg-black/[0.01]"
+
 [token.color-black-2]
 value = "color-mix(in oklab, #000 2%, transparent)"
 source = "src/app/(dashboard)/dashboard/providers/page.js:393"
@@ -352,6 +357,11 @@ source = "src/app/globals.css:336"
 value = "24px"
 source = "src/app/globals.css:336"
 
+[token.duration-fast]
+value = "0.15s"
+source = "src/shared/components/XiaomiMimoAuthModal.js:347"
+class = "duration-150"
+
 [token.duration-node]
 value = "0.3s"
 source = "src/app/landing/components/Features.js:117"
@@ -481,6 +491,11 @@ class = "w-14"
 value = "4rem"
 source = "src/app/(dashboard)/dashboard/combos/page.js:416"
 class = "w-16"
+
+[token.landscape-width]
+value = "1000px"
+source = "src/app/landing/components/HeroSection.js:7"
+class = "w-[1000px]"
 
 [token.size-full]
 value = "100%"
@@ -929,7 +944,7 @@ uses = ["card-min", "fr", "space-4"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:632"
 
 [component.key-card]
-uses = ["space-3", "space-4", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-soft", "opacity-disabled", "space-2", "text-base", "text-base-leading", "weight-semibold", "size-10", "radius-full", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "space-1", "flex-1", "font-mono", "text-xs", "text-xs-leading", "color-text-muted", "space-1-5"]
+uses = ["space-3", "space-4", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-soft", "opacity-disabled", "space-2", "text-base", "text-base-leading", "weight-semibold", "size-10", "radius-full", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "space-1", "flex-1", "font-mono", "text-xs", "text-xs-leading", "color-text-muted", "space-1-5", "color-black-1", "duration-fast"]
 source = "src/shared/components/Card.js:28"
 
 [component.settings-list]
@@ -949,5 +964,5 @@ uses = ["size-full", "color-surface", "color-border", "color-primary", "node-bor
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:35"
 
 [component.landscape]
-uses = ["size-full", "color-surface", "color-border", "color-primary", "border-width", "color-text-main", "color-text-muted", "text-xs", "text-10", "weight-medium", "weight-semibold", "opacity-disabled", "space-2", "text-sm", "text-sm-leading", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "space-4", "space-1-5", "text-xs-leading", "size-1-5", "radius-full", "color-border-subtle", "radius-brand-lg", "color-surface-2", "color-primary-10", "node-border-width", "color-bg", "duration-node", "text-base", "grid-opacity"]
+uses = ["size-full", "color-surface", "color-border", "color-primary", "border-width", "color-text-main", "color-text-muted", "text-xs", "text-10", "weight-medium", "weight-semibold", "opacity-disabled", "space-2", "text-sm", "text-sm-leading", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "space-4", "space-1-5", "text-xs-leading", "size-1-5", "radius-full", "color-border-subtle", "radius-brand-lg", "color-surface-2", "color-primary-10", "node-border-width", "color-bg", "duration-node", "text-base", "text-13", "text-11", "color-text-subtle", "tracking-wider", "color-green-600", "color-red-600", "landscape-width"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:35"

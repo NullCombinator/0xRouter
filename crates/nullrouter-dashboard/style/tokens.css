@@ -18,6 +18,7 @@
   --color-text-subtle: #9CA3AF;
   --color-vibrancy: rgba(255, 255, 255, 0.72);
   --color-white: #fff;
+  --color-black-1: color-mix(in oklab, #000 1%, transparent);
   --color-black-2: color-mix(in oklab, #000 2%, transparent);
   --color-black-10: color-mix(in oklab, #000 10%, transparent);
   --color-black-50: color-mix(in oklab, #000 50%, transparent);
@@ -74,6 +75,7 @@
   --code-padding: 0.1rem 0.35rem;
   --icon-default: 24px;
   --nav-item-leading: 24px;
+  --duration-fast: 0.15s;
   --duration-node: 0.3s;
   --icon-page: 1.5rem;
   --icon-card: 20px;
@@ -100,6 +102,7 @@
   --size-10: 2.5rem;
   --size-14: 3.5rem;
   --size-16: 4rem;
+  --landscape-width: 1000px;
   --size-full: 100%;
   --screen-height: 100vh;
   --sidebar-width: 18rem;
