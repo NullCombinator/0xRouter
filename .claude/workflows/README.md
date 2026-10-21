@@ -53,6 +53,7 @@ sequential or parallel batches depending on the `concurrency` argument where sup
 | `audit-rust-port.js` | `{ rust_path }` | Locate JS counterpart, run 7-section parity audit, triage findings. |
 | `optimize-perf.js` | `{ target, benchmark_cmd?, reference_impl?, speedup_target? }` | Benchmaxxing loop: baseline → hypotheses → implement → correctness → compete → refactor. |
 | `refactor-pass.js` | `{ target, benchmark_cmd? }` | ≥20% SLoC reduction with zero criterion regression gate. |
+| `mockup-to-ui.js` | `{ root?, pages?, passes?, concurrency?, implementer? }` | Dashboard look → `docs/dashboard/mockups/`: parallel per-page survey, one serial shared-file step, parallel per-page edits, one compile, final survey. |
 
 ## Scope note
 
