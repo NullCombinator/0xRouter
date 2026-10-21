@@ -251,6 +251,11 @@ impl AdapterRunner {
         let Ok(input) = serde_json::to_vec(&CallInput { ctx, parts: &parts }) else {
             return self.failed(body, FailReason::InvalidOutput { rule: Rule::NotJson }, started);
         };
+        // A stream event is small and keeps its fixed deadline; a request or answer grows.
+        let deadline = match side {
+            Side::Event => deadline,
+            Side::Request | Side::Response => crate::loader::sized_deadline(deadline, input.len()),
+        };
         let called =
             nullrouter_sandbox::call(&m.sandbox, &m.module, side.entry(), &input, deadline, m.redact.clone()).await;
         let edits = match called {

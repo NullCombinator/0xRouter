@@ -53,7 +53,8 @@ These settings are in the `[adapters]` table of the operator config. See
 | `memory_mib` | 64 | 1–512 |
 | `max_instances` | 64 | 1–4096 |
 
-`request_deadline_ms` bounds each request or response call, and `event_deadline_ms` each stream
+`request_deadline_ms` bounds each request or response call, plus 40 ms per MiB of the call's
+input, so a long conversation isn't cut off for its size. `event_deadline_ms` bounds each stream
 event call. `memory_mib` caps an adapter's linear memory, and `max_instances` sizes the pool of
 sandbox instances that calls draw from. The four limits are read when `serve` starts; restart it
 to apply a change.

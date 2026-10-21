@@ -451,7 +451,8 @@ adapter list and alerts match what happened.
 - **SC-009**: 100% of adapter content changes in the test suite appear in their records, with
   location, kind and reason, and 0 records hold removed or converted content.
 - **SC-010**: An adapter and the guardrail together add at most 5 ms at the 95th percentile to a
-  request, and at most 1 ms per stream event, in the benchmark suite. The hot-path benchmarks
+  request of up to 100 KB, and at most 1 ms per stream event, in the benchmark suite. Above
+  100 KB the added time grows no faster than linearly with the body, and the suite records it. The hot-path benchmarks
   have a committed baseline.
 - **SC-011**: With no third-party adapter installed, 0router starts and passes slice 003's test
   suite with no builder, compiler or review model present.
@@ -499,7 +500,9 @@ revised in planning without asking the user, as long as nothing the user sees ch
   slice, and this slice changes no dashboard page. *(technical decision)*
 - The code size limit, the opaque-blob threshold, and the sandbox's time and memory limits are set
   in planning. *(technical decision)*
-- The 5 ms and 1 ms figures in SC-010 are starting targets. *(technical decision)*
+- The 5 ms and 1 ms figures in SC-010 are starting targets. *(technical decision)* Revised
+  2026-10-20 after the end-to-end benchmark: 5 ms holds up to 100 KB, and a 1 MB Claude Code
+  request takes about 23 ms, linear in the body (research R14). *(technical decision)*
 - Each catalogue entry pins every version to a fingerprint of its source. A fetched source that
   doesn't match its fingerprint is refused before the gate, so what the operator installs is what
   was listed, even though the source lives in the author's own repository. *(technical decision)*

@@ -105,7 +105,7 @@ If no part matches the selectors, the host skips the call and records `not_run`
 
 | Limit | Default | On breach |
 |---|---|---|
-| Wall time per request or response call | 20 ms (epoch deadline, async yield) | `failed{deadline}` |
+| Wall time per request or response call | 20 ms plus 40 ms per MiB of call input (epoch deadline, async yield) | `failed{deadline}` |
 | Wall time per event call | 2 ms | `failed{deadline}` |
 | Linear memory | 64 MiB | `failed{memory}` |
 | Input size | 16 MiB | The call is skipped, and the outcome is `failed{invalid_output: input_too_large}` |

@@ -55,10 +55,15 @@ fn data_escape(s: &str) -> String {
 /// A module whose `zr_on_request` runs `body` (WAT instructions leaving an i64), with `data`
 /// stored where an answer would be read from.
 fn module(body: &str, data: &str) -> Vec<u8> {
+    module_pages(body, data, 1)
+}
+
+/// `module` with `pages` of 64 KiB memory, for inputs that don't fit in one.
+fn module_pages(body: &str, data: &str, pages: u32) -> Vec<u8> {
     let data = data_escape(data);
     wat::parse_str(format!(
         r#"(module
-            (memory (export "memory") 1)
+            (memory (export "memory") {pages})
             (data (i32.const {OUT_AT}) "{data}")
             (func (export "zr_alloc") (param i32) (result i32) i32.const 4096)
             (func (export "zr_on_request") (param i32 i32) (result i64) {body})
@@ -182,6 +187,33 @@ async fn a_loop_is_stopped_at_the_deadline() {
     assert_eq!(out.run.outcome, AdapterOutcome::Failed { reason: FailReason::Deadline });
     assert!(matches!(out.body, Cow::Borrowed(_)));
     assert!(started.elapsed() < Duration::from_secs(2), "the loop ran for {:?}", started.elapsed());
+}
+
+#[test]
+fn a_request_deadline_grows_with_the_call_input() {
+    use nullrouter_adapters::loader::{DEADLINE_PER_MIB, sized_deadline};
+    let base = Duration::from_millis(20);
+    assert_eq!(sized_deadline(base, 0), base);
+    assert_eq!(sized_deadline(base, 1 << 20), base + DEADLINE_PER_MIB);
+    assert_eq!(sized_deadline(base, 1 << 19), base + DEADLINE_PER_MIB / 2);
+    // The 16 MiB input limit bounds it: 20 ms + 16 × 40 ms.
+    assert_eq!(sized_deadline(base, 16 << 20), Duration::from_millis(660));
+    assert_eq!(sized_deadline(base, usize::MAX), Duration::from_millis(660));
+}
+
+#[tokio::test]
+async fn a_loop_on_a_large_input_is_still_stopped() {
+    let r = runner(&module_pages("(loop $l (br $l))\n i64.const 0", "", 32), &["messages[*]"]).with_client(chat());
+    let big = "x".repeat(1 << 20);
+    let body = json!({"model": "m1", "messages": [{"role": "user", "content": big}]});
+    let started = Instant::now();
+    let out = r.run_request(&ctx(), &body).await;
+    let ran = started.elapsed();
+    assert_eq!(out.run.outcome, AdapterOutcome::Failed { reason: FailReason::Deadline });
+    // It ran to the sized deadline (about 60 ms, not the fixed 20 ms) and was stopped there.
+    let sized = nullrouter_adapters::loader::sized_deadline(Duration::from_millis(20), 1 << 20);
+    assert!(ran >= sized, "stopped after {ran:?}, before the deadline {sized:?}");
+    assert!(ran < sized + Duration::from_millis(500), "the loop ran for {ran:?}, deadline {sized:?}");
 }
 
 #[tokio::test]

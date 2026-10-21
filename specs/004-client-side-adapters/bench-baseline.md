@@ -45,6 +45,31 @@ At 1 MB, each of those is a full pass over the body, and the parts the suite doe
 take up most of the 0.27 ms margin, or more. So SC-010 at 1 MB is not established: neither
 met nor missed.
 
+### End to end: `adapters/claude_code_request`
+
+Added after the run above to settle that question. It runs the Claude Code adapter's whole
+request side as `serve` does: extraction, call input, sandbox call, edit check and copy, and
+the verdict. `edit` has one mid-conversation system turn the adapter converts; `clean` has none,
+so the module answers no edits and the verdict is skipped. Same machine, busy (load 3 to 5).
+
+| Bench | Mean | p95 |
+|---|---|---|
+| `claude_code_request/100kb_edit` | 2.58 ms | 3.72 ms |
+| `claude_code_request/100kb_clean` | 1.92 ms | 2.65 ms |
+| `claude_code_request/1mb_edit` | about 23 ms | 26.9 ms |
+| `claude_code_request/1mb_clean` | about 18 ms | 20.9 ms |
+
+**Met up to 100 KB; missed at 1 MB by about five times.** The cost is linear, about 25 µs per
+KB. At 1 MB, timing the parts apart (median): extraction 3.0 ms, call input 8.0 ms (overstated,
+built with `json!`), sandbox call 11.6 ms, edit check and copy 2.8 ms, decoding the original
+4.7 ms, and the guardrail 5.6 ms. Each is a full pass over the body. SC-010 is revised to 5 ms
+up to 100 KB and linear above (spec, Clarifications; research R14).
+
+The sandbox call's share is guest time and counts against the deadline. At about 12 ms per MiB,
+the fixed 20 ms request deadline sent any session past about 2 MB on unedited
+(`failed{deadline}`). The deadline now adds 40 ms per MiB of call input (`loader::sized_deadline`);
+`a_four_megabyte_conversation_runs_within_the_production_deadline` fails without it.
+
 **Event side: met.** `guard_event` p95 is 0.016 ms against 1 ms. Claude Code reads no
 responses (`events = false`), so no sandbox call adds to it.
 

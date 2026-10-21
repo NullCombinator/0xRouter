@@ -21,7 +21,7 @@ use nullrouter_registry::validate::validate_style;
 use nullrouter_sandbox::wasm_hash;
 use nullrouter_wire::codec::Style;
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const HARNESS: &str = "claude-code";
 
@@ -237,4 +237,26 @@ async fn server_tool_blocks_are_removed_for_a_non_anthropic_target() {
             "{provider}/{style}"
         );
     }
+}
+
+/// A long Claude Code session runs with the production deadlines. The guest's time grows with
+/// the body (about 12 ms per MiB); with a fixed 20 ms deadline a session past about 2 MB, which
+/// tool output and images reach, went on unedited (`failed{deadline}`, bench-baseline.md).
+#[tokio::test]
+async fn a_four_megabyte_conversation_runs_within_the_production_deadline() {
+    let adapter = Adapter::load();
+    let text = "The quick brown fox jumps over the lazy dog. ".repeat(20);
+    let mut messages = vec![
+        json!({"role": "user", "content": "Fix the failing test."}),
+        json!({"role": "system", "content": "<system-reminder>Token usage: 1200/200000</system-reminder>"}),
+    ];
+    while messages.len() < 4400 {
+        let role = if messages.len().is_multiple_of(2) { "user" } else { "assistant" };
+        messages.push(json!({"role": role, "content": [{"type": "text", "text": text}]}));
+    }
+    let body = json!({"model": "claude-sonnet-4-5", "max_tokens": 1024, "stream": true, "messages": messages});
+    assert!(serde_json::to_vec(&body).unwrap().len() > 4_000_000);
+    let (got, run) = adapter.run(&ctx("anthropic", "anthropic-messages", "claude-sonnet-4-5", true), &body).await;
+    assert_ne!(got["messages"][1]["role"], "system", "the system turn is converted");
+    assert!(!run.changes.is_empty());
 }

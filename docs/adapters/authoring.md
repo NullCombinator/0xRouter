@@ -176,7 +176,7 @@ The reason codes are a closed set for ABI 1:
 
 | Limit | Value | When it's hit |
 |---|---|---|
-| Time per request or response call | 20 ms (`request_deadline_ms`) | The call fails with `deadline` |
+| Time per request or response call | 20 ms (`request_deadline_ms`), plus 40 ms per MiB of input | The call fails with `deadline` |
 | Time per event call | 2 ms (`event_deadline_ms`) | The call fails with `deadline` |
 | Linear memory | 64 MiB (`memory_mib`) | The call fails with `memory` |
 | Input, or output, from the host or the module | 16 MiB | The call is an invalid output (`input_too_large` or `output_too_large`) |

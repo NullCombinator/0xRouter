@@ -147,9 +147,14 @@ after them (spec Assumptions).
   - the `wasm_threads`, `wasm_simd` relaxed and `wasm_multi_memory` proposals are off.
 - **One `Engine`** for the process, with a pooling allocator sized for 64 concurrent instances.
 - **Time.** A ticker task bumps the engine epoch every 1 ms. Each call gets an epoch deadline
-  (default **20 ms** per request call, **2 ms** per stream-event call) and
+  (default **20 ms** per request or response call, plus **40 ms per MiB** of call input, and
+  **2 ms** per stream-event call) and
   `epoch_deadline_async_yield_and_update`. The guest therefore yields to Tokio instead of
-  blocking a worker (Constitution, Tokio rule), and it is trapped at its deadline.
+  blocking a worker (Constitution, Tokio rule), and it is trapped at its deadline. The
+  per-MiB part exists because a module parses its input: the Claude Code module spends about
+  12 ms per MiB on a loaded 4-core machine, so a fixed 20 ms let any session past about 2 MB go
+  on unedited. 40 ms per MiB keeps three times that margin, and the 16 MiB input limit caps a
+  request call at 660 ms. Events stay fixed: they are small.
 - **Memory.** A `ResourceLimiter` caps linear memory at **64 MiB**, tables at 10,000
   elements and instances at 1.
 - **Instances.** A fresh instance per call, from the pre-compiled `InstancePre`. With pooling
@@ -558,8 +563,16 @@ format):
   body;
 - `adapters/hermes_request`: a body with images.
 
-Targets (SC-010): adapter plus guardrail ≤ 5 ms p95 per request and ≤ 1 ms per event. Any
+Targets (SC-010): adapter plus guardrail ≤ 5 ms p95 per request up to 100 KB, and ≤ 1 ms per
+event. Above 100 KB the request cost grows linearly with the body, and the suite records it
+(`adapters/claude_code_request/{100kb,1mb}_{edit,clean}`, end to end through the runner). Any
 regression blocks merge (Constitution gate).
+
+The first target was 5 ms at any size. Timing the whole Claude Code request side at 1 MB
+(bench-baseline.md) gave about 23 ms mean: selector extraction 3 ms, the call input 2 to 8 ms,
+the sandbox call 12 ms (the guest parses the body), applying edits 3 ms, and the verdict's two
+decodes 10 ms. Each is a full pass over the body, so no single change brings 1 MB under 5 ms;
+reusing the verdict's decode of the original saves about a fifth and is left for later.
 
 ## R15. Claude Code adapter
 

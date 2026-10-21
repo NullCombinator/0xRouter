@@ -25,6 +25,21 @@ use crate::store::{Store, StoreError, VersionEntry, VersionId, VersionState};
 /// How long a module has on a request or a whole answer, and on one stream event (research R5).
 pub const REQUEST_DEADLINE: Duration = Duration::from_millis(20);
 pub const EVENT_DEADLINE: Duration = Duration::from_millis(2);
+/// What a request or answer call gets on top of its deadline per MiB of call input. The guest
+/// parses its input, so its time grows with the body: about 12 ms per MiB measured at load 5
+/// (bench-baseline.md). Without this, long Claude Code conversations hit the 20 ms deadline and
+/// go on unedited.
+pub const DEADLINE_PER_MIB: Duration = Duration::from_millis(40);
+
+/// The deadline for a request or answer call whose input is `input_len` bytes: `base`, plus
+/// [`DEADLINE_PER_MIB`] for each MiB of input, pro rata. Counted up to the sandbox's input limit,
+/// which refuses anything larger before the guest runs, so the extra never passes 16 × 40 ms.
+pub fn sized_deadline(base: Duration, input_len: usize) -> Duration {
+    const MIB: u128 = 1 << 20;
+    let counted = input_len.min(nullrouter_sandbox::abi::MAX_IO) as u128;
+    let extra = DEADLINE_PER_MIB.as_nanos() * counted / MIB;
+    base + Duration::from_nanos(u64::try_from(extra).unwrap_or(u64::MAX))
+}
 
 /// `adapter.toml`: what the adapter says it reads. The gate (T056) holds it to the rules in the
 /// data model; the loader only needs the selectors and which exports to demand.

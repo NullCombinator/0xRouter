@@ -7,8 +7,8 @@
 //! - `adapters/selector_extract`: `messages[*].content[*].type` over a 1 MB body.
 //! - `adapters/hermes_request`: hermes' selectors and request edits over an openai-chat body
 //!   with images.
-//! - `adapters/claude_code_request/{1mb_edit,1mb_clean}`: the Claude Code adapter's whole request
-//!   side on a 1 MB conversation, sandbox call and guardrail verdict included (SC-010 at 1 MB).
+//! - `adapters/claude_code_request/{100kb,1mb}_{edit,clean}`: the Claude Code adapter's whole
+//!   request side, sandbox call and guardrail verdict included (SC-010 end to end).
 //!   Needs `tests/fixtures/claude-code/module.wasm`; skipped without it.
 //!
 //! `cargo bench -p nullrouter-adapters --bench adapters -- --save-baseline slice-004`
@@ -136,7 +136,7 @@ fn hermes_request(c: &mut Criterion) {
     group.finish();
 }
 
-/// The whole request side of the Claude Code adapter on a 1 MB conversation, as `serve` runs
+/// The whole request side of the Claude Code adapter on 100 KB and 1 MB conversations, as `serve` runs
 /// it: selector extraction, the call input, the sandbox call, the edit check and copy, and the
 /// guardrail verdict that decodes the original body again. `edit` has one mid-conversation
 /// system turn, which the adapter converts, so the verdict runs; `clean` has none, so the
@@ -179,22 +179,27 @@ fn claude_code_request(c: &mut Criterion) {
     let mut ctx = request_context("anthropic", "anthropic-messages");
     ctx.model = "claude-sonnet-4-5".to_owned();
 
-    let clean = conversation(1_000_000);
-    let mut edit = clean.clone();
-    if let Some(messages) = edit.get_mut("messages").and_then(Value::as_array_mut) {
-        messages.insert(1, json!({"role": "system", "content": "<system-reminder>Token usage: 1200/200000</system-reminder>"}));
-    }
-
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("a Tokio runtime");
     let mut group = c.benchmark_group("adapters");
-    for (name, body, edits) in [("claude_code_request/1mb_edit", &edit, true), ("claude_code_request/1mb_clean", &clean, false)] {
-        // Check once, outside the timing, that the run takes the path its name says.
-        let out = rt.block_on(runner.run_request(&ctx, body));
-        assert_eq!(out.run.outcome, AdapterOutcome::Ran, "{name}: {:?}", out.run);
-        assert_eq!(!out.run.changes.is_empty(), edits, "{name}: changes {:?}", out.run.changes);
-        group.bench_function(name, |b| {
-            b.iter(|| black_box(rt.block_on(runner.run_request(&ctx, black_box(body))).run.outcome));
-        });
+    for (size, label) in [(100_000, "100kb"), (1_000_000, "1mb")] {
+        let clean = conversation(size);
+        let mut edit = clean.clone();
+        if let Some(messages) = edit.get_mut("messages").and_then(Value::as_array_mut) {
+            messages.insert(
+                1,
+                json!({"role": "system", "content": "<system-reminder>Token usage: 1200/200000</system-reminder>"}),
+            );
+        }
+        for (kind, body, edits) in [("edit", &edit, true), ("clean", &clean, false)] {
+            let name = format!("claude_code_request/{label}_{kind}");
+            // Check once, outside the timing, that the run takes the path its name says.
+            let out = rt.block_on(runner.run_request(&ctx, body));
+            assert_eq!(out.run.outcome, AdapterOutcome::Ran, "{name}: {:?}", out.run);
+            assert_eq!(!out.run.changes.is_empty(), edits, "{name}: changes {:?}", out.run.changes);
+            group.bench_function(&name, |b| {
+                b.iter(|| black_box(rt.block_on(runner.run_request(&ctx, black_box(body))).run.outcome));
+            });
+        }
     }
     group.finish();
 }
