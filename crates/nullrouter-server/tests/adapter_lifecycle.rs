@@ -191,6 +191,9 @@ async fn streams_in_flight_finish_on_the_old_version_and_new_requests_run_the_ap
     s.mock.respond(|r| answer(String::from_utf8_lossy(&r.body).contains("slow")));
     let v1 = install_fixture(s.home(), "acme", MANIFEST, &module("1"));
     s.engine.open_adapters().unwrap();
+    // This test is about which version serves, not about time: wide deadlines keep a loaded
+    // machine from turning a slow call into an unedited event (deadlines: wasm_runner.rs, sandbox.rs).
+    s.engine.override_adapter_deadlines(Duration::from_secs(30), Duration::from_secs(30));
     bind(&s);
     probe(&s, &v1, "1111").await;
 
