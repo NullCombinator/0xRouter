@@ -44,7 +44,7 @@ This Claude Code instance runs under an isolated identity (`claude-0router`) wit
 claude-0router      # launcher at ~/.local/bin/claude-0router
 ```
 
-The gate allows rw to `~/.claude-0router`, `~/Desktop/0router`, and standard temp paths (`/tmp`, `/dev/{null,ptmx,tty,pts,shm}`). `~/Desktop` is read-only (project browsing). `/usr`, `/bin`, `/lib`, `/etc`, and other system trees are read-only. Everything else in `$HOME` is denied. See `identity/README.md` for the full ruleset and how to recompile the gate binary.
+The gate allows rw to `~/.claude-0router`, `~/Desktop/0router`, `/mnt/storage/0router` (HDD for build output and benchmarks), and standard temp paths (`/tmp`, `/dev/{null,ptmx,tty,pts,shm}`). `~/Desktop` is read-only (project browsing). `/usr`, `/bin`, `/lib`, `/etc`, and other system trees are read-only. Everything else in `$HOME` is denied. See `identity/README.md` for the full ruleset and how to recompile the gate binary.
 
 ## Cloud sessions
 
