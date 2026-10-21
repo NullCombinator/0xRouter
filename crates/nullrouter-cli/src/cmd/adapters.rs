@@ -248,14 +248,17 @@ fn list(home: &OperatorHome, as_json: bool) -> Result<ExitCode, ExitCode> {
 
 fn print_installed(done: &Installed, hint: Option<&str>, as_json: bool) {
     let mut text = format!("{} {}: {}", done.harness, done.version, done.state);
-    if !done.reason.is_empty() {
+    if !done.reasons.is_empty() {
+        // One line per gate reason, as `gate/invalid/*.expected` lists them.
+        text = format!("{text}\n{}", done.reasons.join("\n"));
+    } else if !done.reason.is_empty() {
         text = format!("{text} ({})", done.reason);
     }
     if let Some(h) = hint {
         text = format!("{text}\n{h}");
     }
     let value = json!({"harness": done.harness, "version": done.version, "state": done.state,
-                       "reason": done.reason, "note": hint});
+                       "reason": done.reason, "reasons": done.reasons, "note": hint});
     emit(as_json, &value, &text);
 }
 

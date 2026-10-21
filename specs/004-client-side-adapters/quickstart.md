@@ -14,7 +14,9 @@ cd ~/Desktop/0router/.worktrees/004
 export CARGO_HOME=$HOME/Desktop/0router/.cargo-home
 export CARGO_TARGET_DIR=/mnt/storage/0router/target/004
 cargo build --workspace
-export NULLROUTER_HOME=$(mktemp -d)
+export NULLROUTER_HOME=$(mktemp -d)   # a Unix filesystem with a short path: not NTFS (every
+                                     # file looks mode 777 and the home is refused), and short
+                                     # enough for the operator socket (SUN_LEN, 108 bytes)
 alias nr=$CARGO_TARGET_DIR/debug/nullrouter
 ```
 
@@ -47,7 +49,9 @@ fixtures), the scrambler audit, tamper tests, the update lifecycle and hermes on
 ## 1. No adapters, no builder (FR-013, SC-011)
 
 ```bash
-PATH=/usr/bin:/bin $(command -v cargo) test -p nullrouter-server   # the slice 003 suite, builder not on PATH
+# The slice 003 suite with the builder off PATH. cargo's own directory stays: rustup's proxy
+# finds rustc there, not under the CARGO_HOME set above.
+PATH=$(dirname $(command -v cargo)):/usr/bin:/bin cargo test -p nullrouter-server
 nr serve &                                             # starts; `adapters list` shows hermes only
 ```
 

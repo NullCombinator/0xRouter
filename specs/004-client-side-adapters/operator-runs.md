@@ -210,7 +210,7 @@ Stop any `serve` you already have running first: both listen on 127.0.0.1:20129.
 | § | Run | Pass |
 |---|---|---|
 | 0 | `cargo test --workspace` (~25 to 40 min locally) | all green |
-| 1 | `PATH=/usr/bin:/bin $(command -v cargo) test -p nullrouter-server`, then `nr serve &` and `nr adapters list` | green; `serve` logs no builder or review-model warning; the list shows only hermes |
+| 1 | `PATH=$(dirname $(command -v cargo)):/usr/bin:/bin cargo test -p nullrouter-server`, then `nr serve &` and `nr adapters list` | green; `serve` logs no builder or review-model warning; the list shows only hermes |
 | 2 | `nr keys issue hermes-desktop --adapter hermes`, then `cargo test -p nullrouter-adapters --test hermes` | key printed once; tests green |
 | 3 | `nr adapters install crates/nullrouter-adapters/tests/fixtures/noop`, then `nr adapters show noop` | reaches `in_review`, then quarantined with `no_review_model`; nothing serves |
 | 4 | `cargo test -p nullrouter-adapters --test gate`, then `nr adapters install crates/nullrouter-adapters/tests/gate/invalid/multi_reason; echo $?` | green; exit 3; one line per reason, as in `gate/invalid/multi_reason.expected` |

@@ -103,6 +103,8 @@ pub struct Installed {
     pub state: store::VersionState,
     /// Why it is not further along: the refusal reasons, or `builder_not_installed`.
     pub reason: String,
+    /// The gate's refusal reasons, one per entry; empty for any other end.
+    pub reasons: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -180,7 +182,8 @@ pub async fn install(home: &Path, input: &Path, opts: &InstallOptions<'_>) -> Re
                 codes: &["gate_refused"],
             };
             log.raise(alert, jiff::Timestamp::now())?;
-            return Ok(Installed { harness: name, version: id, state: VersionState::Refused, reason });
+            let reasons = reasons.iter().map(ToString::to_string).collect();
+            return Ok(Installed { harness: name, version: id, state: VersionState::Refused, reason, reasons });
         }
     };
 
@@ -244,6 +247,7 @@ pub async fn build(
         version: id.clone(),
         state,
         reason: reason.to_owned(),
+        reasons: Vec::new(),
     };
     if !builder_present(opts.builder) {
         index.set_reason(&name, &id, "builder_not_installed")?;

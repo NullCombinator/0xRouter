@@ -1123,7 +1123,7 @@ each change by path, kind and reason, and each guardrail event, and never any co
   - Add rows to the layout table for the four crates, `adapters/community/` and
     `catalogue/`.
   - Update the "Plugin safety invariant" paragraph to point to the kit and builder paths.
-- [ ] T097 [P] *operator-run*: ask the user to run every non-live section of
+- [X] T097 [P] *operator-run*: ask the user to run every non-live section of
   `specs/004-client-side-adapters/quickstart.md`. Record any gap they report in the commit
   message.
 - [ ] T098 Final gate.

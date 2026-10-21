@@ -368,3 +368,16 @@ fn alerts_list_ack_and_ack_all_follow_the_contract() {
     let out = nr(h, &["alerts", "ack"], "");
     assert_eq!(out.status.code(), Some(2));
 }
+
+#[test]
+fn a_gate_refusal_prints_one_line_per_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let gate = concat!(env!("CARGO_MANIFEST_DIR"), "/../nullrouter-adapters/tests/gate/invalid");
+    let out = nr(dir.path(), &["adapters", "install", &format!("{gate}/multi_reason")], "");
+    assert_eq!(out.status.code(), Some(3), "{}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut lines = stdout.lines();
+    assert!(lines.next().unwrap().ends_with(": refused"), "{stdout}");
+    let expected = std::fs::read_to_string(format!("{gate}/multi_reason.expected")).unwrap();
+    assert_eq!(lines.collect::<Vec<_>>(), expected.lines().collect::<Vec<_>>());
+}
