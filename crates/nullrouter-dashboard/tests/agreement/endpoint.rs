@@ -184,7 +184,7 @@ async fn the_landscape_prints_what_latency_prints() {
             assert!(text.contains(&format!("{name} {}", per["requests"])), "{what}: {name} count\n{text}");
         }
     }
-    assert!(!html.contains("<script") && !html.contains("<animate"), "no script or animation");
+    assert!(!html.contains("<script"), "no script");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -193,7 +193,8 @@ async fn an_agents_colour_is_the_same_on_two_loads_and_after_a_key_is_appended()
     let path = dir.path().join("keys.toml");
     let d = Dash::start(dir).await;
     let colours = |html: &str| -> Vec<String> {
-        html.split("landscape__ring landscape__ring--")
+        // The legend lists the agents in key order, each in its colour (the drawing goes middle-out).
+        html.split("landscape__swatch landscape__swatch--")
             .skip(1)
             .map(|s| s.split('"').next().unwrap_or_default().to_owned())
             .collect()

@@ -352,17 +352,10 @@ source = "src/app/globals.css:336"
 value = "24px"
 source = "src/app/globals.css:336"
 
-[token.flow-step]
-value = "36"
-source = "src/app/globals.css:505"
-
-[token.flow-offset]
-value = "-36"
-source = "src/app/globals.css:505"
-
-[token.flow-duration]
-value = "0.75s"
-source = "src/app/globals.css:514"
+[token.duration-node]
+value = "0.3s"
+source = "src/app/landing/components/Features.js:117"
+class = "duration-300"
 
 [token.icon-page]
 value = "1.5rem"
@@ -944,11 +937,11 @@ uses = ["space-3", "color-text-muted", "text-sm", "text-sm-leading", "font-mono"
 source = "src/shared/components/Card.js:76"
 
 [component.gauge]
-uses = ["color-text-subtle", "color-surface-3", "color-text-muted", "border-width", "color-surface", "color-border", "color-red-50", "color-red-100", "color-red-200", "color-red-300", "color-red-400", "color-red-500", "color-red-600", "color-text-main", "color-white", "edge-last-opacity", "text-11", "text-10", "weight-medium"]
+uses = ["color-text-subtle", "color-surface-3", "color-text-muted", "border-width", "color-surface", "color-border", "color-red-50", "color-red-100", "color-red-200", "color-red-300", "color-red-400", "color-red-500", "color-red-600", "color-text-main", "color-white", "edge-last-opacity", "text-11", "text-10", "weight-medium", "weight-semibold"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:35"
 
 [component.pipe]
-uses = ["color-border", "border-width", "edge-idle-opacity", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "size-1-5", "color-border-subtle", "space-4", "edge-last-opacity", "color-text-subtle", "color-surface-2", "color-white", "color-surface-3", "color-primary", "flow-step", "flow-offset", "flow-duration"]
+uses = ["color-border", "border-width", "edge-idle-opacity", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "size-1-5", "color-border-subtle", "space-4", "edge-last-opacity", "color-text-subtle", "color-surface-2", "color-white", "color-surface-3", "color-primary", "opacity-disabled"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:294"
 
 [component.topology]
@@ -956,5 +949,5 @@ uses = ["size-full", "color-surface", "color-border", "color-primary", "node-bor
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:35"
 
 [component.landscape]
-uses = ["size-full", "color-surface", "color-border", "color-primary", "border-width", "color-text-main", "color-text-muted", "text-xs", "text-10", "weight-medium", "weight-semibold", "opacity-disabled", "space-2", "text-sm", "text-sm-leading", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "space-4", "space-1-5", "text-xs-leading", "size-1-5", "radius-full", "color-border-subtle", "radius-brand-lg", "color-surface-2", "color-primary-10", "node-border-width"]
+uses = ["size-full", "color-surface", "color-border", "color-primary", "border-width", "color-text-main", "color-text-muted", "text-xs", "text-10", "weight-medium", "weight-semibold", "opacity-disabled", "space-2", "text-sm", "text-sm-leading", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "space-4", "space-1-5", "text-xs-leading", "size-1-5", "radius-full", "color-border-subtle", "radius-brand-lg", "color-surface-2", "color-primary-10", "node-border-width", "color-bg", "duration-node", "text-base", "grid-opacity"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:35"

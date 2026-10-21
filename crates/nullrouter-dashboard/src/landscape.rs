@@ -1,12 +1,12 @@
 //! The traffic landscape on Endpoint & Key (spec 010 US3, research R9): agents on the left, the
 //! router in the centre, providers on the right, one pipe per hop with a pressure gauge on it.
 //! Pipes are glass tubes that run straight into a manifold on each side of the router; the liquid
-//! in each is its agent's colour, one lane per agent on a provider's pipe, and bubbles
-//! move through it in the direction of the traffic (a stylesheet animation, as 9router's
-//! `topology-edge-dash`; still under `prefers-reduced-motion`).
-//! Inline SVG drawn on the server: no script, no external reference. Every number
-//! on a gauge is printed as text beside it, so neither a zone nor the needle carries a fact
-//! alone (FR-027), and the `:hover`/`:focus-within` card only repeats what the page prints.
+//! in each is its agent's colour, one lane per agent on a provider's pipe, and a sheen and bubbles
+//! move through it in the direction of the traffic (SVG animation as the mockup draws it, no
+//! script; hidden under `prefers-reduced-motion`).
+//! Inline SVG drawn on the server: no script, no external reference. A dial prints its median
+//! inside and marks its 95th percentile on the scale; its request count is on the node. Hovering
+//! a node or a gauge shows a card, drawn over the rest of the drawing, with that hop's numbers.
 //!
 //! The nodes are every unrevoked key and every provider with an account, plus any revoked key or
 //! other provider with a row in the latency view (FR-020). Colours come from `agent_colour`.
@@ -27,31 +27,34 @@ pub const OVERHEAD_FULL_MS: f64 = 40.0;
 pub const TTFT_FULL_MS: f64 = 3000.0;
 pub const EMPTY: &str = "No requests in the last 24 hours";
 /// Longest name drawn in a node before it is shortened (the full text stays in the card).
-pub const SHOWN_CHARS: usize = 22;
+pub const SHOWN_CHARS: usize = 16;
 
-const WIDTH: f64 = 900.0;
-const NODE_W: f64 = 210.0;
-const NODE_H: f64 = 40.0;
+const WIDTH: f64 = 960.0;
+const NODE_W: f64 = 200.0;
+const NODE_H: f64 = 52.0;
 const AGENT_X: f64 = 10.0;
-const PROVIDER_X: f64 = 680.0;
-const ROUTER_W: f64 = 110.0;
-const ROUTER_H: f64 = 44.0;
-const PITCH: f64 = 96.0;
+const PROVIDER_X: f64 = 750.0;
+const ROUTER_W: f64 = 130.0;
+const ROUTER_H: f64 = 52.0;
+const PITCH: f64 = 110.0;
 /// The dial: the scale's radius, the bezel's, and the stem that screws it into its pipe. The
 /// scale sweeps `SWEEP` degrees clockwise from `START`, as a pressure gauge's does.
-const DIAL_R: f64 = 15.0;
-const FACE_R: f64 = 22.0;
-const NECK: f64 = 12.0;
+const DIAL_R: f64 = 18.0;
+const FACE_R: f64 = 25.0;
+const NECK: f64 = 10.0;
 const START: f64 = 225.0;
 const SWEEP: f64 = 270.0;
 /// The scale's bands, pale to deep: 9router's red spectrum.
 const BANDS: [&str; 7] = ["red-50", "red-100", "red-200", "red-300", "red-400", "red-500", "red-600"];
 /// The manifolds: where agent pipes turn towards the router, and provider pipes leave it.
-const MANIFOLD_L: f64 = 340.0;
-const MANIFOLD_R: f64 = 570.0;
+const MANIFOLD_L: f64 = 372.0;
+const MANIFOLD_R: f64 = 588.0;
 /// The pipe's bore, and the liquid inside it.
 const BORE: f64 = 18.0;
 const LIQUID: f64 = 12.0;
+/// The sheen's wavelength and period, as the mockup's `flowR`.
+const SHEEN: f64 = 80.0;
+const SHEEN_DUR: &str = "1.3s";
 
 /// What the landscape reads: three views and the page's clock.
 pub struct Inputs<'a> {
@@ -176,40 +179,41 @@ fn arc(cx: f64, cy: f64, r: f64, from: f64, to: f64) -> String {
     format!("M{x0:.1},{y0:.1} A{r},{r} 0 {large} 1 {x1:.1},{y1:.1}")
 }
 
-fn gauge(x: f64, y: f64, p50: Option<f64>, full: f64, pair_text: &str, requests: u64) -> Markup {
+fn gauge(x: f64, y: f64, p50: Option<f64>, p95: Option<f64>, full: f64) -> Markup {
     let needle = p50.map(|v| point(x, y, DIAL_R - 2.0, scale_deg(v / full)));
+    let peak = p95.map(|v| (point(x, y, DIAL_R + 3.5, scale_deg(v / full)), point(x, y, DIAL_R - 2.5, scale_deg(v / full))));
     let band = SWEEP / BANDS.len() as f64;
     let f = |v: f64| format!("{v:.1}");
     html! {
-        g class="gauge" {
-            // The stem, its hex nut and the thread below it.
-            rect class="gauge__stem" x=(f(x - 3.0)) y=(f(y + FACE_R - 1.0)) width="6" height=(f(NECK + 1.0)) {}
-            rect class="gauge__nut" x=(f(x - 7.0)) y=(f(y + FACE_R + 2.0)) width="14" height="5" rx="1" {}
-            @for k in 0..2 {
-                line class="gauge__thread" x1=(f(x - 3.0)) y1=(f(y + FACE_R + 9.0 + 2.0 * f64::from(k))) x2=(f(x + 3.0)) y2=(f(y + FACE_R + 9.0 + 2.0 * f64::from(k))) {}
-            }
-            circle class="gauge__bezel" cx=(f(x)) cy=(f(y)) r=(f(FACE_R)) stroke-width="2" {}
-            circle class="gauge__face" cx=(f(x)) cy=(f(y)) r=(f(FACE_R - 3.0)) {}
-            path class="gauge__track" d=(arc(x, y, DIAL_R, START, START - SWEEP)) stroke-width="5" {}
-            @for (n, shade) in BANDS.iter().enumerate() {
-                @let from = START - band * n as f64;
-                path class=(format!("gauge__band gauge__band--{shade}")) d=(arc(x, y, DIAL_R, from, from - band)) stroke-width="3.5" {}
-            }
-            @for k in 0..=9 {
-                @let deg = START - SWEEP * f64::from(k) / 9.0;
-                @let (x0, y0) = point(x, y, DIAL_R - 3.5, deg);
-                @let (x1, y1) = point(x, y, DIAL_R - (if k % 3 == 0 { 6.5 } else { 5.0 }), deg);
-                line class="gauge__tick" x1=(f(x0)) y1=(f(y0)) x2=(f(x1)) y2=(f(y1)) {}
-            }
-            @if let Some((nx, ny)) = needle {
-                line class="gauge__needle" x1=(f(x)) y1=(f(y)) x2=(f(nx)) y2=(f(ny)) stroke-width="1.6" {}
-                circle class="gauge__hub" cx=(f(x)) cy=(f(y)) r="2.5" {}
-            }
-            path class="gauge__glare" d=(arc(x, y, FACE_R - 5.0, 160.0, 100.0)) stroke-width="2" {}
-            text class="gauge__value" x=(f(x)) y=(f(y - FACE_R - 5.0)) text-anchor="middle" {
-                (pair_text) tspan class="gauge__small" { " · " (requests) " req" }
-            }
+        // The stem, its hex nut and the thread below it.
+        rect class="gauge__stem" x=(f(x - 3.5)) y=(f(y + FACE_R - 1.0)) width="7" height=(f(NECK + 1.0)) {}
+        rect class="gauge__nut" x=(f(x - 8.0)) y=(f(y + FACE_R + 1.0)) width="16" height="5" rx="1.5" {}
+        @for k in 0..2 {
+            @let ty = y + FACE_R + 7.5 + 2.0 * f64::from(k);
+            line class="gauge__thread" x1=(f(x - 3.5)) y1=(f(ty)) x2=(f(x + 3.5)) y2=(f(ty)) {}
         }
+        circle class="gauge__bezel" cx=(f(x)) cy=(f(y)) r=(f(FACE_R)) stroke-width="2" {}
+        circle class="gauge__face" cx=(f(x)) cy=(f(y)) r=(f(FACE_R - 3.0)) {}
+        path class="gauge__track" d=(arc(x, y, DIAL_R, START, START - SWEEP)) stroke-width="7" {}
+        @for (n, shade) in BANDS.iter().enumerate() {
+            @let from = START - band * n as f64;
+            path class=(format!("gauge__band gauge__band--{shade}")) d=(arc(x, y, DIAL_R, from, from - band)) stroke-width="4.5" {}
+        }
+        @for k in 0..=9 {
+            @let deg = START - SWEEP * f64::from(k) / 9.0;
+            @let (x0, y0) = point(x, y, DIAL_R - 4.5, deg);
+            @let (x1, y1) = point(x, y, DIAL_R - (if k % 3 == 0 { 8.5 } else { 7.0 }), deg);
+            line class="gauge__tick" x1=(f(x0)) y1=(f(y0)) x2=(f(x1)) y2=(f(y1)) {}
+        }
+        @if let Some(((ox, oy), (ix, iy))) = peak {
+            line class="gauge__peak" x1=(f(ox)) y1=(f(oy)) x2=(f(ix)) y2=(f(iy)) stroke-width="2" {}
+        }
+        @if let Some((nx, ny)) = needle {
+            line class="gauge__needle" x1=(f(x)) y1=(f(y)) x2=(f(nx)) y2=(f(ny)) stroke-width="1.8" {}
+            circle class="gauge__hub" cx=(f(x)) cy=(f(y)) r="3" {}
+        }
+        path class="gauge__glare" d=(arc(x, y, FACE_R - 5.0, 160.0, 100.0)) stroke-width="2" {}
+        text class="gauge__value" x=(f(x)) y=(f(y + 16.0)) text-anchor="middle" { (p50.map_or_else(|| "none".to_owned(), ms)) }
     }
 }
 
@@ -226,15 +230,24 @@ fn last_text(last: &Value, i: &Inputs<'_>) -> Option<String> {
     Some(format!("{} {when}{status}", last["result"].as_str()?))
 }
 
-/// The hover card: the full name and every number the page prints for the node.
-fn card(x: f64, y: f64, title: &str, lines: &[String]) -> Markup {
-    let h = 18.0 + 13.0 * (lines.len() as f64 + 1.0);
+/// The hover card over the item spanning `top`..`bottom` around `cx`: the title and every number
+/// the page prints for it. It opens towards the drawing's middle, so it covers only what is drawn
+/// before it (see the order in `landscape`), and a shade under it lifts it off the drawing.
+fn tip(cx: f64, (top, bottom): (f64, f64), mid: f64, title: &str, lines: &[String]) -> Markup {
+    let longest = lines.iter().map(|l| l.chars().count()).chain([title.chars().count()]).max().unwrap_or(0);
+    let w = (longest as f64 * 6.8 + 28.0).min(WIDTH - 8.0);
+    let h = 20.0 + 17.0 * (lines.len() as f64 + 1.0);
+    let x = (cx - w / 2.0).clamp(4.0, WIDTH - 4.0 - w);
+    let y = if (top + bottom) / 2.0 < mid { bottom + 8.0 } else { top - 8.0 - h };
+    let f = |v: f64| format!("{v:.1}");
     html! {
         g class="landscape__card" {
-            rect x=(format!("{x:.1}")) y=(format!("{y:.1}")) width="250" height=(format!("{h:.0}")) rx="6" {}
-            text class="landscape__name" x=(format!("{:.1}", x + 8.0)) y=(format!("{:.1}", y + 15.0)) { (title) }
+            rect class="landscape__shade" x=(f(x - 2.0)) y=(f(y + 6.0)) width=(f(w + 4.0)) height=(f(h)) rx="12" {}
+            rect class="landscape__shade" x=(f(x)) y=(f(y + 2.0)) width=(f(w)) height=(f(h)) rx="10" {}
+            rect class="landscape__tip" x=(f(x)) y=(f(y)) width=(f(w)) height=(f(h)) rx="10" {}
+            text class="landscape__tip-title" x=(f(x + 14.0)) y=(f(y + 22.0)) { (title) }
             @for (n, l) in lines.iter().enumerate() {
-                text class="landscape__text" x=(format!("{:.1}", x + 8.0)) y=(format!("{:.1}", y + 29.0 + 13.0 * n as f64)) { (l) }
+                text class="landscape__text" x=(f(x + 14.0)) y=(f(y + 39.0 + 17.0 * n as f64)) { (l) }
             }
         }
     }
@@ -252,10 +265,10 @@ enum Mark<'a> {
 fn avatar(cx: f64, cy: f64, n: usize) -> Markup {
     let (cx, cy) = (format!("{cx:.1}"), format!("{cy:.1}"));
     html! {
-        circle class="landscape__avatar" cx=(cx) cy=(cy) r="11" {}
-        circle cx=(cx) cy=(cy) r="11" fill=(format!("url(#avatar-{n}-a)")) {}
-        circle cx=(cx) cy=(cy) r="11" fill=(format!("url(#avatar-{n}-b)")) {}
-        circle class=(format!("landscape__ring landscape__ring--{}", agent_colour(n))) cx=(cx) cy=(cy) r="11" {}
+        circle class="landscape__avatar" cx=(cx) cy=(cy) r="15" {}
+        circle cx=(cx) cy=(cy) r="15" fill=(format!("url(#avatar-{n}-a)")) {}
+        circle cx=(cx) cy=(cy) r="15" fill=(format!("url(#avatar-{n}-b)")) {}
+        circle class=(format!("landscape__ring landscape__ring--{}", agent_colour(n))) cx=(cx) cy=(cy) r="15" {}
     }
 }
 
@@ -275,15 +288,16 @@ fn avatar_defs(n: usize) -> Markup {
 }
 
 fn mark(x: f64, y: f64, m: &Mark<'_>) -> Markup {
+    let f = |v: f64| format!("{v:.1}");
     match m {
-        Mark::Avatar(n) => avatar(x + 22.0, y, *n),
+        Mark::Avatar(n) => avatar(x + 30.0, y, *n),
         Mark::Logo(href) => html! {
-            rect class="landscape__logo-tile" x=(format!("{:.1}", x + 10.0)) y=(format!("{:.1}", y - 13.0)) width="26" height="26" rx="6" {}
-            image href=(href) x=(format!("{:.1}", x + 11.0)) y=(format!("{:.1}", y - 12.0)) width="24" height="24" {}
+            rect class="landscape__logo-tile" x=(f(x + 14.0)) y=(f(y - 16.0)) width="32" height="32" rx="8" {}
+            image href=(href) x=(f(x + 16.0)) y=(f(y - 14.0)) width="28" height="28" {}
         },
         Mark::Letters(t) => html! {
-            rect class="landscape__letters-tile" x=(format!("{:.1}", x + 10.0)) y=(format!("{:.1}", y - 13.0)) width="26" height="26" rx="6" {}
-            text class="landscape__letters" x=(format!("{:.1}", x + 23.0)) y=(format!("{:.1}", y + 4.0)) text-anchor="middle" { (t) }
+            rect class="landscape__letters-tile" x=(f(x + 14.0)) y=(f(y - 16.0)) width="32" height="32" rx="8" {}
+            text class="landscape__letters" x=(f(x + 30.0)) y=(f(y + 4.5)) text-anchor="middle" { (t) }
         },
     }
 }
@@ -295,29 +309,24 @@ fn provider_mark<'a>(id: &str, logos: &'a Index) -> Mark<'a> {
     )
 }
 
-fn node(
-    x: f64,
-    y: f64,
-    name: &str,
-    sub: Option<&str>,
-    m: &Mark<'_>,
-    revoked: bool,
-    card_lines: &[String],
-) -> Markup {
+/// A node's box, mark and name; its card is drawn with it by `hot`.
+fn node(x: f64, y: f64, name: &str, sub: Option<&str>, m: &Mark<'_>) -> Markup {
     let top = y - NODE_H / 2.0;
-    let class = if revoked { "landscape__node landscape__node--revoked" } else { "landscape__node" };
+    let f = |v: f64| format!("{v:.1}");
     html! {
-        g class=(class) tabindex="0" {
-            title { (name) }
-            rect x=(format!("{x:.1}")) y=(format!("{top:.1}")) width=(format!("{NODE_W:.0}")) height=(format!("{NODE_H:.0}")) rx="8" {}
-            (mark(x, y, m))
-            text class="landscape__name" x=(format!("{:.1}", x + 44.0)) y=(format!("{:.1}", if sub.is_some() { y - 3.0 } else { y + 5.0 })) { (short(name)) }
-            @if let Some(sub) = sub {
-                text class="landscape__tag" x=(format!("{:.1}", x + 44.0)) y=(format!("{:.1}", y + 11.0)) { (short(sub)) }
-            }
-            (card(x, top + NODE_H + 4.0, name, card_lines))
+        title { (name) }
+        rect class="landscape__box" x=(f(x)) y=(f(top)) width=(format!("{NODE_W:.0}")) height=(format!("{NODE_H:.0}")) rx="8" {}
+        (mark(x, y, m))
+        text class="landscape__name" x=(f(x + 56.0)) y=(f(if sub.is_some() { y - 2.0 } else { y + 5.5 })) { (short(name)) }
+        @if let Some(sub) = sub {
+            text class="landscape__tag" x=(f(x + 56.0)) y=(f(y + 14.0)) { (sub) }
         }
     }
+}
+
+/// Something that shows a card while hovered or focused: its drawing, then the card over it.
+fn hot(class: &str, body: Markup, card: Markup) -> Markup {
+    html! { g class=(format!("landscape__hot {class}")) tabindex="0" { (body) (card) } }
 }
 
 fn agent_lines(a: &Agent<'_>, i: &Inputs<'_>) -> Vec<String> {
@@ -351,14 +360,13 @@ fn provider_lines(p: &Provider<'_>, i: &Inputs<'_>) -> Vec<String> {
     lines
 }
 
-/// The line under an agent's name: its harness tag, and "revoked" for a revoked key.
+/// The line under an agent's name: its harness tag, "revoked" for a revoked key, and its
+/// request count when it has traffic.
 fn sub_of(a: &Agent<'_>) -> Option<String> {
-    match (a.tag, a.revoked) {
-        (Some(t), true) => Some(format!("{t} · revoked")),
-        (Some(t), false) => Some(t.to_owned()),
-        (None, true) => Some("revoked".to_owned()),
-        (None, false) => None,
-    }
+    let requests = a.row.map(|r| format!("{} req", r["requests"]));
+    let parts: Vec<String> =
+        [a.tag.map(str::to_owned), a.revoked.then(|| "revoked".to_owned()), requests].into_iter().flatten().collect();
+    (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
 /// A straight run of tube, centre line from one point to the other.
@@ -369,6 +377,52 @@ impl Run {
     fn line(self, class: &str, width: f64) -> Markup {
         let Run(x0, y0, x1, y1) = self;
         html! { line class=(class) x1=(format!("{x0:.1}")) y1=(format!("{y0:.1}")) x2=(format!("{x1:.1}")) y2=(format!("{y1:.1}")) stroke-width=(format!("{width:.1}")) {} }
+    }
+
+    /// The sheen gradient that moves the way this run's traffic goes.
+    fn sheen(self) -> &'static str {
+        let Run(x0, y0, x1, y1) = self;
+        if y0 == y1 {
+            if x1 >= x0 { "url(#flow-right)" } else { "url(#flow-left)" }
+        } else if y1 > y0 {
+            "url(#flow-down)"
+        } else {
+            "url(#flow-up)"
+        }
+    }
+
+    /// Bubbles riding the liquid from the start of the run to its end, staggered so they never
+    /// move in step: about one per 60 units, each with its own size, speed and lane.
+    fn bubbles(self, width: f64, seed: usize) -> Markup {
+        let Run(x0, y0, x1, y1) = self;
+        let len = (x1 - x0).abs() + (y1 - y0).abs();
+        let count = ((len / 60.0).ceil() as usize).clamp(1, 6);
+        let across = y0 == y1;
+        html! {
+            @for b in 0..count {
+                @let k = seed * 7 + b * 13;
+                @let r = 1.3 + (k % 5) as f64 * 0.25;
+                @let dur = len / (55.0 + (k % 4) as f64 * 9.0);
+                @let off = ((k % 3) as f64 - 1.0) * width * 0.22;
+                @let (dx, dy) = if across { (0.0, off) } else { (off, 0.0) };
+                circle class="pipe__bubble" r=(format!("{r:.2}")) {
+                    animateMotion dur=(format!("{dur:.2}s")) begin=(format!("-{:.2}s", dur * b as f64 / count as f64 + (k % 7) as f64 * 0.1)) repeatCount="indefinite"
+                        path=(format!("M{:.1},{:.1} L{:.1},{:.1}", x0 + dx, y0 + dy, x1 + dx, y1 + dy)) {}
+                }
+            }
+        }
+    }
+}
+
+/// A sheen gradient: a soft white band every `SHEEN` units, sliding along `(dx, dy)`.
+fn sheen_def(id: &str, (dx, dy): (f64, f64)) -> Markup {
+    html! {
+        linearGradient id=(id) gradientUnits="userSpaceOnUse" x1="0" y1="0" x2=(format!("{:.0}", dx.abs())) y2=(format!("{:.0}", dy.abs())) spreadMethod="repeat" {
+            stop class="pipe__sheen-stop" offset="0" {}
+            stop class="pipe__sheen-stop pipe__sheen-stop--peak" offset="0.5" {}
+            stop class="pipe__sheen-stop" offset="1" {}
+            animateTransform attributeName="gradientTransform" type="translate" from="0 0" to=(format!("{dx:.0} {dy:.0}")) dur=(SHEEN_DUR) repeatCount="indefinite" {}
+        }
     }
 }
 
@@ -388,9 +442,14 @@ fn agent_class(a: &Agent<'_>) -> String {
     if a.row.is_some() { format!("pipe pipe--{}", agent_colour(a.colour)) } else { "pipe pipe--idle".to_owned() }
 }
 
-/// The gauge on a pipe's straight run, its face above the bore on a neck.
-fn pipe_gauge(x: f64, y: f64, stat: &Value, full: f64, requests: &Value) -> Markup {
-    gauge(x, y - BORE / 2.0 - NECK - FACE_R, stat["p50"].as_f64(), full, &pair(stat), requests.as_u64().unwrap_or(0))
+/// The gauge on a pipe's straight run, its face above the bore on a neck: the dial's centre.
+fn gauge_centre(x: f64, y: f64) -> (f64, f64) {
+    (x, y - BORE / 2.0 - NECK - FACE_R)
+}
+
+/// The vertical extent of a gauge whose dial is centred at `cy`, stem included.
+fn gauge_span(cy: f64) -> (f64, f64) {
+    (cy - FACE_R, cy + FACE_R + NECK)
 }
 
 /// The landscape: nodes, pipes, gauges, the legend; below the drawing, the empty-state text when
@@ -398,8 +457,8 @@ fn pipe_gauge(x: f64, y: f64, stat: &Value, full: f64, requests: &Value) -> Mark
 pub fn landscape(i: &Inputs<'_>) -> Markup {
     let (agents, providers) = (agents(i), providers(i));
     let rows_n = agents.len().max(providers.len()).max(1);
-    let height = rows_n as f64 * PITCH + 48.0;
-    let mid = height / 2.0 + 24.0;
+    let height = rows_n as f64 * PITCH + 60.0;
+    let mid = height / 2.0 + 30.0;
     let rx = (WIDTH - ROUTER_W) / 2.0;
     let none = rows(&i.latency["agents"]).is_empty() && rows(&i.latency["providers"]).is_empty();
     let ay: Vec<f64> = (0..agents.len()).map(|n| column_y(n, agents.len(), mid)).collect();
@@ -407,12 +466,15 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
     let span = |ys: &[f64]| {
         ys.iter().fold((mid, mid), |(lo, hi), y| (lo.min(*y), hi.max(*y)))
     };
+    let as_of = format!("last 24 h · as of {}", i.as_of.to_zoned(i.tz.clone()).strftime("%H:%M:%S"));
 
-    // The tubes, then the liquid in them.
+    // The tubes, then the liquid in them; then everything that shows a card on hover, as
+    // (distance from the middle, drawing).
     let mut tubes = Vec::new();
     let mut fills = Vec::new();
     let mut collars = Vec::new();
-    let mut gauges = Vec::new();
+    let mut hots: Vec<(f64, Markup)> = Vec::new();
+    let node_span = |y: f64| (y - NODE_H / 2.0, y + NODE_H / 2.0);
     let x0 = AGENT_X + NODE_W;
     for (a, &y) in agents.iter().zip(&ay) {
         let run = Run(x0, y, MANIFOLD_L, y);
@@ -424,8 +486,15 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
         collars.push(collar(x0 + 5.0, y));
         collars.push(collar(MANIFOLD_L - BORE / 2.0 - 6.0, y));
         if let Some(r) = a.row {
-            gauges.push(pipe_gauge((x0 + MANIFOLD_L) / 2.0 - 6.0, y, &r["overhead"], OVERHEAD_FULL_MS, &r["requests"]));
+            let (gx, gy) = gauge_centre((x0 + MANIFOLD_L) / 2.0 - 6.0, y);
+            let lines = [format!("router overhead p50/p95 {}", pair(&r["overhead"])), format!("{} requests", r["requests"]), as_of.clone()];
+            let body = gauge(gx, gy, r["overhead"]["p50"].as_f64(), r["overhead"]["p95"].as_f64(), OVERHEAD_FULL_MS);
+            hots.push(((gy - mid).abs(), hot("gauge", body, tip(gx, gauge_span(gy), mid, &format!("{} → router", a.name), &lines))));
         }
+        let class = if a.revoked { "landscape__node landscape__node--revoked" } else { "landscape__node" };
+        let body = node(AGENT_X, y, &a.name, sub_of(a).as_deref(), &Mark::Avatar(a.colour));
+        let card = tip(AGENT_X + NODE_W / 2.0, node_span(y), mid, &a.name, &agent_lines(a, i));
+        hots.push(((y - mid).abs(), hot(class, body, card)));
     }
     let (lo, hi) = span(&ay);
     tubes.push(Run(MANIFOLD_L, lo, MANIFOLD_L, hi));
@@ -458,38 +527,53 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
         collars.push(collar(MANIFOLD_R + BORE / 2.0 + 6.0, y));
         collars.push(collar(PROVIDER_X - 5.0, y));
         if let Some(r) = p.row {
-            gauges.push(pipe_gauge((MANIFOLD_R + PROVIDER_X) / 2.0 + 6.0, y, &r["own_ttft"], TTFT_FULL_MS, &r["requests"]));
+            let (gx, gy) = gauge_centre((MANIFOLD_R + PROVIDER_X) / 2.0 + 6.0, y);
+            let mut lines = vec![format!("own ttft p50/p95 {}", pair(&r["own_ttft"])), format!("{} requests", r["requests"])];
+            lines.extend(last_text(&r["last"], i).map(|l| format!("last response {l}")));
+            lines.push(as_of.clone());
+            let body = gauge(gx, gy, r["own_ttft"]["p50"].as_f64(), r["own_ttft"]["p95"].as_f64(), TTFT_FULL_MS);
+            hots.push(((gy - mid).abs(), hot("gauge", body, tip(gx, gauge_span(gy), mid, &format!("router → {}", p.id), &lines))));
         }
+        let sub = p.row.map(|r| format!("{} req", r["requests"]));
+        let body = node(PROVIDER_X, y, p.id, sub.as_deref(), &provider_mark(p.id, i.logos));
+        let card = tip(PROVIDER_X + NODE_W / 2.0, node_span(y), mid, p.id, &provider_lines(p, i));
+        hots.push(((y - mid).abs(), hot("landscape__node", body, card)));
     }
+    // Cards open towards the middle, so drawing from the middle out puts each card over
+    // everything it can reach.
+    hots.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let flowing: Vec<&Fill> = fills.iter().filter(|f| !f.class.ends_with("--idle")).collect();
 
     html! {
         div class="landscape" {
             svg class="landscape__svg" viewBox=(format!("0 0 {WIDTH:.0} {height:.0}")) role="img" aria-label="Agent traffic in the last 24 hours" {
-                defs { @for n in 0..7 { (avatar_defs(n)) } }
+                defs {
+                    @for n in 0..7 { (avatar_defs(n)) }
+                    (sheen_def("flow-right", (SHEEN, 0.0)))
+                    (sheen_def("flow-left", (-SHEEN, 0.0)))
+                    (sheen_def("flow-down", (0.0, SHEEN)))
+                    (sheen_def("flow-up", (0.0, -SHEEN)))
+                }
                 // Wall, glass, liquid, shine: each layer over the whole network, so joints stay clean.
                 @for t in &tubes { (t.line("pipe__wall", BORE + 4.0)) }
                 @for t in &tubes { (t.line("pipe__glass", BORE)) }
                 @for f in &fills { (f.run.line(&f.class, f.width)) }
-                // Traffic moving through the liquid: bubbles in it.
-                @for f in fills.iter().filter(|f| !f.class.ends_with("--idle")) {
-                    (f.run.line("pipe__bubbles", (f.width * 0.35).clamp(1.5, 3.5)))
+                // Traffic moving through the liquid: a sheen over it and bubbles in it.
+                @for f in &flowing {
+                    @let Run(x0, y0, x1, y1) = f.run;
+                    line class="pipe__sheen" x1=(format!("{x0:.1}")) y1=(format!("{y0:.1}")) x2=(format!("{x1:.1}")) y2=(format!("{y1:.1}")) stroke=(f.run.sheen()) stroke-width=(format!("{:.1}", f.width)) {}
                 }
+                @for (n, f) in flowing.iter().enumerate() { (f.run.bubbles(f.width, n)) }
                 @for t in tubes.iter().filter(|t| t.1 == t.3) {
                     (Run(t.0, t.1 - BORE / 2.0 + 3.5, t.2, t.3 - BORE / 2.0 + 3.5).line("pipe__shine", 2.0))
                 }
                 @for c in &collars { (c) }
-                @for g in &gauges { (g) }
                 g class="landscape__node" {
                     rect class="landscape__router" x=(format!("{rx:.1}")) y=(format!("{:.1}", mid - ROUTER_H / 2.0)) width=(format!("{ROUTER_W:.0}")) height=(format!("{ROUTER_H:.0}")) rx="10" {}
-                    image href=(assets::href("logo-mark.png")) x=(format!("{:.1}", rx + 14.0)) y=(format!("{:.1}", mid - 11.0)) width="22" height="22" {}
-                    text class="landscape__name landscape__name--router" x=(format!("{:.1}", rx + 42.0)) y=(format!("{:.1}", mid + 5.0)) { "0Router" }
+                    image href=(assets::href("logo-mark.png")) x=(format!("{:.1}", rx + 16.0)) y=(format!("{:.1}", mid - 14.0)) width="28" height="28" {}
+                    text class="landscape__name landscape__name--router" x=(format!("{:.1}", rx + 52.0)) y=(format!("{:.1}", mid + 5.5)) { "0Router" }
                 }
-                @for (n, a) in agents.iter().enumerate() {
-                    (node(AGENT_X, ay[n], &a.name, sub_of(a).as_deref(), &Mark::Avatar(a.colour), a.revoked, &agent_lines(a, i)))
-                }
-                @for (n, p) in providers.iter().enumerate() {
-                    (node(PROVIDER_X, py[n], p.id, None, &provider_mark(p.id, i.logos), false, &provider_lines(p, i)))
-                }
+                @for (_, h) in &hots { (h) }
             }
             @if !agents.is_empty() {
                 ul class="landscape__legend" {
@@ -576,26 +660,43 @@ mod tests {
     }
 
     #[test]
-    fn the_numbers_are_printed_as_text_beside_every_gauge() {
+    fn each_dial_prints_its_median_and_each_node_its_request_count() {
         let html = render(&keys(), &accounts(), &latency());
-        for (pair, req) in [("5 ms / 9 ms", 612), ("5.0 s / 6.0 s", 614), ("90 ms / 90 ms", 2)] {
-            let text = format!(">{pair}<tspan class=\"gauge__small\"> · {req} req<");
-            assert!(html.contains(&text), "{text}\n{html}");
+        for median in ["5 ms", "5.0 s", "90 ms"] {
+            assert!(html.contains(&format!(">{median}</text>")), "{median}\n{html}");
         }
+        for sub in ["claude-code · 612 req", "revoked · 2 req", ">614 req<"] {
+            assert!(html.contains(sub), "{sub}\n{html}");
+        }
+        // The gauge's card names the hop and both percentiles.
+        for text in [">claude-code → router<", "router overhead p50/p95 5 ms / 9 ms", ">router → anthropic<", "own ttft p50/p95 5.0 s / 6.0 s"] {
+            assert!(html.contains(text), "{text}\n{html}");
+        }
+        assert_eq!(html.matches("class=\"gauge__peak\"").count(), 3, "every dial marks its 95th percentile");
+    }
+
+    #[test]
+    fn cards_are_drawn_from_the_middle_out_and_open_towards_it() {
+        let html = render(&keys(), &accounts(), &latency());
+        let svg_end = html.find("</svg>").unwrap();
+        let router = html.find("landscape__router").unwrap();
+        let first_hot = html.find("landscape__hot").unwrap();
+        assert!(router < first_hot && first_hot < svg_end, "the router is under every card");
+        assert!(!html[html.rfind("landscape__hot").unwrap()..svg_end].contains("pipe__"), "no pipe after the cards");
     }
 
     #[test]
     fn the_needle_sits_at_the_median_and_pins_beyond_full_scale() {
         // 5 ms of 40 is 1/8 of the sweep: 225 - 33.75 = 191.25 degrees; 5 s of 3 s pins at the end.
         let (x, y) = point(100.0, 100.0, DIAL_R - 2.0, 191.25);
-        let g = gauge(100.0, 100.0, Some(5.0), OVERHEAD_FULL_MS, "x", 1).into_string();
+        let g = gauge(100.0, 100.0, Some(5.0), Some(9.0), OVERHEAD_FULL_MS).into_string();
         assert!(g.contains(&format!("x2=\"{x:.1}\"")) && g.contains(&format!("y2=\"{y:.1}\"")), "{g}");
-        let pinned = gauge(100.0, 100.0, Some(5000.0), TTFT_FULL_MS, "5.0 s", 1).into_string();
+        let pinned = gauge(100.0, 100.0, Some(5000.0), Some(6000.0), TTFT_FULL_MS).into_string();
         let (px, py) = point(100.0, 100.0, DIAL_R - 2.0, START - SWEEP);
         assert!(pinned.contains(&format!("x2=\"{px:.1}\"")) && pinned.contains(&format!("y2=\"{py:.1}\"")), "{pinned}");
         assert!(pinned.contains(">5.0 s<"), "the value beyond full scale is still printed");
-        let none = gauge(100.0, 100.0, None, TTFT_FULL_MS, "none", 3).into_string();
-        assert!(!none.contains("gauge__needle") && none.contains(">none<"), "no value: no needle, and `none` printed");
+        let none = gauge(100.0, 100.0, None, None, TTFT_FULL_MS).into_string();
+        assert!(!none.contains("gauge__needle") && !none.contains("gauge__peak") && none.contains(">none<"), "no value: no needle, and `none` printed");
     }
 
     #[test]
@@ -634,10 +735,15 @@ mod tests {
     }
 
     #[test]
-    fn the_drawing_has_no_script_animation_or_external_reference() {
+    fn the_drawing_has_no_script_or_external_reference() {
         let html = render(&keys(), &accounts(), &latency());
-        for banned in ["<script", "<animate", "<style", "xlink", "http://", "https://", "onclick", "onload"] {
+        for banned in ["<script", "<style", "xlink", "http://", "https://", "onclick", "onload", "onbegin", "onend", "<set"] {
             assert!(!html.contains(banned), "{banned}\n{html}");
+        }
+        // The only animation moves the sheens and the bubbles.
+        for (at, _) in html.match_indices("<animate") {
+            let to = &html[at..];
+            assert!(to.starts_with("<animateMotion ") || to.starts_with("<animateTransform attributeName=\"gradientTransform\""), "{}", &to[..60]);
         }
         // Images only from this server's assets and logos; paint only from the drawing's own gradients.
         for (at, _) in html.match_indices("href=\"") {
@@ -646,7 +752,10 @@ mod tests {
         }
         for (at, _) in html.match_indices("url(#") {
             let id = &html[at + 5..at + 5 + html[at + 5..].find(')').unwrap()];
-            assert!(id.starts_with("avatar-") && html.contains(&format!("id=\"{id}\"")), "url(#{id}) names no gradient here");
+            assert!(
+                (id.starts_with("avatar-") || id.starts_with("flow-")) && html.contains(&format!("id=\"{id}\"")),
+                "url(#{id}) names no gradient here"
+            );
         }
     }
 

@@ -74,9 +74,7 @@
   --code-padding: 0.1rem 0.35rem;
   --icon-default: 24px;
   --nav-item-leading: 24px;
-  --flow-step: 36;
-  --flow-offset: -36;
-  --flow-duration: 0.75s;
+  --duration-node: 0.3s;
   --icon-page: 1.5rem;
   --icon-card: 20px;
   --icon-nav: 18px;
