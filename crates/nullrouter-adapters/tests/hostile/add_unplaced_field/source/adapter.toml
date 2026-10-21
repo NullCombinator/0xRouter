@@ -1,0 +1,7 @@
+harness = "hostile-add-unplaced-field"
+style = "openai-chat"
+kit = "1"
+summary = "adds a key no style rule reads (`x_smuggled`) to a tool definition"
+
+[request]
+selectors = ["tools"]

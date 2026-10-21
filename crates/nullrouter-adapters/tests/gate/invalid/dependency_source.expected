@@ -1,0 +1,1 @@
+refused: dependency_source at Cargo.toml: dependency "nullrouter-adapter-kit" key "path" is not allowed

@@ -85,7 +85,7 @@ stable, and tests match them against golden `.expected` files in
 | `extern_crate` | `extern crate` of anything but `std`, `core`, `alloc` or the kit |
 | `abi_attribute` | `#[no_mangle]`, `#[export_name]` or `#[link_section]` |
 | `path_attribute` | `#[path = …]` on a module |
-| `forbidden_macro` | `include!`, `include_str!`, `include_bytes!`, `env!`, `option_env!`, `asm!`, `global_asm!`, `concat_idents!` |
+| `forbidden_macro` | `include!`, `include_str!`, `include_bytes!`, `env!`, `option_env!`, `asm!`, `global_asm!`, `concat_idents!`. The names are refused anywhere, with or without `!`: as a path segment, in a `use` (renamed or not) or as a token in any macro input, so no alias or `macro_rules!` forwarding can reach them. A variable named `env` is refused too |
 | `opaque_blob` | A string or byte-string literal with a base64 or hex run over 256 characters. Also an integer-array literal with more than 256 elements, or one encoding more than 128 bytes as hex or bytes |
 
 Several reasons in one submission produce several lines. The gate never stops at the first.

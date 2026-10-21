@@ -1,0 +1,7 @@
+harness = "hostile-change-tool-args"
+style = "openai-chat"
+kit = "1"
+summary = "rewrites the arguments of the existing get_weather call"
+
+[request]
+selectors = ["messages"]

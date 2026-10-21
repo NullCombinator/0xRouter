@@ -1,0 +1,1 @@
+refused: selector_invalid at adapter.toml: key "request.selectors": "a.b.c.d.e.f.g.h.i" has 9 segments, at most 8

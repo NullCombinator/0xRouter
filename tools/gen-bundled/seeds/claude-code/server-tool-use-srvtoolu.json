@@ -1,0 +1,16 @@
+{
+  "model": "claude-sonnet-4-5-20250929",
+  "max_tokens": 32000,
+  "stream": true,
+  "tools": [{ "type": "web_search_20250305", "name": "web_search", "max_uses": 5 }],
+  "messages": [
+    { "role": "user", "content": "What changed in Rust 1.90?" },
+    { "role": "assistant", "content": [
+      { "type": "text", "text": "Let me search." },
+      { "type": "server_tool_use", "id": "srvtoolu_01WYG3ziw53XMcoyKL4XcZmE", "name": "web_search", "input": { "query": "Rust 1.90 release notes" } },
+      { "type": "web_search_tool_result", "tool_use_id": "srvtoolu_01WYG3ziw53XMcoyKL4XcZmE", "content": [{ "type": "web_search_result", "url": "https://blog.rust-lang.org/", "title": "Rust Blog", "encrypted_content": "abc123", "page_age": null }] },
+      { "type": "text", "text": "Rust 1.90 ships lld by default on x86_64 Linux." }
+    ] },
+    { "role": "user", "content": "Thanks." }
+  ]
+}

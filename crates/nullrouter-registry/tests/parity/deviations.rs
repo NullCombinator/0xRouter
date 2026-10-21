@@ -19,6 +19,8 @@ struct File {
 pub(crate) struct Deviation {
     provider: Option<String>,
     style: Option<String>,
+    /// A harness adapter's rows (spec 004), compared by its own parity test.
+    harness: Option<String>,
     fixture: String,
     /// Dotted path into the compared value.
     field: String,
@@ -27,7 +29,7 @@ pub(crate) struct Deviation {
 
 impl Deviation {
     fn subject(&self) -> &str {
-        self.provider.as_deref().or(self.style.as_deref()).unwrap_or_default()
+        self.provider.as_deref().or(self.style.as_deref()).or(self.harness.as_deref()).unwrap_or_default()
     }
 }
 
@@ -43,7 +45,8 @@ impl Deviations {
     fn parse(src: &str) -> Self {
         let file: File = toml::from_str(src).unwrap_or_else(|e| panic!("deviations.toml: {e}"));
         for d in &file.deviation {
-            assert!(d.provider.is_some() != d.style.is_some(), "{d:?}: set exactly one of provider or style");
+            let subjects = [&d.provider, &d.style, &d.harness].iter().filter(|s| s.is_some()).count();
+            assert_eq!(subjects, 1, "{d:?}: set exactly one of provider, style or harness");
             assert!(!d.reason.trim().is_empty(), "{d:?}: a deviation needs a reason");
         }
         Self(file.deviation)

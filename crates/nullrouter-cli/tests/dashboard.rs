@@ -9,7 +9,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use nullrouter_engine::files::DashboardToken;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 struct Out {
     code: i32,
@@ -237,14 +237,21 @@ fn status_and_check_when_the_port_is_taken() {
 #[test]
 fn off_means_the_port_is_closed() {
     let dir = tempfile::tempdir().unwrap();
-    let port = free_port();
+    // The test holds the port itself: a port only probed free can be taken by a parallel test
+    // before the assert. A server that bound it anyway would fail and record the error.
+    let held = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = held.local_addr().unwrap().port();
     config(dir.path(), &format!("enabled = false\nlisten = \"127.0.0.1:{port}\"\n"));
     let _serving = serve(dir.path());
 
     let out = nr(dir.path(), &["dashboard", "status"]);
     assert_eq!(out.code, 0);
     assert!(out.stdout.starts_with("dashboard: off (config.toml [dashboard] enabled = false)\n"), "{}", out.stdout);
-    assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_err(), "nothing listens on the dashboard port");
+    let v: Value = serde_json::from_str(&nr(dir.path(), &["--json", "dashboard", "status"]).stdout).unwrap();
+    assert_eq!((&v["serving"], &v["error"]), (&json!(false), &Value::Null), "no bind was tried: {v}");
+    let client = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let (_, from) = held.accept().unwrap();
+    assert_eq!(from, client.local_addr().unwrap(), "only the test listens on the dashboard port");
     let check = nr(dir.path(), &["check"]);
     assert!(!check.stdout.contains("dashboard not listening"), "{}", check.stdout);
 }

@@ -1,0 +1,11 @@
+harness = "unsafe-block"
+style = "openai-chat"
+kit = "1"
+summary = "Test fixture: an unsafe block inside on_request"
+
+[request]
+selectors = ["model"]
+
+[response]
+selectors = []
+events = false

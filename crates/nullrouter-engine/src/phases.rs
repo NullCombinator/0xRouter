@@ -392,8 +392,10 @@ pub fn decorate(record: &mut serde_json::Value, now: Option<f64>) {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            adapter: None,
             member: None,
             timing,
+            tally_seq: None,
         });
     }
     let running = record["outcome"] == "in_progress";
@@ -434,8 +436,10 @@ mod tests {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            adapter: None,
             member: None,
             timing: t,
+            tally_seq: None,
         }
     }
 

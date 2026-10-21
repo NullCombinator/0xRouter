@@ -1,0 +1,7 @@
+{
+  "source_fp": "sha256:6354a193d36a841f29d99dbcc1343938b003f3abc0d2c0c5e3d317f7a15b3629",
+  "wasm_hash": "sha256:cc6e7d1105585a22870c38992c035dcc1645472f543c158f37d8dc78c127b948",
+  "kit_abi": 1,
+  "toolchain": "1.93.1-wasm32-unknown-unknown",
+  "built": "2026-10-19T13:26:34.896436561Z"
+}

@@ -202,8 +202,10 @@ mod tests {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            adapter: None,
             member: None,
             timing: None,
+            tally_seq: None,
         }
     }
 

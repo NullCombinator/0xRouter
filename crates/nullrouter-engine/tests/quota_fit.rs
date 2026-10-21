@@ -45,6 +45,7 @@ fn entry(min: u64, ok: bool, w: Option<QuotaWindow>, tally: &[(&str, ModelTally)
         error: None,
         windows: w.into_iter().collect(),
         tally: tally.iter().map(|(m, t)| ((*m).to_owned(), *t)).collect::<BTreeMap<_, _>>(),
+        seq: None,
     }
 }
 

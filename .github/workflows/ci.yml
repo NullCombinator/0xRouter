@@ -34,6 +34,7 @@ jobs:
         with:
           toolchain: 1.93.1
           components: clippy
+          targets: wasm32-unknown-unknown
       # Save the cache even when tests fail, or every red run rebuilds from scratch.
       - uses: Swatinem/rust-cache@v2
         with:

@@ -1,0 +1,6 @@
+outcome = "failed"
+detail = "trap"
+side = "request"
+alert = "adapter_failed"
+suspect = false
+input = "request.json"

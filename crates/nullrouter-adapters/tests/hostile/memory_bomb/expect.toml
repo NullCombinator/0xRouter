@@ -1,0 +1,6 @@
+outcome = "failed"
+detail = "memory"
+side = "request"
+alert = "adapter_failed"
+suspect = false
+input = "request.json"

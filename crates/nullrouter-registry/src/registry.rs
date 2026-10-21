@@ -11,9 +11,9 @@ use crate::logo::Logo;
 use crate::lookup::{Catalog, derive_model_name};
 use crate::resolve::NotFound;
 use crate::schema::{
-    CapabilityKind, CapabilitySection, ContentKind, DashboardSettings, Endpoint, Model, ModelKind, ModelType,
-    PipelineSettings, ProviderEntity, ProviderSettings, RoutingSettings, SectionModel, ServerSettings, StyleFile,
-    TestSettings, WireFormat,
+    AdaptersSettings, CapabilityKind, CapabilitySection, ContentKind, DashboardSettings, Endpoint, Model, ModelKind,
+    ModelType, PipelineSettings, ProviderEntity, ProviderSettings, RoutingSettings, SectionModel, ServerSettings,
+    StyleFile, TestSettings, WireFormat,
 };
 use crate::validate::FieldPath;
 
@@ -106,6 +106,8 @@ pub struct RuntimeSettings {
     pub dashboard: DashboardSettings,
     /// `[routing]`, with target keys written as unified names or `provider-id/model`.
     pub routing: RoutingSettings,
+    /// `[adapters]` (spec 004).
+    pub adapters: AdaptersSettings,
     /// `[tests]` (spec 011).
     pub tests: TestSettings,
     /// `[connection] proxy`: the proxy every provider uses unless it or its account says

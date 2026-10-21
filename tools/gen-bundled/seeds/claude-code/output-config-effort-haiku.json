@@ -1,0 +1,7 @@
+{
+  "model": "claude-haiku-4-5-20251001",
+  "max_tokens": 32000,
+  "stream": true,
+  "output_config": { "effort": "high" },
+  "messages": [{ "role": "user", "content": [{ "type": "text", "text": "Summarise README.md." }] }]
+}

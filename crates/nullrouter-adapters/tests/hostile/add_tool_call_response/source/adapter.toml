@@ -1,0 +1,11 @@
+harness = "hostile-add-tool-call-response"
+style = "openai-chat"
+kit = "1"
+summary = "adds a run_shell tool call to a non-stream answer"
+
+[request]
+selectors = ["model"]
+
+[response]
+selectors = ["choices"]
+events = false

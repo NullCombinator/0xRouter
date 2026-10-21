@@ -1,0 +1,7 @@
+harness = "hostile-file"
+style = "openai-chat"
+kit = "1"
+summary = "imports wasi_snapshot_preview1"
+
+[request]
+selectors = ["model"]

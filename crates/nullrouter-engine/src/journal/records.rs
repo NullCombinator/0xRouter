@@ -56,7 +56,8 @@ pub fn lines_for(before: &RequestRecord, after: &RequestRecord, force_open: bool
         || before.ttft_ms != after.ttft_ms
         || before.total_ms != after.total_ms
         || before.break_handling != after.break_handling
-        || before.job != after.job;
+        || before.job != after.job
+        || before.response_adapter != after.response_adapter;
     // A job that was submitted is in progress until it is done, but its reference must survive.
     if closed && (after.outcome != Outcome::InProgress || after.job.is_some()) {
         out.push(("close", close_line(after)));
@@ -90,7 +91,7 @@ fn open_line(r: &RequestRecord) -> Value {
 }
 
 fn close_line(r: &RequestRecord) -> Value {
-    json!({
+    let mut line = json!({
         "id": r.id,
         "outcome": r.outcome,
         "served_by": r.served_by,
@@ -99,7 +100,12 @@ fn close_line(r: &RequestRecord) -> Value {
         "usage": r.usage,
         "break_handling": r.break_handling,
         "job": r.job,
-    })
+    });
+    // Only when there is one, so lines for requests without an adapter keep their old shape.
+    if let Some(a) = &r.response_adapter {
+        line["response_adapter"] = json!(a);
+    }
+    line
 }
 
 /// The segment day (`YYYY-MM-DD`) of a record that arrived at `arrived` (RFC 3339).
@@ -180,7 +186,17 @@ impl Folding {
             }
             "close" => {
                 for key in
-                    ["outcome", "served_by", "ttft_ms", "total_ms", "usage", "break_handling", "job", "recovered_at"]
+                    [
+                    "outcome",
+                    "served_by",
+                    "ttft_ms",
+                    "total_ms",
+                    "usage",
+                    "break_handling",
+                    "job",
+                    "recovered_at",
+                    "response_adapter",
+                ]
                 {
                     if let Some(v) = line.get(key) {
                         self.record.insert(key.into(), v.clone());
@@ -761,8 +777,10 @@ mod tests {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            adapter: None,
             member: None,
             timing: None,
+            tally_seq: None,
         }
     }
 
@@ -936,6 +954,44 @@ mod tests {
         assert_eq!(forget(home.path(), &Who::Agent("key_a".into()), Duration::from_secs(1)).unwrap(), 1);
         assert!(read(home.path(), &Filter::default()).is_empty());
         assert!(segments(home.path()).is_empty(), "an emptied segment is removed");
+    }
+
+    #[test]
+    fn an_adapter_run_survives_the_journal_unchanged() {
+        use crate::records::{AdapterOutcome, AdapterRun};
+        use nullrouter_adapters::apply::ContentChange;
+        use nullrouter_adapter_kit::{Kind, Reason};
+
+        let mut start = record("rq_1", "2026-10-07T09:00:00Z");
+        let mut done = start.clone();
+        let mut a = attempt(1, "max");
+        let mut run = AdapterRun::new("hermes", "builtin", AdapterOutcome::Ran);
+        run.changes.push(ContentChange {
+            path: "messages[1].reasoning_content".into(),
+            kind: Kind::Removed,
+            reason: Reason::TargetRejectsField,
+        });
+        a.adapter = Some(run.clone());
+        done.attempts.push(a);
+        done.response_adapter = Some(run);
+        done.outcome = Outcome::Succeeded;
+        start.outcome = Outcome::InProgress;
+        let blank = RequestRecord::new("rq_1".into(), start.arrived.clone(), "anthropic-messages");
+        let mut lines = lines_for(&blank, &start, true);
+        lines.extend(lines_for(&start, &done, false));
+        let folded = fold(&text(&lines));
+        assert_eq!(folded.len(), 1);
+        assert_eq!(folded[0], serde_json::to_value(&done).unwrap());
+        assert_eq!(folded[0]["attempts"][0]["adapter"]["changes"][0]["reason"], "target_rejects_field");
+    }
+
+    #[test]
+    fn lines_written_before_adapters_still_fold() {
+        let start = record("rq_2", "2026-10-07T09:00:00Z");
+        let blank = RequestRecord::new("rq_2".into(), start.arrived.clone(), "anthropic-messages");
+        let folded = fold(&text(&lines_for(&blank, &start, true)));
+        assert!(folded[0].get("response_adapter").is_none());
+        assert!(folded[0]["attempts"].as_array().is_none_or(|a| a.iter().all(|x| x.get("adapter").is_none())));
     }
 
     #[test]

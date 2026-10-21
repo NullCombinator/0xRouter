@@ -112,6 +112,7 @@ impl FitRun {
             error: None,
             windows: windows.to_vec(),
             tally,
+            seq: None,
         });
         if self.crash_next {
             self.crash_next = false;

@@ -1,0 +1,7 @@
+harness = "hostile-legit-removal"
+style = "openai-chat"
+kit = "1"
+summary = "removes `max_tokens` and `temperature`: a removal the guardrail must l"
+
+[request]
+selectors = ["max_tokens", "temperature"]

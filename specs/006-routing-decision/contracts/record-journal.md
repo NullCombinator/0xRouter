@@ -28,6 +28,10 @@ by readers. Recovery truncates a torn final line.
   before the client's last byte is sent (`close`).
 - Folding: start from `open`, append each `attempt` in `n` order, set `decision`, then apply
   `close`. Later duplicates of a line type replace earlier ones.
+- A finished attempt that was tallied carries `tally_seq`, its number in the tally's counting
+  order. The tally checkpoint and each poll entry keep the number they were read at (`seq`), so
+  crash recovery re-counts exactly the attempts after them. Lines and files written before
+  `tally_seq` existed have none, and recovery compares times for them.
 - After a crash, recovery writes `{"t":"close","id":…,"outcome":"interrupted","recovered_at":…}`.
 - No prompt content, header value or secret ever appears. `dropped` is paths only (slice 003).
   Error reasons are redacted (slice 005).

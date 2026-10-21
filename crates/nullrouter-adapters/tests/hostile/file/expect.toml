@@ -1,0 +1,7 @@
+outcome = "not_run"
+detail = "no_approved_version"
+side = "request"
+alert = "module_refused"
+suspect = false
+input = "request.json"
+note = "the load gate refuses the module (alert code load_refused); the key serves as a plain client"

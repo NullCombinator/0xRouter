@@ -29,6 +29,16 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
     for a in &report.unused_accounts {
         tracing::warn!("account {a} names a provider that isn't loaded");
     }
+    // Versions built for a kit ABI the sandbox no longer runs are flagged `rebuilding` before the
+    // adapters load, so they load as plain clients instead of failing the load gate (FR-032).
+    if let Err(e) = nullrouter_adapters::flag_rebuilds(engine.home().path()) {
+        tracing::warn!("adapter kit-upgrade check failed: {e}");
+    }
+    // An `adapters/` other users can enter is refused here, before anything listens.
+    engine.open_adapters().map_err(|e| {
+        eprintln!("startup failed: {e}");
+        ExitCode::from(1)
+    })?;
     let listen = listen.unwrap_or_else(|| engine.snapshot().settings().server.listen.clone());
     let home = engine.home().clone();
     let engine = Arc::new(engine);
@@ -48,10 +58,31 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
         if let Ok(addr) = listener.local_addr() {
             engine.status.set_client_listen(addr.to_string());
         }
+        // The operator socket appearing means the server is ready, so the journal is made whole
+        // first: until then no client of the socket can read a request a crash left open as
+        // still in flight.
+        serve::recover_journal(&engine).await;
         let socket = operator::bind(&home).map_err(|e| {
             eprintln!("cannot open the operator socket: {e}");
             ExitCode::from(1)
         })?;
+        // Reviews a stopped server left `in_review` start again now: queuing needs the runtime.
+        engine.resume_reviews();
+        // Kit-upgrade rebuilds run in the background; the server serves meanwhile.
+        let rebuilder = engine.clone();
+        tokio::spawn(async move {
+            let builder = rebuilder.snapshot().settings().adapters.builder.clone();
+            let opts = nullrouter_adapters::InstallOptions {
+                styles: &[],
+                builder: builder.as_deref(),
+                origin: nullrouter_adapters::store::Origin::Local("kit-upgrade".into()),
+                build_timeout: nullrouter_adapters::BUILD_TIMEOUT,
+            };
+            let reload = || rebuilder.refresh_adapters();
+            if let Err(e) = nullrouter_adapters::startup_rebuilds(rebuilder.home().path(), &opts, &reload).await {
+                tracing::warn!("adapter kit-upgrade rebuild failed: {e}");
+            }
+        });
         let (stop, stopped) = tokio::sync::watch::channel(false);
         let until_stopped = |mut stopped: tokio::sync::watch::Receiver<bool>| async move {
             let _ = stopped.wait_for(|s| *s).await;
@@ -75,7 +106,7 @@ pub(crate) fn run(home: Option<PathBuf>, listen: Option<String>) -> Result<ExitC
         .await;
         let ops = tokio::spawn(operator::serve(engine, socket, until_stopped(stopped)));
         tracing::info!("listening on {listen}");
-        let served = serve::run(app, listener, serve::signal()).await;
+        let served = serve::serve_recovered(app, listener, serve::signal()).await;
         let _ = stop.send(true);
         let _ = ops.await;
         dashboard.stopped().await;

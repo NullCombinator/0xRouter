@@ -15,7 +15,13 @@ Workspace layout:
 | `crates/nullrouter-engine` | Request engine: operator state snapshot, attempt loop (classification, retry, fallback, stay-warm), upstream calls, request records |
 | `crates/nullrouter-server` | HTTP surface over the engine: style-built routes, access-key check, streaming relay, model lists, token counts, operator socket, read model (`views`) |
 | `crates/nullrouter-dashboard` | Read-only web dashboard served by `serve`: access, pages, style tokens, assets |
-| `crates/nullrouter-cli` | `nullrouter` CLI: `serve`, `accounts`, `keys`, `behaviour`, `records`, `plugins`, `check`, `validate`, `resolve`, `unified`, `model`, `providers` |
+| `crates/nullrouter-adapter-kit` | The adapter kit: the only crate a third-party adapter may depend on (types, edits, the WASM ABI in `abi.rs`) |
+| `crates/nullrouter-sandbox` | The adapter sandbox: a wasmtime host with a fresh instance per call, no network, filesystem or secrets |
+| `crates/nullrouter-adapters` | Harness adapters: built-in hermes, and the third-party pipeline (gate, store, build, review, guardrail, catalogue client, alerts) |
+| `crates/nullrouter-builder` | `nullrouter-builder`: compiles reviewed adapter source to WASM offline, against the embedded kit |
+| `crates/nullrouter-cli` | `nullrouter` CLI: `serve`, `accounts`, `keys`, `behaviour`, `records`, `adapters`, `catalogue`, `alerts`, `plugins`, `check`, `validate`, `resolve`, `unified`, `model`, `providers` |
+| `adapters/community/` | Third-party harness adapter sources (Rust, kit only), such as `claude-code`; built by the builder, never by the workspace |
+| `catalogue/` | `index.toml`: the adapter catalogue (versions, archive URLs, sha256, source fingerprints) |
 | `plugins/bundled/` | The seven bundled providers (schema 2 TOML): seeded from `ref/9router` by the generator, then maintained by hand |
 | `plugins/community/` | The other 114 providers, generated from `ref/9router`; embedded, fit-checked, and installed on request |
 | `styles/bundled/` | The four client API styles (Chat Completions, Messages, Responses, Gemini): data files read by `nullrouter-wire` |
@@ -169,9 +175,9 @@ The 10 recurring patterns in 9router and their Rust equivalents are catalogued i
 
 - A **provider plugin** is **data, not code**. It declares endpoints, auth schemes, model IDs, and parameter mappings in a TOML file, and the core alone acts on those declarations. If a provider needs code, it belongs in the core as a built-in.
 - A **harness adapter** handles one client harness's quirks and may be code, but only sandboxed code. Built-in adapters (hermes) are core code. A third-party adapter:
-  - ships as Rust source only, depends only on 0router's adapter kit (no other crates, build scripts or proc macros), and is compiled to WASM by a builder service separate from the core;
-  - runs only inside the sandbox, and only if its source matches the reviewed source;
+  - ships as Rust source only, depends only on 0router's adapter kit (`crates/nullrouter-adapter-kit`; no other crates, build scripts or proc macros, enforced by `crates/nullrouter-adapters/src/gate.rs`), and is compiled to WASM by a builder service separate from the core (`crates/nullrouter-builder`);
+  - runs only inside the sandbox (`crates/nullrouter-sandbox`), and only if its source matches the reviewed source;
   - goes live only after an operator-decided review; it never updates automatically, and the previous version keeps serving meanwhile;
-  - is checked on every request by a rule-based guardrail: if it adds or changes a tool call, the core drops its changes and sends the unmodified request.
+  - is checked on every request by a rule-based guardrail (`crates/nullrouter-adapters/src/guard.rs`): if it adds or changes a tool call, the core drops its changes and sends the unmodified request.
 
 An adapter may change request content only where its harness's coupling requires it, and every change is recorded (Principle IV).

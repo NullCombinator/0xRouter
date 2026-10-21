@@ -8,7 +8,7 @@ license.workspace = true
 
 [features]
 # `parity` lets tests open the registry with the fit check off (`Engine::open_parity`).
-testkit = ["dep:axum", "dep:tempfile", "nullrouter-registry/parity"]
+testkit = ["dep:axum", "dep:tempfile", "nullrouter-registry/parity", "nullrouter-adapters/testkit"]
 
 [dependencies]
 tokio.workspace = true
@@ -34,14 +34,19 @@ url.workspace = true
 tower.workspace = true
 nullrouter-wire.workspace = true
 nullrouter-registry.workspace = true
+nullrouter-adapters.workspace = true
+nullrouter-adapter-kit.workspace = true
 axum = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 
 [dev-dependencies]
+wat = "1"
+nullrouter-sandbox.workspace = true
 tempfile.workspace = true
 criterion.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 nullrouter-engine = { path = ".", features = ["testkit"] }
+nullrouter-adapters = { workspace = true, features = ["testkit"] }
 # The connect-attribution spike (tests/connect_attribution.rs): a local TLS server and CONNECT proxy.
 rustls = "0.23"
 tokio-rustls = "0.26"

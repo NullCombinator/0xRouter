@@ -1,0 +1,7 @@
+harness = "hostile-loop"
+style = "openai-chat"
+kit = "1"
+summary = "spins forever in zr_on_request; stopped at the 20 ms deadline"
+
+[request]
+selectors = ["model"]

@@ -243,3 +243,106 @@ async fn a_crash_loses_no_counted_traffic() {
     assert_eq!(counted, 5);
     assert!(cost > 0.0);
 }
+
+/// Stops the journal's writer without a shutdown checkpoint, lets `edit` change the files the
+/// crash left, and reopens the engine from them as `serve` does.
+async fn crash_and_recover(f: &mut FleetSetup, edit: impl FnOnce(&std::path::Path)) {
+    use nullrouter_engine::state::Engine;
+    use nullrouter_registry::OperatorHome;
+
+    let old = f.setup.engine.clone();
+    tokio::task::spawn_blocking(move || old.journal.shutdown()).await.unwrap();
+    edit(f.setup._dir.path());
+    let (engine, _) = Engine::open_parity(OperatorHome::new(f.setup._dir.path())).unwrap();
+    let engine = std::sync::Arc::new(engine);
+    let e = engine.clone();
+    tokio::task::spawn_blocking(move || e.recover_journal()).await.unwrap().unwrap();
+    f.setup.engine = engine;
+}
+
+/// Each journal segment under `home/records`, with its lines parsed.
+fn journal_lines(home: &std::path::Path) -> Vec<(std::path::PathBuf, Vec<serde_json::Value>)> {
+    let mut days = Vec::new();
+    for e in std::fs::read_dir(home.join("records")).unwrap().flatten() {
+        if e.path().extension().is_some_and(|x| x == "jsonl") {
+            let text = std::fs::read_to_string(e.path()).unwrap();
+            days.push((e.path(), text.lines().map(|l| serde_json::from_str(l).unwrap()).collect()));
+        }
+    }
+    days
+}
+
+fn edit_json(path: &std::path::Path, edit: impl FnOnce(&mut serde_json::Value)) {
+    let mut v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    edit(&mut v);
+    std::fs::write(path, v.to_string()).unwrap();
+}
+
+#[tokio::test]
+async fn an_attempt_the_checkpoint_holds_is_not_recounted_when_its_journal_time_is_later() {
+    let mut f = fleet().await;
+    assert!(poll(&f, "alpha", "one").await);
+    serve(&f, 2).await;
+    f.setup.engine.checkpoint_tallies().await;
+    let before = f.setup.engine.history.tally.get("alpha", "one");
+    assert_eq!(before.values().map(|t| t.requests).sum::<u64>(), 2);
+
+    // The checkpoint holds both attempts, but its time is no later than the second one's time in
+    // the journal: both fell in the same millisecond (the checkpoint's time is cut to it), or the
+    // wall clock stepped back in between. The order the tally saw is what counts.
+    crash_and_recover(&mut f, |home| {
+        let last = journal_lines(home)
+            .into_iter()
+            .flat_map(|(_, lines)| lines)
+            .filter_map(|r| r["arrived"].as_str().map(str::to_owned))
+            .max()
+            .unwrap();
+        edit_json(&home.join("quota/alpha/one.tally.json"), |cp| cp["at"] = json!(last));
+    })
+    .await;
+    assert_eq!(f.setup.engine.history.tally.get("alpha", "one"), before, "each attempt counted once");
+}
+
+#[tokio::test]
+async fn a_checkpoint_written_before_tally_sequences_still_recovers_by_time() {
+    let mut f = fleet().await;
+    assert!(poll(&f, "alpha", "one").await);
+    serve(&f, 2).await;
+    f.setup.engine.checkpoint_tallies().await;
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    serve(&f, 3).await;
+    let before = f.setup.engine.history.tally.get("alpha", "one");
+    assert_eq!(before.values().map(|t| t.requests).sum::<u64>(), 5);
+
+    // An upgrade: the old binary wrote the checkpoint and the journal lines before it, with no
+    // sequence; the new one wrote the lines after it. Those are told apart by time, as before.
+    crash_and_recover(&mut f, |home| {
+        let cp = home.join("quota/alpha/one.tally.json");
+        let mut at = String::new();
+        edit_json(&cp, |v| {
+            v.as_object_mut().unwrap().remove("seq");
+            at = v["at"].as_str().unwrap().to_owned();
+        });
+        let at = nullrouter_engine::clock::parse_rfc3339(&at).unwrap();
+        let mut stripped = std::collections::BTreeSet::new();
+        for (path, mut lines) in journal_lines(home) {
+            let old: Vec<serde_json::Value> = lines
+                .iter()
+                .filter(|l| {
+                    l["arrived"].as_str().and_then(nullrouter_engine::clock::parse_rfc3339).is_some_and(|t| t < at)
+                })
+                .map(|l| l["id"].clone())
+                .collect();
+            for l in lines.iter_mut().filter(|l| l["t"] == "attempt" && old.contains(&l["id"])) {
+                if l["attempt"].as_object_mut().unwrap().remove("tally_seq").is_some() {
+                    stripped.insert((l["id"].to_string(), l["attempt"]["n"].to_string()));
+                }
+            }
+            let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+            std::fs::write(path, text).unwrap();
+        }
+        assert_eq!(stripped.len(), 2, "the two attempts before the checkpoint carried a sequence");
+    })
+    .await;
+    assert_eq!(f.setup.engine.history.tally.get("alpha", "one"), before, "the checkpoint plus the journal after it");
+}

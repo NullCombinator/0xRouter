@@ -1,0 +1,23 @@
+{
+  "source": "Generated from ref/9router@39e36d3 by tools/gen-bundled/generate.mjs — do not edit.",
+  "data": {
+    "model": "claude-haiku-4-5-20251001",
+    "max_tokens": 32000,
+    "stream": true,
+    "thinking": {
+      "type": "enabled",
+      "budget_tokens": 10000
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "List the files in this directory."
+          }
+        ]
+      }
+    ]
+  }
+}

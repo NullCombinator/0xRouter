@@ -1,0 +1,7 @@
+harness = "hostile-memory-bomb"
+style = "openai-chat"
+kit = "1"
+summary = "grows linear memory to 128 MiB, past the 64 MiB cap"
+
+[request]
+selectors = ["model"]

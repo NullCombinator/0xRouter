@@ -1,0 +1,6 @@
+outcome = "blocked"
+detail = "unplaced_added"
+side = "request"
+alert = "guardrail"
+suspect = true
+input = "request.json"

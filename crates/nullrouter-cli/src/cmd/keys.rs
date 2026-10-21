@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Subcommand;
-use nullrouter_engine::keys::{self, BreakBehaviour, Keys};
+use nullrouter_engine::keys::{self, BreakBehaviour, HarnessName, Keys};
 use nullrouter_registry::OperatorHome;
 use nullrouter_server::views;
 use serde_json::{Value, json};
@@ -19,6 +19,9 @@ pub(crate) enum Command {
         /// Which harness the key's client is (1 to 32 characters); shown, never acted on.
         #[arg(long)]
         harness: Option<String>,
+        /// The harness adapter this key's requests run through.
+        #[arg(long, value_name = "HARNESS")]
+        adapter: Option<String>,
     },
     List,
     /// Revoke a key by name or id.
@@ -37,11 +40,23 @@ pub(crate) enum Command {
         key: String,
         behaviour: String,
     },
+    /// Bind a key to a harness's adapter, or unbind it with `--clear`.
+    SetAdapter {
+        key: String,
+        #[arg(required_unless_present = "clear", conflicts_with = "clear")]
+        harness: Option<String>,
+        #[arg(long)]
+        clear: bool,
+    },
 }
 
 fn fail(e: impl std::fmt::Display) -> ExitCode {
     eprintln!("{e}");
     ExitCode::from(1)
+}
+
+fn harness_name(s: &str) -> Result<HarnessName, ExitCode> {
+    HarnessName::new(s).map_err(fail)
 }
 
 fn behaviour(s: &str) -> Result<BreakBehaviour, ExitCode> {
@@ -59,20 +74,28 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     let mut list = Keys::load(&home.path().join(keys::FILE)).map_err(fail)?;
     let done = match cmd {
         Command::List => unreachable!("handled above"),
-        Command::Issue { name, break_behaviour, harness } => {
+        Command::Issue { name, break_behaviour, harness, adapter } => {
             let b = break_behaviour.as_deref().map(behaviour).transpose()?;
-            // Checked before anything is issued, so a refused tag writes nothing.
+            // Checked before anything is issued, so a refused tag or adapter writes nothing.
             let tag = harness.as_deref().map(keys::check_harness).transpose().map_err(fail)?;
+            let h = adapter.as_deref().map(harness_name).transpose()?;
             let (key, rec) = list.issue(&name, b).map_err(fail)?;
             let (id, name) = (rec.id.clone(), rec.name.clone());
             if tag.is_some() {
                 list.set_harness(&id, tag.as_deref()).map_err(fail)?;
             }
+            if h.is_some() {
+                list.set_adapter(&id, h.clone()).map_err(fail)?;
+            }
             list.save().map_err(fail)?;
             let status = super::apply(&home).map_err(fail)?;
             // The only time the key is shown: stdout carries just the key, for scripts.
             if as_json {
-                println!("{}", json!({"id": id, "name": name, "harness": tag, "key": key, "status": status}));
+                let adapter = h.as_ref().map(HarnessName::as_str);
+                println!(
+                    "{}",
+                    json!({"id": id, "name": name, "harness": tag, "adapter": adapter, "key": key, "status": status})
+                );
             } else {
                 eprintln!("issued {id} ({name}), {status}; it is shown once, only its digest is stored:");
                 println!("{key}");
@@ -116,6 +139,11 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
             list.set_break(&key, b).map_err(fail)?;
             key
         }
+        Command::SetAdapter { key, harness, clear } => {
+            let h = if clear { None } else { harness.as_deref().map(harness_name).transpose()? };
+            list.set_adapter(&key, h).map_err(fail)?;
+            key
+        }
     };
     list.save().map_err(fail)?;
     let status = super::apply(&home).map_err(fail)?;
@@ -132,10 +160,14 @@ fn print_list(rows: &Value, as_json: bool) {
         println!("{rows:#}");
         return;
     }
+    // The adapter column appears once any key is bound to one.
+    let any_adapter = rows.as_array().into_iter().flatten().any(|r| r["adapter"].is_string());
     for r in rows.as_array().into_iter().flatten() {
         let s = |k: &str| r[k].as_str().unwrap_or_default().to_owned();
+        let adapter =
+            if any_adapter { format!("{:<14} ", r["adapter"].as_str().unwrap_or("-")) } else { String::new() };
         println!(
-            "{:<12} {:<20} {:<14} {:<8} {:<26} {:<26} {:<11} {}",
+            "{:<12} {:<20} {:<14} {:<8} {:<26} {:<26} {:<11} {adapter}{}",
             s("id"),
             s("name"),
             r["harness"].as_str().unwrap_or("-"),

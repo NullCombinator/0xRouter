@@ -8,12 +8,15 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
 use arc_swap::ArcSwap;
+use nullrouter_adapters::runner::{AdapterRunner, WasmHandle};
 use nullrouter_registry::{
     LoadReport, OperatorHome, Registry, RegistryHandle, RuntimeSettings, SecretString, StartupError,
 };
 use nullrouter_wire::codec::Style;
 
 use crate::accounts::{self, Accounts};
+use crate::connection::pause::ProxyBoard;
+use crate::connection::proxy::{self, Proxies};
 use crate::cooldown::Cooldowns;
 use crate::files::{DashboardToken, FileError};
 use crate::identity::AgentSessions;
@@ -21,8 +24,6 @@ use crate::keys::{self, BreakBehaviour, Keys};
 use crate::models_live::LiveModels;
 use crate::records::RecordStore;
 use crate::redact::{Redactor, SharedRedactor};
-use crate::connection::pause::ProxyBoard;
-use crate::connection::proxy::{self, Proxies};
 use crate::tokens::TokenCells;
 use crate::upstream;
 
@@ -79,6 +80,8 @@ pub enum StateError {
     Journal(String),
     #[error("reload task failed: {0}")]
     Join(String),
+    #[error("the adapter store can't open: {0}")]
+    Adapters(String),
 }
 
 impl From<StartupError> for StateError {
@@ -139,6 +142,14 @@ pub struct Engine {
     pub fit_learner: Arc<crate::quota::fit::learner::Shared>,
     /// Live model lists, shared with every snapshot.
     pub live_models: Arc<LiveModels>,
+    /// Adapter runners installed at run time (third-party modules, test fixtures), by harness
+    /// name. Built-in adapters are not here: they resolve from a static table.
+    runners: ArcSwap<BTreeMap<String, AdapterRunner>>,
+    /// Where third-party adapters are loaded from. Set by `serve` through
+    /// [`open_adapters`](Self::open_adapters); without it no third-party adapter runs.
+    adapters: OnceLock<nullrouter_adapters::loader::Loader>,
+    /// The one-at-a-time adapter review worker (spec 004, T059).
+    pub(crate) reviews: crate::review_queue::ReviewQueue,
     /// Model verdicts per account (spec 011). Kept across reloads.
     pub verdicts: crate::verdict::Board,
     /// Model tests in flight, retests included (spec 011, R10).
@@ -194,10 +205,7 @@ fn assemble(
         })
         .collect();
     let http = upstream::client(registry.runtime().allow_private_endpoints);
-    let clients = crate::connection::clients::Clients::new(
-        registry.runtime().allow_private_endpoints,
-        proxies,
-    );
+    let clients = crate::connection::clients::Clients::new(registry.runtime().allow_private_endpoints, proxies);
     (
         EngineState {
             registry,
@@ -217,6 +225,94 @@ fn assemble(
 }
 
 impl Engine {
+    /// Makes `runner` the one that serves keys bound to `harness`.
+    pub fn install_runner(&self, harness: &str, runner: AdapterRunner) {
+        let mut next = (**self.runners.load()).clone();
+        next.insert(harness.to_owned(), runner);
+        self.runners.store(Arc::new(next));
+    }
+
+    /// Opens the adapter store under the home and loads every harness's serving version. Fails
+    /// when `adapters/` can be entered by other users. Blocking.
+    ///
+    /// The sandbox limits (`[adapters]` deadlines, `memory_mib`, `max_instances`) are read from the
+    /// current snapshot here and fixed from then on: a config reload while serving does not
+    /// resize the pool or change them.
+    pub fn open_adapters(&self) -> Result<(), StateError> {
+        let shared = self.shared_redactor.clone();
+        let redact: nullrouter_adapters::loader::Redactor = Arc::new(move |s: &str| shared.redact(s).into_owned());
+        let limits = nullrouter_adapters::loader::Limits::from_settings(&self.snapshot().settings().adapters);
+        let loader = nullrouter_adapters::loader::Loader::open_with(self.home().path(), redact, limits)
+            .map_err(|e| StateError::Adapters(e.to_string()))?;
+        if self.adapters.set(loader).is_ok() {
+            self.refresh_adapters();
+        }
+        Ok(())
+    }
+
+    /// Calls that hold an adapter sandbox instance right now (0 without an adapter store).
+    pub fn adapter_live_instances(&self) -> usize {
+        self.adapters.get().map_or(0, nullrouter_adapters::loader::Loader::live_instances)
+    }
+
+    /// Sets the third-party adapter deadlines and loads the handles again so they take them.
+    /// Tests only: nothing an operator or an adapter writes reaches the deadlines.
+    #[cfg(feature = "testkit")]
+    pub fn override_adapter_deadlines(&self, request: std::time::Duration, event: std::time::Duration) {
+        if let Some(loader) = self.adapters.get() {
+            loader.override_deadlines(request, event);
+            self.refresh_adapters();
+        }
+    }
+
+    /// Loads the serving version of every harness in the adapter store again, and drops the
+    /// runners of harnesses it no longer names. Blocking: it hashes files.
+    pub fn refresh_adapters(&self) {
+        let Some(loader) = self.adapters.get() else { return };
+        let names = loader.harnesses();
+        let mut next = (**self.runners.load()).clone();
+        next.retain(|name, r| !matches!(r, AdapterRunner::Wasm(_)) || names.iter().any(|n| n.as_str() == name));
+        for name in &names {
+            if AdapterRunner::builtin(name).is_none() {
+                next.insert(name.as_str().to_owned(), AdapterRunner::Wasm(loader.handle(name)));
+            }
+        }
+        self.runners.store(Arc::new(next));
+        loader.forget_unused();
+    }
+
+    /// Acts on a finished run of a third-party adapter (alerts; a blocked run marks its version
+    /// suspect and loads the store again, so it stops serving). Runs of built-in adapters and
+    /// engines without an adapter store do nothing. Blocking: it writes files.
+    pub fn note_adapter_run(&self, run: &nullrouter_adapters::record::AdapterRun, record: &str) {
+        let Some(loader) = self.adapters.get() else { return };
+        if loader.note_run(run, record) {
+            self.refresh_adapters();
+        }
+    }
+
+    /// [`note_adapter_run`](Self::note_adapter_run) for the async path: only a `failed` or
+    /// `blocked` run has anything to act on, and that runs on a blocking thread.
+    pub async fn settle_adapter_run(self: &Arc<Self>, run: &nullrouter_adapters::record::AdapterRun, record: &str) {
+        use nullrouter_adapters::record::AdapterOutcome;
+        if !matches!(run.outcome, AdapterOutcome::Failed { .. } | AdapterOutcome::Blocked) {
+            return;
+        }
+        let (engine, run, record) = (self.clone(), run.clone(), record.to_owned());
+        let _ = tokio::task::spawn_blocking(move || engine.note_adapter_run(&run, &record)).await;
+    }
+
+    /// The runner for the harness agent key `key_id` is bound to. `None` for a key with no
+    /// harness. A harness with no built-in and nothing installed gets a runner that records
+    /// `not_run` (`no_approved_version`) and changes nothing.
+    pub fn runner_for(&self, st: &EngineState, key_id: &str) -> Option<AdapterRunner> {
+        let name = st.keys.iter().find(|k| k.id == key_id)?.adapter.as_ref()?;
+        if let Some(r) = self.runners.load().get(name.as_str()) {
+            return Some(r.clone());
+        }
+        Some(AdapterRunner::builtin(name).unwrap_or_else(|| AdapterRunner::Wasm(WasmHandle::absent(name.as_str()))))
+    }
+
     /// Loads everything under `home`. Refuses shared `accounts.toml` / `keys.toml` /
     /// `tokens.toml`.
     pub fn open(home: OperatorHome) -> Result<(Self, StateReport), StateError> {
@@ -303,6 +399,9 @@ impl Engine {
             status: Default::default(),
             install_id: OnceLock::new(),
             generation: AtomicU64::new(1),
+            runners: ArcSwap::from_pointee(BTreeMap::new()),
+            adapters: OnceLock::new(),
+            reviews: Default::default(),
             reload: Mutex::new(()),
         };
         let st = engine.snapshot();
@@ -429,6 +528,7 @@ impl Engine {
             self.fit_learner.account_added(&a.provider, &a.name);
         }
         self.rebuild_meters();
+        self.refresh_adapters();
         self.recheck_verdicts(&state);
         self.changed.notify_one();
         Ok(report)

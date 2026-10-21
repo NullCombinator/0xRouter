@@ -284,8 +284,10 @@ fn timed_attempt(timing: Option<nullrouter_engine::records::AttemptTiming>) -> n
         dropped: Vec::new(),
         forced: Vec::new(),
         placement: None,
+        adapter: None,
         member: None,
         timing,
+        tally_seq: None,
     }
 }
 

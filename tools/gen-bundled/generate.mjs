@@ -15,6 +15,8 @@
 //   crates/nullrouter-registry/src/credentials/bundled.rs
 //   tests/fixtures/9router/*.json
 //   tests/fixtures/9router/translate/<from>-to-<to>/<case>.json, from tools/gen-bundled/translate-inputs
+//   tests/fixtures/9router/adapters/claude-code/<case>.{in,out,ctx}.json, from
+//     tools/gen-bundled/seeds/claude-code/<case>.json
 //
 // Any registry key this script does not know how to map is a hard error: keys are
 // never dropped silently (R4).
@@ -614,7 +616,8 @@ rmSync(communityDir, { recursive: true, force: true });
 mkdirSync(communityDir, { recursive: true });
 const seedDir = join(ROOT, "tools", "gen-bundled", "seeds");
 mkdirSync(seedDir, { recursive: true });
-// Only the seeds this script writes: seeds/logos/ holds the hand-converted logo overrides.
+// Only the seeds this script writes: seeds/logos/ holds the hand-converted logo overrides, and
+// seeds/claude-code/ the hand-written Claude Code adapter oracle inputs.
 for (const f of readdirSync(seedDir)) if (f.endsWith(".json")) rmSync(join(seedDir, f));
 
 // Logos (spec 009 contracts/plugin-logo.md): the override if there is one, else 9router's PNG,
@@ -1002,6 +1005,54 @@ count("empty", {});
 mkdirSync(join(fixDir, "count"), { recursive: true });
 writeFixture(join("count", "cases.json"), { cases: countCases });
 
+// ── Claude Code adapter oracle (T079) ───────────────────────────────────────
+//
+// chatCore's native passthrough for a Claude Code client (detectClientTool → "claude") on an
+// Anthropic provider (isNativePassthrough: "claude", "anthropic", "anthropic-compatible-*"):
+//   translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) }
+//   normalizeClaudePassthrough(translatedBody, translatedBody.model)
+//   translatedBody.tools = dedupeTools(translatedBody.tools).tools   (when it strips any)
+// The provider never reaches either function. Off passthrough (any other provider) 9router
+// translates instead and calls only dedupeTools, so these fixtures have one context. The seed's
+// `model` stands in for upstreamModel. Each case writes `<case>.in.json` (the seed),
+// `<case>.out.json` (the body sent upstream) and `<case>.ctx.json` (the context and arguments).
+const { normalizeClaudePassthrough } = await imp("open-sse/translator/formats/claude.js");
+const { dedupeTools } = await imp("open-sse/utils/toolDeduper.js");
+const { stripThinkingSuffix } = await imp("open-sse/translator/concerns/thinkingUnified.js");
+const ccSeedDir = join(seedDir, "claude-code");
+const ccDir = join(fixDir, "adapters", "claude-code");
+rmSync(ccDir, { recursive: true, force: true });
+mkdirSync(ccDir, { recursive: true });
+const writeCc = (name, data) => writeFileSync(join(ccDir, name), `${JSON.stringify({ source: HEADER, data }, null, 2)}\n`);
+let ccCases = 0;
+for (const f of readdirSync(ccSeedDir).filter((f) => f.endsWith(".json")).sort()) {
+  const name = f.slice(0, -".json".length);
+  const input = JSON.parse(readFileSync(join(ccSeedDir, f), "utf8"));
+  const model = stripThinkingSuffix(input.model);
+  // structuredClone: the spread copy is shallow and normalize mutates nested objects.
+  const out = frozen(() => {
+    const translatedBody = { ...structuredClone(input), model };
+    normalizeClaudePassthrough(translatedBody, translatedBody.model);
+    let stripped = [];
+    if (Array.isArray(translatedBody.tools)) {
+      const r = dedupeTools(translatedBody.tools);
+      if (r.stripped.length > 0) [translatedBody.tools, stripped] = [r.tools, r.stripped];
+    }
+    return { body: JSON.parse(JSON.stringify(translatedBody)), stripped };
+  });
+  writeCc(`${name}.in.json`, input);
+  writeCc(`${name}.out.json`, out.body);
+  writeCc(`${name}.ctx.json`, {
+    client_tool: "claude",
+    provider: "anthropic",
+    passthrough: true,
+    calls: ["normalizeClaudePassthrough(body, body.model)", "dedupeTools(body.tools)"],
+    model,
+    dedupe_stripped: out.stripped,
+  });
+  ccCases++;
+}
+
 // ── Sign-in and quota oracle (T040) ─────────────────────────────────────────
 //
 // In its own process: it installs a scripted fetch before any 9router module loads, which
@@ -1013,4 +1064,5 @@ console.log(`ref/9router@${SHA}`);
 console.log(`  ${plugins.length} plugins, ${credentials.length} credentials (${credentials.map((c) => c.provider_id).join(", ")})`);
 console.log(`  ${oauthParamKeys.size} oauth params, ${sectionFormats.size} section formats, ${lookupRows.length} lookup rows`);
 console.log(`  translate oracle: ${requestCases} request cases, ${streamCases} stream cases`);
+console.log(`  claude-code adapter oracle: ${ccCases} cases`);
 for (const n of notes) console.log(`  note: ${n}`);

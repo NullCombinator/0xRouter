@@ -82,6 +82,7 @@ struct File {
 struct Row {
     provider: Option<String>,
     style: Option<String>,
+    harness: Option<String>,
     fixture: String,
     field: String,
     reason: String,
@@ -101,7 +102,10 @@ impl Deviations {
         let rows: Vec<Row> =
             file.deviation.into_iter().filter(|r| r.style.as_deref().is_some_and(|s| s.contains("-to-"))).collect();
         for r in &rows {
-            assert!(r.provider.is_none(), "{r:?}: set exactly one of provider or style");
+            assert!(
+                r.provider.is_none() && r.harness.is_none(),
+                "{r:?}: set exactly one of provider, style or harness"
+            );
             assert!(!r.reason.trim().is_empty(), "{r:?}: a deviation needs a reason");
         }
         let used = RefCell::new(vec![false; rows.len()]);

@@ -114,8 +114,9 @@ Rules:
   - Clearing it returns the version to `approved`, and it serves again.
 - **Approval.** Approving a `reported` version sets `active` to it. The previously active
   version becomes `superseded`, and requests already in flight finish on it (FR-023, US4-3).
-- **Removal.** `remove <harness>` deletes the harness's files and index entry. Bound keys
-  become plain clients, recorded with the reason `removed`.
+- **Removal.** `remove <harness>` deletes the harness's version files and versions. Its index
+  entry stays, with no versions, so bound keys become plain clients recorded with the reason
+  `removed` (a harness with no entry at all records `no_approved_version`).
   `remove <harness> <version>` refuses the active version unless given `--force`.
 - **Waiting without the builder.** `queued` persists across restarts. A missing builder
   leaves the reason `builder_not_installed`, and `adapters build --retry` resumes.
@@ -215,7 +216,7 @@ Adding a code is a minor kit version. Removing one is a major ABI version.
 | `duration_us` | integer |
 
 Values of `not_run.reason`: `no_approved_version`, `suspect`, `source_mismatch`, `rebuilding`,
-`rebuild_failed`, `removed`, `no_selector_match`.
+`rebuild_failed`, `removed`, `no_selector_match`, `media_request`.
 
 Values of `failed.reason`: `trap`, `deadline`, `memory`, or `invalid_output{rule}`.
 

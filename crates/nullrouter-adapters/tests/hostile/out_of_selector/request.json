@@ -1,0 +1,58 @@
+{
+  "model": "m1",
+  "messages": [
+    {
+      "role": "system",
+      "content": "be brief"
+    },
+    {
+      "role": "user",
+      "content": "weather?"
+    },
+    {
+      "role": "assistant",
+      "content": "checking",
+      "tool_calls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\":\"Oslo\",\"unit\":\"c\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "c1",
+      "content": "rain"
+    },
+    {
+      "role": "user",
+      "content": "thanks"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "d",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "tool_choice": "auto",
+  "max_tokens": 100,
+  "temperature": 0.7,
+  "user": "u1",
+  "stream": false
+}

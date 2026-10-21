@@ -1,0 +1,7 @@
+harness = "hostile-secret-probe"
+style = "openai-chat"
+kit = "1"
+summary = "scans its whole input for sk-, Bearer and NR-SENTINEL-, logs and write"
+
+[request]
+selectors = ["user"]

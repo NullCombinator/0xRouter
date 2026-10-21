@@ -1,0 +1,12 @@
+harness = "noop"
+style = "openai-chat"
+kit = "1"
+summary = "does nothing"
+flavour = "plain"
+
+[request]
+selectors = ["model"]
+
+[response]
+selectors = []
+events = false

@@ -8,7 +8,7 @@ output says either `applied` or `saved; applies at next start` (FR-029: no resta
 
 | Path | Mode | Contents |
 |---|---|---|
-| `keys.toml` | 0600 | Each `[[key]]` gains an optional `harness` field |
+| `keys.toml` | 0600 | Each `[[key]]` gains an optional `adapter` field (the binding; slice 010's `harness` is a separate display-only tag) |
 | `config.toml` | any | Gains `[adapters]` ([data-model.md](../data-model.md#adaptersconfig-configtoml-adapters)) |
 | `adapters/index.toml` | 0600 | Harnesses, versions, states, `[review]` |
 | `adapters/<harness>/<version-id>/…` | 0600 files, 0700 dirs | Source, module, build, review, decision |
@@ -23,8 +23,8 @@ for `keys.toml`.
 
 | Command | Effect |
 |---|---|
-| `nullrouter keys issue <name> [--harness H] [--break …]` | As in slice 003, with an optional harness |
-| `nullrouter keys set-harness <name\|id> <H>` / `--clear` | Binds or unbinds a harness |
+| `nullrouter keys issue <name> [--adapter H] [--harness TEXT] [--break …]` | As in slice 003, with an optional adapter binding (and slice 010's display tag) |
+| `nullrouter keys set-adapter <name\|id> <H>` / `--clear` | Binds or unbinds a harness's adapter |
 | `nullrouter keys list` | Gains a `harness` column |
 
 **Adapters** (FR-029):
@@ -37,11 +37,11 @@ for `keys.toml`.
 | `nullrouter adapters review <H> <version> [--retry]` | Shows the report. `--retry` requeues a quarantined review |
 | `nullrouter adapters build <H> <version> --retry` | Requeues a build (for example once the builder has been installed) |
 | `nullrouter adapters approve <H> <version> [--note T]` | Only from `reported`. The version becomes active from the next request |
-| `nullrouter adapters reject <H> <version> [--note T]` | From `reported` or `quarantined` |
+| `nullrouter adapters reject <H> <version> [--note T]` | Only from `reported` (data-model state machine). A `quarantined` version is retried with `review --retry` or removed with `remove` |
 | `nullrouter adapters clear <H> <version>` | `suspect` → `approved`. It asks for confirmation and shows the guardrail events first |
 | `nullrouter adapters remove <H> [<version>] [--force]` | Removes a version, or the whole harness. The active version needs `--force` |
 | `nullrouter adapters rebuild [<H>]` | Rebuilds approved versions against the current kit (R9). Run it before upgrading to avoid the plain-client window |
-| `nullrouter adapters review-settings --model M --budget N [--reserve-output N]` | Sets `[review]` (FR-022). `--clear` removes it |
+| `nullrouter adapters review-settings --model M --budget N [--reserve-output N]` | Sets `[review]` (FR-022). `M` is a unified model id or `provider/model`, so it names the provider too. `--clear` removes it |
 
 **Updating** (FR-029): there is no separate `update` command. Installing a newer version of an
 installed harness, with `adapters install` or `catalogue install`, is the update. It goes through

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+pub use nullrouter_adapters::HarnessName;
 pub use nullrouter_registry::schema::BreakBehaviour;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -37,6 +38,10 @@ pub struct AgentKey {
     /// records never read it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harness: Option<String>,
+    /// The harness adapter this key's requests run through (spec 004 FR-001); `None` is a plain
+    /// client. Separate from the display tag, so a tag never starts running code.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adapter: Option<HarnessName>,
 }
 
 /// Longest harness tag, in Unicode scalar values.
@@ -190,6 +195,7 @@ impl Keys {
             revoked: None,
             break_behaviour,
             harness: None,
+            adapter: None,
         });
         Ok((key, self.list.last().expect("just pushed")))
     }
@@ -216,6 +222,12 @@ impl Keys {
     pub fn revoke(&mut self, name_or_id: &str) -> Result<(), KeyError> {
         let k = self.find_mut(name_or_id)?;
         k.revoked.get_or_insert_with(clock::now_rfc3339);
+        Ok(())
+    }
+
+    /// Binds the key to a harness's adapter; `None` makes it a plain client again.
+    pub fn set_adapter(&mut self, name_or_id: &str, h: Option<HarnessName>) -> Result<(), KeyError> {
+        self.find_mut(name_or_id)?.adapter = h;
         Ok(())
     }
 

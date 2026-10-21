@@ -28,7 +28,7 @@ after them (spec Assumptions).
   `pooling-allocator`, and without `wasi`, `component-model`, `cache`, `threads` or `gc`.
   wasmtime 45 needs rustc 1.93, and 1.93.1 is installed. wasmtime 46 and later need 1.94 or
   newer, and 49 needs 1.96.
-- **Workspace MSRV rises from 1.85 to 1.93.** Only the crates that link the sandbox need it, but
+- **Workspace MSRV rises from 1.89 to 1.93.** Only the crates that link the sandbox need it, but
   the `nullrouter` binary links them all.
 - **Guest target: `wasm32-unknown-unknown`**, not WASI. The guest has no imports beyond the kit's
   host ABI (R2), so it has no system interface to misuse.
@@ -92,6 +92,34 @@ after them (spec Assumptions).
 - **Header edits** are not in this slice. No confirmed harness needs them, and the forwarding
   floor (003 R18) stays the only header policy.
 
+**Update 2026-10-06** (the engine after slices 005–009):
+- **Where in the code.** The request side runs in `attempt.rs` per candidate, before
+  `body_for` and `count_body`.
+  - Same style: `forward` takes the edited body.
+  - Cross style: the edited body is decoded again with the client's codec, and `encode` reads
+    that IR.
+  - No edits: the request's own body and IR are used, so a key without a harness, or an
+    adapter that changes nothing, costs no extra decode.
+- **Token counts** run the request side too: a harness's count call carries the same blocks
+  its generation call does. There is no response side for counts.
+- **Media requests** run no adapter. The record shows `not_run{media_request}` (FR-026).
+- **Routing.** `route.rs` builds its prefix chain from the request as received, before any
+  adapter. An adapter's edits are fixed for a given body, target and version, so equal client
+  prefixes still map to equal upstream prefixes, and the warm lookup holds. A new adapter
+  version can change that mapping once, which costs at most one cache miss.
+- **Stream-break resume** (`breaks.rs`) is a new attempt. The adapter runs on the client body,
+  then the core appends its continuation. That continuation is the core's own, not the
+  adapter's, so the guardrail doesn't see it.
+- **Pass-through frames.** When the provider's frames go out unchanged (same style, streamed),
+  they are parsed for the response side only if the active adapter declares response
+  selectors. hermes and the Claude Code adapter declare none.
+- **Response event paths** (`event[N]`) count the events sent to the client across attempts,
+  so a resumed stream continues the numbering.
+- **Journal.** Slice 006 writes each attempt whole, so `Attempt.adapter` is kept, pruned and
+  forgotten with its record. The close line names its fields, so it gains
+  `response_adapter`, written only when present; older lines read unchanged. (CI found this
+  on 2026-10-07; the first draft of this note said no journal change was needed.)
+
 **Rationale**:
 - Adapter authors know their own harness's format, which is the client style. Working
   pre-encode means an adapter never has to learn every provider's wire format.
@@ -119,9 +147,14 @@ after them (spec Assumptions).
   - the `wasm_threads`, `wasm_simd` relaxed and `wasm_multi_memory` proposals are off.
 - **One `Engine`** for the process, with a pooling allocator sized for 64 concurrent instances.
 - **Time.** A ticker task bumps the engine epoch every 1 ms. Each call gets an epoch deadline
-  (default **20 ms** per request call, **2 ms** per stream-event call) and
+  (default **20 ms** per request or response call, plus **40 ms per MiB** of call input, and
+  **2 ms** per stream-event call) and
   `epoch_deadline_async_yield_and_update`. The guest therefore yields to Tokio instead of
-  blocking a worker (Constitution, Tokio rule), and it is trapped at its deadline.
+  blocking a worker (Constitution, Tokio rule), and it is trapped at its deadline. The
+  per-MiB part exists because a module parses its input: the Claude Code module spends about
+  12 ms per MiB on a loaded 4-core machine, so a fixed 20 ms let any session past about 2 MB go
+  on unedited. 40 ms per MiB keeps three times that margin, and the 16 MiB input limit caps a
+  request call at 660 ms. Events stay fixed: they are small.
 - **Memory.** A `ResourceLimiter` caps linear memory at **64 MiB**, tables at 10,000
   elements and instances at 1.
 - **Instances.** A fresh instance per call, from the pre-compiled `InstancePre`. With pooling
@@ -161,7 +194,8 @@ calls, definitions or results. hermes talks openai-chat.
     encoder already drops unplaced keys and records them (003 R27), so the adapter leaves those
     attempts alone.
 - **Reject table (user-visible).** It is filled by a live check (task) against anthropic,
-  openrouter, opencode-zen and opencode-go. For a provider not in the table, the default is
+  openrouter, opencode-zen, opencode-go, xai and grok-cli. grok-cli speaks openai-responses,
+  so hermes's attempts there are cross-style. For a provider not in the table, the default is
   **keep**: forward as received (IV). openrouter uses `reasoning_details` to continue reasoning
   across tool calls, so a blanket removal would degrade it. 9router's rule
   (`paramSupport.js`: groq, mistral, cerebras) seeds the table for community providers.
@@ -172,8 +206,11 @@ calls, definitions or results. hermes talks openai-chat.
     `{type:"image_url", image_url:{url:"data:<mime>;base64,<data>"}}`. The MIME type is
     sniffed from magic bytes when absent.
   - A string `content` becomes `[{type:"text",text}] + parts`.
-  - Recorded as `converted` with `format_conversion`, on `messages[i].images` and
-    `messages[i].content`.
+  - Recorded as `converted` / `format_conversion` on `messages[i].content`, and as `removed` /
+    `format_conversion` on the `messages[i].images` key it came from (R5 ties `converted` to
+    `replace`). A key that still holds entries the adapter couldn't convert is `converted` to
+    those entries.
+  - A message with no `content` key is left alone: an edit can only replace a key that exists.
   - Slice 003's codec then carries the parts to any target style.
 - **Attachments**:
   - `attachments` / `experimental_attachments` entries have the shape
@@ -344,6 +381,14 @@ where they are enforced.
   - `nullrouter-builder setup` unpacks the kit into `$NULLROUTER_HOME/builder/vendor/`, with its
     `.cargo-checksum.json`. It fetches `serde` and `serde_json` at the locked versions, the only
     network use, run once by the operator. It then points `crates-io` at that directory.
+  - **Deviation (2026-10-09):** no one may run cargo locally, so `tools/package-kit.sh`, the
+    committed `.crate` and `tests/kit_embed.rs` are replaced. The builder embeds the kit's live
+    source files with `include_str!`, so it cannot drift from `crates/nullrouter-adapter-kit`.
+    `setup` writes the kit into `vendor/` with a normalised manifest (no workspace
+    inheritance) and a `.cargo-checksum.json` whose `package` value is also the kit's lock
+    `checksum`. It vendors `serde`, `serde_json` and their closure with `cargo vendor` from
+    the workspace `Cargo.lock`, embedded with `include_str!` (no copy to drift), and derives the pinned
+    `Cargo.lock` from the result. The builder adds the adapter's own lock entry per build.
   - Adapter packages keep writing `nullrouter-adapter-kit = "1"`, so a future crates.io release
     needs no change to any package.
   - Authors build with `nullrouter-builder`. In this repository, `adapters/community/` carries a
@@ -450,9 +495,14 @@ to it by hash.
   - In-flight requests keep the version they started with, which is why v1 finishes requests
     in flight (US4-3).
   - Compiled modules are cached by `wasm_hash` in the snapshot.
-- **Key binding.** `keys.toml` `AgentKey` gains `harness: Option<String>`. It is set by
-  `keys issue --harness` and changed by `keys set-harness` or `keys set-harness --clear`
+- **Key binding.** `keys.toml` `AgentKey` gains `adapter: Option<HarnessName>`. It is set by
+  `keys issue --adapter` and changed by `keys set-adapter` or `keys set-adapter --clear`
   (FR-001).
+  - Renamed from `harness` / `--harness` / `set-harness` on merging main, 2026-10-08. Slice 010
+    (R7) had shipped `harness` as a free-text, display-only tag that "auth, routing, adapters
+    and records never read" (the user's clarify Q5). One field for both would let a label start
+    running code once an adapter of that name is installed, so the two stay separate: the tag
+    names the client for people, the binding selects the adapter.
   - An unknown harness name is refused at issue time, unless it's a third-party harness that has
     no approved version yet (spec Edge Cases: the key works as a plain client until then).
 
@@ -513,15 +563,25 @@ format):
   body;
 - `adapters/hermes_request`: a body with images.
 
-Targets (SC-010): adapter plus guardrail ≤ 5 ms p95 per request and ≤ 1 ms per event. Any
+Targets (SC-010): adapter plus guardrail ≤ 5 ms p95 per request up to 100 KB, and ≤ 1 ms per
+event. Above 100 KB the request cost grows linearly with the body, and the suite records it
+(`adapters/claude_code_request/{100kb,1mb}_{edit,clean}`, end to end through the runner). Any
 regression blocks merge (Constitution gate).
+
+The first target was 5 ms at any size. Timing the whole Claude Code request side at 1 MB
+(bench-baseline.md) gave about 23 ms mean: selector extraction 3 ms, the call input 2 to 8 ms,
+the sandbox call 12 ms (the guest parses the body), applying edits 3 ms, and the verdict's two
+decodes 10 ms. Each is a full pass over the body, so no single change brings 1 MB under 5 ms;
+reusing the verdict's decode of the original saves about a fifth and is left for later.
 
 ## R15. Claude Code adapter
 
 **Decision**: written as a normal third-party adapter at `adapters/community/claude-code/`
 against the kit, in anthropic-messages style. It is listed in the catalogue and goes through
 gate, build, review and decision with no special path (FR-027). Its selectors are:
-`thinking`, `output_config`, `model`, `messages[*].role`, `messages[*].content`, `tools`.
+`thinking`, `output_config`, `model`, `messages[*]`, `tools`. Whole messages, not their role
+and content apart: folding a system turn and dropping an emptied message replace and remove
+messages, which needs each message as one part.
 
 Behaviour follows `normalizeClaudePassthrough` (`open-sse/translator/formats/claude.js:204`)
 plus `dedupeTools`:
@@ -545,6 +605,15 @@ plus `dedupeTools`:
    (`empty_after_removal`).
 8. Duplicate built-in tools that have MCP equivalents are removed (`dedupeTools`). This is a
    tool-definition removal, allowed by FR-016.
+
+**Oracle details** (the T079 fixtures, ref `39e36d3`), which the adapter follows:
+- Wrapping a bare content block (step 3) also drops its `cache_control`.
+- A `redacted_thinking` block with only `data` and no `signature` counts as foreign (step 5).
+- Step 5's "tool results that reference them" includes a `tool_result` in a user turn.
+- A system message right after an assistant turn becomes its own user turn rather than being
+  folded, so two user turns can follow each other (step 4).
+- Step 5 applies only when `Context.provider == "anthropic"` and the style is the same; every
+  other target, including Anthropic-compatible providers, takes step 6.
 
 **Deviations (user-visible)**:
 - 9router **inserts a thinking placeholder** into an assistant turn that has a `tool_use` but no

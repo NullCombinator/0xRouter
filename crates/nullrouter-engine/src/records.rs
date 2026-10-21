@@ -11,6 +11,10 @@ use serde_json::Value;
 use crate::keys::AgentId;
 use crate::routing::{Decision, PlacementReason};
 
+pub use nullrouter_adapters::apply::{ContentChange, Rule as InvalidOutputRule};
+pub use nullrouter_adapters::record::{
+    AdapterDirection, AdapterOutcome, AdapterRef, AdapterRun, FailReason, GuardrailEvent, GuardrailRule, NotRunReason,
+};
 pub use nullrouter_wire::codec::Dropped;
 
 pub const CAPACITY: usize = 10_000;
@@ -161,6 +165,10 @@ pub struct Attempt {
     /// Why the placement chose this account (slice 006). `None` for skips and for requests that
     /// no placement shaped (a continuation, a job poll).
     pub placement: Option<AttemptPlacement>,
+    /// What the key's harness adapter did to this attempt's request (slice 004). `None` when
+    /// the key has no harness.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adapter: Option<AdapterRun>,
     /// The combo path to this attempt's unified model, `coder › fallback-chain › gpt` (spec 011);
     /// `None` outside a combo.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -168,6 +176,11 @@ pub struct Attempt {
     /// The attempt's marks (spec 013). `None` on records written before that slice.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timing: Option<AttemptTiming>,
+    /// Its number in the tally's counting order ([`crate::quota::tally`]): recovery after a
+    /// crash counts it again only if the checkpoint doesn't hold it. `None` when nothing was
+    /// tallied, and on records written before it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tally_seq: Option<u64>,
 }
 
 /// How an attempt got its connection.
@@ -250,6 +263,12 @@ pub enum SourceLevel {
     Default,
 }
 
+/// Cleans an adapter run's client-derived strings with the redactor: control characters
+/// dropped, length capped, secrets masked. Paths carry the client's own key names.
+pub fn redact_run(run: &mut AdapterRun, r: &crate::redact::Redactor) {
+    run.clean_with(|s| r.redact(&plain(s)).into_owned());
+}
+
 /// Why an attempt went where it did, and where it stood in the placement's order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct AttemptPlacement {
@@ -314,6 +333,9 @@ pub struct RequestRecord {
     pub job: Option<JobRef>,
     /// The placement that chose the attempt order (slice 006).
     pub decision: Option<Decision>,
+    /// What the harness adapter did to the response, aggregated over its events (slice 004).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_adapter: Option<AdapterRun>,
     /// Set on a model test's call (spec 011, FR-021): the run and what started it. A test
     /// record has no agent and keeps no prompt or output.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -352,6 +374,7 @@ impl RequestRecord {
             usage: None,
             job: None,
             decision: None,
+            response_adapter: None,
             test: None,
             combo: None,
         }
@@ -570,8 +593,10 @@ mod tests {
             dropped: Vec::new(),
             forced: Vec::new(),
             placement: None,
+            adapter: None,
             member: None,
             timing: None,
+            tally_seq: None,
         });
         r
     }

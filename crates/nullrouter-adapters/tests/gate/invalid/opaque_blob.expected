@@ -1,0 +1,1 @@
+refused: opaque_blob at src/lib.rs:13: base64 run over 256 characters

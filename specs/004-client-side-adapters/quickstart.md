@@ -6,20 +6,35 @@ slice 003's quickstart passes.
 
 ## Prerequisites
 
+Run from the checkout that holds the slice, here the 004 worktree. Builds go to the HDD
+target directory, never `./target`:
+
 ```bash
-cd ~/Desktop/0router
-export CARGO_HOME=$PWD/.cargo-home
+cd ~/Desktop/0router/.worktrees/004
+export CARGO_HOME=$HOME/Desktop/0router/.cargo-home
+export CARGO_TARGET_DIR=/mnt/storage/0router/target/004
 cargo build --workspace
-export NULLROUTER_HOME=$(mktemp -d)
-alias nr=./target/debug/nullrouter
+export NULLROUTER_HOME=$(mktemp -d)   # a Unix filesystem with a short path: not NTFS (every
+                                     # file looks mode 777 and the home is refused), and short
+                                     # enough for the operator socket (SUN_LEN, 108 bytes)
+alias nr=$CARGO_TARGET_DIR/debug/nullrouter
 ```
 
-For builder checks (sections 3 onwards), the builder needs its pinned toolchain:
+For builder checks (sections 3 onwards), the builder needs its pinned toolchain. The core
+runs the builder with `--home $NULLROUTER_HOME`, so every new home needs its own `setup`.
+It uses the network, once per home:
 
 ```bash
 rustup target add wasm32-unknown-unknown --toolchain 1.93.1
 cargo build -p nullrouter-builder
-./target/debug/nullrouter-builder setup      # unpacks the embedded kit; fetches serde once
+$CARGO_TARGET_DIR/debug/nullrouter-builder setup   # into $NULLROUTER_HOME/builder: kit, pinned toolchain, vendored serde
+```
+
+Installs look for `nullrouter-builder` on `PATH`. Section 1 checks the server without it, so
+put it there only when you reach section 3:
+
+```bash
+export PATH=$CARGO_TARGET_DIR/debug:$PATH
 ```
 
 ## 0. Whole suite (no network, no builder needed)
@@ -34,7 +49,9 @@ fixtures), the scrambler audit, tamper tests, the update lifecycle and hermes on
 ## 1. No adapters, no builder (FR-013, SC-011)
 
 ```bash
-PATH=/usr/bin:/bin cargo test -p nullrouter-server     # the slice 003 suite, builder not on PATH
+# The slice 003 suite with the builder off PATH. cargo's own directory stays: rustup's proxy
+# finds rustc there, not under the CARGO_HOME set above.
+PATH=$(dirname $(command -v cargo)):/usr/bin:/bin cargo test -p nullrouter-server
 nr serve &                                             # starts; `adapters list` shows hermes only
 ```
 
@@ -44,7 +61,7 @@ warning.
 ## 2. hermes (US1, FR-006–FR-009, SC-001)
 
 ```bash
-nr keys issue hermes-desktop --harness hermes         # prints the key once
+nr keys issue hermes-desktop --adapter hermes         # prints the key once
 cargo test -p nullrouter-adapters --test hermes        # images, attachments, echoed reasoning
 ```
 
@@ -55,7 +72,7 @@ cargo test -p nullrouter-adapters --test hermes        # images, attachments, ec
 
 Live (opt-in, needs operator accounts): run
 `NR_LIVE=1 cargo test -p nullrouter-server --test harness_hermes -- --ignored`. It runs
-hermes against anthropic, openrouter, opencode-zen and opencode-go, with tools, reasoning
+hermes against anthropic, openrouter, opencode-zen, opencode-go, xai and grok-cli (signed in), with tools, reasoning
 and images, streamed and not streamed. It also fills in or confirms the reject table.
 
 ## 3. Install, review, decide (US2, FR-019–FR-022)
@@ -66,7 +83,7 @@ nr adapters show noop                                  # quarantined: no_review_
 nr adapters review-settings --model claude-sonnet --budget 60000
 nr adapters review noop <version> --retry              # → reported (live model)
 nr adapters approve noop <version>
-nr keys issue test-agent --harness noop
+nr keys issue test-agent --adapter noop
 ```
 
 **Expected**:
@@ -81,7 +98,7 @@ cargo test -p nullrouter-adapters --test gate
 nr adapters install crates/nullrouter-adapters/tests/gate/invalid/multi_reason   # exit 3
 ```
 
-**Expected**: one line per reason, matching `multi_reason/.expected`. The expected codes
+**Expected**: one line per reason, matching `gate/invalid/multi_reason.expected`. The expected codes
 include `foreign_dependency`, `build_script` and `opaque_blob`.
 
 ## 5. Hostile adapters and the guardrail (US3, SC-002, SC-003)
@@ -148,7 +165,7 @@ Live, opt-in, with the builder and a review model:
 nr catalogue install claude-code          # or: nr adapters install adapters/community/claude-code
 nr adapters review claude-code <version> --retry
 nr adapters approve claude-code <version>
-nr keys issue cc-laptop --harness claude-code
+nr keys issue cc-laptop --adapter claude-code
 NR_LIVE=1 cargo test -p nullrouter-server --test harness_claude_code -- --ignored
 ```
 

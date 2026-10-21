@@ -532,6 +532,70 @@ fn keys_carry_a_harness_tag_set_changed_cleared_and_refused() {
     assert_eq!(mode(&file), 0o600);
 }
 
+#[test]
+fn keys_bind_to_an_adapter_and_the_list_shows_it_only_when_one_is() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    assert!(nr(h, &["keys", "issue", "plain"], "").status.success());
+    let before = String::from_utf8(nr(h, &["keys", "list"], "").stdout).unwrap();
+    assert!(!before.contains("hermes"), "{before}");
+
+    assert!(nr(h, &["keys", "issue", "desk", "--adapter", "hermes"], "").status.success());
+    let file = Keys::load(&h.join(keys::FILE)).unwrap();
+    let adapter = |name: &str| file.iter().find(|k| k.name == name).unwrap().adapter.clone();
+    assert_eq!(adapter("desk").map(|n| n.to_string()), Some("hermes".into()));
+    assert!(adapter("plain").is_none());
+    let listed = String::from_utf8(nr(h, &["keys", "list"], "").stdout).unwrap();
+    assert!(listed.contains("hermes"), "{listed}");
+    let json: serde_json::Value = serde_json::from_slice(&nr(h, &["--json", "keys", "list"], "").stdout).unwrap();
+    let row = |name: &str| json.as_array().unwrap().iter().find(|r| r["name"] == name).unwrap().clone();
+    assert_eq!(row("desk")["adapter"], "hermes");
+    assert!(row("plain").get("adapter").is_none());
+
+    // Rebind, then clear.
+    assert!(nr(h, &["keys", "set-adapter", "plain", "claude-code"], "").status.success());
+    assert_eq!(
+        Keys::load(&h.join(keys::FILE)).unwrap().iter().find(|k| k.name == "plain").unwrap().adapter.as_ref().map(|n| n.to_string()),
+        Some("claude-code".into())
+    );
+    assert!(nr(h, &["keys", "set-adapter", "plain", "--clear"], "").status.success());
+    assert!(Keys::load(&h.join(keys::FILE)).unwrap().iter().find(|k| k.name == "plain").unwrap().adapter.is_none());
+
+    // Reserved and malformed names, unknown keys, and a missing adapter are refused.
+    for args in [
+        vec!["keys", "set-adapter", "plain", "opencode"],
+        vec!["keys", "set-adapter", "plain", "Bad Name"],
+        vec!["keys", "set-adapter", "nobody", "hermes"],
+        vec!["keys", "issue", "other", "--adapter", "zcode"],
+    ] {
+        assert_eq!(nr(h, &args, "").status.code(), Some(1), "{args:?}");
+    }
+    assert!(!nr(h, &["keys", "set-adapter", "plain"], "").status.success());
+    assert!(Keys::load(&h.join(keys::FILE)).unwrap().iter().all(|k| k.name != "other"), "a refused issue leaves no key");
+}
+
+#[test]
+fn adapters_list_shows_hermes_as_built_in_and_unknown_harnesses_fail() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    let out = nr(h, &["adapters", "list"], "");
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hermes  built-in");
+
+    let out = nr(h, &["--json", "adapters", "list"], "");
+    let rows: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(rows[0]["harness"], "hermes");
+    assert_eq!(rows[0]["built_in"], true);
+
+    let out = nr(h, &["adapters", "rebuild", "nosuch"], "");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no harness nosuch"));
+
+    let out = nr(h, &["adapters", "remove", "nosuch", "--yes"], "");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no harness nosuch"));
+}
+
 /// T057 (FR-023): `accounts exclusive on` refuses an account whose provider reports no quota
 /// (xai declares no `[quota]`): exit 2, the reason on stderr, and the accounts file unchanged.
 #[test]

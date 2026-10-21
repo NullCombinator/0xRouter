@@ -392,6 +392,8 @@ nullrouter keys revoke claude-code-laptop     # by name or id
 nullrouter keys issue codex-ci --harness codex-cli   # issue with a harness tag
 nullrouter keys tag codex-ci claude-code      # set or replace the tag, by name or id
 nullrouter keys tag codex-ci --clear          # remove it
+nullrouter keys issue hermes-desk --adapter hermes   # requests from this key run hermes's adapter
+nullrouter keys set-adapter hermes-desk --clear      # back to a plain client
 ```
 
 The key's id is the agent's identity: provider session ids are derived from it, and
@@ -403,8 +405,34 @@ control characters, it changes nothing about routing, and a refused tag exits 1 
 changes nothing. `keys tag` works on revoked keys too, never touches the secret, and unknown
 keys exit 2.
 
+The adapter is different: it names the harness adapter the key's requests run through, and an
+`ADAPTER` column appears in `keys list` once any key has one. Setting a tag never selects an
+adapter, and binding an adapter leaves the tag alone.
+
 **Downgrading.** A `keys.toml` that holds a tagged key is refused by a binary from before the
 tag existed. Run `nullrouter keys tag <key> --clear` for each tagged key before going back.
+
+## Harness adapters
+
+A key bound to a harness runs that harness's adapter on its requests. Installing, reviewing,
+approving and removing adapters, their alerts, the catalogue and the `[adapters]` settings are
+covered in [adapters/operating.md](adapters/operating.md).
+
+**Address space.** `serve` starts the adapter sandbox at startup, whether or not an adapter is
+installed. The sandbox reserves about 4 GiB of virtual address space per instance in its pool,
+which is about 258 GB at the default `max_instances = 64`. This is address space, not memory.
+The RAM actually in use is a few MB, plus about 14 MB for each loaded adapter as large as
+claude-code.
+
+A virtual-memory limit on the process, such as `ulimit -v` or a systemd `LimitAS=`, makes the
+reservation fail. `serve` then stops with `startup failed: the adapter store can't open: the
+adapter sandbox did not start: sandbox engine: failed to create memory pool mapping`. Lift the limit, or lower
+`max_instances` under `[adapters]` to fit it: about 4 GiB per instance, plus what the rest of
+the process needs.
+
+Strict overcommit (`vm.overcommit_memory = 2`) is not expected to fail it: the reserved range
+holds no writable memory until an instance uses it, and Linux charges only writable memory.
+This is untested.
 
 ## The dashboard
 

@@ -1,0 +1,7 @@
+harness = "hostile-bad-output"
+style = "openai-chat"
+kit = "1"
+summary = "answers text that is not JSON"
+
+[request]
+selectors = ["model"]

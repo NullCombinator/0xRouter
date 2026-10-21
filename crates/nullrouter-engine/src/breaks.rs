@@ -79,6 +79,7 @@ pub(crate) struct Broken {
 /// far as the trailing assistant turn. `Err` says why `c` can't continue it.
 pub(crate) fn continuation(
     req: &TextRequest,
+    src: &crate::attempt::Source<'_>,
     c: &Candidate<'_>,
     wire: &Style,
     seen: &Seen,
@@ -91,7 +92,7 @@ pub(crate) fn continuation(
     }
     for u in &decl.unless {
         let holds = match u {
-            ContinuationUnless::ThinkingEnabled => req.ir.params.thinking.as_ref().is_some_and(|t| t.enabled),
+            ContinuationUnless::ThinkingEnabled => src.ir.params.thinking.as_ref().is_some_and(|t| t.enabled),
             ContinuationUnless::ToolCallInProgress => seen.tool_call,
         };
         if holds {
@@ -111,7 +112,7 @@ pub(crate) fn continuation(
     let (mut body, dropped) = if c.same_style(&req.client.id) {
         // The client's own body, so an optimizer's fields survive the continuation (R10).
         let edits = Edits { model: Some(model), stream: c.endpoint.force_stream.then_some(true), include_usage: true };
-        let mut body = request::forward(&req.body, wire, &edits).map_err(carry)?;
+        let mut body = request::forward(src.body, wire, &edits).map_err(carry)?;
         let one = Request { messages: vec![turn], ..Request::default() };
         let enc = request::encode(&one, wire, &wire.id).map_err(carry)?;
         let Some(Value::Array(added)) = select_one(&t.messages, &enc.body).cloned() else {
@@ -125,7 +126,7 @@ pub(crate) fn continuation(
         set_path(&mut body, &t.messages, Value::Array(list));
         (body, Vec::new())
     } else {
-        let mut ir = req.ir.clone();
+        let mut ir = src.ir.clone();
         ir.model.clone_from(model);
         ir.stream = true;
         ir.messages.push(turn);

@@ -896,6 +896,7 @@ fn fit_history(base: SystemTime, n: usize) -> Vec<nullrouter_engine::quota::hist
         v: VERSION,
         at: rfc3339_millis(min(m)),
         ok: true,
+        seq: None,
         error: None,
         windows: vec![QuotaWindow {
             name: "5-hour".into(),

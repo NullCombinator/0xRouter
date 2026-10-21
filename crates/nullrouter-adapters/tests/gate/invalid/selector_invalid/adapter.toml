@@ -1,0 +1,11 @@
+harness = "noop"
+style = "openai-chat"
+kit = "1"
+summary = "does nothing"
+
+[request]
+selectors = ["a.b.c.d.e.f.g.h.i"]
+
+[response]
+selectors = []
+events = false
