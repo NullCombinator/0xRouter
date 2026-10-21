@@ -1179,3 +1179,128 @@ async fn live_routing_matches_polls() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Slice 012, live fit progress (T066, SC-012, research R16).
+
+/// Copies what the engine reads to fit an operator home: accounts, config, plugins and the
+/// quota history with its fit state. Keys, tokens and the journal stay behind.
+fn copy_fit_inputs(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    for name in ["accounts.toml", "config.toml", "plugins", "quota"] {
+        let src = from.join(name);
+        if src.is_dir() {
+            copy_tree(&src, &to.join(name))?;
+        } else if src.is_file() {
+            std::fs::copy(&src, to.join(name))?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_tree(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for e in std::fs::read_dir(from)? {
+        let e = e?;
+        let (src, dst) = (e.path(), to.join(e.file_name()));
+        if src.is_dir() {
+            copy_tree(&src, &dst)?;
+        } else {
+            std::fs::copy(&src, &dst)?;
+        }
+    }
+    Ok(())
+}
+
+/// One number's state and its progress, as the view words them, with its 95% range if any.
+fn describe_number(
+    state: &nullrouter_engine::quota::fit::NumberState,
+    range: Option<&(f64, f64, f64)>,
+) -> (String, String) {
+    use nullrouter_engine::quota::extract::rfc3339_millis;
+    use nullrouter_engine::quota::fit::{NumberState, Progress};
+
+    let progress = |p: &Progress| format!("{} intervals, ±{:.0}%", p.intervals, p.half_width * 100.0);
+    let (label, detail) = match state {
+        NumberState::Learning { progress: p } => ("learning", progress(p)),
+        NumberState::Fitted { since } => ("fitted", format!("since {}", rfc3339_millis(*since))),
+        NumberState::Relearning { since, progress: p } => {
+            ("relearning", format!("since {}, {}", rfc3339_millis(*since), progress(p)))
+        }
+        NumberState::Restarted { since, reason } => {
+            ("restarted", format!("since {}: {reason}", rfc3339_millis(*since)))
+        }
+        NumberState::NotSeparable { partner } => ("not separable", format!("traffic can't tell it from {partner}")),
+        NumberState::Yardstick => ("yardstick", "held at the declared value".to_owned()),
+        NumberState::NotReported => ("not reported", "the provider reports no limit".to_owned()),
+        NumberState::NotFitted(reason) => ("not fitted", reason.clone()),
+    };
+    let range = range
+        .map_or(String::new(), |(e, lo, hi)| format!("; estimate {e:.4}, 95% range {lo:.4} to {hi:.4}"));
+    (label.to_owned(), format!("{detail}{range}"))
+}
+
+/// Prints the fit's state and progress for every number of every polled account (`-- live_fit_progress
+/// --nocapture`). The fit is replayed offline from a copy of `$NULLROUTER_HOME`, so the operator's
+/// own files are never written. Skipped unless `NR_LIVE=1`; with it, the check fails when
+/// `NULLROUTER_HOME` is unset, is not a directory, or no account is polled.
+#[tokio::test]
+async fn live_fit_progress() {
+    if !live() {
+        eprintln!("skipped: set NR_LIVE=1 to run the live checks");
+        return;
+    }
+    let Some(home) = std::env::var_os("NULLROUTER_HOME") else {
+        panic!(
+            "live_fit_progress: NULLROUTER_HOME is not set. Set it to the operator home whose quota history \
+             the fit should read; this check does not fall back to ~/.0router."
+        );
+    };
+    let home = std::path::PathBuf::from(home);
+    assert!(home.is_dir(), "live_fit_progress: NULLROUTER_HOME={} is not a directory", home.display());
+
+    // The engine writes its journal and fit state beside the files it reads, so open a copy.
+    let copy = tempfile::tempdir().unwrap();
+    copy_fit_inputs(&home, copy.path())
+        .unwrap_or_else(|e| panic!("live_fit_progress: copying {} failed: {e}", home.display()));
+    let (engine, _) = Engine::open(OperatorHome::new(copy.path())).unwrap();
+    let st = engine.snapshot();
+    let fits = engine.fit_learner.snapshot_all();
+
+    let mut polled = 0;
+    let mut with_state = 0;
+    for account in st.accounts.iter() {
+        let Ok(entity) = st.registry.provider(&account.provider) else { continue };
+        if !nullrouter_engine::quota::fit::is_fitted_account(entity, account) {
+            continue;
+        }
+        polled += 1;
+        let who = format!("{}/{}", account.provider, account.name);
+        // Pooled numbers are shared by the plugin's accounts; capacity is this account's own.
+        let own = format!("capacity@{}", account.name);
+        for window in entity.routing().windows {
+            let Some(snap) = fits.get(&(account.provider.clone(), window.name.clone())) else {
+                eprintln!("{who} {}: no fit state yet, the learner holds no rows for this window", window.name);
+                continue;
+            };
+            with_state += 1;
+            for (number, state) in snap.numbers.iter().filter(|(k, _)| !k.contains('@') || k.as_str() == own) {
+                let (label, detail) = describe_number(state, snap.ranges.get(number));
+                eprintln!("{who} {} {number}: {label} ({detail})", window.name);
+            }
+        }
+    }
+    assert!(
+        polled > 0,
+        "live_fit_progress found no polled account under {}. A polled account is one whose provider \
+         reports quota for it; add one (for example an anthropic or grok-cli account), then rerun.",
+        home.display()
+    );
+    assert!(
+        with_state > 0,
+        "live_fit_progress: {polled} polled account(s) under {} but the fit holds no state for any of their \
+         windows, so the fit never ran on the history. Check that quota/ holds the poll history for these \
+         accounts and that the plugin declares [quota] windows, then rerun.",
+        home.display()
+    );
+    eprintln!("live_fit_progress: {polled} polled account(s) under {}", home.display());
+}

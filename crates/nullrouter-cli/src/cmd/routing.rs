@@ -4,7 +4,10 @@
 //! The view reads the running server over the operator socket (exit 4 with no server). The
 //! `set`, `unset` and `window` subcommands edit `accounts.toml` and `config.toml` directly,
 //! check the result with the registry gate's rules, and ask a running server to reload.
+//! `set-plugin` and `unset-plugin` edit a plugin's `[provider.<id>.meter."<window>"]` tables in
+//! `config.toml`: weights and multipliers only, since capacity is per account.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -12,9 +15,11 @@ use clap::{Args as ClapArgs, Subcommand};
 use nullrouter_cli::routing_text;
 use nullrouter_engine::accounts::{self, Accounts, PriceOverride, RoutingOverrides, WindowOverride};
 use nullrouter_registry::OperatorHome;
-use nullrouter_registry::schema::{OperatorConfig, Percent, parse_duration};
+use nullrouter_registry::schema::{OperatorConfig, PartialTokenWeights, Percent, parse_duration};
 use nullrouter_server::views;
 use serde_json::json;
+
+use super::connection::edit;
 
 /// `routing [target]` shows the routing view; the subcommands change the settings.
 #[derive(ClapArgs)]
@@ -29,17 +34,33 @@ pub(crate) struct Args {
 #[derive(Subcommand)]
 pub(crate) enum Command {
     /// Set an account's routing overrides: `cache_lifetime=1h`, `reserve=10%`, `price.input=3`,
-    /// `window.<name>.capacity=12000000` (also `.length`, `.reserve`).
+    /// `window.<name>.capacity=12000000` (also `.length`, `.reserve`), `window.<name>.weight.<class>=V`
+    /// or `window.<name>.multiplier.<glob>=V`.
     Set {
         provider: String,
         name: String,
         #[arg(required = true, value_name = "KEY=VALUE")]
         settings: Vec<String>,
     },
-    /// Remove overrides: `cache_lifetime`, `reserve`, `price`, `window.<name>` or one of its fields.
+    /// Remove overrides: `cache_lifetime`, `reserve`, `price`, `window.<name>` or one of its fields,
+    /// `window.<name>.weight.<class>` or `window.<name>.multiplier.<glob>`.
     Unset {
         provider: String,
         name: String,
+        #[arg(required = true, value_name = "KEY")]
+        keys: Vec<String>,
+    },
+    /// Set a plugin's weights and multipliers for every account of it: `window.<name>.weight.<class>=V`
+    /// or `window.<name>.multiplier.<glob>=V`. Capacity is per account and is refused here.
+    SetPlugin {
+        provider: String,
+        #[arg(required = true, value_name = "KEY=VALUE")]
+        settings: Vec<String>,
+    },
+    /// Remove a plugin's weights or multipliers: `window.<name>.weight.<class>` or
+    /// `window.<name>.multiplier.<glob>`.
+    UnsetPlugin {
+        provider: String,
         #[arg(required = true, value_name = "KEY")]
         keys: Vec<String>,
     },
@@ -56,13 +77,15 @@ fn fail(e: impl std::fmt::Display) -> ExitCode {
     ExitCode::from(1)
 }
 
-const KEYS: &str = "cache_lifetime, reserve, price.input, price.output, price.cache_read, price.cache_write, window.<name>.capacity, window.<name>.length, window.<name>.reserve";
+const KEYS: &str = "cache_lifetime, reserve, price.input, price.output, price.cache_read, price.cache_write, window.<name>.capacity, window.<name>.length, window.<name>.reserve, window.<name>.weight.<class>, window.<name>.multiplier.<glob>";
 
 pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<ExitCode, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
     match args.command {
         Some(Command::Set { provider, name, settings }) => set(&home, &provider, &name, &settings),
         Some(Command::Unset { provider, name, keys }) => unset(&home, &provider, &name, &keys),
+        Some(Command::SetPlugin { provider, settings }) => set_plugin(&home, &provider, &settings),
+        Some(Command::UnsetPlugin { provider, keys }) => unset_plugin(&home, &provider, &keys),
         Some(Command::Window { args }) => window(&home, &args),
         None => view(&home, args.target.as_deref(), as_json),
     }
@@ -101,6 +124,11 @@ fn edit_account(
         && let Some(w) = routing.unknown_windows(p.routing().windows).first()
     {
         return Err(fail(format!("window.{w}: {provider} declares no window with that name")));
+    }
+    if let Ok(p) = reg.provider(provider)
+        && let Some(problem) = routing.meter_problem(provider, p.routing().windows)
+    {
+        return Err(fail(problem));
     }
     list.set_routing(provider, name, routing).map_err(fail)?;
     list.save().map_err(fail)?;
@@ -147,16 +175,22 @@ fn set(home: &OperatorHome, provider: &str, name: &str, settings: &[String]) -> 
                 "price.output" | "price.cache_read" | "price.cache_write" => {
                     price_extra.push((key, number(key, value)?))
                 }
-                _ => {
-                    let (w, field) =
-                        window_key(key).ok_or_else(|| format!("{key}: unknown setting; allowed: {KEYS}"))?;
-                    let o = r.window.entry(w.to_owned()).or_default();
-                    match field {
-                        "capacity" => o.capacity = Some(number(key, value)?),
-                        "length" => o.length = Some(duration(key, value)?),
-                        _ => o.reserve = Some(percent(key, value)?),
+                _ => match window_meter_key(key) {
+                    Some((w, meter)) => {
+                        let o = r.window.entry(w.to_owned()).or_default();
+                        set_meter(o, key, meter, Some(number(key, value)?))?;
                     }
-                }
+                    None => {
+                        let (w, field) =
+                            window_key(key).ok_or_else(|| format!("{key}: unknown setting; allowed: {KEYS}"))?;
+                        let o = r.window.entry(w.to_owned()).or_default();
+                        match field {
+                            "capacity" => o.capacity = Some(number(key, value)?),
+                            "length" => o.length = Some(duration(key, value)?),
+                            _ => o.reserve = Some(percent(key, value)?),
+                        }
+                    }
+                },
             }
         }
         if !price_extra.is_empty() {
@@ -192,8 +226,16 @@ fn unset(home: &OperatorHome, provider: &str, name: &str, keys: &[String]) -> Re
                         }
                     }
                 }
-                other => match (window_key(other), other.strip_prefix("window.")) {
-                    (Some((w, field)), _) => {
+                other => match (window_meter_key(other), window_key(other), other.strip_prefix("window.")) {
+                    (Some((w, meter)), _, _) => {
+                        if let Some(o) = r.window.get_mut(w) {
+                            set_meter(o, other, meter, None)?;
+                            if *o == WindowOverride::default() {
+                                r.window.remove(w);
+                            }
+                        }
+                    }
+                    (None, Some((w, field)), _) => {
                         if let Some(o) = r.window.get_mut(w) {
                             match field {
                                 "capacity" => o.capacity = None,
@@ -205,12 +247,209 @@ fn unset(home: &OperatorHome, provider: &str, name: &str, keys: &[String]) -> Re
                             }
                         }
                     }
-                    (None, Some(w)) if !w.is_empty() => {
+                    (None, None, Some(w)) if !w.is_empty() => {
                         r.window.remove(w);
                     }
                     _ => return Err(format!("{other}: unknown setting; allowed: {KEYS}")),
                 },
             }
+        }
+        Ok(())
+    })
+}
+
+/// The last part of a `window.<name>.weight.<class>` or `window.<name>.multiplier.<glob>` key.
+#[derive(Clone, Copy)]
+enum Meter<'a> {
+    Weight(&'a str),
+    Multiplier(&'a str),
+}
+
+/// `window.<name>.weight.<class>` and `window.<name>.multiplier.<glob>` as `(name, meter)`. A glob
+/// may hold dots, so a multiplier key is split at its first `.multiplier.`.
+fn window_meter_key(key: &str) -> Option<(&str, Meter<'_>)> {
+    let rest = key.strip_prefix("window.")?;
+    if let Some((name, glob)) = rest.split_once(".multiplier.") {
+        return (!name.is_empty()).then_some((name, Meter::Multiplier(glob)));
+    }
+    let (name, class) = rest.rsplit_once(".weight.")?;
+    (!name.is_empty()).then_some((name, Meter::Weight(class)))
+}
+
+/// Sets (`Some`) or removes (`None`) the weight or multiplier that `meter` names in one window.
+/// A window with no weights left has none, and an empty multiplier map is the same as none.
+fn set_meter(o: &mut WindowOverride, key: &str, meter: Meter<'_>, value: Option<f64>) -> Result<(), String> {
+    match meter {
+        Meter::Weight(class) => {
+            let mut t = o.token_weights.unwrap_or_default();
+            match class {
+                "input" => t.input = value,
+                "output" => t.output = value,
+                "cache_read" => t.cache_read = value,
+                "cache_write" => t.cache_write = value,
+                _ => {
+                    return Err(format!("{key}: unknown weight class; allowed: input, output, cache_read, cache_write"));
+                }
+            }
+            o.token_weights = (t != PartialTokenWeights::default()).then_some(t);
+        }
+        Meter::Multiplier(glob) => match value {
+            Some(f) => {
+                o.model_multiplier.insert(glob.to_owned(), f);
+            }
+            None => {
+                o.model_multiplier.shift_remove(glob);
+            }
+        },
+    }
+    Ok(())
+}
+
+const PLUGIN_KEYS: &str = "window.<name>.weight.<class>, window.<name>.multiplier.<glob>";
+
+/// One plugin-level setting (`Some` value to set, `None` to remove) on the per-window overrides.
+/// Capacity is per account, so a plugin never takes it.
+fn plugin_setting(meters: &mut BTreeMap<String, WindowOverride>, key: &str, value: Option<&str>) -> Result<(), String> {
+    if matches!(window_key(key), Some((_, "capacity"))) {
+        return Err("capacity is per account; use routing set <provider> <account>".into());
+    }
+    let (w, meter) = window_meter_key(key).ok_or_else(|| format!("{key}: unknown setting; allowed: {PLUGIN_KEYS}"))?;
+    let value = value.map(|v| number(key, v)).transpose()?;
+    let o = meters.entry(w.to_owned()).or_default();
+    set_meter(o, key, meter, value)?;
+    if *o == WindowOverride::default() {
+        meters.remove(w);
+    }
+    Ok(())
+}
+
+/// `{ input = 1.0, output = 15.0 }`: the classes that are set, in the gate's order.
+fn inline_weights(t: PartialTokenWeights) -> String {
+    let parts: Vec<String> = [
+        ("input", t.input),
+        ("output", t.output),
+        ("cache_read", t.cache_read),
+        ("cache_write", t.cache_write),
+    ]
+    .into_iter()
+    .filter_map(|(class, v)| v.map(|v| format!("{class} = {v:?}")))
+    .collect();
+    format!("{{ {} }}", parts.join(", "))
+}
+
+/// `{ "claude-opus-*" = 1.5 }`: the globs quoted, in the map's order.
+fn inline_multipliers<'a>(m: impl Iterator<Item = (&'a String, &'a f64)>) -> String {
+    let parts: Vec<String> = m.map(|(glob, f)| format!("\"{}\" = {f:?}", quoted(glob))).collect();
+    format!("{{ {} }}", parts.join(", "))
+}
+
+/// A TOML basic-string body: backslashes and quotes escaped.
+fn quoted(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Loads `config.toml`, lets `change` edit one plugin's per-window weights and multipliers, checks
+/// the windows that changed with the gate's rules and the plugin's declared windows, rewrites
+/// their `[provider.<id>.meter."<window>"]` tables, then saves and tells the server.
+fn edit_plugin(
+    home: &OperatorHome,
+    provider: &str,
+    change: impl FnOnce(&mut BTreeMap<String, WindowOverride>) -> Result<(), String>,
+) -> Result<ExitCode, ExitCode> {
+    let path = home.config_file();
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(fail(format!("{}: {e}", path.display()))),
+    };
+    let config: OperatorConfig = toml::from_str(&text).map_err(|e| fail(format!("{}: {e}", path.display())))?;
+    let reg = crate::open(Some(home.path().to_owned()))?.snapshot();
+    let p = reg.provider(provider).map_err(|_| {
+        let known: Vec<&str> = reg.providers().map(|p| p.id.as_str()).collect();
+        fail(format!("no provider {provider:?}; known providers: {}", known.join(", ")))
+    })?;
+    let id = p.id.clone();
+    let declared = p.routing().windows;
+
+    let before: BTreeMap<String, WindowOverride> = config
+        .provider
+        .get(&id)
+        .map(|s| {
+            s.meter
+                .iter()
+                .map(|(w, m)| {
+                    let o = WindowOverride {
+                        token_weights: m.token_weights,
+                        model_multiplier: m.model_multiplier.clone(),
+                        ..Default::default()
+                    };
+                    (w.clone(), o)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut after = before.clone();
+    change(&mut after).map_err(fail)?;
+    let changed: BTreeSet<String> =
+        before.keys().chain(after.keys()).filter(|n| before.get(*n) != after.get(*n)).cloned().collect();
+    if changed.is_empty() {
+        println!("{id}: no change");
+        return Ok(ExitCode::SUCCESS);
+    }
+    for name in &changed {
+        let Some(o) = after.get(name) else { continue };
+        let one = RoutingOverrides { window: BTreeMap::from([(name.clone(), o.clone())]), ..Default::default() };
+        if let Some(problem) = one.problem() {
+            return Err(fail(problem));
+        }
+        if !one.unknown_windows(declared).is_empty() {
+            return Err(fail(format!("window.{name}: {id} declares no window with that name")));
+        }
+        if let Some(problem) = one.meter_problem(&id, declared) {
+            return Err(fail(problem));
+        }
+    }
+
+    let mut edited = text;
+    for name in &changed {
+        let header = format!("provider.{id}.meter.\"{}\"", quoted(name));
+        let (weights, multipliers) = match after.get(name) {
+            Some(o) => (
+                o.token_weights.map(inline_weights),
+                (!o.model_multiplier.is_empty()).then(|| inline_multipliers(o.model_multiplier.iter())),
+            ),
+            None => (None, None),
+        };
+        edited = edit(&edited, &header, "token_weights", weights.as_deref()).0;
+        edited = edit(&edited, &header, "model_multiplier", multipliers.as_deref()).0;
+    }
+    // The file must still load: a config the server would refuse is never written.
+    toml::from_str::<OperatorConfig>(&edited)
+        .map_err(|e| fail(format!("{}: the edit would not load: {e}", path.display())))?;
+    std::fs::create_dir_all(home.path()).map_err(fail)?;
+    let tmp = path.with_extension("toml.tmp");
+    std::fs::write(&tmp, &edited)
+        .and_then(|()| std::fs::rename(&tmp, &path))
+        .map_err(|e| fail(format!("{}: {e}", path.display())))?;
+    let status = super::apply(home).map_err(fail)?;
+    println!("{id} plugin: {status}");
+    Ok(ExitCode::SUCCESS)
+}
+
+fn set_plugin(home: &OperatorHome, provider: &str, settings: &[String]) -> Result<ExitCode, ExitCode> {
+    edit_plugin(home, provider, |meters| {
+        for setting in settings {
+            let (key, value) = setting.split_once('=').ok_or_else(|| format!("{setting}: expected key=value"))?;
+            plugin_setting(meters, key, Some(value))?;
+        }
+        Ok(())
+    })
+}
+
+fn unset_plugin(home: &OperatorHome, provider: &str, keys: &[String]) -> Result<ExitCode, ExitCode> {
+    edit_plugin(home, provider, |meters| {
+        for key in keys {
+            plugin_setting(meters, key, None)?;
         }
         Ok(())
     })

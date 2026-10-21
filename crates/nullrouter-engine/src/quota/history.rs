@@ -130,12 +130,12 @@ pub fn tally_file(home: &Path, provider: &str, account: &str) -> Result<PathBuf,
     Ok(dir.join(component(&dir, provider)?).join(format!("{}.tally.json", component(&dir, account)?)))
 }
 
-fn io_err(path: &Path) -> impl FnOnce(io::Error) -> FileError + '_ {
+pub(crate) fn io_err(path: &Path) -> impl FnOnce(io::Error) -> FileError + '_ {
     move |source| FileError::Io { path: path.to_owned(), source }
 }
 
 /// Creates the file's directories, 0700.
-fn private_dirs(path: &Path) -> Result<(), FileError> {
+pub(crate) fn private_dirs(path: &Path) -> Result<(), FileError> {
     match path.parent() {
         Some(dir) => DirBuilder::new().recursive(true).mode(0o700).create(dir).map_err(io_err(path)),
         None => Ok(()),
@@ -144,7 +144,7 @@ fn private_dirs(path: &Path) -> Result<(), FileError> {
 
 /// The history file opened for appending and locked; re-opened when a prune replaced it
 /// while this one waited for the lock.
-fn open_append(path: &Path) -> Result<File, FileError> {
+pub(crate) fn open_append(path: &Path) -> Result<File, FileError> {
     private_dirs(path)?;
     loop {
         let f = OpenOptions::new().append(true).create(true).mode(0o600).open(path).map_err(io_err(path))?;
@@ -167,7 +167,7 @@ pub fn append(home: &Path, provider: &str, account: &str, entry: &Entry) -> Resu
 
 /// Calls `each` with the file's lines, newest first, until it returns `false`. Reads only
 /// as much of the file's tail as needed.
-fn lines_backwards(f: &mut File, mut each: impl FnMut(&[u8]) -> bool) -> io::Result<()> {
+pub(crate) fn lines_backwards(f: &mut File, mut each: impl FnMut(&[u8]) -> bool) -> io::Result<()> {
     const CHUNK: u64 = 8 * 1024;
     let mut pos = f.metadata()?.len();
     let mut carry: Vec<u8> = Vec::new();
@@ -254,6 +254,10 @@ fn accounts_on_disk(
         }
         for f in fs::read_dir(d.path()).map_err(io_err(&d.path()))?.flatten() {
             let name = f.file_name().to_string_lossy().into_owned();
+            // The outside-use file sits beside the history but is not one.
+            if name.ends_with(".outside.jsonl") {
+                continue;
+            }
             let Some(a) = name.strip_suffix(".jsonl").or_else(|| name.strip_suffix(".tally.json")) else {
                 continue;
             };
@@ -271,7 +275,8 @@ fn accounts_on_disk(
 }
 
 /// Deletes entries before `before` from every history (of `provider`, and `account`, when
-/// given). Returns how many were deleted. Unreadable lines are kept.
+/// given). Returns how many were deleted. Unreadable lines are kept. The account's outside-use
+/// file is pruned too, under the same lock: see [`prune_outside`]. The count is history entries only.
 pub fn prune(
     home: &Path,
     before: SystemTime,
@@ -304,18 +309,89 @@ pub fn prune(
             files::write_private(&path, &kept)?;
             removed += dropped;
         }
+        // `f` still holds the history lock, which the outside-use writer takes too.
+        prune_outside(home, &p, &a, before)?;
     }
     Ok(removed)
 }
 
-/// Deletes the account's history and checkpoint. `false`: there was none.
+/// Drops the outside-use lines whose `start` is before `before`, except unacknowledged alerts
+/// and their entries. An acknowledged alert, an `ack` and a `reclassified` line go with the entry
+/// or alert they name; unreadable lines are kept. The caller holds the history lock.
+fn prune_outside(home: &Path, provider: &str, account: &str, before: SystemTime) -> Result<(), FileError> {
+    use super::fit::outside::{Line, outside_file};
+    use std::collections::HashSet;
+
+    let path = outside_file(home, provider, account)?;
+    let Some(text) = files::read_private(&path)? else { return Ok(()) };
+    let lines: Vec<(&str, Option<Line>)> =
+        text.lines().filter(|l| !l.is_empty()).map(|l| (l, serde_json::from_str::<Line>(l).ok())).collect();
+    let acked: HashSet<&str> = lines
+        .iter()
+        .filter_map(|(_, l)| match l {
+            Some(Line::Ack { alert, .. }) => Some(alert.as_str()),
+            _ => None,
+        })
+        .collect();
+    // Entries an unacknowledged alert names stay.
+    let pinned: HashSet<&str> = lines
+        .iter()
+        .filter_map(|(_, l)| match l {
+            Some(Line::Alert { id, entry, .. }) if !acked.contains(id.as_str()) => Some(entry.as_str()),
+            _ => None,
+        })
+        .collect();
+    let old: HashSet<&str> = lines
+        .iter()
+        .filter_map(|(_, l)| match l {
+            Some(Line::Entry(e)) if !pinned.contains(e.id.as_str()) && e.start_time().is_some_and(|t| t < before) => {
+                Some(e.id.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    // Alerts that go: acknowledged ones whose entry goes.
+    let gone_alerts: HashSet<&str> = lines
+        .iter()
+        .filter_map(|(_, l)| match l {
+            Some(Line::Alert { id, entry, .. }) if acked.contains(id.as_str()) && old.contains(entry.as_str()) => {
+                Some(id.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    let mut kept = String::with_capacity(text.len());
+    let mut dropped = false;
+    for (raw, line) in &lines {
+        let drop = match line {
+            Some(Line::Entry(e)) => old.contains(e.id.as_str()),
+            Some(Line::Alert { id, .. }) => gone_alerts.contains(id.as_str()),
+            Some(Line::Ack { alert, .. }) => gone_alerts.contains(alert.as_str()),
+            Some(Line::Reclassified { entry, .. }) => old.contains(entry.as_str()),
+            None => false,
+        };
+        if drop {
+            dropped = true;
+        } else {
+            kept.push_str(raw);
+            kept.push('\n');
+        }
+    }
+    if dropped {
+        files::write_private(&path, &kept)?;
+    }
+    Ok(())
+}
+
+/// Deletes the account's history, checkpoint and outside-use file. `false`: there was none.
 pub fn forget(home: &Path, provider: &str, account: &str) -> Result<bool, FileError> {
     let mut found = false;
     let history = history_file(home, provider, account)?;
     if let Ok(f) = File::open(&history) {
         f.lock().map_err(io_err(&history))?;
     }
-    for path in [history, tally_file(home, provider, account)?] {
+    let outside = super::fit::outside::outside_file(home, provider, account)?;
+    for path in [history, tally_file(home, provider, account)?, outside] {
         match fs::remove_file(&path) {
             Ok(()) => found = true,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
@@ -364,6 +440,18 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Called with `(provider, account, entry)` after an entry is durably appended.
+pub type EntryObserver = Arc<dyn Fn(&str, &str, &Entry) + Send + Sync>;
+
+#[derive(Default)]
+struct Observers(Mutex<Vec<EntryObserver>>);
+
+impl std::fmt::Debug for Observers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Observers").field("len", &lock(&self.0).len()).finish()
+    }
+}
+
 /// The engine's poll history writer and running tallies.
 #[derive(Debug)]
 pub struct History {
@@ -375,6 +463,8 @@ pub struct History {
     /// Held by whoever writes files: one writer at a time, in queue order.
     writer: Mutex<()>,
     checkpoint_ms: AtomicU64,
+    /// Told of each entry once it is on disk (the quota fit learns from them, spec 012).
+    observers: Observers,
 }
 
 impl History {
@@ -387,6 +477,7 @@ impl History {
             queue: Mutex::default(),
             writer: Mutex::default(),
             checkpoint_ms: AtomicU64::new(CHECKPOINT_EVERY.as_millis() as u64),
+            observers: Observers::default(),
         };
         match accounts_on_disk(home, None, None) {
             Ok(list) => {
@@ -406,6 +497,12 @@ impl History {
 
     pub fn home(&self) -> &Path {
         &self.home
+    }
+
+    /// Registers `f` to run after each entry is durably appended, on the writing thread. It
+    /// must not call back into this history's writers.
+    pub fn on_entry(&self, f: EntryObserver) {
+        lock(&self.observers.0).push(f);
     }
 
     /// How often the server checkpoints (tests shorten it).
@@ -467,6 +564,10 @@ impl History {
             // The entry holds the taken tally; an old checkpoint is stale against it.
             tracing::warn!(provider = p, account = a, "tally checkpoint not written: {e}");
             self.tally.mark_dirty(p, a);
+        }
+        let observers: Vec<EntryObserver> = lock(&self.observers.0).clone();
+        for observe in observers {
+            observe(p, a, &entry);
         }
         Ok(entry)
     }

@@ -239,7 +239,7 @@ fn accounts_list_shows_sign_in_states_and_the_command() {
     fn cells(l: &str) -> Vec<&str> {
         l.split("  ").map(str::trim).filter(|c| !c.is_empty()).collect()
     }
-    assert_eq!(cells(lines[0]), ["provider", "name", "kind", "order", "priority", "secret", "proxy", "state"], "{text}");
+    assert_eq!(cells(lines[0]), ["provider", "name", "kind", "order", "priority", "secret", "proxy", "exclusive", "state"], "{text}");
     assert_eq!(cells(lines[1]), ["anthropic", "api", "key", "1", "1", "…0003", "—", "active"], "{text}");
     assert_eq!(cells(lines[2]), ["anthropic", "max", "signin", "0", "1", "…h3Kq", "—", "active"], "{text}");
     assert_eq!(
@@ -594,4 +594,24 @@ fn adapters_list_shows_hermes_as_built_in_and_unknown_harnesses_fail() {
     let out = nr(h, &["adapters", "remove", "nosuch", "--yes"], "");
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("no harness nosuch"));
+}
+
+/// T057 (FR-023): `accounts exclusive on` refuses an account whose provider reports no quota
+/// (xai declares no `[quota]`): exit 2, the reason on stderr, and the accounts file unchanged.
+#[test]
+fn exclusive_use_is_refused_where_the_provider_reports_no_quota() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = dir.path();
+    assert!(nr(h, &["accounts", "add", "xai", "main"], &format!("{SECRET}\n")).status.success());
+    let file = h.join(accounts::FILE);
+    let before = std::fs::read_to_string(&file).unwrap();
+
+    let out = nr(h, &["accounts", "exclusive", "xai", "main", "on"], "");
+    assert_eq!(out.status.code(), Some(2), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "account xai/main: exclusive use needs quota polls; xai reports no quota for this account\n"
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), before, "a refused declaration writes nothing");
+    assert!(Accounts::load(&file).unwrap().get("xai", "main").unwrap().exclusive_use.is_none());
 }

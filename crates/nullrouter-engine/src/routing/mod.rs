@@ -5,11 +5,14 @@
 //! argument, so the simulated week (US6) can drive it with an injected clock. The `no_io` test
 //! below keeps it that way.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::time::{Duration, SystemTime};
 
 use nullrouter_registry::schema::CacheMode;
 use serde::{Deserialize, Serialize};
+
+use crate::quota::fit::Source;
 
 pub use meter::{AccountQuota, QuotaState};
 pub use price::PriceSpec;
@@ -165,6 +168,9 @@ pub struct CandidateRow {
     pub deficit_before: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub price_now: Option<f64>,
+    /// Window name → number name → source, for the numbers the quota read that aren't declared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meter_sources: Option<BTreeMap<String, BTreeMap<String, Source>>>,
 }
 
 impl CandidateRow {
@@ -242,6 +248,8 @@ pub struct Candidate {
     pub quota: AccountQuota,
     pub cache: CacheSpec,
     pub price: PriceSpec,
+    /// Carried into the decision row: the non-declared numbers in effect, per window.
+    pub meter_sources: Option<BTreeMap<String, BTreeMap<String, Source>>>,
 }
 
 /// What `place` reads: one target's candidates and the request's facts.
@@ -375,6 +383,7 @@ mod types_tests {
                 share: Some(0.61),
                 deficit_before: Some(91_200),
                 price_now: None,
+                meter_sources: None,
             }],
             order: vec![0],
         };

@@ -5,8 +5,12 @@
 
 mod common;
 
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
 use common::*;
 use nullrouter_engine::classify;
+use nullrouter_engine::quota::fit::{Fits, WindowFit};
 use nullrouter_engine::records::{AttemptOutcome, RequestRecord};
 use nullrouter_engine::routing::{CandidateRow, DecisionKind, MovedBecause, PlacementReason, Tier};
 use nullrouter_engine::testkit::SimWindow;
@@ -153,4 +157,30 @@ async fn every_cold_and_overflow_record_is_recomputable_from_its_rows() {
         assert_eq!(format!("{}/{}", first.provider, first.account.as_deref().unwrap_or("")), recomputed(&d));
     }
     assert_eq!(overflow, 4);
+}
+
+/// The candidate row of `provider/account` in a record's decision, as JSON.
+fn row_json(r: &RequestRecord, provider: &str, account: &str) -> Value {
+    let d = r.decision.as_ref().expect("a decision");
+    let row = d.candidates.iter().find(|c| c.provider == provider && c.account == account).expect("the row");
+    serde_json::to_value(row).unwrap()
+}
+
+#[tokio::test]
+async fn meter_sources_is_absent_until_a_capacity_is_fitted_then_names_it() {
+    let f = fleet().build().await;
+    // Every number alpha/a's 5h window has is declared: the row carries no meter_sources.
+    let before = ask(&f, "ak_1", "before the fit").await;
+    let row = row_json(&before, "alpha", "a");
+    assert!(row.get("meter_sources").is_none(), "{row}");
+
+    // A significant capacity for alpha/a's 5h window: store the fit and rebuild the meters.
+    let window = WindowFit { capacity: BTreeMap::from([("a".to_owned(), 900_000.0)]), ..Default::default() };
+    let fits = Fits { windows: BTreeMap::from([("alpha".to_owned(), BTreeMap::from([("5h".to_owned(), window)]))]) };
+    f.setup.engine.fits.store(Arc::new(fits));
+    f.setup.engine.rebuild_meters();
+
+    let after = ask(&f, "ak_2", "after the fit").await;
+    let row = row_json(&after, "alpha", "a");
+    assert_eq!(row["meter_sources"], json!({"5h": {"capacity": "fit"}}), "{row}");
 }

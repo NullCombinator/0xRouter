@@ -3,6 +3,8 @@
 //! `routing` view. Files are written atomically and checked with the registry gate's rules; the
 //! view needs a running server (exit 4 without one).
 
+#![recursion_limit = "256"]
+
 use std::io::Write;
 use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
@@ -10,7 +12,7 @@ use std::time::Duration;
 
 use nullrouter_engine::accounts::{self, Accounts};
 use nullrouter_engine::testkit::{MockUpstream, Step};
-use nullrouter_registry::schema::OperatorConfig;
+use nullrouter_registry::schema::{OperatorConfig, PartialTokenWeights};
 use serde_json::{Value, json};
 
 const SECRET: &str = "sk-routing-SENTINEL-0050";
@@ -195,6 +197,148 @@ fn the_view_needs_a_server() {
     let o = nr(dir.path(), &["routing"]);
     assert_eq!(o.status.code(), Some(4), "{}", text(&o));
     assert!(text(&o).contains("no server is running"), "{}", text(&o));
+}
+
+/// A plugin whose `5-hour` window is weighted and declares the glob `claude-*`, and whose
+/// `per-minute` window counts requests.
+fn gamma(home: &Path) {
+    std::fs::create_dir_all(home.join("plugins")).unwrap();
+    std::fs::write(
+        home.join("plugins/gamma.toml"),
+        "schema = 2\nid = \"gamma\"\ncategory = \"apikey\"\n[auth]\nkind = \"apikey\"\n\
+         [endpoints.text]\nurl = \"https://gamma.example/v1/chat/completions\"\nwire = \"openai-chat\"\n\
+         [[models]]\nid = \"m1\"\n[[routing.window]]\nname = \"5-hour\"\nlength = \"5h\"\n\
+         unit = \"weighted_tokens\"\nmodel_multiplier = { \"claude-*\" = 2.0 }\n\
+         [[routing.window]]\nname = \"per-minute\"\nlength = \"1m\"\nunit = \"requests\"\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_weight_and_a_multiplier_round_trip_through_accounts_toml() {
+    let dir = tempfile::tempdir().unwrap();
+    gamma(dir.path());
+    ok(dir.path(), &["accounts", "add", "gamma", "key"]);
+    let out = ok(
+        dir.path(),
+        &["routing", "set", "gamma", "key", "window.5-hour.weight.output=15", "window.5-hour.multiplier.claude-*=1.5"],
+    );
+    assert!(out.contains("saved; applies at next start"), "{out}");
+    let r = load(dir.path()).get("gamma", "key").unwrap().routing.clone();
+    let w = &r.window["5-hour"];
+    assert_eq!(w.token_weights, Some(PartialTokenWeights { output: Some(15.0), ..Default::default() }));
+    assert_eq!(w.model_multiplier.get("claude-*"), Some(&1.5));
+
+    // Refusals say why and change nothing: a request window has no weights, a glob must be
+    // declared, and a class must be one of the four.
+    let before = std::fs::read(dir.path().join(accounts::FILE)).unwrap();
+    let msg = refused(dir.path(), &["routing", "set", "gamma", "key", "window.per-minute.weight.output=2"]);
+    assert!(msg.contains("only applies to unit \"weighted_tokens\""), "{msg}");
+    let msg = refused(dir.path(), &["routing", "set", "gamma", "key", "window.5-hour.multiplier.claude-opus-*=2"]);
+    assert!(msg.contains("declares no glob"), "{msg}");
+    let msg = refused(dir.path(), &["routing", "set", "gamma", "key", "window.5-hour.weight.thinking=2"]);
+    assert!(msg.contains("unknown weight class"), "{msg}");
+    assert_eq!(std::fs::read(dir.path().join(accounts::FILE)).unwrap(), before);
+
+    ok(dir.path(), &["routing", "unset", "gamma", "key", "window.5-hour.weight.output"]);
+    let r = load(dir.path()).get("gamma", "key").unwrap().routing.clone();
+    assert!(r.window["5-hour"].token_weights.is_none());
+    assert_eq!(r.window["5-hour"].model_multiplier.get("claude-*"), Some(&1.5));
+    ok(dir.path(), &["routing", "unset", "gamma", "key", "window.5-hour.multiplier.claude-*"]);
+    assert!(load(dir.path()).get("gamma", "key").unwrap().routing.is_empty());
+}
+
+#[test]
+fn set_plugin_writes_the_meter_table_and_unset_plugin_takes_it_out() {
+    let dir = home();
+    let out = ok(dir.path(), &["routing", "set-plugin", "anthropic", "window.5-hour.weight.output=15"]);
+    assert!(out.contains("saved; applies at next start"), "{out}");
+    let text = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert!(text.contains("[provider.anthropic.meter.\"5-hour\"]"), "{text}");
+    let c = config(dir.path());
+    let m = &c.provider["anthropic"].meter["5-hour"];
+    assert_eq!(m.token_weights, Some(PartialTokenWeights { output: Some(15.0), ..Default::default() }));
+
+    ok(dir.path(), &["routing", "unset-plugin", "anthropic", "window.5-hour.weight.output"]);
+    let text = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert!(!text.contains("meter"), "{text}");
+
+    // Capacity is per account: refused with the contract's text, and the file is left alone.
+    let msg = refused(dir.path(), &["routing", "set-plugin", "anthropic", "window.5-hour.capacity=12000000"]);
+    assert!(msg.contains("capacity is per account; use routing set <provider> <account>"), "{msg}");
+    assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), text);
+}
+
+#[test]
+fn set_plugin_takes_a_declared_multiplier_and_refuses_the_rest() {
+    let dir = tempfile::tempdir().unwrap();
+    gamma(dir.path());
+    ok(dir.path(), &["routing", "set-plugin", "gamma", "window.5-hour.multiplier.claude-*=1.5"]);
+    let text = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+    assert!(text.contains("[provider.gamma.meter.\"5-hour\"]"), "{text}");
+    assert!(text.contains("model_multiplier = { \"claude-*\" = 1.5 }"), "{text}");
+
+    let msg = refused(dir.path(), &["routing", "set-plugin", "gamma", "window.5-hour.multiplier.claude-opus-*=1.5"]);
+    assert!(msg.contains("gamma declares no glob \"claude-opus-*\" for window 5-hour"), "{msg}");
+    let msg = refused(dir.path(), &["routing", "set-plugin", "gamma", "window.per-minute.weight.output=2"]);
+    assert!(msg.contains("only applies to unit \"weighted_tokens\""), "{msg}");
+    let msg = refused(dir.path(), &["routing", "set-plugin", "gamma", "window.nope.weight.output=2"]);
+    assert!(msg.contains("declares no window with that name"), "{msg}");
+    let msg = refused(dir.path(), &["routing", "set-plugin", "nobody", "window.5-hour.weight.output=2"]);
+    assert!(msg.contains("no provider \"nobody\""), "{msg}");
+    assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), text);
+}
+
+#[test]
+fn the_meter_block_shows_each_number_state_and_the_unfitted_line() {
+    let answer = json!({
+        "amortization": {"start": "2026-10-04T05:00:00.000Z", "length": "5h"},
+        "journal": {"kept": true, "last_sync_age_s": 0.4},
+        "targets": [{"target": "sonnet", "accounts": [
+            {"provider": "anthropic", "account": "max", "tier": "subscription", "source": "polled",
+             "priority": 1.0, "pace": 1.42, "share": 0.61, "deficit": 91200, "cache_lifetime": "5m",
+             "price_now": null, "why_not": null, "windows": [],
+             "meter": [{"window": "5-hour", "epoch": "2026-10-04T05:00:00.000Z", "split": null,
+                 "set_aside": {"reset": 0, "usage_unreported": 0, "exhausted": 0},
+                 "numbers": [
+                     {"number": "capacity", "declared": 9000000.0, "account_override": null, "plugin_override": null,
+                      "fit": {"value": 13800000.0, "low": 13100000.0, "high": 14600000.0}, "in_use": 13800000.0,
+                      "source": "fit", "state": "fitted", "since": "2026-10-06T09:10:00.000Z", "progress": null,
+                      "partner": null, "reason": null},
+                     {"number": "weight.input", "declared": 1.0, "account_override": null, "plugin_override": null,
+                      "fit": null, "in_use": null, "source": "declared", "state": "yardstick", "since": null,
+                      "progress": null, "partner": null, "reason": null},
+                     {"number": "weight.cache_read", "declared": 0.1, "account_override": null, "plugin_override": null,
+                      "fit": null, "in_use": null, "source": "declared", "state": "learning", "since": null,
+                      "progress": {"intervals": 312, "half_width": 0.4}, "partner": null, "reason": null},
+                     {"number": "weight.cache_write", "declared": 1.25, "account_override": null, "plugin_override": null,
+                      "fit": null, "in_use": null, "source": "declared", "state": "not_separable", "since": null,
+                      "progress": null, "partner": "weight.cache_read", "reason": null}
+                 ]}]},
+            {"provider": "opencode-go", "account": "main", "tier": "subscription", "source": "estimated",
+             "priority": 1.0, "pace": 1.05, "share": 0.2, "deficit": 0, "cache_lifetime": "5m",
+             "price_now": null, "why_not": null, "windows": [], "meter": [],
+             "fit_note": "provider reports no quota"}
+        ]}]
+    });
+    let now = nullrouter_engine::clock::parse_rfc3339("2026-10-04T07:12:00Z").unwrap();
+    let text = nullrouter_cli::routing_text::render(&answer, now);
+    let lines: Vec<&str> = text.lines().collect();
+    let max = lines.iter().position(|l| l.contains("anthropic/max")).unwrap();
+    let want = [
+        format!(
+            "    {:<15}{:<20}{}",
+            "meter 5-hour",
+            "capacity",
+            "9.0M declared · fit 13.1M–14.6M · in use 13.8M fit since Tue 09:10"
+        ),
+        format!("{:19}{:<20}{}", "", "weight.input", "1 yardstick"),
+        format!("{:19}{:<20}{}", "", "weight.cache_read", "0.1 declared · learning 312 intervals ±40%"),
+        format!("{:19}{:<20}{}", "", "weight.cache_write", "1.25 declared · not separable from weight.cache_read"),
+    ];
+    assert_eq!(lines[max + 1..max + 5].join("\n"), want.join("\n"), "{text}");
+    assert!(lines[max + 5].contains("opencode-go/main"), "{text}");
+    assert_eq!(lines[max + 6], format!("    {:<15}{}", "meter", "not fitted: provider reports no quota"), "{text}");
 }
 
 // ---- against a running server ----

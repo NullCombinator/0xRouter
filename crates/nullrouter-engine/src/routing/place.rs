@@ -185,6 +185,7 @@ pub fn place(input: &RoutingInput, now: SystemTime) -> Placement {
             share: s.why_not.is_none().then_some(share_of[i]),
             deficit_before: Some(deficit_of(i).round() as i64),
             price_now: (tier(i) == Tier::Payg).then(|| price::price_now(&c.price, now)).flatten(),
+            meter_sources: c.meter_sources.clone(),
         })
         .collect();
 
@@ -291,6 +292,7 @@ mod tests {
             },
             cache: CacheSpec { mode: CacheMode::Automatic, lifetime: Duration::from_secs(300), min_tokens: 1024 },
             price: PriceSpec::default(),
+            meter_sources: None,
         }
     }
 

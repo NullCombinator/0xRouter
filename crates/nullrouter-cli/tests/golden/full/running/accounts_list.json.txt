@@ -17,7 +17,8 @@ exit: 0
     "email": null,
     "tier": null,
     "expires_at": null,
-    "last_refresh_at": null
+    "last_refresh_at": null,
+    "exclusive_use": null
   },
   {
     "provider": "anthropic",
@@ -35,7 +36,8 @@ exit: 0
     "email": null,
     "tier": null,
     "expires_at": null,
-    "last_refresh_at": null
+    "last_refresh_at": null,
+    "exclusive_use": null
   },
   {
     "provider": "openrouter",
@@ -53,7 +55,8 @@ exit: 0
     "email": null,
     "tier": null,
     "expires_at": null,
-    "last_refresh_at": null
+    "last_refresh_at": null,
+    "exclusive_use": null
   },
   {
     "provider": "xai",
@@ -71,7 +74,8 @@ exit: 0
     "email": "work@example.test",
     "tier": "pro",
     "expires_at": "2026-10-03T20:23:00Z",
-    "last_refresh_at": "2026-10-03T12:00:00Z"
+    "last_refresh_at": "2026-10-03T12:00:00Z",
+    "exclusive_use": null
   },
   {
     "provider": "xai",
@@ -89,7 +93,8 @@ exit: 0
     "email": null,
     "tier": null,
     "expires_at": "2026-10-02T09:00:00Z",
-    "last_refresh_at": null
+    "last_refresh_at": null,
+    "exclusive_use": null
   },
   {
     "provider": "xai",
@@ -107,7 +112,8 @@ exit: 0
     "email": null,
     "tier": null,
     "expires_at": "2026-10-02T10:00:00Z",
-    "last_refresh_at": null
+    "last_refresh_at": null,
+    "exclusive_use": null
   }
 ]
 --- stderr

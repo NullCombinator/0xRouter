@@ -159,3 +159,41 @@ async fn the_view_carries_every_number_the_operator_reads_and_a_priority_applies
     assert_eq!(b["priority"], 3.0);
     assert!(b["share"].as_f64().unwrap() > before * 2.0, "{before} -> {}", b["share"]);
 }
+
+#[tokio::test]
+async fn the_fit_fields_reach_the_op_for_a_polled_account() {
+    let quota_mock = MockQuota::start().await;
+    let quota = SimQuota::new();
+    quota_mock.simulate(&quota);
+    quota.account("sk-view-a", "alpha/a");
+    let reset = nullrouter_engine::clock::rfc3339(SystemTime::now() + Duration::from_secs(3600));
+    quota.set("alpha/a", vec![SimWindow::new("5h", "tokens", 1_000_000.0, &reset).used(200_000.0)]);
+    let url = quota_mock.url(QuotaRoute::Sim);
+    let s = server_custom(
+        |m| {
+            let alpha = format!("{}{ALPHA}\n{}", chat(m, "alpha", ""), SimQuota::quota_toml(&url, &[("5h", "tokens")]));
+            vec![("alpha", alpha), ("pay", chat(m, "pay", PAY))]
+        },
+        &accounts(1.0),
+        "[[unified_model]]\nname = \"u\"\nmembers = [{ provider = \"alpha\", model = \"m1\" }, { provider = \"pay\", model = \"m1\" }]\n",
+    )
+    .await;
+    s.engine.poll_quota("alpha", "a").await.expect("polled");
+
+    let view = operator::handle(&s.engine, &json!({"op": "routing.view"})).await;
+    assert_eq!(view["ok"], true, "{view:#}");
+    let a = row(&view, "alpha/a");
+    // The polled account carries its meter, its outside use and no fit note.
+    let meter = a["meter"].as_array().unwrap_or_else(|| panic!("meter missing from {a:#}"));
+    assert_eq!(meter.len(), 1, "{a:#}");
+    assert_eq!(meter[0]["window"], "5h");
+    assert!(meter[0].get("numbers").is_some() && meter[0].get("set_aside").is_some(), "{a:#}");
+    assert_eq!(a["outside_use"]["intervals_7d"], 0);
+    assert_eq!(a["outside_use"]["alerts"], json!([]));
+    assert!(a.get("fit_note").is_some_and(Value::is_null), "{a:#}");
+    // The pay-as-you-go account has no meter and says why the fit leaves it alone.
+    let p = row(&view, "pay/key");
+    assert_eq!(p["fit_note"], "pay-as-you-go");
+    assert_eq!(p["meter"], json!([]));
+    assert!(view["warnings"].is_array(), "{view:#}");
+}

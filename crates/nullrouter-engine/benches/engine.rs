@@ -14,17 +14,26 @@
 //! (T041) plans every unified model a 3-level combo walks: `c1 = [u0, c2]`, `c2 = [u1, c3]`,
 //! `c3 = [u2, u3]`, each unified model one provider × 4 accounts, with the empty board.
 //!
+//! `placement/meters_in_effect` (spec 012, T067, SC-011): the `same_style` request against an
+//! account whose meters are in effect, a fitted capacity, output weight and multiplier, so the
+//! placement reads non-declared cells. It is compared against the `slice-006` baseline locally
+//! only (`-- placement --baseline slice-006`); the baseline is never committed and cloud timings
+//! don't compare.
+//!
 //! `cargo bench -p nullrouter-engine --bench engine -- --save-baseline slice-003`
 
 #[path = "../tests/common/mod.rs"]
 mod common;
 
 use std::hint::black_box;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::{Setup, chat_body, chat_chunks, chat_plugin, request, setup, setup_signin};
 use criterion::{Criterion, criterion_group, criterion_main};
 use nullrouter_engine::attempt::Answer;
+use nullrouter_engine::quota::fit::{Fits, TokenClass, WindowFit};
+use nullrouter_engine::testkit::SimQuota;
 use serde_json::json;
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
@@ -149,6 +158,60 @@ fn bench(c: &mut Criterion) {
     group.finish();
 
     plan_bench(c, &rt);
+    placement_bench(c, &rt);
+}
+
+/// `placement/meters_in_effect` (spec 012, SC-011): one account of `fitco` carries a published
+/// `WindowFit` (capacity, an output weight, a multiplier), installed through the engine's public
+/// `fits` cell and `rebuild_meters`, so `Meters::rebuild` yields non-declared cells that the
+/// placement reads. The request goes through `first_piece` like `ttfb/same_style`.
+fn placement_bench(c: &mut Criterion, rt: &Runtime) {
+    let s = rt.block_on(setup(|m| vec![("fitco", metered_plugin(m))], &[("fitco", "main"), ("fitco", "spare")], ""));
+    s.mock.respond(|_| chat_chunks());
+
+    let fit = WindowFit {
+        weights: [(TokenClass::Output, 4.0)].into_iter().collect(),
+        multipliers: [("m1".to_owned(), 2.0)].into_iter().collect(),
+        capacity: [("main".to_owned(), 900_000.0), ("spare".to_owned(), 950_000.0)].into_iter().collect(),
+        ..WindowFit::default()
+    };
+    let mut fits = Fits::default();
+    fits.windows.insert("fitco".to_owned(), [("5h".to_owned(), fit)].into_iter().collect());
+    s.engine.fits.store(Arc::new(fits));
+    s.engine.rebuild_meters();
+    assert!(
+        ["main", "spare"].iter().all(|a| s.engine.meters.get("fitco", a).is_some()),
+        "the fit is in effect: every account has a meter cell"
+    );
+
+    let mut group = c.benchmark_group("placement");
+    let mut all = Vec::new();
+    group.bench_function("meters_in_effect", |b| {
+        b.iter_custom(|iters| {
+            rt.block_on(async {
+                let mut total = Duration::ZERO;
+                for _ in 0..iters {
+                    let took = first_piece(&s, "openai-chat", "fitco/m1", chat_body("fitco/m1", true)).await;
+                    all.push(took);
+                    total += took;
+                }
+                total
+            })
+        })
+    });
+    report("placement/meters_in_effect", std::mem::take(&mut all));
+    group.finish();
+}
+
+/// An openai-chat provider `fitco` with a `5h` `[routing]` window that declares token weights and
+/// an `m1` multiplier, and a `[quota]` that reports it for its accounts, so a fit applies to them.
+fn metered_plugin(mock: &nullrouter_engine::testkit::MockUpstream) -> String {
+    let mut toml = chat_plugin(mock, "fitco", "");
+    toml += "[[routing.window]]\nname = \"5h\"\nlength = \"5h\"\nunit = \"weighted_tokens\"\ncapacity = 1000000\n";
+    toml += "token_weights = { input = 1.0, output = 5.0, cache_read = 0.1, cache_write = 1.25 }\n";
+    toml += "model_multiplier = { \"m1\" = 1.0 }\n";
+    toml += &SimQuota::quota_toml(&mock.url("/fitco/usage"), &[("5h", "weighted_tokens")]);
+    toml
 }
 
 fn plan_bench(c: &mut Criterion, rt: &Runtime) {
