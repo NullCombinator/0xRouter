@@ -49,12 +49,14 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
             as_of: ctx.page.as_of,
         })))
         (endpoint(ctx.json(ViewName::Check)))
-        (section_bar_noted("Agents", prose(ADD_HINT), disabled_button("Add Agent", Some("add"), true)))
-        @if keys.is_empty() {
-            (card(None, empty("key", NO_AGENTS, NO_AGENTS_HINT)))
-        } @else {
-            div class="key-grid" {
-                @for (n, k) in keys.iter().enumerate() { (key_card(ctx, n, k)) }
+        div class="key-grid" {
+            (section_bar_noted("Agents", prose(ADD_HINT), disabled_button("Add Agent", Some("add"), true)))
+            @if keys.is_empty() {
+                (card(None, empty("key", NO_AGENTS, NO_AGENTS_HINT)))
+            } @else {
+                div class="key-grid__cards" {
+                    @for (n, k) in keys.iter().enumerate() { (key_card(ctx, n, k)) }
+                }
             }
         }
     };

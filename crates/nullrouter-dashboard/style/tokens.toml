@@ -827,7 +827,7 @@ uses = ["size-full", "opacity-disabled", "color-red-500-30", "space-2", "space-3
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/ProviderLimitCard.js:58"
 
 [component.usage-overview]
-uses = ["space-6", "grid-usage", "space-2", "flex-1", "space-1", "radius-brand", "color-surface-2", "color-surface", "color-text-main", "shadow-soft"]
+uses = ["space-6", "grid-usage", "space-2", "flex-1", "space-1", "radius-brand", "color-surface-2", "color-surface", "color-text-main", "shadow-soft", "border-width", "color-border-subtle", "radius-brand-lg"]
 source = "src/shared/components/UsageStats.js:475"
 
 [component.usage-stats]
@@ -855,7 +855,7 @@ uses = ["space-1", "space-2", "space-3", "border-width", "color-border-subtle", 
 source = "src/app/(dashboard)/dashboard/usage/components/RequestDetailsTab.js:58"
 
 [component.provider-grid]
-uses = ["card-min", "fr", "space-4", "space-2", "size-9", "space-3", "border-width", "color-border", "radius-brand", "color-surface-2", "color-text-muted", "text-sm", "text-sm-leading", "icon-nav", "color-text-main", "space-1-5"]
+uses = ["card-min", "fr", "space-4", "space-2", "size-9", "space-3", "border-width", "color-border", "radius-brand", "color-surface-2", "color-text-muted", "text-sm", "text-sm-leading", "icon-nav", "color-text-main", "space-1-5", "color-surface", "space-4", "color-border-subtle", "radius-brand-lg"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:632"
 
 [component.provider-card]
@@ -879,7 +879,7 @@ uses = ["space-3", "space-1-5", "flex-1", "text-sm", "text-sm-leading", "weight-
 source = "src/app/(dashboard)/dashboard/providers/page.js:722"
 
 [component.endpoint-url]
-uses = ["space-3", "space-2-5", "radius-brand", "color-surface-2", "font-mono", "text-sm", "text-sm-leading", "color-text-muted", "text-xs", "text-xs-leading", "weight-semibold", "color-text-main"]
+uses = ["space-3", "space-2-5", "radius-brand", "color-surface-2", "font-mono", "text-sm", "text-sm-leading", "color-text-muted", "text-xs", "text-xs-leading", "weight-semibold", "color-text-main", "flex-1"]
 source = "src/shared/components/Input.js:41"
 
 [component.key-grid]

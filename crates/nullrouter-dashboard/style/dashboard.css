@@ -678,7 +678,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .usage-overview__period { display: flex; justify-content: flex-end; }
 .usage-overview__period .kind-filter { gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-brand); background: var(--color-surface-2); }
 .usage-overview__period .kind-filter__item--current, .usage-overview__period .kind-filter__item--current:hover { background: var(--color-surface); color: var(--color-text-main); box-shadow: var(--shadow-soft); }
-.usage-overview__graph { display: flex; flex-direction: column; min-width: 0; }
+.usage-overview__graph { display: flex; flex-direction: column; min-width: 0; border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-brand-lg); }
 .usage-overview__graph .slot { flex: var(--flex-1); }
 .usage-stats { display: grid; grid-template-columns: var(--grid-cols-5); gap: var(--space-3); }
 .usage-stat { display: flex; flex-direction: column; align-items: center; min-width: 0; padding: var(--space-3); gap: var(--space-1); text-align: center; }
@@ -741,7 +741,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 /* provider-grid, provider-card, provider-window, kind-filter, model-row, plugin-row: Providers */
 .provider-grid { display: flex; flex-direction: column; }
 .provider-grid__cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-min), var(--fr))); gap: var(--space-4); }
-.provider-grid__search { display: flex; align-items: center; gap: var(--space-2); }
+.provider-grid__search { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
 .provider-grid__field {
   display: flex;
   align-items: center;
@@ -750,12 +750,12 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
   padding: 0 var(--space-3);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-brand);
-  background: var(--color-surface-2);
+  background: var(--color-surface);
   color: var(--color-text-muted);
 }
 .provider-grid__field .icon { width: var(--icon-nav); height: var(--icon-nav); }
 .provider-grid__input { border: 0; background: transparent; color: var(--color-text-main); font: inherit; font-size: var(--text-sm); line-height: var(--text-sm-leading); outline: none; }
-.provider-grid__none { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-muted); font-size: var(--text-sm); line-height: var(--text-sm-leading); }
+.provider-grid__none { display: flex; align-items: center; justify-content: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-brand-lg); background: var(--color-surface); color: var(--color-text-muted); font-size: var(--text-sm); line-height: var(--text-sm-leading); }
 .provider-grid__none .icon { width: var(--icon-nav); height: var(--icon-nav); }
 .provider-card {
   display: flex;
@@ -852,6 +852,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 /* endpoint-url, key-grid, key-card, settings-list: Endpoint & Key and Settings */
 .endpoint-url { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 .endpoint-url__text {
+  flex: var(--flex-1);
   padding: var(--space-2-5) var(--space-3);
   border-radius: var(--radius-brand);
   background: var(--color-surface-2);
@@ -863,7 +864,8 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 }
 .endpoint-url__label { color: var(--color-text-main); font-weight: var(--weight-semibold); }
 .endpoint-url__note { color: var(--color-text-muted); font-size: var(--text-xs); line-height: var(--text-xs-leading); }
-.key-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-min), var(--fr))); gap: var(--space-4); }
+.key-grid { display: flex; flex-direction: column; }
+.key-grid__cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-min), var(--fr))); gap: var(--space-4); }
 .key-card {
   display: flex;
   flex-direction: column;
