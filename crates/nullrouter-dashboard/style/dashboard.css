@@ -192,6 +192,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
   background: var(--color-surface);
   box-shadow: var(--shadow-soft);
 }
+.card--bare { padding: 0; border-color: transparent; background: transparent; box-shadow: none; }
 .card__head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
 .card__tile { display: flex; flex: none; padding: var(--space-2); border-radius: var(--radius-brand); background: var(--color-bg); color: var(--color-text-muted); }
 .card__titles { flex: var(--flex-1); min-width: 0; }
@@ -900,6 +901,8 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .settings-list__path { font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--text-sm-leading); overflow-wrap: anywhere; }
 
 .gauge { display: block; }
+.gauge__face { fill: var(--color-surface); stroke: var(--color-text-subtle); stroke-width: var(--border-width); }
+.gauge__neck { fill: var(--color-text-subtle); }
 .gauge__zone { fill: none; stroke-width: var(--size-1-5); }
 .gauge__zone--ok { stroke: var(--color-green-500); }
 .gauge__zone--warn { stroke: var(--color-yellow-500); }
@@ -908,9 +911,13 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .gauge__hub { fill: var(--color-text-main); }
 .gauge__value { fill: var(--color-text-main); font-size: var(--text-11); font-weight: var(--weight-medium); }
 .gauge__small { fill: var(--color-text-muted); font-size: var(--text-10); }
-.pipe { fill: none; stroke: var(--color-border); stroke-width: var(--size-1-5); stroke-linecap: round; stroke-linejoin: round; }
-.pipe__case { fill: none; stroke: var(--color-border-subtle); stroke-width: var(--space-4); stroke-linecap: round; stroke-linejoin: round; }
-.pipe--idle { opacity: var(--edge-idle-opacity); }
+.pipe { fill: none; stroke: var(--color-border); stroke-opacity: var(--edge-last-opacity); }
+.pipe__wall { stroke: var(--color-text-subtle); stroke-opacity: var(--edge-last-opacity); stroke-linecap: round; }
+.pipe__glass { stroke: var(--color-surface-2); stroke-linecap: round; }
+.pipe__shine { stroke: var(--color-white); stroke-opacity: var(--edge-last-opacity); stroke-linecap: round; }
+.pipe__collar { fill: var(--color-surface-3); stroke: var(--color-text-subtle); stroke-width: var(--border-width); }
+.pipe--router { stroke: var(--color-primary); stroke-opacity: var(--edge-idle-opacity); }
+.pipe--idle { stroke: var(--color-border); stroke-opacity: var(--edge-idle-opacity); }
 .pipe--agent-1 { stroke: var(--agent-1); }
 .pipe--agent-2 { stroke: var(--agent-2); }
 .pipe--agent-3 { stroke: var(--agent-3); }
@@ -930,6 +937,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .topology__count { fill: var(--color-text-muted); font-size: var(--text-xs); }
 .topology__last { fill: var(--color-text-muted); font-size: var(--text-10); }
 .landscape { min-width: 0; overflow-x: auto; }
+.landscape__svg { padding: var(--space-4); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-brand-lg); }
 .landscape__svg { display: block; width: var(--size-full); height: auto; }
 .landscape__node rect { fill: var(--color-surface); stroke: var(--color-border); stroke-width: var(--border-width); }
 .landscape__node .landscape__router { fill: var(--color-surface); stroke: var(--color-primary); }
@@ -947,5 +955,16 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .landscape__card { visibility: hidden; }
 .landscape__node:hover .landscape__card, .landscape__node:focus-within .landscape__card { visibility: visible; }
 .landscape__card rect { fill: var(--color-surface); stroke: var(--color-border); stroke-width: var(--border-width); }
+.landscape__name--router { fill: var(--color-primary); }
+.landscape__legend { display: flex; flex-wrap: wrap; gap: var(--space-4); margin: var(--space-2) 0 0; padding: 0; list-style: none; }
+.landscape__key { display: flex; align-items: center; gap: var(--space-1-5); color: var(--color-text-muted); font-size: var(--text-xs); line-height: var(--text-xs-leading); }
+.landscape__swatch { width: var(--size-1-5); height: var(--size-1-5); border-radius: var(--radius-full); }
+.landscape__swatch--agent-1 { background: var(--agent-1); }
+.landscape__swatch--agent-2 { background: var(--agent-2); }
+.landscape__swatch--agent-3 { background: var(--agent-3); }
+.landscape__swatch--agent-4 { background: var(--agent-4); }
+.landscape__swatch--agent-5 { background: var(--agent-5); }
+.landscape__swatch--agent-6 { background: var(--agent-6); }
+.landscape__swatch--agent-7 { background: var(--agent-7); }
 .landscape__empty { color: var(--color-text-muted); font-size: var(--text-sm); line-height: var(--text-sm-leading); padding: var(--space-2); }
 .topology__label { color: var(--color-text-muted); font-size: var(--text-xs); text-align: center; }

@@ -174,8 +174,17 @@ impl<'a> Head<'a> {
 
 /// `Card.js` at `padding = "md"`, with an optional header.
 pub fn card(head: Option<Head<'_>>, body: Markup) -> Markup {
+    card_as("card", head, body)
+}
+
+/// A card's head over a body with no card around it: the body brings its own frame.
+pub fn bare_card(head: Head<'_>, body: Markup) -> Markup {
+    card_as("card card--bare", Some(head), body)
+}
+
+fn card_as(class: &str, head: Option<Head<'_>>, body: Markup) -> Markup {
     html! {
-        section class="card" {
+        section class=(class) {
             @if let Some(h) = head {
                 div class="card__head" {
                     span class="card__tile" { (icon(h.icon)) }

@@ -1,6 +1,7 @@
 //! The traffic landscape on Endpoint & Key (spec 010 US3, research R9): agents on the left, the
 //! router in the centre, providers on the right, one pipe per hop with a half-dial gauge on it.
-//! Pipes run straight into a manifold on each side of the router, one lane per agent colour.
+//! Pipes are glass tubes that run straight into a manifold on each side of the router; the liquid
+//! in each is its agent's colour, one lane per agent on a provider's pipe.
 //! Inline SVG drawn on the server: no script, no animation, no external reference. Every number
 //! on a gauge is printed as text beside it, so neither a zone nor the needle carries a fact
 //! alone (FR-027), and the `:hover`/`:focus-within` card only repeats what the page prints.
@@ -31,13 +32,17 @@ const AGENT_X: f64 = 10.0;
 const PROVIDER_X: f64 = 680.0;
 const ROUTER_W: f64 = 110.0;
 const ROUTER_H: f64 = 44.0;
-const PITCH: f64 = 78.0;
+const PITCH: f64 = 96.0;
 const DIAL_R: f64 = 14.0;
+/// The dial's face around the zones, and the neck that screws it into its pipe.
+const FACE_R: f64 = 19.0;
+const NECK: f64 = 6.0;
 /// The manifolds: where agent pipes turn towards the router, and provider pipes leave it.
 const MANIFOLD_L: f64 = 340.0;
 const MANIFOLD_R: f64 = 570.0;
-/// The gap between two lanes of one bundle.
-const LANE: f64 = 7.0;
+/// The pipe's bore, and the liquid inside it.
+const BORE: f64 = 18.0;
+const LIQUID: f64 = 12.0;
 
 /// What the landscape reads: three views and the page's clock.
 pub struct Inputs<'a> {
@@ -156,11 +161,13 @@ fn arc(cx: f64, cy: f64, from: f64, to: f64, class: &str) -> Markup {
 }
 
 /// A half dial on a hop: green to half scale, amber to 80%, red above; the needle at the median
-/// and pinned at full scale beyond it. The numbers are printed as text above and below it.
+/// and pinned at full scale beyond it. The pair is printed above the face, the count inside it.
 fn gauge(x: f64, y: f64, p50: Option<f64>, full: f64, pair_text: &str, requests: u64) -> Markup {
     let needle = p50.map(|v| point(x, y, DIAL_R - 2.0, 180.0 - 180.0 * (v / full).clamp(0.0, 1.0)));
     html! {
         g class="gauge" {
+            rect class="gauge__neck" x=(format!("{:.1}", x - 3.0)) y=(format!("{:.1}", y + FACE_R - 1.0)) width="6" height=(format!("{:.0}", NECK + 2.0)) {}
+            circle class="gauge__face" cx=(format!("{x:.1}")) cy=(format!("{y:.1}")) r=(format!("{FACE_R:.0}")) {}
             (arc(x, y, 180.0, 90.0, "ok"))
             (arc(x, y, 90.0, 36.0, "warn"))
             (arc(x, y, 36.0, 0.0, "hot"))
@@ -168,20 +175,10 @@ fn gauge(x: f64, y: f64, p50: Option<f64>, full: f64, pair_text: &str, requests:
                 line class="gauge__needle" x1=(format!("{x:.1}")) y1=(format!("{y:.1}")) x2=(format!("{nx:.1}")) y2=(format!("{ny:.1}")) {}
                 circle class="gauge__hub" cx=(format!("{x:.1}")) cy=(format!("{y:.1}")) r="2" {}
             }
-            text class="gauge__value" x=(format!("{x:.1}")) y=(format!("{:.1}", y - DIAL_R - 6.0)) text-anchor="middle" { (pair_text) }
-            text class="gauge__small" x=(format!("{x:.1}")) y=(format!("{:.1}", y + 30.0)) text-anchor="middle" { (requests) " req" }
+            text class="gauge__value" x=(format!("{x:.1}")) y=(format!("{:.1}", y - FACE_R - 5.0)) text-anchor="middle" { (pair_text) }
+            text class="gauge__small" x=(format!("{x:.1}")) y=(format!("{:.1}", y + 12.0)) text-anchor="middle" { (requests) " req" }
         }
     }
-}
-
-/// A lane's offset from the bundle's centre line.
-fn lane(k: usize, n: usize) -> f64 {
-    (k as f64 - (n as f64 - 1.0) / 2.0) * LANE
-}
-
-/// Straight out of `x0`, a turn at the manifold `xm`, straight on into `x1`.
-fn pipe_path(x0: f64, y0: f64, xm: f64, x1: f64, y1: f64) -> String {
-    format!("M{x0:.1},{y0:.1} H{xm:.1} V{y1:.1} H{x1:.1}")
 }
 
 /// `resolved 14:01:58` or `failed 14:00:31 (503)`, with the date when it isn't the read's date;
@@ -279,93 +276,135 @@ fn sub_of(a: &Agent<'_>) -> Option<String> {
     }
 }
 
-/// The gauge above a pipe's straight run, with its numbers.
-fn pipe_gauge(x: f64, y: f64, stat: &Value, full: f64, requests: &Value) -> Markup {
-    gauge(x, y - 8.0, stat["p50"].as_f64(), full, &pair(stat), requests.as_u64().unwrap_or(0))
-}
+/// A straight run of tube, centre line from one point to the other.
+#[derive(Clone, Copy)]
+struct Run(f64, f64, f64, f64);
 
-/// The pipe from agent `k` of `n` to the router, in its own lane of the left manifold, with its
-/// overhead gauge when it has traffic.
-fn agent_pipe(a: &Agent<'_>, (k, n): (usize, usize), y: f64, rx: f64, mid: f64) -> (Vec<(String, String)>, Markup) {
-    let x0 = AGENT_X + NODE_W;
-    let class =
-        if a.row.is_some() { format!("pipe pipe--{}", agent_colour(a.colour)) } else { "pipe pipe--idle".to_owned() };
-    let d = pipe_path(x0, y, MANIFOLD_L + lane(k, n), rx, mid + lane(k, n) / 2.0);
-    let gauge = html! {
-        @if let Some(r) = a.row { (pipe_gauge((x0 + MANIFOLD_L) / 2.0 - LANE * 2.0, y, &r["overhead"], OVERHEAD_FULL_MS, &r["requests"])) }
-    };
-    (vec![(class, d)], gauge)
-}
-
-/// The pipe from the router to provider `k` of `n`: one stroke per agent that used it, in that
-/// agent's colour; dim with no traffic. The own-wait gauge sits on it.
-fn provider_pipe(
-    p: &Provider<'_>,
-    agents: &[Agent<'_>],
-    (k, n): (usize, usize),
-    y: f64,
-    rx: f64,
-    mid: f64,
-) -> (Vec<(String, String)>, Markup) {
-    let x0 = rx + ROUTER_W;
-    let xm = MANIFOLD_R + lane(k, n);
-    let used: Vec<&Value> = p.row.map_or_else(Vec::new, |r| rows(&r["agents"]).iter().collect());
-    let mut strokes: Vec<(String, String)> = used
-        .iter()
-        .enumerate()
-        .map(|(j, u)| {
-            let colour = agents.iter().find(|a| u["id"] == a.id).map_or(0, |a| a.colour);
-            let off = lane(j, used.len()) * 0.6;
-            (format!("pipe pipe--{}", agent_colour(colour)), pipe_path(x0, mid + lane(k, n) / 2.0 + off, xm + off, PROVIDER_X, y + off))
-        })
-        .collect();
-    if strokes.is_empty() {
-        strokes.push(("pipe pipe--idle".to_owned(), pipe_path(x0, mid + lane(k, n) / 2.0, xm, PROVIDER_X, y)));
+impl Run {
+    fn line(self, class: &str, width: f64) -> Markup {
+        let Run(x0, y0, x1, y1) = self;
+        html! { line class=(class) x1=(format!("{x0:.1}")) y1=(format!("{y0:.1}")) x2=(format!("{x1:.1}")) y2=(format!("{y1:.1}")) stroke-width=(format!("{width:.1}")) {} }
     }
-    let gauge = html! {
-        @if let Some(r) = p.row { (pipe_gauge((MANIFOLD_R + PROVIDER_X) / 2.0 + LANE * 2.0, y, &r["own_ttft"], TTFT_FULL_MS, &r["requests"])) }
-    };
-    (strokes, gauge)
 }
 
-/// The landscape: nodes, pipes, gauges; below the drawing, the empty-state text when the window
-/// holds no request.
+/// The liquid in a run: one class per stroke (`pipe pipe--agent-N`, or `pipe pipe--idle`).
+struct Fill {
+    class: String,
+    run: Run,
+    width: f64,
+}
+
+/// A flange where a tube meets a node or the router: a short band across a horizontal run.
+fn collar(x: f64, y: f64) -> Markup {
+    html! { rect class="pipe__collar" x=(format!("{:.1}", x - 3.5)) y=(format!("{:.1}", y - BORE / 2.0 - 4.0)) width="7" height=(format!("{:.0}", BORE + 8.0)) rx="2" {} }
+}
+
+fn agent_class(a: &Agent<'_>) -> String {
+    if a.row.is_some() { format!("pipe pipe--{}", agent_colour(a.colour)) } else { "pipe pipe--idle".to_owned() }
+}
+
+/// The gauge on a pipe's straight run, its face above the bore on a neck.
+fn pipe_gauge(x: f64, y: f64, stat: &Value, full: f64, requests: &Value) -> Markup {
+    gauge(x, y - BORE / 2.0 - NECK - FACE_R, stat["p50"].as_f64(), full, &pair(stat), requests.as_u64().unwrap_or(0))
+}
+
+/// The landscape: nodes, pipes, gauges, the legend; below the drawing, the empty-state text when
+/// the window holds no request.
 pub fn landscape(i: &Inputs<'_>) -> Markup {
     let (agents, providers) = (agents(i), providers(i));
     let rows_n = agents.len().max(providers.len()).max(1);
     let height = rows_n as f64 * PITCH + 24.0;
-    let mid = height / 2.0;
+    let mid = height / 2.0 + 12.0;
     let rx = (WIDTH - ROUTER_W) / 2.0;
     let none = rows(&i.latency["agents"]).is_empty() && rows(&i.latency["providers"]).is_empty();
+    let ay: Vec<f64> = (0..agents.len()).map(|n| column_y(n, agents.len(), mid)).collect();
+    let py: Vec<f64> = (0..providers.len()).map(|n| column_y(n, providers.len(), mid)).collect();
+    let span = |ys: &[f64]| {
+        ys.iter().fold((mid, mid), |(lo, hi), y| (lo.min(*y), hi.max(*y)))
+    };
 
-    let (mut strokes, mut gauges) = (Vec::new(), Vec::new());
-    for (n, a) in agents.iter().enumerate() {
-        let (s, g) = agent_pipe(a, (n, agents.len()), column_y(n, agents.len(), mid), rx, mid);
-        strokes.extend(s);
-        gauges.push(g);
+    // The tubes, then the liquid in them.
+    let mut tubes = Vec::new();
+    let mut fills = Vec::new();
+    let mut collars = Vec::new();
+    let mut gauges = Vec::new();
+    let x0 = AGENT_X + NODE_W;
+    for (a, &y) in agents.iter().zip(&ay) {
+        let run = Run(x0, y, MANIFOLD_L, y);
+        tubes.push(run);
+        fills.push(Fill { class: agent_class(a), run, width: LIQUID });
+        if a.row.is_some() {
+            fills.push(Fill { class: agent_class(a), run: Run(MANIFOLD_L, y, MANIFOLD_L, mid), width: LIQUID });
+        }
+        collars.push(collar(x0 + 5.0, y));
+        collars.push(collar(MANIFOLD_L - BORE / 2.0 - 6.0, y));
+        if let Some(r) = a.row {
+            gauges.push(pipe_gauge((x0 + MANIFOLD_L) / 2.0 - 6.0, y, &r["overhead"], OVERHEAD_FULL_MS, &r["requests"]));
+        }
     }
-    for (n, p) in providers.iter().enumerate() {
-        let (s, g) = provider_pipe(p, &agents, (n, providers.len()), column_y(n, providers.len(), mid), rx, mid);
-        strokes.extend(s);
-        gauges.push(g);
+    let (lo, hi) = span(&ay);
+    tubes.push(Run(MANIFOLD_L, lo, MANIFOLD_L, hi));
+    let feeds = [Run(MANIFOLD_L, mid, rx, mid), Run(rx + ROUTER_W, mid, MANIFOLD_R, mid)];
+    for run in feeds {
+        tubes.push(run);
+        fills.push(Fill { class: "pipe pipe--router".to_owned(), run, width: LIQUID });
+    }
+    collars.push(collar(rx - 6.0, mid));
+    collars.push(collar(rx + ROUTER_W + 6.0, mid));
+    let (lo, hi) = span(&py);
+    tubes.push(Run(MANIFOLD_R, lo, MANIFOLD_R, hi));
+    for (p, &y) in providers.iter().zip(&py) {
+        let run = Run(MANIFOLD_R, y, PROVIDER_X, y);
+        tubes.push(run);
+        let used: Vec<&Value> = p.row.map_or_else(Vec::new, |r| rows(&r["agents"]).iter().collect());
+        let lane = LIQUID / used.len().max(1) as f64;
+        for (j, u) in used.iter().enumerate() {
+            let colour = agents.iter().find(|a| u["id"] == a.id).map_or(0, |a| a.colour);
+            let off = (j as f64 - (used.len() as f64 - 1.0) / 2.0) * lane;
+            let class = format!("pipe pipe--{}", agent_colour(colour));
+            if j == 0 {
+                fills.push(Fill { class: class.clone(), run: Run(MANIFOLD_R, mid, MANIFOLD_R, y), width: LIQUID });
+            }
+            fills.push(Fill { class, run: Run(MANIFOLD_R, y + off, PROVIDER_X, y + off), width: lane });
+        }
+        if used.is_empty() {
+            fills.push(Fill { class: "pipe pipe--idle".to_owned(), run, width: LIQUID });
+        }
+        collars.push(collar(MANIFOLD_R + BORE / 2.0 + 6.0, y));
+        collars.push(collar(PROVIDER_X - 5.0, y));
+        if let Some(r) = p.row {
+            gauges.push(pipe_gauge((MANIFOLD_R + PROVIDER_X) / 2.0 + 6.0, y, &r["own_ttft"], TTFT_FULL_MS, &r["requests"]));
+        }
     }
 
     html! {
         div class="landscape" {
             svg class="landscape__svg" viewBox=(format!("0 0 {WIDTH:.0} {height:.0}")) role="img" aria-label="Agent traffic in the last 24 hours" {
-                // The tube under every stroke first, so no casing covers a lane.
-                @for (_, d) in &strokes { path class="pipe__case" d=(d) {} }
-                @for (class, d) in &strokes { path class=(class) d=(d) {} }
+                // Wall, glass, liquid, shine: each layer over the whole network, so joints stay clean.
+                @for t in &tubes { (t.line("pipe__wall", BORE + 4.0)) }
+                @for t in &tubes { (t.line("pipe__glass", BORE)) }
+                @for f in &fills { (f.run.line(&f.class, f.width)) }
+                @for t in tubes.iter().filter(|t| t.1 == t.3) {
+                    (Run(t.0, t.1 - BORE / 2.0 + 3.5, t.2, t.3 - BORE / 2.0 + 3.5).line("pipe__shine", 2.0))
+                }
+                @for c in &collars { (c) }
                 @for g in &gauges { (g) }
                 g class="landscape__node" {
                     rect class="landscape__router" x=(format!("{rx:.1}")) y=(format!("{:.1}", mid - ROUTER_H / 2.0)) width=(format!("{ROUTER_W:.0}")) height=(format!("{ROUTER_H:.0}")) rx="10" {}
-                    text class="landscape__name" x=(format!("{:.1}", rx + ROUTER_W / 2.0)) y=(format!("{:.1}", mid + 4.0)) text-anchor="middle" { "0router" }
+                    text class="landscape__name landscape__name--router" x=(format!("{:.1}", rx + ROUTER_W / 2.0)) y=(format!("{:.1}", mid + 5.0)) text-anchor="middle" { "0router" }
                 }
                 @for (n, a) in agents.iter().enumerate() {
-                    (node(AGENT_X, column_y(n, agents.len(), mid), &a.name, sub_of(a).as_deref(), Some(a.colour), a.revoked, &agent_lines(a, i)))
+                    (node(AGENT_X, ay[n], &a.name, sub_of(a).as_deref(), Some(a.colour), a.revoked, &agent_lines(a, i)))
                 }
                 @for (n, p) in providers.iter().enumerate() {
-                    (node(PROVIDER_X, column_y(n, providers.len(), mid), p.id, None, None, false, &provider_lines(p, i)))
+                    (node(PROVIDER_X, py[n], p.id, None, None, false, &provider_lines(p, i)))
+                }
+            }
+            @if !agents.is_empty() {
+                ul class="landscape__legend" {
+                    @for a in &agents {
+                        li class="landscape__key" { span class=(format!("landscape__swatch landscape__swatch--{}", agent_colour(a.colour))) {} (a.name) }
+                    }
                 }
             }
             @if none { p class="landscape__empty" { (EMPTY) } }

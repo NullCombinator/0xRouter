@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
 use crate::components::{
-    Head, Tone, agent_colour, badge, card, disabled_button, empty, name, prose, section_bar_noted, side_panel, side_section,
+    Head, Tone, agent_colour, badge, bare_card, card, disabled_button, empty, name, prose, section_bar_noted, side_panel, side_section,
 };
 use crate::landscape;
 use crate::page::{ViewName, Want};
@@ -41,7 +41,7 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
     let keys = ctx.json(ViewName::Keys).as_array().map_or(&[][..], Vec::as_slice);
     let heading = landscape::heading(ctx.page.as_of, ctx.tz);
     let content = html! {
-        (card(Some(Head::new("hub", &heading).subtitle(TRAFFIC)), landscape::landscape(&landscape::Inputs {
+        (bare_card(Head::new("hub", &heading).subtitle(TRAFFIC), landscape::landscape(&landscape::Inputs {
             keys: ctx.json(ViewName::Keys),
             accounts: ctx.json(ViewName::Accounts),
             latency: ctx.json(ViewName::Latency),
