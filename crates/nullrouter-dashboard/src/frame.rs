@@ -95,7 +95,7 @@ fn sidebar(current: Option<Id>, version: &str) -> Markup {
     html! {
         aside class="sidebar" {
             div class="sidebar__brand" {
-                span class="sidebar__mark" { (icon("hub")) }
+                (mark())
                 div class="sidebar__names" {
                     span class="sidebar__name" { "0Router Proxy" }
                     span class="sidebar__version" { (version) }
@@ -114,6 +114,11 @@ fn sidebar(current: Option<Id>, version: &str) -> Markup {
             }
         }
     }
+}
+
+/// The brand mark: the project logo, as the mockups' sidebar shows it.
+pub fn mark() -> Markup {
+    html! { img class="sidebar__mark" src=(assets::href("logo-mark.png")) alt="" width="36" height="36"; }
 }
 
 /// The housekeeping panel (FR-024, research R4): every `check` notice by level, then the accounts

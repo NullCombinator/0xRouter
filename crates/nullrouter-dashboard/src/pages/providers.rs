@@ -12,7 +12,9 @@ use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
 use crate::access::encode_component;
-use crate::components::{self, Tone, badge, disabled, disabled_switch, empty, icon, kv, modal, name, prose, status};
+use crate::components::{
+    self, Tone, badge, disabled, disabled_button, disabled_switch, empty, icon, kv, modal, name, prose, status,
+};
 use crate::page::{ViewName, Want};
 
 pub const VIEWS: &[ViewName] =
@@ -68,7 +70,7 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
         @for (title, categories) in SECTIONS {
             @let mine: Vec<&Value> = shown.iter().copied().filter(|p| section_of(p) == *title && is_in(p, categories)).collect();
             @if !mine.is_empty() {
-                (section(ctx, title, disabled("Test All", None, TEST_HINT), &mine, accounts))
+                (section(ctx, title, test_all(), &mine, accounts))
             }
         }
         @if shown.is_empty() && q.is_some() {
@@ -108,41 +110,48 @@ fn matches(p: &Value, q: &str) -> bool {
     ["id", "alias"].iter().any(|k| p[*k].as_str().is_some_and(|s| s.to_lowercase().contains(q)))
 }
 
-/// The `q` search, a `GET` form (research R4).
+/// The `q` search, a `GET` form (research R4) at the top right, as the mockup draws it: Enter
+/// submits it.
 fn search(req: &Req) -> Markup {
     html! {
         form class="provider-grid__search" method="get" action=(req.base()) role="search" {
             @if req.notices_open() { input type="hidden" name="notices" value=""; }
-            (icon("search"))
-            input class="input" type="search" name="q" value=(req.get("q").unwrap_or_default())
-                placeholder="Search providers..." aria-label="Search providers";
-            button class="button button--secondary" type="submit" { "Search" }
+            label class="provider-grid__field" {
+                (icon("search"))
+                input class="provider-grid__input" type="search" name="q" value=(req.get("q").unwrap_or_default())
+                    placeholder="Search providers..." aria-label="Search providers";
+            }
         }
     }
+}
+
+/// A section's "Test All", disabled, with its hint as the bar's note.
+fn test_all() -> (Markup, Markup) {
+    (prose(TEST_HINT), disabled_button("Test All", Some("play_arrow"), false))
 }
 
 /// "Custom Providers", always drawn: it holds the two disabled "Add … Compatible" controls.
 fn custom_section(ctx: &Ctx<'_>, shown: &[&Value], accounts: &[Value]) -> Markup {
     let mine: Vec<&Value> = shown.iter().copied().filter(|p| section_of(p) == CUSTOM).collect();
-    let controls = html! {
-        (disabled("Add Anthropic Compatible", Some("add"), ADD_HINT))
-        (disabled("Add OpenAI Compatible", Some("add"), ADD_HINT))
-    };
+    let controls = (prose(ADD_HINT), html! {
+        (disabled_button("Add Anthropic Compatible", Some("add"), true))
+        (disabled_button("Add OpenAI Compatible", Some("add"), false))
+    });
     if mine.is_empty() {
         return html! {
             div class="provider-grid" {
-                (components::section_bar(CUSTOM, controls))
-                (empty("extension", "No custom providers", "Add one with a plugin file; see docs/plugins.md."))
+                (components::section_bar_noted(CUSTOM, controls.0, controls.1))
+                p class="provider-grid__none" { (icon("extension")) "No custom providers. Add one with a plugin file; see docs/plugins.md." }
             }
         };
     }
     section(ctx, CUSTOM, controls, &mine, accounts)
 }
 
-fn section(ctx: &Ctx<'_>, title: &str, controls: Markup, providers: &[&Value], accounts: &[Value]) -> Markup {
+fn section(ctx: &Ctx<'_>, title: &str, controls: (Markup, Markup), providers: &[&Value], accounts: &[Value]) -> Markup {
     html! {
         div class="provider-grid" {
-            (components::section_bar(title, controls))
+            (components::section_bar_noted(title, controls.0, controls.1))
             div class="provider-grid__cards" {
                 @for p in providers { (card(ctx, p, &accounts_of(accounts, p["id"].as_str().unwrap_or_default()))) }
             }

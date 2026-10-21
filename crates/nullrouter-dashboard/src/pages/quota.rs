@@ -11,7 +11,7 @@ use maud::{Markup, html};
 use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
-use crate::components::{card, command, empty, icon, kv, logo, meter, name, section_bar, status};
+use crate::components::{card, command, empty, icon, kv, logo, meter, name, status};
 use crate::page::{ViewName, Want};
 
 pub const VIEWS: &[ViewName] = &[ViewName::Accounts, ViewName::Quota, ViewName::Routing, ViewName::Check];
@@ -42,13 +42,14 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
             account_card(ctx, q, a, &routes_of(routing, provider, account), default_len)
         })
         .collect();
-    let bar = section_bar(
-        "Accounts",
-        html! {
-            @if let Some(w) = amortization(ctx, routing) { (w) }
+    // The mockup's toolbar: the filters on the right, the amortization window `routing` shows
+    // beside them.
+    let bar = html! {
+        div class="quota-filters__bar" {
+            @if let Some(w) = amortization(ctx, routing) { span class="quota-filters__window" { (w) } }
             (filters(ctx.req, accounts))
-        },
-    );
+        }
+    };
     let content = if cards.is_empty() {
         html! {
             (bar)
@@ -58,7 +59,7 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
         html! {
             (bar)
             div class="quota-grid" { @for c in &cards { (c) } }
-            p class="hint" {
+            p class="quota-grid__foot" {
                 "Showing " (cards.len()) " accounts · polled quota is read from the provider, estimated quota is counted from your requests."
             }
         }

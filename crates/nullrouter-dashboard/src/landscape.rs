@@ -1,5 +1,6 @@
 //! The traffic landscape on Endpoint & Key (spec 010 US3, research R9): agents on the left, the
 //! router in the centre, providers on the right, one pipe per hop with a half-dial gauge on it.
+//! Pipes run straight into a manifold on each side of the router, one lane per agent colour.
 //! Inline SVG drawn on the server: no script, no animation, no external reference. Every number
 //! on a gauge is printed as text beside it, so neither a zone nor the needle carries a fact
 //! alone (FR-027), and the `:hover`/`:focus-within` card only repeats what the page prints.
@@ -32,6 +33,11 @@ const ROUTER_W: f64 = 110.0;
 const ROUTER_H: f64 = 44.0;
 const PITCH: f64 = 78.0;
 const DIAL_R: f64 = 14.0;
+/// The manifolds: where agent pipes turn towards the router, and provider pipes leave it.
+const MANIFOLD_L: f64 = 340.0;
+const MANIFOLD_R: f64 = 570.0;
+/// The gap between two lanes of one bundle.
+const LANE: f64 = 7.0;
 
 /// What the landscape reads: three views and the page's clock.
 pub struct Inputs<'a> {
@@ -150,7 +156,7 @@ fn arc(cx: f64, cy: f64, from: f64, to: f64, class: &str) -> Markup {
 }
 
 /// A half dial on a hop: green to half scale, amber to 80%, red above; the needle at the median
-/// and pinned at full scale beyond it. The numbers are printed under it as text.
+/// and pinned at full scale beyond it. The numbers are printed as text above and below it.
 fn gauge(x: f64, y: f64, p50: Option<f64>, full: f64, pair_text: &str, requests: u64) -> Markup {
     let needle = p50.map(|v| point(x, y, DIAL_R - 2.0, 180.0 - 180.0 * (v / full).clamp(0.0, 1.0)));
     html! {
@@ -162,15 +168,20 @@ fn gauge(x: f64, y: f64, p50: Option<f64>, full: f64, pair_text: &str, requests:
                 line class="gauge__needle" x1=(format!("{x:.1}")) y1=(format!("{y:.1}")) x2=(format!("{nx:.1}")) y2=(format!("{ny:.1}")) {}
                 circle class="gauge__hub" cx=(format!("{x:.1}")) cy=(format!("{y:.1}")) r="2" {}
             }
-            text class="gauge__value" x=(format!("{x:.1}")) y=(format!("{:.1}", y + 13.0)) text-anchor="middle" { (pair_text) }
-            text class="gauge__small" x=(format!("{x:.1}")) y=(format!("{:.1}", y + 24.0)) text-anchor="middle" { (requests) " req" }
+            text class="gauge__value" x=(format!("{x:.1}")) y=(format!("{:.1}", y - DIAL_R - 6.0)) text-anchor="middle" { (pair_text) }
+            text class="gauge__small" x=(format!("{x:.1}")) y=(format!("{:.1}", y + 30.0)) text-anchor="middle" { (requests) " req" }
         }
     }
 }
 
-fn pipe_path(x0: f64, y0: f64, x1: f64, y1: f64) -> String {
-    let xm = (x0 + x1) / 2.0;
-    format!("M{x0:.1},{y0:.1} C{xm:.1},{y0:.1} {xm:.1},{y1:.1} {x1:.1},{y1:.1}")
+/// A lane's offset from the bundle's centre line.
+fn lane(k: usize, n: usize) -> f64 {
+    (k as f64 - (n as f64 - 1.0) / 2.0) * LANE
+}
+
+/// Straight out of `x0`, a turn at the manifold `xm`, straight on into `x1`.
+fn pipe_path(x0: f64, y0: f64, xm: f64, x1: f64, y1: f64) -> String {
+    format!("M{x0:.1},{y0:.1} H{xm:.1} V{y1:.1} H{x1:.1}")
 }
 
 /// `resolved 14:01:58` or `failed 14:00:31 (503)`, with the date when it isn't the read's date;
@@ -216,11 +227,11 @@ fn node(
             title { (name) }
             rect x=(format!("{x:.1}")) y=(format!("{top:.1}")) width=(format!("{NODE_W:.0}")) height=(format!("{NODE_H:.0}")) rx="8" {}
             @if let Some(n) = dot {
-                circle class=(format!("landscape__dot landscape__dot--{}", agent_colour(n))) cx=(format!("{:.1}", x + 14.0)) cy=(format!("{y:.1}")) r="5" {}
+                circle class=(format!("landscape__dot landscape__dot--{}", agent_colour(n))) cx=(format!("{:.1}", x + 18.0)) cy=(format!("{y:.1}")) r="9" {}
             }
-            text class="landscape__name" x=(format!("{:.1}", x + if dot.is_some() { 28.0 } else { 12.0 })) y=(format!("{:.1}", if sub.is_some() { y - 3.0 } else { y + 4.0 })) { (short(name)) }
+            text class="landscape__name" x=(format!("{:.1}", x + if dot.is_some() { 36.0 } else { 12.0 })) y=(format!("{:.1}", if sub.is_some() { y - 3.0 } else { y + 4.0 })) { (short(name)) }
             @if let Some(sub) = sub {
-                text class="landscape__tag" x=(format!("{:.1}", x + if dot.is_some() { 28.0 } else { 12.0 })) y=(format!("{:.1}", y + 11.0)) { (short(sub)) }
+                text class="landscape__tag" x=(format!("{:.1}", x + if dot.is_some() { 36.0 } else { 12.0 })) y=(format!("{:.1}", y + 11.0)) { (short(sub)) }
             }
             (card(x, top + NODE_H + 4.0, name, card_lines))
         }
@@ -268,43 +279,53 @@ fn sub_of(a: &Agent<'_>) -> Option<String> {
     }
 }
 
-/// The pipe from an agent to the router, with its overhead gauge when it has traffic.
-fn agent_pipe(a: &Agent<'_>, y: f64, rx: f64, mid: f64) -> Markup {
+/// The gauge above a pipe's straight run, with its numbers.
+fn pipe_gauge(x: f64, y: f64, stat: &Value, full: f64, requests: &Value) -> Markup {
+    gauge(x, y - 8.0, stat["p50"].as_f64(), full, &pair(stat), requests.as_u64().unwrap_or(0))
+}
+
+/// The pipe from agent `k` of `n` to the router, in its own lane of the left manifold, with its
+/// overhead gauge when it has traffic.
+fn agent_pipe(a: &Agent<'_>, (k, n): (usize, usize), y: f64, rx: f64, mid: f64) -> (Vec<(String, String)>, Markup) {
     let x0 = AGENT_X + NODE_W;
     let class =
         if a.row.is_some() { format!("pipe pipe--{}", agent_colour(a.colour)) } else { "pipe pipe--idle".to_owned() };
-    html! {
-        path class=(class) d=(pipe_path(x0, y, rx, mid)) {}
-        @if let Some(r) = a.row {
-            (gauge((x0 + rx) / 2.0, (y + mid) / 2.0, r["overhead"]["p50"].as_f64(), OVERHEAD_FULL_MS, &pair(&r["overhead"]), r["requests"].as_u64().unwrap_or(0)))
-        }
-    }
+    let d = pipe_path(x0, y, MANIFOLD_L + lane(k, n), rx, mid + lane(k, n) / 2.0);
+    let gauge = html! {
+        @if let Some(r) = a.row { (pipe_gauge((x0 + MANIFOLD_L) / 2.0 - LANE * 2.0, y, &r["overhead"], OVERHEAD_FULL_MS, &r["requests"])) }
+    };
+    (vec![(class, d)], gauge)
 }
 
-/// The pipe from the router to a provider: one stroke per agent that used it, in that agent's
-/// colour; dim with no traffic. The own-wait gauge sits on it.
-fn provider_pipe(p: &Provider<'_>, agents: &[Agent<'_>], y: f64, rx: f64, mid: f64) -> Markup {
+/// The pipe from the router to provider `k` of `n`: one stroke per agent that used it, in that
+/// agent's colour; dim with no traffic. The own-wait gauge sits on it.
+fn provider_pipe(
+    p: &Provider<'_>,
+    agents: &[Agent<'_>],
+    (k, n): (usize, usize),
+    y: f64,
+    rx: f64,
+    mid: f64,
+) -> (Vec<(String, String)>, Markup) {
     let x0 = rx + ROUTER_W;
+    let xm = MANIFOLD_R + lane(k, n);
     let used: Vec<&Value> = p.row.map_or_else(Vec::new, |r| rows(&r["agents"]).iter().collect());
-    let strokes: Vec<(String, f64)> = used
+    let mut strokes: Vec<(String, String)> = used
         .iter()
         .enumerate()
-        .map(|(k, u)| {
+        .map(|(j, u)| {
             let colour = agents.iter().find(|a| u["id"] == a.id).map_or(0, |a| a.colour);
-            (format!("pipe pipe--{}", agent_colour(colour)), (k as f64 - (used.len() as f64 - 1.0) / 2.0) * 4.0)
+            let off = lane(j, used.len()) * 0.6;
+            (format!("pipe pipe--{}", agent_colour(colour)), pipe_path(x0, mid + lane(k, n) / 2.0 + off, xm + off, PROVIDER_X, y + off))
         })
         .collect();
-    html! {
-        @if strokes.is_empty() {
-            path class="pipe pipe--idle" d=(pipe_path(x0, mid, PROVIDER_X, y)) {}
-        }
-        @for (class, off) in &strokes {
-            path class=(class) d=(pipe_path(x0, mid + off, PROVIDER_X, y + off)) {}
-        }
-        @if let Some(r) = p.row {
-            (gauge((x0 + PROVIDER_X) / 2.0, (mid + y) / 2.0, r["own_ttft"]["p50"].as_f64(), TTFT_FULL_MS, &pair(&r["own_ttft"]), r["requests"].as_u64().unwrap_or(0)))
-        }
+    if strokes.is_empty() {
+        strokes.push(("pipe pipe--idle".to_owned(), pipe_path(x0, mid + lane(k, n) / 2.0, xm, PROVIDER_X, y)));
     }
+    let gauge = html! {
+        @if let Some(r) = p.row { (pipe_gauge((MANIFOLD_R + PROVIDER_X) / 2.0 + LANE * 2.0, y, &r["own_ttft"], TTFT_FULL_MS, &r["requests"])) }
+    };
+    (strokes, gauge)
 }
 
 /// The landscape: nodes, pipes, gauges; below the drawing, the empty-state text when the window
@@ -317,15 +338,25 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
     let rx = (WIDTH - ROUTER_W) / 2.0;
     let none = rows(&i.latency["agents"]).is_empty() && rows(&i.latency["providers"]).is_empty();
 
+    let (mut strokes, mut gauges) = (Vec::new(), Vec::new());
+    for (n, a) in agents.iter().enumerate() {
+        let (s, g) = agent_pipe(a, (n, agents.len()), column_y(n, agents.len(), mid), rx, mid);
+        strokes.extend(s);
+        gauges.push(g);
+    }
+    for (n, p) in providers.iter().enumerate() {
+        let (s, g) = provider_pipe(p, &agents, (n, providers.len()), column_y(n, providers.len(), mid), rx, mid);
+        strokes.extend(s);
+        gauges.push(g);
+    }
+
     html! {
         div class="landscape" {
             svg class="landscape__svg" viewBox=(format!("0 0 {WIDTH:.0} {height:.0}")) role="img" aria-label="Agent traffic in the last 24 hours" {
-                @for (n, a) in agents.iter().enumerate() {
-                    (agent_pipe(a, column_y(n, agents.len(), mid), rx, mid))
-                }
-                @for (n, p) in providers.iter().enumerate() {
-                    (provider_pipe(p, &agents, column_y(n, providers.len(), mid), rx, mid))
-                }
+                // The tube under every stroke first, so no casing covers a lane.
+                @for (_, d) in &strokes { path class="pipe__case" d=(d) {} }
+                @for (class, d) in &strokes { path class=(class) d=(d) {} }
+                @for g in &gauges { (g) }
                 g class="landscape__node" {
                     rect class="landscape__router" x=(format!("{rx:.1}")) y=(format!("{:.1}", mid - ROUTER_H / 2.0)) width=(format!("{ROUTER_W:.0}")) height=(format!("{ROUTER_H:.0}")) rx="10" {}
                     text class="landscape__name" x=(format!("{:.1}", rx + ROUTER_W / 2.0)) y=(format!("{:.1}", mid + 4.0)) text-anchor="middle" { "0router" }

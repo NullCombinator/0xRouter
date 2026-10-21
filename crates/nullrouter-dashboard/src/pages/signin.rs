@@ -12,7 +12,6 @@ use axum::response::{Html, IntoResponse, Response};
 use maud::{DOCTYPE, Markup, html};
 
 use crate::access::{self, Gate};
-use crate::components::icon;
 use crate::{Shared, assets};
 
 /// What the sign-in page shows.
@@ -36,7 +35,7 @@ pub fn page(screen: &Screen) -> Markup {
             body class="signin" {
                 main class="signin__card" {
                     div class="signin__brand" {
-                        span class="sidebar__mark" { (icon("hub")) }
+                        (crate::frame::mark())
                         h1 class="signin__title" { "0Router Proxy" }
                     }
                     @match screen {

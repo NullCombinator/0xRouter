@@ -433,6 +433,11 @@ value = "2.25rem"
 source = "src/shared/components/Sidebar.js:123"
 class = "size-9"
 
+[token.size-10]
+value = "2.5rem"
+source = "src/app/(dashboard)/dashboard/profile/page.js:847"
+class = "size-10"
+
 [token.size-14]
 value = "3.5rem"
 source = "src/shared/components/Toggle.js:17"
@@ -502,6 +507,11 @@ class = "1fr"
 value = "repeat(2, minmax(0, 1fr))"
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/index.js:1049"
 class = "md:grid-cols-2"
+
+[token.grid-cols-5]
+value = "repeat(5, minmax(0, 1fr))"
+source = "src/app/(dashboard)/dashboard/usage/components/OverviewCards.js:11"
+class = "lg:grid-cols-5"
 
 [token.grid-usage]
 value = "minmax(0, 2fr) minmax(280px, 1fr)"
@@ -697,7 +707,7 @@ uses = ["flex-1", "space-8", "container-7xl", "space-10"]
 source = "src/shared/components/layouts/DashboardLayout.js:94"
 
 [component.page-header]
-uses = ["space-3", "space-8", "space-2", "border-width", "color-border-subtle", "color-primary", "icon-page", "flex-1", "text-2xl", "text-2xl-leading", "weight-semibold", "tracking-tight", "color-text-muted", "text-sm", "text-sm-leading", "space-1-5", "color-border", "radius-brand", "color-surface", "text-xs", "text-xs-leading", "icon-badge"]
+uses = ["space-3", "space-8", "space-2", "border-width", "color-border-subtle", "color-primary", "icon-page", "flex-1", "text-2xl", "text-2xl-leading", "weight-semibold", "tracking-tight", "color-text-muted", "text-sm", "text-sm-leading", "space-1-5", "color-border", "radius-brand", "color-surface", "text-xs", "text-xs-leading", "icon-badge", "space-4", "space-0-5"]
 source = "src/shared/components/Header.js:230"
 
 [component.notices]
@@ -705,7 +715,7 @@ uses = ["space-2"]
 source = "src/shared/components/layouts/DashboardLayout.js:12"
 
 [component.notice]
-uses = ["space-3", "border-width", "radius-lg", "text-sm", "text-sm-leading", "color-red-500-30", "color-red-500-10", "color-red-600", "color-yellow-500-30", "color-yellow-500-10", "color-yellow-600", "color-blue-500-30", "color-blue-500-10", "color-blue-600"]
+uses = ["space-3", "border-width", "radius-lg", "text-sm", "text-sm-leading", "color-red-500-30", "color-red-500-10", "color-red-600", "color-yellow-500-30", "color-yellow-500-10", "color-yellow-600", "color-blue-500-30", "color-blue-500-10", "color-blue-600", "space-2", "text-xs", "text-xs-leading"]
 source = "src/shared/components/layouts/DashboardLayout.js:12"
 
 [component.failure]
@@ -721,7 +731,7 @@ uses = ["space-4", "border-width", "color-border-subtle", "radius-brand", "color
 source = "src/shared/components/Card.js:61"
 
 [component.section-bar]
-uses = ["space-3", "space-4", "text-xl", "text-xl-leading", "weight-semibold", "space-2"]
+uses = ["space-3", "space-4", "text-xl", "text-xl-leading", "weight-semibold", "space-2", "color-text-muted", "text-sm", "text-sm-leading"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:628"
 
 [component.kv]
@@ -729,7 +739,7 @@ uses = ["space-4", "space-2", "border-width", "color-border-subtle", "text-sm", 
 source = "src/shared/components/Card.js:76"
 
 [component.button]
-uses = ["space-2", "size-7", "space-3", "border-width", "radius-button", "text-xs", "text-xs-leading", "weight-semibold", "icon-nav", "size-9", "space-4", "radius-brand", "text-sm", "text-sm-leading", "color-brand-500", "color-white", "shadow-sm", "color-brand-600", "color-border", "color-surface-2", "color-text-main", "color-surface-3", "opacity-disabled"]
+uses = ["space-2", "size-7", "space-3", "border-width", "radius-button", "text-xs", "text-xs-leading", "weight-semibold", "icon-nav", "size-9", "space-4", "radius-brand", "text-sm", "text-sm-leading", "color-brand-500", "color-white", "shadow-sm", "color-brand-600", "color-border", "color-surface-2", "color-text-main", "color-surface-3", "opacity-disabled", "color-surface"]
 source = "src/shared/components/Button.js:35"
 
 [component.control]
@@ -777,7 +787,7 @@ uses = ["space-1", "space-6", "border-width", "color-border", "radius-brand-lg",
 source = "src/app/(dashboard)/dashboard/combos/page.js:1067"
 
 [component.empty]
-uses = ["space-12", "size-16", "space-4", "radius-full", "color-primary-10", "color-primary", "icon-empty", "space-1", "color-text-main", "text-base", "text-base-leading", "weight-medium", "color-text-muted", "text-sm", "text-sm-leading"]
+uses = ["space-12", "size-16", "space-4", "radius-full", "color-primary-10", "color-primary", "icon-empty", "space-1", "color-text-main", "text-base", "text-base-leading", "weight-medium", "color-text-muted", "text-sm", "text-sm-leading", "size-14", "radius-brand-lg", "space-8", "weight-semibold"]
 source = "src/app/(dashboard)/dashboard/combos/page.js:415"
 
 [component.modal]
@@ -785,7 +795,7 @@ uses = ["z-modal", "space-4", "color-black-50", "blur-backdrop", "modal-width", 
 source = "src/shared/components/Modal.js:47"
 
 [component.side-panel]
-uses = ["screen-height", "border-width", "color-border-subtle", "color-surface", "drawer-width", "space-3", "space-6", "color-primary", "space-4", "flex-1", "color-text-main", "text-lg", "text-lg-leading", "weight-semibold", "color-text-muted"]
+uses = ["screen-height", "border-width", "color-border-subtle", "color-surface", "drawer-width", "space-3", "space-6", "color-primary", "space-4", "flex-1", "color-text-main", "text-lg", "text-lg-leading", "weight-semibold", "color-text-muted", "z-panel", "shadow-elev", "size-7", "size-14", "color-border", "radius-brand", "shadow-soft", "color-bg-alt"]
 source = "src/shared/components/Drawer.js:51"
 
 [component.side-section]
@@ -805,11 +815,11 @@ uses = ["screen-height", "space-4", "color-bg", "color-text-main", "font-sans", 
 source = "src/shared/components/layouts/AuthLayout.js:19"
 
 [component.quota-filters]
-uses = ["space-1-5", "size-8", "space-2", "border-width", "color-black-10", "radius-lg", "color-black-2", "color-text-main", "text-xs", "text-xs-leading"]
+uses = ["space-1-5", "size-8", "space-2", "border-width", "color-black-10", "radius-lg", "color-black-2", "color-text-main", "text-xs", "text-xs-leading", "space-3", "color-text-muted"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:393"
 
 [component.quota-grid]
-uses = ["grid-cols-2", "space-3"]
+uses = ["grid-cols-2", "space-3", "color-text-muted", "text-xs", "text-xs-leading"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/index.js:1049"
 
 [component.quota-card]
@@ -817,11 +827,11 @@ uses = ["size-full", "opacity-disabled", "color-red-500-30", "space-2", "space-3
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/ProviderLimitCard.js:58"
 
 [component.usage-overview]
-uses = ["space-6", "grid-usage", "space-2", "flex-1"]
+uses = ["space-6", "grid-usage", "space-2", "flex-1", "space-1", "radius-brand", "color-surface-2", "color-surface", "color-text-main", "shadow-soft"]
 source = "src/shared/components/UsageStats.js:475"
 
 [component.usage-stats]
-uses = ["card-min", "fr", "space-3"]
+uses = ["card-min", "fr", "space-3", "grid-cols-5"]
 source = "src/app/(dashboard)/dashboard/usage/components/OverviewCards.js:11"
 
 [component.usage-stat]
@@ -845,7 +855,7 @@ uses = ["space-1", "space-2", "space-3", "border-width", "color-border-subtle", 
 source = "src/app/(dashboard)/dashboard/usage/components/RequestDetailsTab.js:58"
 
 [component.provider-grid]
-uses = ["card-min", "fr", "space-4", "space-2"]
+uses = ["card-min", "fr", "space-4", "space-2", "size-9", "space-3", "border-width", "color-border", "radius-brand", "color-surface-2", "color-text-muted", "text-sm", "text-sm-leading", "icon-nav", "color-text-main", "space-1-5"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:632"
 
 [component.provider-card]
@@ -869,7 +879,7 @@ uses = ["space-3", "space-1-5", "flex-1", "text-sm", "text-sm-leading", "weight-
 source = "src/app/(dashboard)/dashboard/providers/page.js:722"
 
 [component.endpoint-url]
-uses = ["space-3", "space-2-5", "radius-brand", "color-surface-2", "font-mono", "text-sm", "text-sm-leading", "color-text-muted", "text-xs", "text-xs-leading"]
+uses = ["space-3", "space-2-5", "radius-brand", "color-surface-2", "font-mono", "text-sm", "text-sm-leading", "color-text-muted", "text-xs", "text-xs-leading", "weight-semibold", "color-text-main"]
 source = "src/shared/components/Input.js:41"
 
 [component.key-grid]
@@ -877,11 +887,11 @@ uses = ["card-min", "fr", "space-4"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:632"
 
 [component.key-card]
-uses = ["space-3", "space-4", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-soft", "opacity-disabled", "space-2", "text-base", "text-base-leading", "weight-semibold"]
+uses = ["space-3", "space-4", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-soft", "opacity-disabled", "space-2", "text-base", "text-base-leading", "weight-semibold", "size-10", "radius-full", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "space-1", "flex-1", "font-mono", "text-xs", "text-xs-leading", "color-text-muted", "space-1-5"]
 source = "src/shared/components/Card.js:28"
 
 [component.settings-list]
-uses = ["space-3", "color-text-muted", "text-sm", "text-sm-leading", "font-mono"]
+uses = ["space-3", "color-text-muted", "text-sm", "text-sm-leading", "font-mono", "color-text-main", "weight-semibold", "space-1", "space-2-5", "radius-full", "color-surface-2", "text-xs", "text-xs-leading", "weight-medium"]
 source = "src/shared/components/Card.js:76"
 
 [component.gauge]
@@ -889,7 +899,7 @@ uses = ["color-green-500", "color-yellow-500", "color-red-500", "size-1-5", "col
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:35"
 
 [component.pipe]
-uses = ["color-border", "border-width", "edge-idle-opacity", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7"]
+uses = ["color-border", "border-width", "edge-idle-opacity", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "size-1-5", "color-border-subtle", "space-4"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:294"
 
 [component.topology]

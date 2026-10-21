@@ -58,6 +58,7 @@ icons!(
     "movie",
     "notifications",
     "open_in_new",
+    "play_arrow",
     "psychology",
     "record_voice_over",
     "remove",
@@ -200,6 +201,17 @@ pub fn section_bar(title: &str, right: Markup) -> Markup {
     html! { div class="section-bar" { h2 class="section-bar__title" { (title) } div class="section-bar__controls" { (right) } } }
 }
 
+/// A section bar with a muted note before its controls (the mockups' "Agents" bar): where a group
+/// of disabled controls shares one hint, the hint is the note.
+pub fn section_bar_noted(title: &str, note: Markup, right: Markup) -> Markup {
+    html! {
+        div class="section-bar" {
+            h2 class="section-bar__title" { (title) }
+            div class="section-bar__controls" { span class="section-bar__note" { (note) } (right) }
+        }
+    }
+}
+
 /// A label and a value on one line.
 pub fn kv(label: &str, value: Markup) -> Markup {
     html! { div class="kv" { span class="kv__label" { (label) } span class="kv__value" { (value) } } }
@@ -220,6 +232,13 @@ pub fn disabled(label: &str, icon_name: Option<&str>, hint: &str) -> Markup {
             span class="hint" { (prose(hint)) }
         }
     }
+}
+
+/// A disabled button alone, for a group whose hint is its section bar's note
+/// ([`section_bar_noted`]); `primary` draws it in the brand fill, as the mockups' first button.
+pub fn disabled_button(label: &str, icon_name: Option<&str>, primary: bool) -> Markup {
+    let class = if primary { "button button--primary" } else { "button button--secondary" };
+    html! { button class=(class) type="button" disabled { @if let Some(i) = icon_name { (icon(i)) } (label) } }
 }
 
 /// A switch drawn off and disabled, with its hint (plugin enable, disable, hide).
@@ -248,11 +267,12 @@ pub fn modal(title: &str, close: &str, body: Markup) -> Markup {
     }
 }
 
-/// The right side panel (Client adapters, Provider plugins), always rendered; its chevron is a
-/// `<details>` summary, so it opens and closes without a script.
+/// The right side panel (Client adapters, Provider plugins), always rendered and closed at first,
+/// as the mockups draw it: a chevron tab at the page's edge. The tab is a `<details>` summary, so
+/// it opens and closes without a script.
 pub fn side_panel(icon_name: &str, title: &str, sections: Markup) -> Markup {
     html! {
-        details class="side-panel" open {
+        details class="side-panel" {
             summary class="side-panel__head" {
                 (icon(icon_name)) b class="side-panel__title" { (title) }
                 span class="side-panel__chevron side-panel__chevron--open" { (icon("chevron_right")) }
