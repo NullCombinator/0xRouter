@@ -24,6 +24,22 @@ pub fn time_element(rfc3339: &str, tz: &TimeZone) -> Markup {
 }
 
 /// As `time_element`, but an instant on the same local day as `now` shows only its clock,
+/// How long before `now` the instant was, as the mockup's Recent Requests words it (`2s ago`,
+/// `4m ago`, `3h ago`, `2d ago`), relative to the page's "as of" instant. The element carries
+/// the instant itself, and its local time is the title; the Requests table prints it in full.
+pub fn ago_element(rfc3339: &str, tz: &TimeZone, now: Timestamp) -> Markup {
+    let Ok(at) = rfc3339.parse::<Timestamp>() else { return html! { (rfc3339) } };
+    let secs = (now - at).get_seconds().max(0);
+    let text = match secs {
+        s if s < 60 => format!("{s}s ago"),
+        s if s < 3600 => format!("{}m ago", s / 60),
+        s if s < 86_400 => format!("{}h ago", s / 3600),
+        s => format!("{}d ago", s / 86_400),
+    };
+    let local = at.to_zoned(tz.clone()).strftime("%Y-%m-%d %H:%M:%S").to_string();
+    html! { time datetime=(at.to_string()) title=(local) { (text) } }
+}
+
 /// `HH:MM:SS`; the element keeps the full instant either way.
 pub fn time_element_since(rfc3339: &str, tz: &TimeZone, now: Timestamp) -> Markup {
     match rfc3339.parse::<Timestamp>() {
@@ -55,6 +71,20 @@ mod tests {
 
     fn berlin() -> TimeZone {
         TimeZone::get("Europe/Berlin").expect("the system has tzdata")
+    }
+
+    #[test]
+    fn ago_counts_back_from_the_page_instant() {
+        let now: Timestamp = "2026-10-06T14:02:11Z".parse().unwrap();
+        for (at, want) in [
+            ("2026-10-06T14:02:09Z", "2s ago"),
+            ("2026-10-06T13:58:11Z", "4m ago"),
+            ("2026-10-06T11:02:11Z", "3h ago"),
+            ("2026-10-04T14:02:11Z", "2d ago"),
+        ] {
+            let html = ago_element(at, &TimeZone::UTC, now).into_string();
+            assert!(html.contains(&format!(">{want}<")) && html.contains(&format!("datetime=\"{at}\"")), "{html}");
+        }
     }
 
     #[test]

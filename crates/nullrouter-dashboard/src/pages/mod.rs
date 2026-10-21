@@ -303,6 +303,11 @@ impl Ctx<'_> {
     pub fn time(&self, rfc3339: &str) -> Markup {
         crate::time::time_element_since(rfc3339, self.tz, self.page.as_of)
     }
+
+    /// `2s ago`, counted from the page's "as of" instant.
+    pub fn ago(&self, rfc3339: &str) -> Markup {
+        crate::time::ago_element(rfc3339, self.tz, self.page.as_of)
+    }
 }
 
 /// The views a request needs: the page's own, then `check` for its notices and, with the panel

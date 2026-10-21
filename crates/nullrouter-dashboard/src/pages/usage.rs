@@ -320,7 +320,7 @@ fn recent(ctx: &Ctx<'_>, records: &[Value]) -> Markup {
                             td { span class=(dot(r)) title=(result_words(r)) {} }
                             td { a href=(record_href(ctx.req, id)) { (text(&r["target"])) } }
                             td class="usage-recent__num" { (tokens(r)) }
-                            td class="usage-recent__num" { (ctx.time(r["arrived"].as_str().unwrap_or_default())) }
+                            td class="usage-recent__num" { (ctx.ago(r["arrived"].as_str().unwrap_or_default())) }
                         }
                     }
                 }
