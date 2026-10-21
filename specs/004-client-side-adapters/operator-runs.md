@@ -141,48 +141,60 @@ comparison would mix the two.
 
 No slice-003 baseline is left on this machine: it lived in the old `target/`, from before
 builds moved to `/mnt/storage`. The baseline comes from `f7518cd`, main's head and the commit
-004 merged last, so it is everything except 004. Both sides use the same `CARGO_TARGET_DIR`,
-because Criterion keeps its baselines there.
+004 merged last, so it is everything except 004. Both sides write to the same
+`CRITERION_HOME`, because Criterion keeps its baselines there.
 
-**Run** (the machine otherwise idle, the 012 session paused)
+**Run** in a normal terminal, with the machine otherwise idle and the 012 session paused.
+Not under `.cargo/capped`: it runs everything at `nice 19` with a low CPU weight, and the
+first run's numbers were invalid because of it. Write down `uptime` before and after; a load
+above about 1 makes the comparison noise.
 
 ```sh
 export CARGO_HOME=$HOME/Desktop/0router/.cargo-home
 export CARGO_TARGET_DIR=/mnt/storage/0router/target/bench
-git -C ~/Desktop/0router worktree add /tmp/nr-pre-004 f7518cd
-cd /tmp/nr-pre-004
+export CRITERION_HOME=/mnt/storage/0router/criterion-004
+OUT=/mnt/storage/0router/bench-004
+mkdir -p "$OUT"
+git -C ~/Desktop/0router worktree add /mnt/storage/0router/nr-pre-004 f7518cd
+cd /mnt/storage/0router/nr-pre-004
 cargo bench -p nullrouter-engine --bench engine -- --save-baseline pre-004
 cargo bench -p nullrouter-server --bench server -- --save-baseline pre-004
 cargo bench -p nullrouter-wire   --bench wire   -- --save-baseline pre-004
 
 cd ~/Desktop/0router/.worktrees/004
-cargo bench -p nullrouter-engine --bench engine -- --baseline pre-004 | tee /tmp/bench-engine.txt
-cargo bench -p nullrouter-server --bench server -- --baseline pre-004 | tee /tmp/bench-server.txt
-cargo bench -p nullrouter-wire   --bench wire   -- --baseline pre-004 | tee /tmp/bench-wire.txt
-cargo bench -p nullrouter-adapters --bench adapters -- --save-baseline slice-004 | tee /tmp/bench-adapters.txt
-cargo bench -p nullrouter-sandbox  --bench sandbox  -- --save-baseline slice-004 | tee /tmp/bench-sandbox.txt
-git -C ~/Desktop/0router worktree remove /tmp/nr-pre-004
+uptime | tee "$OUT/load-before.txt"
+cargo bench -p nullrouter-engine   --bench engine   -- --baseline pre-004      | tee "$OUT/engine.txt"
+cargo bench -p nullrouter-server   --bench server   -- --baseline pre-004      | tee "$OUT/server.txt"
+cargo bench -p nullrouter-wire     --bench wire     -- --baseline pre-004      | tee "$OUT/wire.txt"
+cargo bench -p nullrouter-adapters --bench adapters -- --save-baseline slice-004 | tee "$OUT/adapters.txt"
+cargo bench -p nullrouter-sandbox  --bench sandbox  -- --save-baseline slice-004 | tee "$OUT/sandbox.txt"
+git -C ~/Desktop/0router worktree remove /mnt/storage/0router/nr-pre-004
 ```
 
-The adapters bench reports Criterion's mean, not a p95. This prints each bench's p95 over its
-per-iteration sample times:
+Criterion reports means, not a p95. This prints each adapters and sandbox bench's p95 over
+its per-iteration sample times. The sandbox benches have no group, so Criterion names their
+directories `sandbox_call_noop` and `sandbox_call_claude_code`:
 
 ```sh
-for f in $CARGO_TARGET_DIR/criterion/adapters/*/new/sample.json \
-         $CARGO_TARGET_DIR/criterion/sandbox/*/new/sample.json; do
+for f in "$CRITERION_HOME"/adapters/*/new/sample.json "$CRITERION_HOME"/sandbox_*/new/sample.json; do
   python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); t=sorted(x/i for x,i in zip(s["times"],s["iters"])); print(f"{t[int(0.95*(len(t)-1))]/1e6:9.3f} ms p95  {sys.argv[1]}")' "$f"
-done
+done | tee "$OUT/p95.txt"
+uptime | tee -a "$OUT/p95.txt"
 ```
 
 **Takes** about 45 to 75 minutes, most of it the two release builds and Criterion's runs.
 
 **Pass**
-- engine, server and wire against `pre-004`: each bench says `No change in performance
-  detected` or `Change within noise threshold`. Any `Performance has regressed` on the
-  no-adapter path blocks the merge (FR-030).
+- engine, server and wire against `pre-004`: a regression counts only when it is
+  consistent: the same bench regresses again on a rerun, and its neighbours don't move just
+  as far the other way. A consistent regression on the no-adapter path blocks the merge
+  (FR-030). At this machine's noise level (load about 3 to 6), single runs swing 20 to 70%
+  both ways and settle nothing.
 - SC-010: request side p95 ≤ 5 ms on the 1 MB request, adding `guard_request` at 1 MB to
-  `sandbox/call_claude_code`. Event side: `guard_event` p95 ≤ 1 ms.
-- Send me the `/tmp/bench-*.txt` files and the p95 lines. I write `bench-baseline.md` in
+  `sandbox/call_claude_code`. Event side: `guard_event` p95 ≤ 1 ms. The call bench uses a
+  100 KB body, so this sum is not a 1 MB request through the adapter: see
+  [bench-baseline.md](bench-baseline.md).
+- Tell me when `$OUT` is written; I read it there. I write `bench-baseline.md` in
   slice 003's format. If a target is missed, I report the numbers to you before any
   optimising.
 

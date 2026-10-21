@@ -7,6 +7,9 @@
 //! - `adapters/selector_extract`: `messages[*].content[*].type` over a 1 MB body.
 //! - `adapters/hermes_request`: hermes' selectors and request edits over an openai-chat body
 //!   with images.
+//! - `adapters/claude_code_request/{1mb_edit,1mb_clean}`: the Claude Code adapter's whole request
+//!   side on a 1 MB conversation, sandbox call and guardrail verdict included (SC-010 at 1 MB).
+//!   Needs `tests/fixtures/claude-code/module.wasm`; skipped without it.
 //!
 //! `cargo bench -p nullrouter-adapters --bench adapters -- --save-baseline slice-004`
 
@@ -133,5 +136,68 @@ fn hermes_request(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, guard_request, guard_event, selector_extract, hermes_request);
+/// The whole request side of the Claude Code adapter on a 1 MB conversation, as `serve` runs
+/// it: selector extraction, the call input, the sandbox call, the edit check and copy, and the
+/// guardrail verdict that decodes the original body again. `edit` has one mid-conversation
+/// system turn, which the adapter converts, so the verdict runs; `clean` has none, so the
+/// adapter answers no edits and the verdict is skipped. SC-010 is judged on `edit`.
+fn claude_code_request(c: &mut Criterion) {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use nullrouter_adapters::record::AdapterOutcome;
+    use nullrouter_adapters::runner::{AdapterRunner, WasmHandle, WasmModule};
+    use nullrouter_sandbox::{ModuleFlags, SandboxEngine, load, wasm_hash};
+
+    let path = format!("{}/tests/fixtures/claude-code/module.wasm", env!("CARGO_MANIFEST_DIR"));
+    let Ok(wasm) = std::fs::read(&path) else {
+        eprintln!("adapters/claude_code_request skipped: no built module at {path} (T080)");
+        return;
+    };
+    let sandbox = Arc::new(SandboxEngine::new(4).expect("the sandbox engine starts"));
+    let module = load(&sandbox, &wasm, &wasm_hash(&wasm), ModuleFlags::default()).expect("the module loads");
+    // The manifest's selectors (adapters/community/claude-code/adapter.toml).
+    let request_selectors = ["thinking", "output_config", "model", "messages[*]", "tools"]
+        .iter()
+        .map(|s| Selector::parse(s).expect("a valid selector"))
+        .collect();
+    // Far above the production 20 ms: this measures the time, it doesn't enforce it.
+    let deadline = Duration::from_secs(5);
+    let wasm_module = WasmModule {
+        sandbox,
+        module: Arc::new(module),
+        request_selectors,
+        request_deadline: deadline,
+        response_selectors: Vec::new(),
+        events: false,
+        response_deadline: deadline,
+        event_deadline: deadline,
+        redact: Arc::new(|line: &str| line.to_owned()),
+    };
+    let runner = AdapterRunner::Wasm(WasmHandle::loaded("claude-code", "bench", wasm_module))
+        .with_client(Arc::new(style("anthropic-messages")));
+    let mut ctx = request_context("anthropic", "anthropic-messages");
+    ctx.model = "claude-sonnet-4-5".to_owned();
+
+    let clean = conversation(1_000_000);
+    let mut edit = clean.clone();
+    if let Some(messages) = edit.get_mut("messages").and_then(Value::as_array_mut) {
+        messages.insert(1, json!({"role": "system", "content": "<system-reminder>Token usage: 1200/200000</system-reminder>"}));
+    }
+
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().expect("a Tokio runtime");
+    let mut group = c.benchmark_group("adapters");
+    for (name, body, edits) in [("claude_code_request/1mb_edit", &edit, true), ("claude_code_request/1mb_clean", &clean, false)] {
+        // Check once, outside the timing, that the run takes the path its name says.
+        let out = rt.block_on(runner.run_request(&ctx, body));
+        assert_eq!(out.run.outcome, AdapterOutcome::Ran, "{name}: {:?}", out.run);
+        assert_eq!(!out.run.changes.is_empty(), edits, "{name}: changes {:?}", out.run.changes);
+        group.bench_function(name, |b| {
+            b.iter(|| black_box(rt.block_on(runner.run_request(&ctx, black_box(body))).run.outcome));
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, guard_request, guard_event, selector_extract, hermes_request, claude_code_request);
 criterion_main!(benches);
