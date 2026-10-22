@@ -141,10 +141,10 @@ pass unchanged; never edit a golden file to make a move pass.
 - [ ] T044 Add a confirm sweep in `crates/nullrouter-dashboard/tests/confirm.rs` (SC-007). For every irreversible op, the button leads to the confirm window, Cancel leaves the home byte-identical, and Confirm applies the change.
 - [X] T045 Extend `crates/nullrouter-dashboard/tests/style_guide.rs` (SC-008): no `<script`, and the CSP keeps no `script-src` and keeps `form-action 'self'`, on every page including windows, confirm windows and task panels.
 - [ ] T046 Add a bench in `crates/nullrouter-server/benches/` or extend the 013 overhead bench (SC-006): router overhead p95 with a loop posting dashboard changes as fast as possible, against the 013 baseline. Record the result in `specs/014-functional-dashboard/bench-baseline.md`.
-- [ ] T047 [P] Update the docs:
+- [X] T047 [P] Update the docs:
   - `docs/operator-config.md`: the new commands, `[provider.<id>] enabled|hidden`, and private endpoints;
   - `docs/dashboard/` (or the 009 docs): making changes, confirm windows, Console Log, the form-token note.
-- [ ] T048 Run a security review of the branch (security-auditor) over the forms layer, flash, change log, sign-in hand-back and custom-provider writes. Record it in `specs/014-functional-dashboard/security-review.md` and fix every High and Medium.
+- [ ] T048 Run a security review of the branch (security-auditor) over the forms layer, flash, change log, sign-in hand-back and custom-provider writes, and re-check finding L1 (the shared loopback cookie host, accepted 2026-10-06 for a read-only dashboard) now that the cookie opens the change forms; update the "What the cookie reaches" paragraph in `docs/operator-config.md` to match. Record it in `specs/014-functional-dashboard/security-review.md` and fix every High and Medium.
 - [ ] T049 Run quickstart.md §§ 1–4 on a scratch home and record the results in `specs/014-functional-dashboard/operator-runs.md`. § 5 (real OAuth sign-in) joins the user's whole-system live run.
 
 ## Dependencies

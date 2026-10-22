@@ -69,7 +69,7 @@ The file is 0600 and keeps the newest 1,000 lines. It is rewritten when it reach
 ## Provider visibility (`config.toml`)
 
 ```toml
-[providers.openrouter]
+[provider.openrouter]
 enabled = false   # routing skips it (default true)
 hidden = true     # left out of model lists and the Providers grid (default false)
 ```
