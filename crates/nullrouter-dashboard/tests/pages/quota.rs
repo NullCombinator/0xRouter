@@ -207,6 +207,41 @@ fn the_filters_show_what_is_chosen() {
     assert!(html.contains("name=\"order\"") && html.contains("Expiring first"), "{html}");
 }
 
+/// The first `<form>` posting to `action`, through its `</form>`.
+fn form_to<'a>(html: &'a str, action: &str) -> &'a str {
+    let at = html.find(&format!("action=\"{action}\"")).unwrap_or_else(|| panic!("no form posts to {action}"));
+    let start = html[..at].rfind("<form").expect("the action belongs to a form");
+    let end = at + html[at..].find("</form>").expect("the form closes");
+    &html[start..end]
+}
+
+/// Each account's card has its interval form, which names the account and returns to the page, and
+/// Poll now only where the account reports quota; the alert form posts to `/do/quota/ack`.
+#[tokio::test(flavor = "multi_thread")]
+async fn each_card_has_its_interval_form_and_poll_now_where_quota_is_reported() {
+    let d = Dash::dashboard().await;
+    let rows = d.view(ViewName::Quota, json!({"provider": null, "name": null})).await;
+    let html = d.ok("/quota").await;
+    let all = cards(&html);
+    assert!(!rows.as_array().unwrap().is_empty(), "the fixture has accounts");
+    for q in rows.as_array().unwrap() {
+        let (p, n) = (q["provider"].as_str().unwrap(), q["name"].as_str().unwrap());
+        let card = all
+            .iter()
+            .find(|c| text_of(c).contains(&format!("{p} {n} priority")))
+            .unwrap_or_else(|| panic!("no card for {p}/{n}"));
+        let form = form_to(card, "/do/quota/interval");
+        assert!(form.contains(&format!("name=\"provider\" value=\"{p}\"")), "{p}/{n}: {form}");
+        assert!(form.contains(&format!("name=\"name\" value=\"{n}\"")), "{p}/{n}: {form}");
+        assert!(form.contains("name=\"every\"") && form.contains("name=\"_back\" value=\"/quota\""), "{form}");
+        assert!(form.contains("name=\"_t\" value=\""), "{form}");
+        assert_eq!(card.contains("/do/quota/poll"), q["reported"] == true, "{p}/{n}: Poll now only where quota is reported");
+    }
+    let ack = form_to(&html, "/do/quota/ack");
+    assert!(ack.contains("name=\"id\"") && ack.contains("name=\"_t\" value=\""), "{ack}");
+    assert!(!html.contains("<script"), "no script");
+}
+
 /// A home with no accounts says how to add one.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_empty_home_names_the_command_that_adds_an_account() {

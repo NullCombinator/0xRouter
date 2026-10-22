@@ -130,15 +130,26 @@ async fn the_adapters_panel_says_they_are_not_built_and_lists_none() {
     assert!(!panel.contains("plugin-row") && !panel.contains("<li") && !panel.contains("<table"), "no rows: {panel}");
 }
 
+/// Settings shows its cards, and its two changes are forms that post to their ops and return here;
+/// the token is still changed in the CLI only.
 #[tokio::test(flavor = "multi_thread")]
-async fn settings_has_its_three_cards_and_nothing_to_change() {
+async fn settings_has_its_cards_and_the_break_and_window_forms() {
     let d = Dash::dashboard().await;
     let html = d.ok("/settings").await;
     let text = text_of(&html);
-    for card in ["Routing", "Local mode", "Dashboard", "Token issued"] {
+    for card in ["Routing", "Change", "Local mode", "Dashboard", "Token issued"] {
         assert!(text.contains(card), "{card}\n{text}");
     }
     assert!(text.contains("Change it with nullrouter dashboard token"), "{text}");
     assert!(html.contains("<code class=\"code\">nullrouter dashboard token</code>"));
-    assert!(!html.contains("<form") && !html.contains("<script"), "read-only");
+
+    let brk = form_to(&html, "/do/behaviour/set-break");
+    assert!(brk.contains("name=\"behaviour\"") && brk.contains("name=\"_back\" value=\"/settings\""), "{brk}");
+    assert!(brk.contains("<option value=\"restart\"") && brk.contains("<option value=\"error_event\""), "{brk}");
+    assert!(brk.contains("name=\"_t\" value=\""), "the form carries the token: {brk}");
+
+    let window = form_to(&html, "/do/routing/window");
+    assert!(window.contains("name=\"duration\"") && window.contains("name=\"_back\" value=\"/settings\""), "{window}");
+    assert!(window.contains("name=\"_t\" value=\""), "the form carries the token: {window}");
+    assert!(!html.contains("<script"), "no script");
 }

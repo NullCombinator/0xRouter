@@ -10,8 +10,8 @@ use jiff::Timestamp;
 use maud::{Markup, html};
 use serde_json::{Value, json};
 
-use super::{Body, Ctx, Failure, Req};
-use crate::components::{card, command, empty, icon, kv, logo, meter, name, section_bar, status};
+use super::{Body, Ctx, Failure, Refused, Req};
+use crate::components::{Head, card, command, empty, field, form, icon, kv, logo, meter, name, section_bar, status};
 use crate::page::{ViewName, Want};
 
 pub const VIEWS: &[ViewName] = &[ViewName::Accounts, ViewName::Quota, ViewName::Routing, ViewName::Check];
@@ -52,11 +52,13 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
     let content = if cards.is_empty() {
         html! {
             (bar)
+            (ack_card(ctx))
             (card(None, empty("data_usage", "No accounts.", "Run `nullrouter accounts add <provider> <name>`.")))
         }
     } else {
         html! {
             (bar)
+            (ack_card(ctx))
             div class="quota-grid" { @for c in &cards { (c) } }
             p class="hint" {
                 "Showing " (cards.len()) " accounts · polled quota is read from the provider, estimated quota is counted from your requests."
@@ -171,9 +173,99 @@ fn account_card(ctx: &Ctx<'_>, q: &Value, a: &Value, routes: &[(&Value, &Value)]
             (identity(ctx, a))
             (quota_section(ctx, q, routes))
             (targets_section(default_len, routes))
+            (controls(ctx, q))
         }
     };
     html! { div class=(class) { (card(None, body)) } }
+}
+
+/// Where this page's forms return: the page as it is, minus the flash and the window a refusal
+/// named (the redirect adds that again).
+fn back(req: &Req) -> String {
+    req.href(&req.path(), &["done", "task", "window"], &[])
+}
+
+/// The refusal of the form `id`: a refused change's redirect names its form by `window`, so only
+/// that form shows it.
+fn refused_form<'a>(req: &'a Req, id: &str) -> Option<&'a Refused> {
+    req.refused.as_ref().filter(|_| req.get("window") == Some(id))
+}
+
+/// The text of `r` when it belongs to the field `name`: the field it names, or the form's first
+/// field when it names none of `fields`.
+fn error_on<'a>(r: Option<&'a Refused>, name: &str, fields: &[&str]) -> Option<&'a str> {
+    let r = r?;
+    let owner = r.field.as_deref().filter(|f| fields.contains(f)).or(fields.first().copied());
+    (owner == Some(name)).then_some(r.text.as_str())
+}
+
+/// The value a refused form kept for `name`.
+fn kept<'a>(r: Option<&'a Refused>, name: &str) -> Option<&'a str> {
+    r?.kept.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+}
+
+/// "Usage alerts": acknowledges one alert by its id, or every open one (`all`), narrowed by a
+/// provider and an account.
+fn ack_card(ctx: &Ctx<'_>) -> Markup {
+    let req = ctx.req;
+    let err = refused_form(req, "ack");
+    let fields: &[&str] = &["id", "provider", "account"];
+    let head = Head::new("notifications", "Usage alerts").subtitle("Acknowledge an alert by its id, or every open one");
+    card(
+        Some(head),
+        form(
+            "/do/quota/ack",
+            &back(req),
+            &req.token,
+            html! {
+                input type="hidden" name="_window" value="ack";
+                (field("id", "Alert id", kept(err, "id").or(Some("all")), error_on(err, "id", fields)))
+                (field("provider", "Provider (optional)", kept(err, "provider"), error_on(err, "provider", fields)))
+                (field("account", "Account (optional)", kept(err, "account"), error_on(err, "account", fields)))
+                button class="button button--secondary" type="submit" { "Acknowledge" }
+            },
+        ),
+    )
+}
+
+/// An account's poll forms: its interval (a duration, or `default`), and for an account that reports
+/// quota, Poll now, which starts a poll as a task.
+fn controls(ctx: &Ctx<'_>, q: &Value) -> Markup {
+    let req = ctx.req;
+    let provider = q["provider"].as_str().unwrap_or_default();
+    let account = q["name"].as_str().unwrap_or_default();
+    let window = format!("interval-{provider}-{account}");
+    let err = refused_form(req, &window);
+    let fields: &[&str] = &["every", "provider", "name"];
+    let current = duration_text(q["interval_s"].as_u64().unwrap_or(600));
+    html! {
+        (form("/do/quota/interval", &back(req), &req.token, html! {
+            input type="hidden" name="_window" value=(window);
+            input type="hidden" name="provider" value=(provider);
+            input type="hidden" name="name" value=(account);
+            (field("every", "Poll every", Some(kept(err, "every").unwrap_or(current.as_str())), error_on(err, "every", fields)))
+            p class="hint" { "A duration such as 15m, or default." }
+            button class="button button--secondary" type="submit" { "Save interval" }
+        }))
+        @if q["reported"] == true {
+            (form("/do/quota/poll", &back(req), &req.token, html! {
+                input type="hidden" name="provider" value=(provider);
+                input type="hidden" name="name" value=(account);
+                button class="button button--secondary" type="submit" { "Poll now" }
+            }))
+        }
+    }
+}
+
+/// `15m`, `1h`, `90s`: the duration the interval form takes back (`parse_duration`).
+fn duration_text(secs: u64) -> String {
+    if secs != 0 && secs.is_multiple_of(3600) {
+        format!("{}h", secs / 3600)
+    } else if secs != 0 && secs.is_multiple_of(60) {
+        format!("{}m", secs / 60)
+    } else {
+        format!("{secs}s")
+    }
 }
 
 /// The sign-in status badge. A state that needs signing in again says since when, as an instant,

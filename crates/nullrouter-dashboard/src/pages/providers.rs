@@ -11,7 +11,7 @@ use maud::{Markup, html};
 use nullrouter_server::ops::{self, signin::TERMS_WARNING};
 use serde_json::{Value, json};
 
-use super::{Body, Ctx, Failure, Req};
+use super::{Body, Ctx, Failure, Refused, Req};
 use crate::access::encode_component;
 use crate::components::{
     self, Tone, badge, confirm_window, disabled, disabled_switch, empty, field, form, icon, kv, link_button, modal,
@@ -29,6 +29,10 @@ pub const SWITCH_HINT: &str = "Not built yet. Every loaded plugin is active.";
 pub const INSTALL_HINT: &str = "In the CLI: `nullrouter plugins install <id>`";
 pub const UNINSTALL_HINT: &str = "In the CLI: `nullrouter plugins uninstall <id>`";
 pub const COMMUNITY_HINT: &str = "In the CLI: `nullrouter plugins list --community`.";
+/// The keys each settings form takes, as the CLI's `routing` and `connection` commands name them.
+pub const OVERRIDE_KEYS: &str = "Keys: `cache_lifetime`, `reserve`, `price.input`, `price.output`, `price.cache_read`, `price.cache_write`, `window.<name>.capacity`, `window.<name>.length`, `window.<name>.reserve`, `window.<name>.weight.<class>`, `window.<name>.multiplier.<glob>`.";
+pub const PLUGIN_KEYS: &str = "Keys: `window.<name>.weight.<class>` or `window.<name>.multiplier.<glob>`, with a number. Capacity is per account, so a plugin never takes it.";
+pub const CONNECTION_KEYS: &str = "Keys: `connect-timeout`, `header-timeout`, `first-token-timeout`, `stall-timeout` (a duration such as `30s`), `reuse` and `http2` (`on` or `off`), `retries[.STATUS]` and `retry-wait[.STATUS]`. An empty model is the provider's own setting.";
 
 /// The operator's own plugins (`source` is `user`).
 pub const CUSTOM: &str = "Custom Providers";
@@ -269,6 +273,14 @@ fn window(ctx: &Ctx<'_>, providers: &[Value], accounts: &[Value], token: &str) -
                 h4 class="provider-window__heading" { "Last response" }
                 (last_response(ctx, id))
             }
+            section class="provider-window__section" {
+                h4 class="provider-window__heading" { "Plugin meters" }
+                (plugin_meters(ctx, id))
+            }
+            section class="provider-window__section" {
+                h4 class="provider-window__heading" { "Connection" }
+                (connection_settings(ctx, id))
+            }
         }
     };
     Ok(modal(id, &req.close_href(), body))
@@ -423,6 +435,111 @@ fn account_controls(ctx: &Ctx<'_>, a: &Value) -> Markup {
     }
 }
 
+/// Where this page's settings forms return: the page as it is, minus the flash and the window a
+/// refusal named (the redirect adds that again).
+fn back(req: &Req) -> String {
+    req.href(&req.path(), &["done", "task", "window"], &[])
+}
+
+/// The refusal of the form `id`: a refused change's redirect names its form by `window`, so only
+/// that form shows it.
+fn refused_form<'a>(req: &'a Req, id: &str) -> Option<&'a Refused> {
+    req.refused.as_ref().filter(|_| req.get("window") == Some(id))
+}
+
+/// The text of `r` when it belongs to the field `name`: the field it names, or the form's first
+/// field when it names none of `fields`.
+fn error_on<'a>(r: Option<&'a Refused>, name: &str, fields: &[&str]) -> Option<&'a str> {
+    let r = r?;
+    let owner = r.field.as_deref().filter(|f| fields.contains(f)).or(fields.first().copied());
+    (owner == Some(name)).then_some(r.text.as_str())
+}
+
+/// The value a refused form kept for `name`.
+fn kept<'a>(r: Option<&'a Refused>, name: &str) -> Option<&'a str> {
+    r?.kept.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+}
+
+/// One account's routing overrides (`routing set`, `routing unset`): a key and its value, or a key
+/// to remove. The keys are the CLI's; `window.<name>` names one of the provider's declared windows.
+fn overrides(ctx: &Ctx<'_>, a: &Value) -> Markup {
+    let req = ctx.req;
+    let provider = a["provider"].as_str().unwrap_or_default();
+    let account = a["name"].as_str().unwrap_or_default();
+    let (set, unset) = (format!("routing-set-{account}"), format!("routing-unset-{account}"));
+    let (set_err, unset_err) = (refused_form(req, &set), refused_form(req, &unset));
+    let set_keys: &[&str] = &["key", "value"];
+    html! {
+        p class="hint" { (prose(OVERRIDE_KEYS)) }
+        (form("/do/routing/set", &back(req), &req.token, html! {
+            input type="hidden" name="_window" value=(set);
+            input type="hidden" name="provider" value=(provider);
+            input type="hidden" name="name" value=(account);
+            (field("key", "Override key", kept(set_err, "key"), error_on(set_err, "key", set_keys)))
+            (field("value", "Value", kept(set_err, "value"), error_on(set_err, "value", set_keys)))
+            button class="button button--secondary" type="submit" { "Set override" }
+        }))
+        (form("/do/routing/unset", &back(req), &req.token, html! {
+            input type="hidden" name="_window" value=(unset);
+            input type="hidden" name="provider" value=(provider);
+            input type="hidden" name="name" value=(account);
+            (field("key", "Remove override", kept(unset_err, "key"), error_on(unset_err, "key", &["key"])))
+            button class="button button--secondary" type="submit" { "Remove override" }
+        }))
+    }
+}
+
+/// The provider's plugin meters (`routing set-plugin`, `unset-plugin`): the per-window weights and
+/// multipliers that every account of the plugin inherits.
+fn plugin_meters(ctx: &Ctx<'_>, id: &str) -> Markup {
+    let req = ctx.req;
+    let (set_err, unset_err) = (refused_form(req, "plugin-set"), refused_form(req, "plugin-unset"));
+    let set_keys: &[&str] = &["key", "value"];
+    html! {
+        p class="hint" { (prose(PLUGIN_KEYS)) }
+        (form("/do/routing/set-plugin", &back(req), &req.token, html! {
+            input type="hidden" name="_window" value="plugin-set";
+            input type="hidden" name="provider" value=(id);
+            (field("key", "Meter key", kept(set_err, "key"), error_on(set_err, "key", set_keys)))
+            (field("value", "Value", kept(set_err, "value"), error_on(set_err, "value", set_keys)))
+            button class="button button--secondary" type="submit" { "Set meter" }
+        }))
+        (form("/do/routing/unset-plugin", &back(req), &req.token, html! {
+            input type="hidden" name="_window" value="plugin-unset";
+            input type="hidden" name="provider" value=(id);
+            (field("key", "Remove meter key", kept(unset_err, "key"), error_on(unset_err, "key", &["key"])))
+            button class="button button--secondary" type="submit" { "Remove meter" }
+        }))
+    }
+}
+
+/// The provider's connection settings (`connection set`, `connection unset`), for the provider or,
+/// with a model named, for that model.
+fn connection_settings(ctx: &Ctx<'_>, id: &str) -> Markup {
+    let req = ctx.req;
+    let (set_err, unset_err) = (refused_form(req, "connection-set"), refused_form(req, "connection-unset"));
+    let set_keys: &[&str] = &["key", "value", "model"];
+    let unset_keys: &[&str] = &["key", "model"];
+    html! {
+        p class="hint" { (prose(CONNECTION_KEYS)) }
+        (form("/do/connection/set", &back(req), &req.token, html! {
+            input type="hidden" name="_window" value="connection-set";
+            input type="hidden" name="provider" value=(id);
+            (field("model", "Model (optional)", kept(set_err, "model"), error_on(set_err, "model", set_keys)))
+            (field("key", "Setting", kept(set_err, "key"), error_on(set_err, "key", set_keys)))
+            (field("value", "Value", kept(set_err, "value"), error_on(set_err, "value", set_keys)))
+            button class="button button--secondary" type="submit" { "Set connection" }
+        }))
+        (form("/do/connection/unset", &back(req), &req.token, html! {
+            input type="hidden" name="_window" value="connection-unset";
+            input type="hidden" name="provider" value=(id);
+            (field("model", "Model (optional)", kept(unset_err, "model"), error_on(unset_err, "model", unset_keys)))
+            (field("key", "Remove setting", kept(unset_err, "key"), error_on(unset_err, "key", unset_keys)))
+            button class="button button--secondary" type="submit" { "Remove setting" }
+        }))
+    }
+}
+
 /// The provider's last response in the last 24 hours (`latency`'s `last`): "resolved · <time>",
 /// "failed · <time> · <status>", or that there was none.
 pub const NO_RESPONSE: &str = "None in the last 24 hours";
@@ -474,6 +591,7 @@ fn account_row(ctx: &Ctx<'_>, a: &Value) -> Markup {
                 p class="provider-window__account-run" { (prose(&command)) }
             }
             (account_controls(ctx, a))
+            (overrides(ctx, a))
         }
     }
 }

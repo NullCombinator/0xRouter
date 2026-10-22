@@ -249,6 +249,39 @@ async fn the_sign_in_window_shows_the_terms_warning_and_posts_accept_terms() {
     assert!(!html.contains("<script"), "no script");
 }
 
+/// The provider window's settings forms: each account's routing overrides, the plugin meters and the
+/// connection settings post to their routes with the token and return to the window; a refusal
+/// reopens the window through its `_window`, and no script runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_provider_window_has_the_routing_plugin_and_connection_forms() {
+    let d = Dash::dashboard().await;
+    let html = d.ok("/providers/anthropic").await;
+    for action in [
+        "/do/routing/set",
+        "/do/routing/unset",
+        "/do/routing/set-plugin",
+        "/do/routing/unset-plugin",
+        "/do/connection/set",
+        "/do/connection/unset",
+    ] {
+        let form = form_to(&html, action);
+        assert!(form.contains("name=\"_back\" value=\"/providers/anthropic\""), "{action} returns here: {form}");
+        assert!(form.contains("name=\"_t\" value=\""), "{action} carries the token: {form}");
+        assert!(form.contains("name=\"_window\" value=\""), "{action} names its window: {form}");
+    }
+    let connection = form_to(&html, "/do/connection/set");
+    assert!(connection.contains("name=\"model\"") && connection.contains("name=\"key\""), "{connection}");
+    let plugin = form_to(&html, "/do/routing/set-plugin");
+    assert!(plugin.contains("name=\"provider\" value=\"anthropic\""), "{plugin}");
+
+    let accounts = d.view(ViewName::Accounts, json!({"provider": "anthropic"})).await;
+    for a in rows(&accounts) {
+        let name = a["name"].as_str().unwrap();
+        assert!(html.contains(&format!("name=\"_window\" value=\"routing-set-{name}\"")), "{name}: its override form");
+    }
+    assert!(!html.contains("<script"), "no script");
+}
+
 /// The search is a GET form that filters by id or alias.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_search_filters_cards_by_id() {
