@@ -223,8 +223,13 @@ mod tests {
             "allow_private_endpoints = true\n"
         );
         add_compatible(&c, "local-llm", None, "anthropic", url, &m()).unwrap();
-        private_endpoints(&c, false).unwrap();
-        assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), "");
+        // Off would leave a plugin the loader then refuses: the loader's check refuses the edit.
+        let e = private_endpoints(&c, false).unwrap_err();
+        assert!(e.text.contains("allow_private_endpoints"), "{}", e.text);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("config.toml")).unwrap(),
+            "allow_private_endpoints = true\n"
+        );
     }
 
     #[test]

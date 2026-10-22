@@ -10,7 +10,7 @@ use nullrouter_registry::schema::OperatorConfig;
 use nullrouter_registry::schema::{BreakBehaviour, PartialTokenWeights, Percent, parse_duration};
 
 use super::accounts::{Report, fail, refused};
-use super::config_text::{edit, quoted, write_checked};
+use super::config_text::{self, edit, quoted, write_checked};
 use super::{Ctx, Done, OpError, Status, apply};
 
 fn fail_in(field: &'static str, e: impl std::fmt::Display) -> OpError {
@@ -452,7 +452,10 @@ pub fn window_with(ctx: &Ctx, log: &mut Vec<String>, target: Option<&str>, lengt
         None => edit_key(&text, "[routing]", "amortization", quoted_value.as_deref()),
         Some(t) => edit_key(&text, "[routing.amortization_for]", t, quoted_value.as_deref()),
     };
-    write_checked(&ctx.home, &text).map_err(fail)?;
+    // The loader's check names a target that is no unified model and no provider/model, which the
+    // next load would refuse; nothing is written then.
+    config_text::check(&ctx.home, &text).map_err(|e| fail_in("target", e))?;
+    config_text::write_file(&ctx.home, &text).map_err(fail)?;
     finish(ctx, log, |status| {
         let what = target.map_or_else(|| "amortization".to_owned(), |t| format!("amortization for {t}"));
         format!("{what} = {}: {status}", value.unwrap_or("default"))
@@ -531,6 +534,16 @@ fn set_break(text: &str, b: BreakBehaviour) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_window_for_a_target_that_names_nothing_is_refused_in_the_target_field_and_not_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = Ctx { home: nullrouter_registry::OperatorHome::new(dir.path()), engine: None };
+        let e = window(&ctx, Some("sonnet"), "2h").unwrap_err();
+        assert_eq!((e.exit, e.field), (1, Some("target")));
+        assert!(e.text.contains("sonnet"), "{}", e.text);
+        assert!(!ctx.home.config_file().exists(), "nothing written");
+    }
 
     #[test]
     fn a_key_is_added_replaced_removed_or_given_a_table() {

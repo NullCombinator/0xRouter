@@ -156,6 +156,22 @@ fn config(home: &Path) -> OperatorConfig {
     toml::from_str(&std::fs::read_to_string(home.join("config.toml")).unwrap()).unwrap()
 }
 
+/// A target the registry knows: a bundled provider's model.
+const S: &str = "anthropic/claude-sonnet-4-20250514";
+
+/// A window for a name that is no unified model and no provider/model is refused with the loader's
+/// message, naming the target, and nothing is written (the next load would fail on it).
+#[test]
+fn routing_window_refuses_a_target_the_loader_would_refuse() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("config.toml");
+    std::fs::write(&file, "# mine\nschema = 1\n").unwrap();
+    let before = std::fs::read(&file).unwrap();
+    let msg = refused(dir.path(), &["routing", "window", "sonnet", "2h"]);
+    assert!(msg.contains("sonnet"), "{msg}");
+    assert_eq!(std::fs::read(&file).unwrap(), before, "nothing written");
+}
+
 #[test]
 fn routing_window_sets_the_default_or_a_targets_length() {
     let dir = tempfile::tempdir().unwrap();
@@ -167,24 +183,22 @@ fn routing_window_sets_the_default_or_a_targets_length() {
     let out = ok(dir.path(), &["routing", "window", "2h"]);
     assert!(out.contains("saved; applies at next start"), "{out}");
     assert_eq!(config(dir.path()).routing.amortization, Duration::from_secs(2 * 3600));
-    ok(dir.path(), &["routing", "window", "sonnet", "1h"]);
-    ok(dir.path(), &["routing", "window", "anthropic/claude-opus-4-1", "24h"]);
+    ok(dir.path(), &["routing", "window", S, "1h"]);
+    ok(dir.path(), &["routing", "window", "anthropic/claude-opus-4-20250514", "24h"]);
     let c = config(dir.path());
-    assert_eq!(c.routing.amortization_for["sonnet"], Duration::from_secs(3600));
-    assert_eq!(c.routing.amortization_for["anthropic/claude-opus-4-1"], Duration::from_secs(86_400));
+    assert_eq!(c.routing.amortization_for[S], Duration::from_secs(3600));
+    assert_eq!(c.routing.amortization_for["anthropic/claude-opus-4-20250514"], Duration::from_secs(86_400));
     let file = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
     assert!(file.starts_with("# my settings\n") && file.contains("break_behaviour = \"restart\""), "{file}");
 
-    ok(dir.path(), &["routing", "window", "sonnet", "default"]);
-    assert!(!config(dir.path()).routing.amortization_for.contains_key("sonnet"));
-    assert!(config(dir.path()).routing.amortization_for.contains_key("anthropic/claude-opus-4-1"));
+    ok(dir.path(), &["routing", "window", S, "default"]);
+    assert!(!config(dir.path()).routing.amortization_for.contains_key(S));
+    assert!(config(dir.path()).routing.amortization_for.contains_key("anthropic/claude-opus-4-20250514"));
     ok(dir.path(), &["routing", "window", "default"]);
     assert_eq!(config(dir.path()).routing.amortization, Duration::from_secs(5 * 3600));
 
     let before = std::fs::read(dir.path().join("config.toml")).unwrap();
-    for bad in
-        [&["routing", "window", "0s"][..], &["routing", "window", "soon"], &["routing", "window", "sonnet", "0m"]]
-    {
+    for bad in [&["routing", "window", "0s"][..], &["routing", "window", "soon"], &["routing", "window", S, "0m"]] {
         let msg = refused(dir.path(), bad);
         assert!(msg.contains("amortization") || msg.contains("duration") || msg.contains("0"), "{bad:?}: {msg}");
     }
@@ -328,9 +342,7 @@ fn the_meter_block_shows_each_number_state_and_the_unfitted_line() {
     let want = [
         format!(
             "    {:<15}{:<20}{}",
-            "meter 5-hour",
-            "capacity",
-            "9.0M declared · fit 13.1M–14.6M · in use 13.8M fit since Tue 09:10"
+            "meter 5-hour", "capacity", "9.0M declared · fit 13.1M–14.6M · in use 13.8M fit since Tue 09:10"
         ),
         format!("{:19}{:<20}{}", "", "weight.input", "1 yardstick"),
         format!("{:19}{:<20}{}", "", "weight.cache_read", "0.1 declared · learning 312 intervals ±40%"),

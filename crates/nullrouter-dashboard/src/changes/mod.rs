@@ -64,6 +64,7 @@ mod accounts;
 mod connection;
 mod keys;
 mod model_tests;
+mod plugins;
 mod proxy;
 mod quota;
 mod routing;
@@ -117,6 +118,11 @@ pub fn lookup(area: &str, op: &str) -> Option<(String, Handler)> {
         "verdicts.mark" => model_tests::mark,
         "verdicts.clear" => model_tests::clear,
         "verdicts.settings" => model_tests::settings,
+        "plugins.install" => plugins::install,
+        "plugins.uninstall" => plugins::uninstall,
+        "plugins.private_endpoints" => plugins::private_endpoints,
+        "providers.add_compatible" => plugins::add_compatible,
+        // T033: providers.enable/disable/hide/show; T035: adapters.*, catalogue.install, alerts.ack
         #[cfg(any(test, feature = "testkit"))]
         "debug.noop" => testkit::noop,
         _ => return None,

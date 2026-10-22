@@ -23,6 +23,8 @@ pub enum ViewName {
     Accounts,
     Behaviour,
     Check,
+    /// The declared combos and those dropped (`combos`).
+    Combos,
     Dashboard,
     Keys,
     /// The last 24 hours per agent and provider (`latency`).
@@ -36,6 +38,8 @@ pub enum ViewName {
     /// The Requests table (`records list`).
     Records,
     Routing,
+    /// The unified models and those dropped (`unified`).
+    Unified,
     /// Request and token totals for one period (`usage`).
     Usage,
 }
@@ -49,6 +53,7 @@ impl ViewName {
             Self::Accounts => views::accounts::NEEDS,
             Self::Behaviour => views::behaviour::NEEDS,
             Self::Check => views::check::NEEDS,
+            Self::Combos => views::combos::NEEDS,
             Self::Dashboard => views::dashboard::NEEDS,
             Self::Keys => views::keys::NEEDS,
             Self::Latency => views::latency::NEEDS,
@@ -58,6 +63,7 @@ impl ViewName {
             Self::Quota => views::quota::NEEDS,
             Self::Record | Self::Records => views::records::NEEDS,
             Self::Routing => views::routing::NEEDS,
+            Self::Unified => views::unified::NEEDS,
             Self::Usage => views::usage::NEEDS,
         }
     }
@@ -73,6 +79,7 @@ impl ViewName {
             Self::Accounts => views::accounts::build,
             Self::Behaviour => views::behaviour::build,
             Self::Check => views::check::build,
+            Self::Combos => views::combos::build,
             Self::Dashboard => views::dashboard::build,
             Self::Keys => views::keys::build,
             Self::Latency => views::latency::build,
@@ -83,6 +90,7 @@ impl ViewName {
             Self::Record => views::records::record,
             Self::Records => views::records::build,
             Self::Routing => views::routing::build,
+            Self::Unified => views::unified::build,
             Self::Usage => views::usage::build,
         }
     }

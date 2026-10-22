@@ -184,8 +184,16 @@ fn account_line(a: &Value) -> Markup {
 }
 
 /// The page for `req` from its built state, inside the frame.
-pub fn render(req: &Req, page: &Page, version: &str, tz: &TimeZone, logos: &Index, top: Option<Markup>) -> Response {
-    let ctx = Ctx { req, page, tz, logos };
+pub fn render(
+    engine: &std::sync::Arc<nullrouter_engine::state::Engine>,
+    req: &Req,
+    page: &Page,
+    version: &str,
+    tz: &TimeZone,
+    logos: &Index,
+    top: Option<Markup>,
+) -> Response {
+    let ctx = Ctx { req, page, tz, logos, engine };
     let (status, body) = match pages::body(&ctx) {
         Ok(body) => (StatusCode::OK, body),
         Err(f) => (f.status, Body::new(failure_card(&f.message))),
@@ -195,7 +203,9 @@ pub fn render(req: &Req, page: &Page, version: &str, tz: &TimeZone, logos: &Inde
 
 /// The page under a window that couldn't open: the page as it is, and the window showing the
 /// CLI's message (404).
+#[allow(clippy::too_many_arguments)]
 pub fn render_missing_window(
+    engine: &std::sync::Arc<nullrouter_engine::state::Engine>,
     req: &Req,
     page: &Page,
     version: &str,
@@ -204,7 +214,7 @@ pub fn render_missing_window(
     message: &str,
     top: Option<Markup>,
 ) -> Response {
-    let ctx = Ctx { req, page, tz, logos };
+    let ctx = Ctx { req, page, tz, logos, engine };
     let mut body = pages::body(&ctx).unwrap_or_else(|f| Body::new(failure_card(&f.message)));
     body.window = Some(components::modal("Not found", &req.close_href(), html! { p { (message) } }));
     respond(StatusCode::NOT_FOUND, &frame_for(req, page, version, tz, top), body)

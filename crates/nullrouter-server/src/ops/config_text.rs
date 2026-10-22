@@ -92,11 +92,39 @@ pub fn quoted(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Writes `edited` as `config.toml` after it loads as a config. A file the server would refuse
-/// is never written; the write goes through a temp file and a rename.
+/// The loader's own checks on `edited` as the home's `config.toml`, with nothing written: a file
+/// that fails them would not load, and the next start or reload would refuse it. The message is the
+/// loader's, one line per failed rule, after the file and `the edit would not load`. A failure the home already has without the edit (a broken
+/// plugin, say) is not the edit's: only rules the edit newly breaks refuse it, so a change still
+/// saves, and the reload says why it was not applied.
+pub fn check(home: &OperatorHome, edited: &str) -> Result<(), String> {
+    let Err(errors) = nullrouter_registry::check_config_text(home, edited) else { return Ok(()) };
+    let line = |e: &nullrouter_registry::ValidationError| format!("{}: {}", e.path, e.rule);
+    let before: Vec<String> = match std::fs::read_to_string(home.config_file()) {
+        Ok(current) => nullrouter_registry::check_config_text(home, &current).err().unwrap_or_default(),
+        Err(_) => nullrouter_registry::check_config_text(home, "").err().unwrap_or_default(),
+    }
+    .iter()
+    .map(line)
+    .collect();
+    let new: Vec<String> = errors.iter().map(line).filter(|l| !before.contains(l)).collect();
+    if new.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("{}: the edit would not load: {}", home.config_file().display(), new.join("\n")))
+    }
+}
+
+/// Writes `edited` as `config.toml` after the loader accepts it ([`check`]). A file the server
+/// would refuse is never written; the write goes through a temp file and a rename.
 pub fn write_checked(home: &OperatorHome, edited: &str) -> Result<(), String> {
+    check(home, edited)?;
+    write_file(home, edited)
+}
+
+/// [`write_checked`] for a caller that already ran [`check`]: only the parse is repeated.
+pub fn write_file(home: &OperatorHome, edited: &str) -> Result<(), String> {
     let path = home.config_file();
-    // The file must still load: a config the server would refuse is never written.
     toml::from_str::<OperatorConfig>(edited)
         .map_err(|e| format!("{}: the edit would not load: {e}", path.display()))?;
     std::fs::create_dir_all(home.path()).map_err(|e| e.to_string())?;
@@ -109,6 +137,18 @@ pub fn write_checked(home: &OperatorHome, edited: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_loader_refuses_a_target_that_names_nothing_and_nothing_is_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = OperatorHome::new(dir.path());
+        let bad = "schema = 1\n[routing.amortization_for]\n\"sonnet\" = \"2h\"\n";
+        let why = write_checked(&home, bad).unwrap_err();
+        assert!(why.contains("sonnet"), "{why}");
+        assert!(!home.config_file().exists(), "nothing written");
+        write_checked(&home, "schema = 1\n").unwrap();
+        assert!(home.config_file().exists());
+    }
 
     const H: &str = "provider.acme.connection";
 

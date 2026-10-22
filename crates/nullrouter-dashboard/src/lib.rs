@@ -190,12 +190,12 @@ async fn page(shared: Arc<Shared>, req: pages::Req, headers: &axum::http::Header
             let tz = time::local_zone();
             let logos = logos::Index::of(&engine);
             match read(&engine, &r).await {
-                Ok(p) => frame::render(&r, &p, &version, &tz, &logos, top),
+                Ok(p) => frame::render(&engine, &r, &p, &version, &tz, &logos, top),
                 // A window whose id doesn't exist: the page under it, and the CLI's message.
                 Err(page::PageError::View(e)) if r.window.is_some() => {
                     let base = pages::Req { window: None, ..r.clone() };
                     match read(&engine, &base).await {
-                        Ok(p) => frame::render_missing_window(&r, &p, &version, &tz, &logos, &e.message, top),
+                        Ok(p) => frame::render_missing_window(&engine, &r, &p, &version, &tz, &logos, &e.message, top),
                         Err(e) => frame::render_error(
                             Some(&r),
                             &version,

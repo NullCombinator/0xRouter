@@ -296,9 +296,16 @@ pub struct Ctx<'a> {
     pub tz: &'a TimeZone,
     /// Provider logo addresses (not a view: the bytes are the registry's, research R10).
     pub logos: &'a crate::logos::Index,
+    /// The engine, for what a page plans in process (a test's plan reads its snapshot, no network).
+    pub engine: &'a std::sync::Arc<nullrouter_engine::state::Engine>,
 }
 
 impl Ctx<'_> {
+    /// The operator context ops run in from this page: the home and the engine, in process.
+    pub fn ops(&self) -> nullrouter_server::ops::Ctx {
+        nullrouter_server::ops::Ctx { home: self.engine.home().clone(), engine: Some(self.engine.clone()) }
+    }
+
     /// The JSON of the first view fetched under `name`; `Null` when the page didn't ask for it.
     pub fn json(&self, name: ViewName) -> &Value {
         self.page.view(name).map_or(&Value::Null, |v| &v.json)

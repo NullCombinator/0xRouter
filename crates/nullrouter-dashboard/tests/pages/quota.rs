@@ -35,7 +35,12 @@ fn render(query: &str, accounts: Value, quota_view: Value, routing: Value) -> St
         ],
     };
     let (tz, logos) = (TimeZone::UTC, Index::default());
-    let ctx = Ctx { req: &req, page: &page, tz: &tz, logos: &logos };
+    // The quota page plans nothing; the engine is the context's, over an empty home.
+    let dir = nullrouter_engine::testkit::homes::empty();
+    let (engine, _) =
+        nullrouter_engine::state::Engine::open(nullrouter_registry::OperatorHome::new(dir.path())).unwrap();
+    let engine = std::sync::Arc::new(engine);
+    let ctx = Ctx { req: &req, page: &page, tz: &tz, logos: &logos, engine: &engine };
     match quota::body(&ctx) {
         Ok(body) => body.content.into_string(),
         Err(e) => panic!("the page failed: {}", e.message),

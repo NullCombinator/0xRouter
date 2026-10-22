@@ -18,9 +18,9 @@ fn form_to<'a>(html: &'a str, action: &str) -> &'a str {
     &html[start..end]
 }
 
-/// Combo lists its `combo` notices and no unified model list.
+/// Combo lists its `combo` notices and the declared unified models with their members.
 #[tokio::test(flavor = "multi_thread")]
-async fn combo_lists_its_notices_and_no_unified_models() {
+async fn combo_lists_its_notices_and_the_unified_models() {
     let d = Dash::dashboard().await;
     let check = d.view(ViewName::Check, json!({})).await;
     let page = text_of(&d.ok("/combo").await);
@@ -36,17 +36,21 @@ async fn combo_lists_its_notices_and_no_unified_models() {
         let one_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(page.contains(&one_line), "{one_line:?} is on Combo\n{page}");
     }
-    let unified = d.view(ViewName::Check, json!({})).await["unified_models"].clone();
-    assert!(!page.contains("unified models:"), "no unified model list: {unified}");
+    let unified = d.view(ViewName::Unified, json!({})).await;
+    for u in unified["unified"].as_array().unwrap() {
+        let name = u["name"].as_str().unwrap();
+        assert!(page.contains(name), "unified model {name} is listed: {page}");
+    }
 }
 
-/// Each declare form posts its name and its members, a textarea, one per line, and returns to the
+/// Each declare form (and the Edit form of a listed target; the fixture declares no combo, so
+/// only a unified model has one) posts its name and its members, a textarea, one per line, and returns to the
 /// page; no script runs.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_declare_forms_take_a_name_and_members_in_a_textarea() {
     let d = Dash::dashboard().await;
     let html = d.ok("/combo").await;
-    for route in ["unified/add", "unified/set", "combos/add", "combos/set"] {
+    for route in ["unified/add", "unified/set", "combos/add"] {
         let form = form_to(&html, &format!("/do/{route}"));
         assert!(
             form.contains("name=\"_back\" value=\"/combo\"") && form.contains("name=\"_t\" value=\""),
@@ -58,17 +62,19 @@ async fn the_declare_forms_take_a_name_and_members_in_a_textarea() {
     assert!(!html.contains("<script"), "no script");
 }
 
-/// Test All is a link to every pair, and a Test form names one target and opens the test window.
+/// Test All is a link to every pair, and each listed target has a Test link naming it.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_test_card_has_test_all_and_a_test_form_for_one_target() {
+async fn the_test_card_has_test_all_and_each_target_has_a_test_link() {
     let d = Dash::dashboard().await;
     let html = d.ok("/combo").await;
     assert!(html.contains("href=\"/combo?window=test&amp;target=all\""), "Test All links to every pair");
     assert!(text_of(&html).contains("Test All"));
-    assert!(
-        html.contains("name=\"window\" value=\"test\"") && html.contains("name=\"target\""),
-        "a Test form for one target"
-    );
+    let unified = d.view(ViewName::Unified, json!({})).await;
+    let first = unified["unified"][0]["name"].as_str().expect("the fixture declares a unified model");
+    assert!(html.contains(&format!("href=\"/combo?window=test&amp;target={first}\"")), "a Test link for {first}");
+    assert!(html.contains(&format!("href=\"/combo?window=remove-unified&amp;name={first}\"")), "a Remove link");
+    let edit = form_to(&html, "/do/unified/set");
+    assert!(edit.contains("<textarea") && edit.contains("name=\"name\" value=\""), "an Edit form: {edit}");
 }
 
 /// The remove window of a unified model names what removing loses and posts the name; it returns to
@@ -127,8 +133,8 @@ async fn test_all_shows_the_plan_and_posts_the_target_to_the_run() {
     }
 }
 
-/// Settings has the test-settings form (`verdicts settings`): a setting, a type, a value, and the
-/// allowed settings as its hint; it returns to Settings.
+/// Settings has the test-settings form (`verdicts settings`): a setting, a type, a value, and a
+/// hint naming the CLI command that lists the settings; it returns to Settings.
 #[tokio::test(flavor = "multi_thread")]
 async fn settings_has_the_test_settings_form() {
     let d = Dash::dashboard().await;
@@ -138,7 +144,7 @@ async fn settings_has_the_test_settings_form() {
     for field in ["name=\"setting\"", "name=\"type\"", "name=\"value\""] {
         assert!(form.contains(field), "{field}: {form}");
     }
-    assert!(text_of(&html).contains("retest"), "the allowed settings are named");
+    assert!(form.contains("nullrouter verdicts settings"), "the hint names the listing command: {form}");
 }
 
 /// A refused remove redirects to its own window, which opens again with the loss and the name.
