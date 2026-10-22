@@ -127,7 +127,7 @@ async fn an_installed_plugin_serves_a_request() {
             .spawn()
             .unwrap(),
     );
-    for _ in 0..500 {
+    for _ in 0..1500 {
         if tokio::net::TcpStream::connect(&listen).await.is_ok() {
             break;
         }

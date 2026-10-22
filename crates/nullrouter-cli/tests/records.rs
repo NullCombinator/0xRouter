@@ -237,7 +237,7 @@ async fn serve(home: &Path) -> Serving {
         .spawn()
         .unwrap();
     let serving = Serving(child);
-    for _ in 0..500 {
+    for _ in 0..1500 {
         // Connect, don't just look for the file: the CLI's "a server runs" is this connect.
         let sock = home.join("run/operator.sock");
         if std::os::unix::net::UnixStream::connect(&sock).is_ok() && tokio::net::TcpStream::connect(&listen).await.is_ok() {

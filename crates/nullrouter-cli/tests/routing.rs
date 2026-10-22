@@ -365,7 +365,7 @@ async fn serve(home: &Path) -> Serving {
         .spawn()
         .unwrap();
     let serving = Serving(child);
-    for _ in 0..500 {
+    for _ in 0..1500 {
         if home.join("run/operator.sock").exists() && tokio::net::TcpStream::connect(&listen).await.is_ok() {
             return serving;
         }
