@@ -68,6 +68,13 @@ pub fn gate(engine: &Engine, headers: &HeaderMap) -> Gate {
     }
 }
 
+/// The cookie value that is the current token: the session a form post belongs to.
+pub(crate) fn session_cookie<'a>(engine: &Engine, headers: &'a HeaderMap) -> Option<&'a str> {
+    let snapshot = engine.snapshot();
+    let digest = snapshot.dashboard.digest.as_deref()?;
+    cookie_values(headers).find(|presented| token_matches(digest, presented))
+}
+
 /// Whether `presented` is the token whose digest is `digest`.
 pub fn token_matches(digest: &str, presented: &str) -> bool {
     let got = DashboardToken::digest_of(presented);

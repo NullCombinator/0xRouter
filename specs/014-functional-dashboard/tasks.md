@@ -18,14 +18,14 @@ pass unchanged; never edit a golden file to make a move pass.
 ## Phase 2: Foundational (blocks every story)
 
 - [X] T004 [P] Add a Tasks table in `crates/nullrouter-engine/src/tasks.rs` and expose it on `Engine`. Fields per data-model.md § Task: id `tk_` + 16 random base32 characters; kind ∈ {test, signin, adapter_review, adapter_build, adapter_rebuild, catalogue_install, proxy_fixed, quota_poll}; subject; started/ended; progress lines; result running|done{text}|failed{text}; input for sign-in. Keep the newest 200 tasks, with at most 4 running. A fifth start returns `busy: 4 tasks are running; try again when one ends`. Unit tests cover the bound, the limit and the transitions.
-- [ ] T005 [P] Add the form layer in `crates/nullrouter-dashboard/src/forms.rs`:
+- [X] T005 [P] Add the form layer in `crates/nullrouter-dashboard/src/forms.rs`:
   - The form token is `hex(HMAC-SHA256(process_key, session_cookie_value))[..32]`, with HMAC built on `sha2` (RFC 2104, 64-byte block) and `process_key` 32 bytes from `getrandom`.
   - `check_post(headers, form)` verifies, in order: the session cookie, then Origin equals the dashboard origin (or, if Origin is absent, Referer does), then `_t` in constant time. Failures map as contracts/dashboard-forms.md § Every form says.
   - A `_back` sanitizer accepts only a known dashboard page path, otherwise `/endpoint`.
   - Unit tests include the RFC 4231 HMAC test vector 2.
-- [ ] T006 [P] Add a flash store in `crates/nullrouter-dashboard/src/forms.rs` (data-model.md § Flash): a 128-bit random base32 id bound to its session; kinds done/once/refused (refused carries kept_fields, never a write-only field); expires 5 minutes after creation; consumed on first read; at most 1,000 entries, oldest dropped. Tests: another session can't read a flash; the second read is empty.
+- [X] T006 [P] Add a flash store in `crates/nullrouter-dashboard/src/forms.rs` (data-model.md § Flash): a 128-bit random base32 id bound to its session; kinds done/once/refused (refused carries kept_fields, never a write-only field); expires 5 minutes after creation; consumed on first read; at most 1,000 entries, oldest dropped. Tests: another session can't read a flash; the second read is empty.
 - [X] T007 [P] Add the change log in `crates/nullrouter-dashboard/src/log.rs`: `<home>/dashboard-log.jsonl`, mode 0600, lines `{"at","op","subject","result","text"}` with result ∈ {done, saved_not_applied, started, refused}. Rewrite the file to the newest 1,000 lines once it reaches 1,200. Add a reader that returns entries newest first. Tests: the bound, 0600, order.
-- [ ] T008 Add form components in `crates/nullrouter-dashboard/src/components.rs`:
+- [X] T008 Add form components in `crates/nullrouter-dashboard/src/components.rs`:
   - `form(action, back, token, body)`, which adds the hidden `_t` and `_back` fields;
   - `field`, `select`, `switch`, and `secret_field` (`type="password" autocomplete="off"`, never given a value);
   - `notice(flash)`, and `once_box(label, value)` with the text "This is the only time it is shown.";
@@ -37,7 +37,7 @@ pass unchanged; never edit a golden file to make a move pass.
   - Started tasks redirect with `?task=<id>`.
   - Make the page reader in `crates/nullrouter-dashboard/src/lib.rs` consume `done`/`task` query parameters and pass them to frame rendering.
   - Rename the session cookie to `nrd_session_<port>` (R10) in `crates/nullrouter-dashboard/src/access.rs`, keeping sign-in working.
-- [ ] T010 Add `ops::describe_loss(op, subject) -> String` in `crates/nullrouter-server/src/ops/mod.rs` for every irreversible op in spec FR-009 (account remove, key revoke, plugin uninstall, proxy remove, adapter remove, unified/combo remove, adapter clear, private endpoints on). Example: "clients using key work-laptop stop working at once". Unit-test that each op has a text.
+- [X] T010 Add `ops::describe_loss(op, subject) -> String` in `crates/nullrouter-server/src/ops/mod.rs` for every irreversible op in spec FR-009 (account remove, key revoke, plugin uninstall, proxy remove, adapter remove, unified/combo remove, adapter clear, private endpoints on). Example: "clients using key work-laptop stop working at once". Unit-test that each op has a text.
 - [ ] T011 Test the foundation in `crates/nullrouter-dashboard/tests/forms.rs` (SC-005), using a no-op test route:
   - a post without `_t`, with a wrong `_t`, or with a foreign Origin gives 403 and writes no log line;
   - a GET to `/do/...` gives 405;

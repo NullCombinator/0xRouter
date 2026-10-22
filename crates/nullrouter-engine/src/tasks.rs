@@ -49,9 +49,7 @@ impl FromStr for TaskId {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, String> {
         match s.strip_prefix("tk_") {
-            Some(rest) if rest.len() == 16 && rest.bytes().all(|c| ALPHABET.contains(&c)) => {
-                Ok(Self(s.to_string()))
-            }
+            Some(rest) if rest.len() == 16 && rest.bytes().all(|c| ALPHABET.contains(&c)) => Ok(Self(s.to_string())),
             _ => Err(format!("{s}: not a task id")),
         }
     }
@@ -202,9 +200,8 @@ impl Tasks {
     /// Hands a pasted code to a sign-in task that waits for one.
     pub fn paste(&self, id: &TaskId, code: SecretString) -> Result<(), String> {
         let mut t = lock(&self.table);
-        let waiting = t.find(id).filter(|e| {
-            e.view.result == TaskResult::Running && e.view.input == Some(TaskInput::Paste)
-        });
+        let waiting =
+            t.find(id).filter(|e| e.view.result == TaskResult::Running && e.view.input == Some(TaskInput::Paste));
         let Some(tx) = waiting.and_then(|e| e.paste.as_ref()) else {
             return Err(format!("{id}: not waiting for a code"));
         };
@@ -329,10 +326,7 @@ mod tests {
         let h = t.start(TaskKind::Test, "x").unwrap();
         let id = h.id().clone();
         drop(h);
-        assert_eq!(
-            t.get(&id).unwrap().result,
-            TaskResult::Failed { text: "the task stopped unexpectedly".into() }
-        );
+        assert_eq!(t.get(&id).unwrap().result, TaskResult::Failed { text: "the task stopped unexpectedly".into() });
         assert_eq!(t.list().len(), 1);
     }
 

@@ -303,6 +303,139 @@ pub fn notice(level: &str, text: &str) -> Markup {
     html! { div class=(class) role="status" { (icon(icon_name)) pre class="notice__text" { (text) } } }
 }
 
+/// The answer to a form, shown once at the top of the page it returns to (contracts/dashboard-forms.md):
+/// a change that was done, or one that was refused. Named apart from [`notice`], which takes a level.
+pub fn flash_notice(text: &str, refused: bool) -> Markup {
+    let (class, icon_name) = if refused { ("notice notice--error", "error") } else { ("notice notice--note", "check") };
+    html! { div class=(class) role="status" { (icon(icon_name)) p class="notice__text" { (text) } } }
+}
+
+/// A POST form to `action` (contracts/dashboard-forms.md "Every form"). The form token and the page
+/// to return to travel as hidden fields; the body holds the fields and the submit.
+pub fn form(action: &str, back: &str, token: &str, body: Markup) -> Markup {
+    html! {
+        form class="form" method="post" action=(action) {
+            input type="hidden" name="_t" value=(token);
+            input type="hidden" name="_back" value=(back);
+            (body)
+        }
+    }
+}
+
+fn input_class(error: Option<&str>) -> &'static str {
+    if error.is_some() { "input input--error" } else { "input" }
+}
+
+fn field_error(error: Option<&str>) -> Markup {
+    html! { @if let Some(e) = error { span class="field__error" { (icon("error")) (e) } } }
+}
+
+/// A text field under its label, with the value it had (none for a new field) and its error beside it.
+pub fn field(name: &str, label: &str, value: Option<&str>, error: Option<&str>) -> Markup {
+    html! {
+        label class="field" {
+            span class="field__label" { (label) }
+            input class=(input_class(error)) type="text" name=(name) value=[value];
+            (field_error(error))
+        }
+    }
+}
+
+/// A drop-down under its label; `selected` is the option's value that is chosen.
+pub fn select(name: &str, label: &str, options: &[(&str, &str)], selected: Option<&str>) -> Markup {
+    html! {
+        label class="field" {
+            span class="field__label" { (label) }
+            select class="input" name=(name) {
+                @for (value, text) in options {
+                    option value=(value) selected[selected == Some(*value)] { (text) }
+                }
+            }
+        }
+    }
+}
+
+/// A live on/off switch: a checkbox drawn as a track and a knob, submitted under `name` when on.
+pub fn switch(name: &str, label: &str, on: bool) -> Markup {
+    html! {
+        label class="switch-field" {
+            input class="switch-field__input" type="checkbox" name=(name) value="on" checked[on];
+            span class="switch-field__track" { span class="switch-field__knob" {} }
+            span class="switch-field__label" { (label) }
+        }
+    }
+}
+
+/// A password field for a write-only value (`secret`, `password`, `code`): it never has a value
+/// attribute, so nothing the server holds is echoed back into the page.
+pub fn secret_field(name: &str, label: &str, error: Option<&str>) -> Markup {
+    html! {
+        label class="field" {
+            span class="field__label" { (label) }
+            input class=(input_class(error)) type="password" name=(name) autocomplete="off";
+            (field_error(error))
+        }
+    }
+}
+
+/// A value shown once, selectable, with the warning that it won't be shown again (a new key, a
+/// proxy's one-time code).
+pub fn once_box(label: &str, value: &str) -> Markup {
+    html! {
+        div class="once" {
+            span class="once__label" { (label) }
+            pre class="once__value" { (value) }
+            p class="once__warning" { (icon("warning")) "This is the only time it is shown." }
+        }
+    }
+}
+
+/// A confirm window (research R9): the modal names what is lost, and holds the real form with its
+/// Confirm button beside a Cancel link that closes the window.
+pub fn confirm_window(title: &str, loss_text: &str, cancel_href: &str, form: Markup) -> Markup {
+    let body = html! {
+        div class="confirm" {
+            (notice("warning", loss_text))
+            div class="confirm__actions" {
+                (link_button(cancel_href, "Cancel", None, false))
+                (form)
+            }
+        }
+    };
+    modal(title, cancel_href, body)
+}
+
+/// Where a long task stands (research R4). A running task's page refreshes every 3 s, with no script.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskState<'a> {
+    Running,
+    Done(&'a str),
+    Failed(&'a str),
+}
+
+/// A task's panel: its subject, its state, its progress lines, and its result once it has one.
+pub fn task_panel(subject: &str, started: &str, progress: &[String], result: TaskState<'_>) -> Markup {
+    let (state, outcome, refresh) = match result {
+        TaskState::Running => (badge(Tone::Info, "in progress"), None, true),
+        TaskState::Done(text) => (badge(Tone::Success, "done"), Some(flash_notice(text, false)), false),
+        TaskState::Failed(text) => (badge(Tone::Error, "failed"), Some(flash_notice(text, true)), false),
+    };
+    html! {
+        div class="task" {
+            @if refresh { meta http-equiv="refresh" content="3"; }
+            div class="task__head" {
+                span class="task__subject" { (subject) }
+                (state)
+            }
+            p class="task__started" { "started at " (started) }
+            @if !progress.is_empty() {
+                ul class="task__progress" { @for line in progress { li { (line) } } }
+            }
+            @if let Some(o) = outcome { (o) }
+        }
+    }
+}
+
 /// A name shown in full, or cut with an ellipsis and the full name in its `title`.
 pub fn name(text: &str) -> Markup {
     html! { span class="truncate" title=(text) { (text) } }
@@ -461,5 +594,41 @@ mod tests {
     fn a_disabled_control_has_nothing_to_submit() {
         let m = disabled("Add Agent", Some("add"), "In the CLI: `nullrouter keys issue <name>`").into_string();
         assert!(m.contains("disabled") && !m.contains("<form") && !m.contains("type=\"submit\""), "{m}");
+    }
+
+    #[test]
+    fn a_secret_field_is_a_password_that_never_has_a_value() {
+        for error in [None, Some("refused")] {
+            let m = secret_field("secret", "API key", error).into_string();
+            assert!(m.contains(r#"type="password""#) && m.contains(r#"autocomplete="off""#), "{m}");
+            assert!(!m.contains("value"), "a write-only field has no value attribute: {m}");
+        }
+    }
+
+    #[test]
+    fn a_form_carries_its_token_and_the_page_it_returns_to() {
+        let m = form("/do/keys/issue", "/endpoint", "tok123", maud::html! { p { "x" } }).into_string();
+        assert!(m.contains(r#"method="post""#) && m.contains(r#"action="/do/keys/issue""#), "{m}");
+        assert!(m.contains(r#"<input type="hidden" name="_t" value="tok123">"#), "{m}");
+        assert!(m.contains(r#"<input type="hidden" name="_back" value="/endpoint">"#), "{m}");
+    }
+
+    #[test]
+    fn a_running_task_refreshes_and_a_finished_one_does_not() {
+        let progress = vec!["step one".to_owned()];
+        let running = task_panel("Test anthropic/work", "14:02", &progress, TaskState::Running).into_string();
+        assert!(running.contains(r#"<meta http-equiv="refresh" content="3">"#), "{running}");
+        assert!(running.contains("started at 14:02"), "{running}");
+        for done in [TaskState::Done("ok"), TaskState::Failed("boom")] {
+            let m = task_panel("Test", "14:02", &progress, done).into_string();
+            assert!(!m.contains("http-equiv"), "{m}");
+        }
+    }
+
+    #[test]
+    fn a_once_value_comes_with_the_only_time_warning() {
+        let m = once_box("Key", "nr_abc123").into_string();
+        assert!(m.contains("This is the only time it is shown."), "{m}");
+        assert!(m.contains("nr_abc123"), "{m}");
     }
 }

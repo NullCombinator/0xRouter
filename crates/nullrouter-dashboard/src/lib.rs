@@ -25,6 +25,7 @@ use tokio::task::JoinHandle;
 pub mod access;
 pub mod assets;
 pub mod components;
+pub mod forms;
 pub mod frame;
 pub mod guard;
 pub mod headers;

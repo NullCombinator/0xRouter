@@ -67,12 +67,7 @@ pub fn append(home: &OperatorHome, entry: &Entry) -> io::Result<()> {
 /// The newest `limit` entries, newest first. A missing file is empty; a line that doesn't parse
 /// is skipped.
 pub fn read(home: &OperatorHome, limit: usize) -> io::Result<Vec<Entry>> {
-    Ok(lines(&path(home))?
-        .iter()
-        .rev()
-        .filter_map(|l| serde_json::from_str::<Entry>(l).ok())
-        .take(limit)
-        .collect())
+    Ok(lines(&path(home))?.iter().rev().filter_map(|l| serde_json::from_str::<Entry>(l).ok()).take(limit).collect())
 }
 
 /// Every line of `path`, oldest first; a missing file has none.

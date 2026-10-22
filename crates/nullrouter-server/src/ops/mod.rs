@@ -83,7 +83,8 @@ fn reload_in_process(engine: &Engine) -> Result<Applied, String> {
             for a in &r.unused_accounts {
                 warn!("account {a} names a provider that isn't loaded");
             }
-            let notes: Vec<String> = engine.snapshot().registry.report().notes.iter().map(ToString::to_string).collect();
+            let notes: Vec<String> =
+                engine.snapshot().registry.report().notes.iter().map(ToString::to_string).collect();
             for n in &notes {
                 info!("{n}");
             }
@@ -110,5 +111,86 @@ fn reload_by_socket(home: &OperatorHome) -> Result<Applied, String> {
         )),
         Err(CallError::NoServer(_)) => Ok(Applied { text: "saved; applies at next start", notes: Vec::new() }),
         Err(e) => Err(format!("saved, but the running server wasn't told: {e}")),
+    }
+}
+
+/// The operations that change nothing until the operator confirms (spec 014 FR-009).
+pub const IRREVERSIBLE: &[&str] = &[
+    "accounts.remove",
+    "keys.revoke",
+    "plugins.uninstall",
+    "proxy.remove",
+    "adapters.remove",
+    "adapters.clear",
+    "unified.remove",
+    "combos.remove",
+    "plugins.private_endpoints",
+];
+
+/// One plain sentence saying what `op` on `subject` loses, for its confirm window and the CLI's
+/// `[y/N]` prompt. `None` for an op that isn't irreversible, so no text is ever made up for one.
+pub fn describe_loss(op: &str, subject: &str) -> Option<String> {
+    let text = match op {
+        "accounts.remove" => {
+            format!("account {subject} is removed: its key or sign-in is deleted and routing stops using it")
+        }
+        "keys.revoke" => format!("clients using key {subject} stop working at once"),
+        "plugins.uninstall" => {
+            format!("provider {subject} is uninstalled: its accounts stop routing until it is installed again")
+        }
+        "proxy.remove" => format!("proxy {subject} is deleted with its address and password"),
+        "adapters.remove" => {
+            format!(
+                "adapter {subject} is deleted from the store; when no version is left, keys bound to it become plain clients"
+            )
+        }
+        "adapters.clear" => format!(
+            "adapter {subject} is cleared: its suspect mark is removed and it serves requests again from the next request"
+        ),
+        "unified.remove" => format!("unified model {subject} is removed: requests for it stop routing"),
+        "combos.remove" => format!("combo {subject} is removed: requests for it stop routing"),
+        "plugins.private_endpoints" => "Plugins may then reach this machine and your local network.".to_owned(),
+        _ => return None,
+    };
+    Some(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_irreversible_op_has_a_loss_text() {
+        for op in IRREVERSIBLE {
+            let subject = "subject-x";
+            let text = describe_loss(op, subject);
+            let text = text.unwrap_or_else(|| panic!("{op} has no loss text"));
+            assert!(!text.is_empty(), "{op} has an empty loss text");
+            if *op != "plugins.private_endpoints" {
+                assert!(text.contains(subject), "{op} text does not name the subject: {text}");
+            }
+        }
+    }
+
+    #[test]
+    fn private_endpoints_text_is_the_cli_question() {
+        assert_eq!(
+            describe_loss("plugins.private_endpoints", "on").as_deref(),
+            Some("Plugins may then reach this machine and your local network.")
+        );
+    }
+
+    #[test]
+    fn an_op_that_is_not_irreversible_has_no_text() {
+        assert_eq!(describe_loss("accounts.add", "anthropic/work"), None);
+        assert_eq!(describe_loss("no.such.op", "x"), None);
+    }
+
+    #[test]
+    fn the_list_and_the_texts_agree() {
+        for op in IRREVERSIBLE {
+            assert!(describe_loss(op, "x").is_some(), "{op} is listed but has no text");
+        }
+        assert_eq!(IRREVERSIBLE.len(), 9);
     }
 }

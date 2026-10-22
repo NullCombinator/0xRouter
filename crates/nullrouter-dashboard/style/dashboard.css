@@ -287,6 +287,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 }
 .input:focus { border-color: var(--color-brand-500-40); outline: none; box-shadow: var(--shadow-focus); }
 .input:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
+.input--error { border-color: var(--color-red-500-30); }
 
 /* code: globals.css's inline code */
 .code {
@@ -889,3 +890,88 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .landscape__card rect { fill: var(--color-surface); stroke: var(--color-border); stroke-width: var(--border-width); }
 .landscape__empty { color: var(--color-text-muted); font-size: var(--text-sm); line-height: var(--text-sm-leading); padding: var(--space-2); }
 .topology__label { color: var(--color-text-muted); font-size: var(--text-xs); text-align: center; }
+
+/* form: a change form (contracts/dashboard-forms.md), a column of fields */
+.form { display: flex; flex-direction: column; gap: var(--space-4); }
+
+/* field: Input.js, the label above its input and the error beside it */
+.field { display: flex; flex-direction: column; gap: var(--space-1-5); min-width: 0; }
+.field__label { color: var(--color-text-main); font-size: var(--text-sm); line-height: var(--text-sm-leading); font-weight: var(--weight-medium); }
+.field__error { display: flex; align-items: center; gap: var(--space-1); color: var(--color-red-600); font-size: var(--text-xs); line-height: var(--text-xs-leading); }
+.field__error .icon { width: var(--icon-badge); height: var(--icon-badge); }
+
+/* switch-field: Toggle.js size sm, live: a checkbox drawn as its track and knob */
+.switch-field { position: relative; display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; }
+.switch-field__input { position: absolute; width: 0; height: 0; margin: 0; opacity: 0; }
+.switch-field__track {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-start;
+  width: var(--size-8);
+  height: var(--size-4);
+  padding: var(--space-0-5);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-3);
+}
+.switch-field__input:checked + .switch-field__track { background: var(--color-brand-500); justify-content: flex-end; }
+.switch-field__input:focus-visible + .switch-field__track { box-shadow: var(--shadow-focus); }
+.switch-field__knob { width: var(--size-3); height: var(--size-3); border-radius: var(--radius-full); background: var(--color-white); box-shadow: var(--shadow-sm); }
+.switch-field__label { color: var(--color-text-main); font-size: var(--text-sm); line-height: var(--text-sm-leading); font-weight: var(--weight-medium); }
+
+/* once: a value shown once, selectable, in a box that warns it won't come back */
+.once {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-yellow-500-30);
+  border-radius: var(--radius-lg);
+  background: var(--color-yellow-500-10);
+}
+.once__label { color: var(--color-text-main); font-size: var(--text-sm); line-height: var(--text-sm-leading); font-weight: var(--weight-semibold); }
+.once__value {
+  padding: var(--space-2-5) var(--space-3);
+  border-radius: var(--radius-brand);
+  background: var(--color-surface);
+  color: var(--color-text-main);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm-leading);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.once__warning { display: flex; align-items: center; gap: var(--space-1); color: var(--color-yellow-600); font-size: var(--text-xs); line-height: var(--text-xs-leading); font-weight: var(--weight-semibold); }
+.once__warning .icon { width: var(--icon-badge); height: var(--icon-badge); }
+
+/* confirm: a confirm window's body, the loss notice and its actions */
+.confirm { display: flex; flex-direction: column; gap: var(--space-4); }
+.confirm__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+
+/* task: a long task's panel, its subject, state, progress lines and result */
+.task {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+}
+.task__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-sm); line-height: var(--text-sm-leading); }
+.task__subject { color: var(--color-text-main); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+.task__started { color: var(--color-text-muted); font-size: var(--text-xs); line-height: var(--text-xs-leading); }
+.task__progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs-leading);
+  overflow-wrap: anywhere;
+}
