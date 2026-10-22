@@ -95,7 +95,7 @@ pass unchanged; never edit a golden file to make a move pass.
 - [X] T028 [P] [US3] Move `test` (`crates/nullrouter-cli/src/cmd/test.rs`) and `verdicts mark|clear|settings` (`crates/nullrouter-cli/src/cmd/verdicts.rs`) to `crates/nullrouter-server/src/ops/model_tests.rs`. `test` plans, then runs as a task whose progress lines are the CLI's streamed lines. The CLI's `[y/N]` question text comes from `ops`. `crates/nullrouter-cli/tests/model_test.rs` and `verdicts.rs` pass unchanged.
 - [X] T029 [US3] Build the Combo page forms in `crates/nullrouter-dashboard/src/pages/combo.rs`: declare/edit/remove unified models and combos (members one per line; remove via confirm), and Test buttons per target plus Test All. When the plan bills more than one call, a confirm window asks the CLI's question. The task panel shows progress and the verdict. Add a Test button and verdict mark/clear to the provider window's model rows in `pages/providers.rs`.
 - [X] T030 [P] [US3] Add handlers for unified.*, combos.*, test.run, verdicts.* in `crates/nullrouter-dashboard/src/changes.rs`.
-- [ ] T031 [US3] Test US3 in `crates/nullrouter-dashboard/tests/targets_forms.rs`:
+- [X] T031 [US3] Test US3 in `crates/nullrouter-dashboard/tests/targets_forms.rs`:
   - browser equals CLI for the target ops;
   - an unknown member shows the refusal;
   - a two-call test asks to confirm first;
@@ -130,7 +130,7 @@ pass unchanged; never edit a golden file to make a move pass.
 
 ## Phase 7: User Story 5 — Console Log (P3)
 
-- [ ] T039 [US5] Build the Console Log page in `crates/nullrouter-dashboard/src/pages/console_log.rs`: entries newest first from `log.rs` (local time with zone, op, subject, result, text). The empty state reads "No changes made from the dashboard yet." Drop the page's placeholder hint.
+- [X] T039 [US5] Build the Console Log page in `crates/nullrouter-dashboard/src/pages/console_log.rs`: entries newest first from `log.rs` (local time with zone, op, subject, result, text). The empty state reads "No changes made from the dashboard yet." Drop the page's placeholder hint.
 - [X] T040 [US5] Add the CLI `nullrouter dashboard log [--limit N] [--json]` (`crates/nullrouter-cli/src/cmd/dashboard.rs`), default limit 50, with lines `<local time>  <op>  <subject>  <result>[: text]`. It reads the same file through a reader shared in `nullrouter_server::views` (move the reader from T007 there if needed so the CLI doesn't depend on the dashboard).
 - [ ] T041 [US5] Test US5 in `crates/nullrouter-dashboard/tests/console_log.rs`: three changes, one refused, appear in order on the page and in `dashboard log --json`; no entry contains a pasted marker secret.
 

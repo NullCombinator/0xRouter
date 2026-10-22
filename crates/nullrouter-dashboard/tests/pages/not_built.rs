@@ -1,7 +1,6 @@
-//! Console Log says what isn't built and what exists instead (T042, research R15). Proxy Pools is
+//! Console Log on a home with no dashboard changes shows its empty state (spec 014 US5). Proxy Pools is
 //! built (spec 014 US2): its forms are checked here. Combo is built (spec 014 US3); see `combo.rs`.
 
-use nullrouter_dashboard::pages::console_log;
 use nullrouter_server::ops::describe_loss;
 
 use crate::common::{Dash, text_of};
@@ -15,11 +14,11 @@ fn form_to<'a>(html: &'a str, action: &str) -> &'a str {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn console_log_says_what_is_not_built_and_names_what_exists() {
+async fn console_log_with_no_changes_says_so() {
     let d = Dash::dashboard().await;
     let log = d.ok("/console-log").await;
-    assert!(text_of(&log).contains(console_log::TITLE) && text_of(&log).contains(console_log::HINT));
-    assert!(log.contains("href=\"/usage\""), "Console Log links to the Usage page");
+    assert!(text_of(&log).contains("No changes made from the dashboard yet."), "{log}");
+    assert!(!log.contains("<table"), "no table without entries");
 }
 
 /// Proxy Pools: add has a write-only password, use, clear and probe post to their routes with the
