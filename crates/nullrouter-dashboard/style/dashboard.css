@@ -1067,6 +1067,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .settings-list .kv__value { padding: var(--space-1) var(--space-2-5); border-radius: var(--radius-full); background: var(--color-surface-2); font-size: var(--text-xs); line-height: var(--text-xs-leading); font-weight: var(--weight-medium); }
 .settings-list--plain .kv__value { padding: 0; background: transparent; font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--text-sm-leading); font-weight: var(--weight-medium); }
 .settings-list__note { display: block; color: var(--color-text-muted); font-size: var(--text-xs); line-height: var(--text-xs-leading); font-weight: var(--weight-medium); }
+.settings-list__badge { flex: none; }
 .settings-list__path { font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--text-sm-leading); overflow-wrap: anywhere; }
 
 .gauge { display: block; }

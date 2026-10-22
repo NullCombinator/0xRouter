@@ -109,8 +109,8 @@ async fn settings_shows_behaviour_the_home_and_the_dashboard_status() {
     assert!(!settings.is_empty());
     for (name, v) in settings {
         let tag = if v["default"] == true { " (default)" } else { "" };
-        let want = format!("{name} {}{tag}", v["value"].as_str().unwrap());
-        assert!(text.contains(&want), "{want:?}\n{text}");
+        let want = format!("{}{tag}", v["value"].as_str().unwrap());
+        assert!(text.contains(name.as_str()) && text.contains(&want), "{name} {want:?}\n{text}");
     }
 
     let check = d.view(ViewName::Check, json!({})).await;

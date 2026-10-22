@@ -7,7 +7,7 @@ use maud::{Markup, html};
 use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
-use crate::components::{Head, card, inset, kv, prose};
+use crate::components::{Head, Tone, badge, card, inset, kv, prose};
 use crate::page::{ViewName, Want};
 
 pub const VIEWS: &[ViewName] = &[ViewName::Behaviour, ViewName::Check, ViewName::Dashboard];
@@ -31,8 +31,11 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
     Ok(Body::new(content))
 }
 
+/// What each `[pipeline]` setting decides, under its name.
+const MEANS: &[(&str, &str)] = &[("break_behaviour", "What happens when a conversation cannot stay on its account")];
+
 /// "Routing": each `[pipeline]` setting as `behaviour show` prints it, `(default)` where the value
-/// is the built-in one.
+/// is the built-in one, in a badge as the mockup draws it.
 fn routing(behaviour: &Value) -> Markup {
     let head = Head::new("route", "Routing").subtitle("Same as nullrouter behaviour show");
     card(
@@ -41,7 +44,16 @@ fn routing(behaviour: &Value) -> Markup {
             div class="settings-list" {
                 @for (setting, v) in behaviour.as_object().into_iter().flatten() {
                     @let tag = if v["default"] == true { " (default)" } else { "" };
-                    (kv(setting, html! { (v["value"].as_str().unwrap_or_default()) (tag) }))
+                    @let means = MEANS.iter().find(|(k, _)| k == setting).map(|(_, m)| *m);
+                    div class="kv" {
+                        span class="kv__label" {
+                            (setting)
+                            @if let Some(m) = means { span class="settings-list__note" { (m) } }
+                        }
+                        span class="settings-list__badge" {
+                            (badge(Tone::Default, &format!("{}{tag}", v["value"].as_str().unwrap_or_default())))
+                        }
+                    }
                 }
             }
         },
