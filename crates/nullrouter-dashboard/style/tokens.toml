@@ -88,6 +88,11 @@ value = "color-mix(in oklab, #000 2%, transparent)"
 source = "src/app/(dashboard)/dashboard/providers/page.js:393"
 class = "bg-black/[0.02]"
 
+[token.color-black-5]
+value = "color-mix(in oklab, #000 5%, transparent)"
+source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/index.js:832"
+class = "hover:bg-black/5"
+
 [token.color-black-10]
 value = "color-mix(in oklab, #000 10%, transparent)"
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/QuotaTable.js:183"
@@ -331,6 +336,11 @@ value = "13px"
 source = "src/shared/components/Sidebar.js:181"
 class = "text-[13px]"
 
+[token.weight-normal]
+value = "400"
+source = "src/shared/components/ModelSelectModal.js:611"
+class = "font-normal"
+
 [token.weight-medium]
 value = "500"
 source = "src/shared/components/Input.js:23"
@@ -466,6 +476,11 @@ class = "lg:p-10"
 value = "3rem"
 source = "src/app/(dashboard)/dashboard/combos/page.js:415"
 class = "py-12"
+
+[token.size-1]
+value = "0.25rem"
+source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/QuotaTable.js:182"
+class = "h-1"
 
 [token.size-1-5]
 value = "0.375rem"
@@ -867,7 +882,7 @@ uses = ["size-8", "radius-lg"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:731"
 
 [component.meter]
-uses = ["size-1-5", "border-width", "radius-full", "size-full", "color-green-500-10", "color-green-500", "color-yellow-500-10", "color-yellow-500", "color-red-500-10", "color-red-500", "color-black-10"]
+uses = ["size-1", "border-width", "radius-full", "size-full", "color-green-500-10", "color-green-500", "color-yellow-500-10", "color-yellow-500", "color-red-500-10", "color-red-500", "color-black-10"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/QuotaTable.js:182"
 
 [component.slot]
@@ -903,7 +918,7 @@ uses = ["screen-height", "space-4", "color-bg", "color-text-main", "font-sans", 
 source = "src/shared/components/layouts/AuthLayout.js:19"
 
 [component.quota-filters]
-uses = ["space-1-5", "size-8", "space-2", "border-width", "color-black-10", "radius-lg", "color-black-2", "color-text-main", "text-xs", "text-xs-leading", "space-3", "color-text-muted"]
+uses = ["space-1-5", "size-8", "space-2", "border-width", "color-black-10", "radius-lg", "color-black-2", "color-text-main", "text-xs", "text-xs-leading", "space-3", "color-text-muted", "weight-normal", "color-black-5", "icon-badge", "color-primary-10", "color-primary"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:393"
 
 [component.quota-grid]
@@ -911,7 +926,7 @@ uses = ["grid-cols-2", "space-3", "color-text-muted", "text-xs", "text-xs-leadin
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/index.js:1049"
 
 [component.quota-card]
-uses = ["size-full", "opacity-disabled", "color-red-500-30", "space-2", "space-3", "border-width", "color-black-10", "flex-1", "text-sm", "text-sm-leading", "weight-semibold", "color-text-muted", "text-xs", "text-xs-leading", "text-11", "space-0-5", "text-10", "space-1-5", "color-red-600", "space-1", "color-border-subtle", "quota-name-width", "weight-medium"]
+uses = ["size-full", "opacity-disabled", "color-red-500-30", "space-2", "space-3", "border-width", "color-black-10", "flex-1", "text-sm", "text-sm-leading", "weight-semibold", "color-text-muted", "text-xs", "text-xs-leading", "text-11", "space-0-5", "text-10", "space-1-5", "color-red-600", "space-1", "color-border-subtle", "quota-name-width", "weight-medium", "space-5", "size-7", "color-red-500", "color-black-5", "color-black-2", "size-1-5", "radius-full", "color-green-500", "color-yellow-500", "color-green-600", "color-yellow-600"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/ProviderLimitCard.js:58"
 
 [component.usage-overview]

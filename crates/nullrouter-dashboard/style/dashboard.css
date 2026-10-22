@@ -348,7 +348,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .meter {
   display: block;
   width: 100%;
-  height: var(--size-1-5);
+  height: var(--size-1);
   overflow: hidden;
   border: var(--border-width) solid transparent;
   border-radius: var(--radius-full);
@@ -656,8 +656,11 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .signin__label { font-size: var(--text-sm); line-height: var(--text-sm-leading); font-weight: var(--weight-medium); }
 
 /* quota-filters, quota-grid, quota-card: ProviderLimits (Quota Tracker) */
-.quota-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-1-5); }
-.quota-filters__select, .quota-filters__toggle {
+.quota-filters__bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.quota-filters__window { color: var(--color-text-muted); }
+.quota-filters__window .kv { gap: var(--space-1-5); padding: 0; border-top-width: 0; font-size: var(--text-xs); line-height: var(--text-xs-leading); }
+.quota-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-1-5); margin-left: auto; }
+.quota-filters__pill, .quota-filters .pick__button {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1-5);
@@ -669,9 +672,12 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
   color: var(--color-text-main);
   font-size: var(--text-xs);
   line-height: var(--text-xs-leading);
+  font-weight: var(--weight-normal);
 }
-.quota-filters__bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
-.quota-filters__window { color: var(--color-text-muted); }
+.quota-filters__pill:hover, .quota-filters .pick__button:hover { background: var(--color-black-5); text-decoration: none; }
+.quota-filters__pill .icon, .quota-filters .pick__button .icon { width: var(--icon-badge); height: var(--icon-badge); color: var(--color-text-muted); }
+.quota-filters__pill--on { background: var(--color-primary-10); color: var(--color-primary); }
+.quota-filters__pill--on .icon { color: var(--color-primary); }
 .quota-grid__foot { padding: var(--space-2) var(--space-3); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-2); color: var(--color-text-muted); font-size: var(--text-xs); line-height: var(--text-xs-leading); }
 .quota-grid { display: grid; grid-template-columns: var(--grid-cols-2); gap: var(--space-3); }
 .quota-card { min-width: 0; }
@@ -680,7 +686,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .quota-card--attention > .card { border-color: var(--color-red-500-30); }
 .quota-card__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border-bottom: var(--border-width) solid var(--color-black-10);
@@ -691,30 +697,71 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .quota-card__meta { color: var(--color-text-muted); font-size: var(--text-11); }
 .quota-card__state { display: flex; flex: none; flex-direction: column; align-items: flex-end; gap: var(--space-0-5); }
 .quota-card__since { color: var(--color-text-muted); font-size: var(--text-10); }
-.quota-card__body { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-1-5) var(--space-2) var(--space-2); }
-.quota-card__alert { padding: var(--space-2); color: var(--color-red-600); font-size: var(--text-xs); line-height: var(--text-xs-leading); }
+.quota-card__body { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-1-5) var(--space-2); }
+.quota-card__none {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-5) var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs-leading);
+  text-align: center;
+}
+.quota-card__none .icon { width: var(--size-7); height: var(--size-7); }
+.quota-card__none--alert .icon { color: var(--color-red-500); }
 .quota-card__identity { padding: 0 var(--space-1-5); }
 .quota-card__identity .kv { padding: var(--space-0-5) 0; border-top-width: 0; font-size: var(--text-11); }
-.quota-card__section, .quota-card__targets {
+.quota-card__section { display: flex; flex-direction: column; }
+.quota-card__count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: 0 var(--space-1-5) var(--space-1-5);
+  color: var(--color-text-muted);
+  font-size: var(--text-10);
+}
+.quota-card__failed { color: var(--color-red-600); }
+.quota-card__window {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1-5);
+  border-bottom: var(--border-width) solid var(--color-black-5);
+}
+.quota-card__window:hover { background: var(--color-black-2); }
+.quota-card__window-name {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1-5);
+  width: var(--quota-name-width);
+  min-width: 0;
+  font-size: var(--text-11);
+  font-weight: var(--weight-medium);
+}
+.quota-card__window-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quota-card__dot { flex: none; width: var(--size-1-5); height: var(--size-1-5); border-radius: var(--radius-full); background: var(--color-black-10); }
+.quota-card__dot--good { background: var(--color-green-500); }
+.quota-card__dot--low { background: var(--color-yellow-500); }
+.quota-card__dot--out { background: var(--color-red-500); }
+.quota-card__window-main { display: flex; flex: var(--flex-1); flex-direction: column; gap: var(--space-1); min-width: 0; }
+.quota-card__window-figures { display: flex; justify-content: space-between; gap: var(--space-1); color: var(--color-text-muted); font-size: var(--text-10); }
+.quota-card__window-figure { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quota-card__left { flex: none; font-weight: var(--weight-medium); }
+.quota-card__left--good { color: var(--color-green-600); }
+.quota-card__left--low { color: var(--color-yellow-600); }
+.quota-card__left--out { color: var(--color-red-600); }
+.quota-card__window-reset { flex: none; font-size: var(--text-11); font-weight: var(--weight-medium); white-space: nowrap; }
+.quota-card__targets {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   padding-top: var(--space-2);
   border-top: var(--border-width) solid var(--color-border-subtle);
 }
-.quota-card__source { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); padding: 0 var(--space-1-5); }
-.quota-card__poll, .quota-card__note { color: var(--color-text-muted); font-size: var(--text-10); }
-.quota-card__window {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-1-5);
-  border-bottom: var(--border-width) solid var(--color-border-subtle);
-}
-.quota-card__window-name { flex: none; width: var(--quota-name-width); min-width: 0; font-size: var(--text-11); font-weight: var(--weight-medium); }
-.quota-card__window-main { display: flex; flex: var(--flex-1); flex-direction: column; gap: var(--space-1); min-width: 0; }
-.quota-card__window-figure { color: var(--color-text-muted); font-size: var(--text-10); }
-.quota-card__window-reset { flex: none; font-size: var(--text-11); font-weight: var(--weight-medium); white-space: nowrap; }
 .quota-card__target { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); padding: var(--space-1) var(--space-1-5); font-size: var(--text-11); }
 .quota-card__target .kv { gap: var(--space-1); padding: 0; border-top-width: 0; font-size: var(--text-11); }
 .quota-card__target-name { flex: none; font-weight: var(--weight-medium); }

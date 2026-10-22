@@ -430,18 +430,23 @@ pub fn logo(src: Option<&str>, alias: &str) -> Markup {
     }
 }
 
-/// A bar of `percent` (0 to 100) left, coloured by how much is left, as 9router's quota rows
-/// are: green above 50 %, yellow above 20 %, red below. The CSP allows no inline style, so the
-/// width is one of 21 classes in steps of 5 %; the exact figure is the text beside the bar.
+/// How a share left is coloured, as 9router's quota rows colour it (`getColorClasses`): `good`
+/// above 70 %, `low` from 30 %, `out` below.
+pub fn left_tone(percent: f64) -> &'static str {
+    if percent > 70.0 {
+        "good"
+    } else if percent >= 30.0 {
+        "low"
+    } else {
+        "out"
+    }
+}
+
+/// A bar of `percent` (0 to 100) left, coloured by [`left_tone`]. The CSP allows no inline style,
+/// so the width is one of 21 classes in steps of 5 %; the exact figure is the text beside the bar.
 pub fn meter(percent: f64) -> Markup {
     let p = if percent.is_finite() { percent.clamp(0.0, 100.0) } else { 0.0 };
-    let tone = if p > 50.0 {
-        "meter--good"
-    } else if p > 20.0 {
-        "meter--low"
-    } else {
-        "meter--out"
-    };
+    let tone = format!("meter--{}", left_tone(p));
     let step = ((p / 5.0).round() as u32) * 5;
     let class = format!("meter {tone} meter--w{step}");
     html! { span class=(class) role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow=(format!("{p:.0}")) { span class="meter__fill" {} } }
