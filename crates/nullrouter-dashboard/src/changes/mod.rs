@@ -24,18 +24,22 @@ use crate::{Shared, access};
 /// The most a form body may hold: a model list is the largest thing a form carries.
 const MAX_BODY: usize = 256 * 1024;
 
-/// The fields of one post, decoded.
-pub struct Form(HashMap<String, String>);
+/// The fields of one post, decoded, and the dashboard's own origin (`http://host:port`) the post
+/// came to, when its `Host` is one this dashboard answers to.
+pub struct Form {
+    fields: HashMap<String, String>,
+    origin: Option<String>,
+}
 
 impl Form {
     /// The field `name`, or `""` when it is absent.
     pub fn get(&self, name: &str) -> &str {
-        self.0.get(name).map_or("", String::as_str)
+        self.fields.get(name).map_or("", String::as_str)
     }
 
     /// The field `name` when present and not empty.
     pub fn opt(&self, name: &str) -> Option<&str> {
-        self.0.get(name).map(String::as_str).filter(|v| !v.is_empty())
+        self.fields.get(name).map(String::as_str).filter(|v| !v.is_empty())
     }
 
     /// A checkbox or switch: submitted as `on` when set.
@@ -43,10 +47,16 @@ impl Form {
         matches!(self.get(name), "on" | "true" | "1")
     }
 
+    /// The dashboard origin the post came to, for a redirect that must return to it.
+    pub fn origin(&self) -> Option<&str> {
+        self.origin.as_deref()
+    }
+
     /// A form from `(field, value)` pairs, for the handler tests.
     #[cfg(test)]
     pub fn from_pairs(pairs: &[(&str, &str)]) -> Self {
-        Self(pairs.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect())
+        let fields = pairs.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
+        Self { fields, origin: None }
     }
 }
 
@@ -68,7 +78,8 @@ pub fn lookup(area: &str, op: &str) -> Option<(String, Handler)> {
         "accounts.disable" => accounts::disable,
         "accounts.exclusive" => accounts::exclusive,
         "accounts.remove" => accounts::remove,
-        // T014: accounts.signin, accounts.signin_paste
+        "accounts.signin" => accounts::signin,
+        "accounts.signin_paste" => accounts::signin_paste,
         "keys.issue" => keys::issue,
         "keys.revoke" => keys::revoke,
         "keys.tag" => keys::tag,
@@ -156,7 +167,14 @@ pub async fn dispatch(State(shared): State<Arc<Shared>>, req: Request) -> Respon
     let mut kept: Vec<(String, String)> =
         fields.iter().filter(|(k, _)| !k.starts_with('_')).map(|(k, v)| (k.clone(), v.clone())).collect();
     kept.sort();
-    let form = Form(fields);
+    // The origin a sign-in returns to: the Host the browser used, when this dashboard answers to it.
+    let origin = parts
+        .headers
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .filter(|h| shared.rule.allows(h))
+        .map(|h| format!("http://{h}"));
+    let form = Form { fields, origin };
 
     let engine = shared.engine.clone();
     let ran = shared

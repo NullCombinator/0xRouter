@@ -166,6 +166,89 @@ async fn an_unknown_provider_is_a_404_with_the_clis_message() {
     assert!(text.contains("Providers"), "inside the frame");
 }
 
+/// The first `<form>` posting to `action`, through its `</form>`.
+fn form_to<'a>(html: &'a str, action: &str) -> &'a str {
+    let at = html.find(&format!("action=\"{action}\"")).unwrap_or_else(|| panic!("no form posts to {action}"));
+    let start = html[..at].rfind("<form").expect("the action belongs to a form");
+    let end = at + html[at..].find("</form>").expect("the form closes");
+    &html[start..end]
+}
+
+/// The first account of `provider` in the accounts view, by name.
+async fn first_account(d: &Dash, provider: &str) -> String {
+    let accounts = d.view(ViewName::Accounts, json!({"provider": provider})).await;
+    rows(&accounts)[0]["name"].as_str().unwrap().to_owned()
+}
+
+/// Add account is a form in the provider window: a name, a password field for the key that has no
+/// value attribute, and an order; it returns to the window.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_provider_window_adds_an_account_with_a_write_only_key() {
+    let d = Dash::dashboard().await;
+    let html = d.ok("/providers/anthropic").await;
+    let form = form_to(&html, "/do/accounts/add");
+    assert!(form.contains("name=\"provider\" value=\"anthropic\""), "{form}");
+    assert!(form.contains("name=\"_back\" value=\"/providers/anthropic\""), "a refusal stays here: {form}");
+    for field in ["name=\"name\"", "name=\"order\""] {
+        assert!(form.contains(field), "{field}: {form}");
+    }
+    let at = form.find("type=\"password\" name=\"secret\"").expect("the key is a password field");
+    let tag = &form[at..at + form[at..].find('>').unwrap()];
+    assert!(!tag.contains("value"), "a write-only field has no value attribute: {tag}");
+}
+
+/// Each account row has its priority form, the enable or disable form its state calls for, the two
+/// exclusive forms, and a Remove link that opens its confirm window.
+#[tokio::test(flavor = "multi_thread")]
+async fn account_rows_have_priority_enable_exclusive_and_remove() {
+    let d = Dash::dashboard().await;
+    let accounts = d.view(ViewName::Accounts, json!({"provider": "anthropic"})).await;
+    assert!(!rows(&accounts).is_empty(), "the fixture gives anthropic accounts");
+    let html = d.ok("/providers/anthropic").await;
+    for action in ["/do/accounts/priority", "/do/accounts/exclusive", "/do/accounts/enable", "/do/accounts/disable"] {
+        assert!(html.contains(&format!("action=\"{action}\"")), "{action} is on the window");
+    }
+    for a in rows(&accounts) {
+        let name = a["name"].as_str().unwrap();
+        assert!(html.contains(&format!("name=\"name\" value=\"{name}\"")), "{name}: its forms name it");
+        // The href is escaped, so its `&` reads `&amp;`.
+        let remove = format!("window=remove-account&amp;id=anthropic&amp;name={name}");
+        assert!(html.contains(&remove), "{name}: a Remove link\n{html}");
+    }
+}
+
+/// The remove window names what removing loses, posts the account, and returns to the same
+/// account's window when refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_remove_window_shows_the_loss_and_reopens_on_refusal() {
+    let d = Dash::dashboard().await;
+    let name = first_account(&d, "anthropic").await;
+    let html = d.ok(&format!("/providers?window=remove-account&id=anthropic&name={name}")).await;
+    let loss = nullrouter_server::ops::describe_loss("accounts.remove", &format!("anthropic/{name}")).unwrap();
+    assert!(text_of(&html).contains(&loss), "{loss}\n{}", text_of(&html));
+    let form = form_to(&html, "/do/accounts/remove");
+    assert!(form.contains("name=\"_window\" value=\"remove-account\""), "{form}");
+    // `_back` is an attribute value, so its `&` is written `&amp;`.
+    assert!(form.contains(&format!("name=\"_back\" value=\"/providers?id=anthropic&amp;name={name}\"")), "{form}");
+    assert!(html.contains("class=\"modal\""), "a window");
+
+    let nothing = d.ok("/providers?window=remove-account&id=anthropic").await;
+    assert!(!nothing.contains("/do/accounts/remove"), "no account named, no window");
+}
+
+/// The sign-in window carries the terms warning, and its Sign in form posts the answer to it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_sign_in_window_shows_the_terms_warning_and_posts_accept_terms() {
+    let d = Dash::dashboard().await;
+    let html = d.ok("/providers?window=signin&id=anthropic").await;
+    assert!(html.contains("terms limit the use of Claude Pro/Max subscriptions"), "{html}");
+    let form = form_to(&html, "/do/accounts/signin");
+    assert!(form.contains("name=\"accept_terms\" value=\"on\""), "{form}");
+    assert!(form.contains("name=\"provider\" value=\"anthropic\""), "{form}");
+    assert!(form.contains("name=\"_window\" value=\"signin\""), "a refusal reopens it: {form}");
+    assert!(!html.contains("<script"), "no script");
+}
+
 /// The search is a GET form that filters by id or alias.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_search_filters_cards_by_id() {

@@ -1,9 +1,7 @@
 //! `nullrouter connection` (spec 013, contracts/cli.md): the effective timeouts of each
-//! provider and where each came from, and `set`/`unset` for them in `config.toml`.
-//!
-//! The retry keys `retries[.STATUS]` and `retry-wait[.STATUS]` edit `[provider.P.retry]`, where
-//! a status (or `all`) holds one rule `{ retries, delay_ms }`: unsetting either key removes the
-//! rule, and `retry-wait` needs the rule's `retries` to be set first.
+//! provider and where each came from (`show`), and `set`/`unset` for them in `config.toml`.
+//! The edits are the shared operations in `nullrouter_server::ops::connection`; this file
+//! parses, prints and exits.
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -11,9 +9,8 @@ use std::process::ExitCode;
 
 use clap::Subcommand;
 use nullrouter_registry::OperatorHome;
-use nullrouter_registry::schema::{OperatorConfig, parse_duration};
-use nullrouter_server::ops::config_text::{edit, write_checked};
 use nullrouter_server::operator::{self, CallError};
+use nullrouter_server::ops::{self, Ctx, Done, OpError, Status};
 use serde_json::{Value, json};
 
 #[derive(Subcommand)]
@@ -46,6 +43,23 @@ fn fail(e: impl std::fmt::Display) -> ExitCode {
     ExitCode::from(1)
 }
 
+/// Prints the notes, then the result: the text on stdout; the reason and exit 1 when the running
+/// server refused the saved files; the error and its exit code otherwise.
+fn report(r: Result<Done, OpError>, log: &[String]) -> Result<ExitCode, ExitCode> {
+    for l in log {
+        eprintln!("{l}");
+    }
+    let done = r.map_err(|e| {
+        eprintln!("{}", e.text);
+        ExitCode::from(e.exit)
+    })?;
+    if let Status::SavedNotApplied { reason } = &done.status {
+        return Err(fail(reason));
+    }
+    println!("{}", done.text);
+    Ok(ExitCode::SUCCESS)
+}
+
 pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
     match cmd {
@@ -58,12 +72,16 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
             }
         }
         Command::Set { provider, model, key, value } => {
-            let said = change(&home, &provider, model.as_deref(), &key, Some(&value)).map_err(fail)?;
-            println!("{said}");
+            let ctx = Ctx { home, engine: None };
+            let mut log = Vec::new();
+            let r = ops::connection::set_with(&ctx, &mut log, &provider, model.as_deref(), &key, &value);
+            report(r, &log)?;
         }
         Command::Unset { provider, model, key } => {
-            let said = change(&home, &provider, model.as_deref(), &key, None).map_err(fail)?;
-            println!("{said}");
+            let ctx = Ctx { home, engine: None };
+            let mut log = Vec::new();
+            let r = ops::connection::unset_with(&ctx, &mut log, &provider, model.as_deref(), &key);
+            report(r, &log)?;
         }
     }
     Ok(ExitCode::SUCCESS)
@@ -83,161 +101,6 @@ fn view(home: &OperatorHome, provider: Option<&str>) -> Result<Value, String> {
     }
     let handle = nullrouter_server::views::open_registry(home).map_err(|e| e.message)?;
     nullrouter_engine::connection::view(&handle.snapshot(), provider)
-}
-
-/// The config key for a CLI key.
-fn config_key(key: &str) -> Result<&'static str, String> {
-    Ok(match key {
-        "connect-timeout" => "connect_timeout_ms",
-        "header-timeout" => "header_timeout_ms",
-        "first-token-timeout" => "first_token_timeout_ms",
-        "stall-timeout" => "stall_timeout_ms",
-        "reuse" => "reuse",
-        "http2" => "http2",
-        _ => {
-            return Err(format!(
-                "unknown key {key:?}; allowed: connect-timeout, header-timeout, first-token-timeout, stall-timeout, reuse, http2"
-            ));
-        }
-    })
-}
-
-/// Which half of a retry rule a key sets.
-#[derive(Clone, Copy, PartialEq)]
-enum RetryField {
-    Retries,
-    Wait,
-}
-
-/// `retries`, `retries.503`, `retry-wait` and `retry-wait.503` as the field and the table key
-/// (`all` or the status). `None` for any other key.
-fn retry_key(key: &str) -> Option<Result<(RetryField, String), String>> {
-    let (name, status) = key.split_once('.').map_or((key, None), |(n, s)| (n, Some(s)));
-    let field = match name {
-        "retries" => RetryField::Retries,
-        "retry-wait" => RetryField::Wait,
-        _ => return None,
-    };
-    Some(match status {
-        None => Ok((field, "all".into())),
-        Some(s) if s.len() == 3 && s.bytes().all(|b| b.is_ascii_digit()) => Ok((field, s.into())),
-        Some(s) => Err(format!("{key}: {s:?} is not a 3-digit HTTP status")),
-    })
-}
-
-/// `text` with the retry rule for `status` changed in `[provider.P.retry]`.
-fn edit_retry(
-    text: &str,
-    provider: &str,
-    (field, status): (RetryField, &str),
-    value: Option<&str>,
-) -> Result<(String, bool), String> {
-    let header = format!("provider.{provider}.retry");
-    let table_key = if status == "all" { "all".to_owned() } else { format!("\"{status}\"") };
-    let Some(v) = value else { return Ok(edit(text, &header, &table_key, None)) };
-    let config: OperatorConfig = toml::from_str(text).map_err(|e| format!("config.toml: {e}"))?;
-    let retry = config.provider.get(provider).map(|p| &p.retry);
-    let current = retry.and_then(|r| if status == "all" { r.all } else { r.by_status.get(status).copied() });
-    let (retries, delay_ms) = match field {
-        RetryField::Retries => {
-            let n: u32 = v.parse().map_err(|_| format!("retries takes a count 0-5, not {v:?}"))?;
-            (n, current.map_or(0, |c| c.delay_ms))
-        }
-        RetryField::Wait => {
-            let Some(c) = current else {
-                return Err(format!("set retries{} first; a wait needs a retry count", dotted(status)));
-            };
-            let ms = parse_duration(v).map_err(|e| format!("retry-wait: {e}"))?.as_millis();
-            (c.retries, u64::try_from(ms).map_err(|_| format!("retry-wait: {v} is too long"))?)
-        }
-    };
-    Ok(edit(text, &header, &table_key, Some(&format!("{{ retries = {retries}, delay_ms = {delay_ms} }}"))))
-}
-
-fn dotted(status: &str) -> String {
-    if status == "all" { String::new() } else { format!(".{status}") }
-}
-
-/// `reuse` and `http2` are switches kept for a provider, never a model.
-fn is_switch(key: &str) -> bool {
-    matches!(key, "reuse" | "http2")
-}
-
-/// `on` or `off`, as the TOML boolean it is written as.
-fn parse_switch(key: &str, value: &str) -> Result<String, String> {
-    match value {
-        "on" => Ok("true".into()),
-        "off" => Ok("false".into()),
-        _ => Err(format!("{key} takes on or off, not {value:?}")),
-    }
-}
-
-/// A timeout in ms from `500ms`, `30s`, `5m`; `off` is 0 and only the first token takes it.
-fn parse_value(key: &str, value: &str) -> Result<u64, String> {
-    if value == "off" {
-        return if key == "first-token-timeout" {
-            Ok(0)
-        } else {
-            Err(format!("{key} can't be off; give a duration such as 30s"))
-        };
-    }
-    let ms = parse_duration(value).map_err(|e| format!("{key}: {e}"))?.as_millis();
-    u64::try_from(ms).map_err(|_| format!("{key}: {value} is too long"))
-}
-
-/// Changes (`Some`) or removes (`None`) one setting in `config.toml`, then asks the server to
-/// reload. Nothing is written for an unknown provider or a value the config would refuse.
-fn change(
-    home: &OperatorHome,
-    provider: &str,
-    model: Option<&str>,
-    key: &str,
-    value: Option<&str>,
-) -> Result<String, String> {
-    let retry = retry_key(key).transpose()?;
-    if retry.is_some() && model.is_some() {
-        return Err(format!("{key} is set for a provider, not a model"));
-    }
-    let ckey = if retry.is_some() { "" } else { config_key(key)? };
-    if is_switch(key) && model.is_some() {
-        return Err(format!("{key} is set for a provider, not a model"));
-    }
-    let new = match value {
-        _ if retry.is_some() => None,
-        Some(v) if is_switch(key) => Some(parse_switch(key, v)?),
-        Some(v) => Some(parse_value(key, v)?.to_string()),
-        None => None,
-    };
-    let handle = nullrouter_server::views::open_registry(home).map_err(|e| e.message)?;
-    let snapshot = handle.snapshot();
-    let known: Vec<&str> = snapshot.providers().map(|p| p.id.as_str()).collect();
-    if !known.contains(&provider) {
-        return Err(format!("no provider {provider:?}; known providers: {}", known.join(", ")));
-    }
-    let header = match model {
-        Some(m) => format!("provider.{provider}.model.\"{}\".connection", m.replace('\\', "\\\\").replace('"', "\\\"")),
-        None => format!("provider.{provider}.connection"),
-    };
-    let path = home.config_file();
-    let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(format!("{}: {e}", path.display())),
-    };
-    let what = format!("{provider}{} {key}", model.map_or(String::new(), |m| format!(" model {m}")));
-    let (edited, changed) = match &retry {
-        Some((field, status)) => edit_retry(&text, provider, (*field, status.as_str()), value)?,
-        None => edit(&text, &header, ckey, new.as_deref()),
-    };
-    if !changed {
-        return Ok(format!("{what}: was not set"));
-    }
-    write_checked(home, &edited)?;
-    let status = crate::cmd::apply(home)?;
-    Ok(match value {
-        Some(v) => format!("{what} = {v}: {status}"),
-        None => format!("{what} unset: {status}"),
-    })
 }
 
 fn source(s: &Value) -> String {
@@ -308,15 +171,26 @@ fn render(view: &Value) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn values_are_durations_and_only_first_token_may_be_off() {
-        assert_eq!(parse_value("header-timeout", "500ms"), Ok(500));
-        assert_eq!(parse_value("header-timeout", "30s"), Ok(30_000));
-        assert_eq!(parse_value("stall-timeout", "5m"), Ok(300_000));
-        assert_eq!(parse_value("first-token-timeout", "off"), Ok(0));
-        assert!(parse_value("header-timeout", "off").unwrap_err().contains("can't be off"));
-        assert!(parse_value("header-timeout", "soon").unwrap_err().contains("header-timeout"));
-        assert!(config_key("retries").unwrap_err().contains("allowed"));
+    /// `set` or `unset` as the CLI runs it: the text it prints, or the refusal or error it prints
+    /// on stderr.
+    fn change(
+        home: &OperatorHome,
+        provider: &str,
+        model: Option<&str>,
+        key: &str,
+        value: Option<&str>,
+    ) -> Result<String, String> {
+        let ctx = Ctx { home: home.clone(), engine: None };
+        let mut log = Vec::new();
+        let done = match value {
+            Some(v) => ops::connection::set_with(&ctx, &mut log, provider, model, key, v),
+            None => ops::connection::unset_with(&ctx, &mut log, provider, model, key),
+        };
+        match done {
+            Ok(Done { status: Status::SavedNotApplied { reason }, .. }) => Err(reason),
+            Ok(d) => Ok(d.text),
+            Err(e) => Err(e.text),
+        }
     }
 
     fn home_with_config(config: &str) -> (tempfile::TempDir, OperatorHome) {
@@ -324,14 +198,6 @@ mod tests {
         std::fs::write(dir.path().join("config.toml"), config).unwrap();
         let home = OperatorHome::new(dir.path());
         (dir, home)
-    }
-
-    #[test]
-    fn an_unknown_provider_is_refused_with_the_known_ones_and_nothing_is_written() {
-        let (dir, home) = home_with_config("schema = 1\n");
-        let e = change(&home, "nope", None, "header-timeout", Some("10s")).unwrap_err();
-        assert!(e.contains("no provider \"nope\"") && e.contains("known providers:"), "{e}");
-        assert_eq!(std::fs::read_to_string(dir.path().join("config.toml")).unwrap(), "schema = 1\n");
     }
 
     #[test]

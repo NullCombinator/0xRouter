@@ -3,7 +3,7 @@
 
 use nullrouter_engine::accounts::SecretSource;
 use nullrouter_registry::SecretString;
-use nullrouter_server::ops::{Ctx, OpError, accounts as ops};
+use nullrouter_server::ops::{Ctx, OpError, TaskId, accounts as ops};
 
 use super::{Form, Ran};
 
@@ -58,7 +58,34 @@ pub fn remove(ctx: &Ctx, form: &Form) -> Ran {
     (subject(form), ops::remove(ctx, form.get("provider"), form.get("name")))
 }
 
-// T014: accounts.signin, accounts.signin_paste
+/// Starts a sign-in as a task. `accept_terms` answers the provider's terms warning; the dashboard's
+/// origin is where a loopback redirect returns.
+pub fn signin(ctx: &Ctx, form: &Form) -> Ran {
+    let result = ops::signin(ctx, form.get("provider"), form.get("name"), form.flag("accept_terms"), form.origin());
+    (subject(form), result)
+}
+
+/// The checked fields of `accounts.signin_paste`: the task id, and the pasted code, which is held
+/// as a secret from here on. An id that is not a task id is refused as no such task.
+fn parse_paste(form: &Form) -> Result<(TaskId, SecretString), OpError> {
+    let task = form.get("task").parse::<TaskId>().map_err(|_| OpError {
+        text: "no such task".into(),
+        exit: 1,
+        field: Some("task"),
+    })?;
+    let code = form.get("code").trim();
+    if code.is_empty() {
+        return Err(OpError { text: "no code pasted".into(), exit: 1, field: Some("code") });
+    }
+    Ok((task, SecretString::new(code)))
+}
+
+/// Hands the pasted code to the sign-in task that waits for it.
+pub fn signin_paste(ctx: &Ctx, form: &Form) -> Ran {
+    let subject = format!("task {}", form.get("task"));
+    let result = parse_paste(form).and_then(|(task, code)| ops::signin_paste(ctx, &task, code));
+    (subject, result)
+}
 
 #[cfg(test)]
 mod tests {
@@ -104,9 +131,30 @@ mod tests {
             ("disable", "accounts.disable"),
             ("exclusive", "accounts.exclusive"),
             ("remove", "accounts.remove"),
+            ("signin", "accounts.signin"),
+            ("signin-paste", "accounts.signin_paste"),
         ] {
             let (got, _) = lookup("accounts", op).expect(id);
             assert_eq!(got, id);
         }
+    }
+
+    #[test]
+    fn paste_refuses_a_task_id_that_is_not_one_and_an_empty_code() {
+        let form = Form::from_pairs(&[("task", "not-a-task"), ("code", "c")]);
+        let e = parse_paste(&form).expect_err("a bad id is refused");
+        assert_eq!((e.text.as_str(), e.field, e.exit), ("no such task", Some("task"), 1));
+
+        let form = Form::from_pairs(&[("task", "tk_abcdefghijklmnop"), ("code", "  ")]);
+        let e = parse_paste(&form).expect_err("an empty code is refused");
+        assert_eq!((e.text.as_str(), e.field), ("no code pasted", Some("code")));
+    }
+
+    #[test]
+    fn paste_keeps_the_code_as_a_secret() {
+        let form = Form::from_pairs(&[("task", "tk_abcdefghijklmnop"), ("code", " sekrit-code ")]);
+        let (task, code) = parse_paste(&form).expect("valid fields parse");
+        assert_eq!(task.as_str(), "tk_abcdefghijklmnop");
+        assert!(code.with_exposed(|c| c == "sekrit-code"));
     }
 }

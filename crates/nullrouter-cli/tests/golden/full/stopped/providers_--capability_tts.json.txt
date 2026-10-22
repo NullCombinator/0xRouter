@@ -9,7 +9,9 @@ exit: 0
       "tts",
       "stt"
     ],
-    "source": "bundled"
+    "source": "bundled",
+    "signin": false,
+    "terms_warning": false
   },
   {
     "id": "openrouter",
@@ -23,7 +25,9 @@ exit: 0
       "tts",
       "embedding"
     ],
-    "source": "bundled"
+    "source": "bundled",
+    "signin": false,
+    "terms_warning": false
   }
 ]
 --- stderr

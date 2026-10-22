@@ -56,9 +56,9 @@ pass unchanged; never edit a golden file to make a move pass.
   - **Device flow**: the task's `input` carries code and link.
   - The terms warning is required via `accept_terms`, just as `--accept-terms-risk` works.
   - `crates/nullrouter-cli/tests/signin.rs` passes unchanged.
-- [ ] T015 [US1] Build the Providers forms in `crates/nullrouter-dashboard/src/pages/providers.rs`: the provider window gets "Add account" (name, secret_field, order) and "Sign in" (for OAuth providers; it opens a confirm window with the terms warning when the provider declares one). Account rows get priority, enable/disable and exclusive controls, plus Remove through `confirm_window` with `describe_loss`. The sign-in task panel shows the paste field or the device code.
+- [X] T015 [US1] Build the Providers forms in `crates/nullrouter-dashboard/src/pages/providers.rs`: the provider window gets "Add account" (name, secret_field, order) and "Sign in" (for OAuth providers; it opens a confirm window with the terms warning when the provider declares one). Account rows get priority, enable/disable and exclusive controls, plus Remove through `confirm_window` with `describe_loss`. The sign-in task panel shows the paste field or the device code.
 - [X] T016 [US1] Build the Endpoint & Key forms in `crates/nullrouter-dashboard/src/pages/endpoint.rs`: Issue key (name, harness tag, break, adapter), with the result in `once_box`. Key cards get tag, break and adapter controls, plus Revoke through the confirm window. Remove the disabled hints these replace.
-- [ ] T017 [P] [US1] Add form handlers for every US1 op id in contracts/dashboard-forms.md to `crates/nullrouter-dashboard/src/changes.rs` (accounts.add, signin, signin_paste, priority, enable, disable, exclusive, remove; keys.issue, revoke, tag, set_break, set_adapter). Write-only fields go straight into `SecretString`.
+- [X] T017 [P] [US1] Add form handlers for every US1 op id in contracts/dashboard-forms.md to `crates/nullrouter-dashboard/src/changes.rs` (accounts.add, signin, signin_paste, priority, enable, disable, exclusive, remove; keys.issue, revoke, tag, set_break, set_adapter). Write-only fields go straight into `SecretString`.
 - [ ] T018 [US1] Test US1 in `crates/nullrouter-dashboard/tests/accounts_keys_forms.rs`:
   - each US1 op through the browser matches the CLI on a twin home (same files, same `keys list --json` / `accounts list --json`);
   - a duplicate account shows the CLI's refusal next to the name field with the other fields kept;
@@ -69,10 +69,10 @@ pass unchanged; never edit a golden file to make a move pass.
 
 **Goal**: behaviour, overrides, window, connection, proxies, quota interval, poll and acks from the browser. **Independent test**: spec US2.
 
-- [ ] T019 [P] [US2] Move `behaviour set-break` (`crates/nullrouter-cli/src/cmd/behaviour.rs`) and `routing set|unset|set-plugin|unset-plugin|window` (`crates/nullrouter-cli/src/cmd/routing.rs`) to `crates/nullrouter-server/src/ops/routing.rs`. `crates/nullrouter-cli/tests/routing.rs` passes unchanged.
-- [ ] T020 [P] [US2] Move `connection set|unset` (`crates/nullrouter-cli/src/cmd/connection.rs`) to `crates/nullrouter-server/src/ops/connection.rs`. Its tests pass unchanged.
+- [X] T019 [P] [US2] Move `behaviour set-break` (`crates/nullrouter-cli/src/cmd/behaviour.rs`) and `routing set|unset|set-plugin|unset-plugin|window` (`crates/nullrouter-cli/src/cmd/routing.rs`) to `crates/nullrouter-server/src/ops/routing.rs`. `crates/nullrouter-cli/tests/routing.rs` passes unchanged.
+- [X] T020 [P] [US2] Move `connection set|unset` (`crates/nullrouter-cli/src/cmd/connection.rs`) to `crates/nullrouter-server/src/ops/connection.rs`. Its tests pass unchanged.
 - [ ] T021 [P] [US2] Move `proxy add|remove|use|clear|fixed` (`crates/nullrouter-cli/src/cmd/proxy.rs`) to `crates/nullrouter-server/src/ops/proxy.rs`. `fixed` runs as a task. The password is a `SecretString`. `crates/nullrouter-cli/tests/proxy.rs` passes unchanged.
-- [ ] T022 [P] [US2] Move `quota interval|poll|ack` (`crates/nullrouter-cli/src/cmd/quota.rs`) to `crates/nullrouter-server/src/ops/quota.rs`. `poll` runs as a task in-process. `prune` and `forget` stay CLI-only (spec FR-001). `crates/nullrouter-cli/tests/quota.rs` passes unchanged.
+- [X] T022 [P] [US2] Move `quota interval|poll|ack` (`crates/nullrouter-cli/src/cmd/quota.rs`) to `crates/nullrouter-server/src/ops/quota.rs`. `poll` runs as a task in-process. `prune` and `forget` stay CLI-only (spec FR-001). `crates/nullrouter-cli/tests/quota.rs` passes unchanged.
 - [ ] T023 [US2] Add the US2 forms to pages:
   - Settings (`pages/settings.rs`): default break behaviour, amortization window, test settings (`verdicts settings`);
   - provider and account windows (`pages/providers.rs`): routing overrides, plugin meters, connection settings;

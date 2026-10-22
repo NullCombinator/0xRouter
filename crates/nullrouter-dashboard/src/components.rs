@@ -7,6 +7,7 @@
 //! test maps each class to its component by the part before `__` or `--`.
 
 use maud::{Markup, html};
+use nullrouter_engine::tasks::TaskInput;
 
 macro_rules! icons {
     ($($name:literal),* $(,)?) => {
@@ -429,10 +430,45 @@ pub fn task_panel(subject: &str, started: &str, progress: &[String], result: Tas
             }
             p class="task__started" { "started at " (started) }
             @if !progress.is_empty() {
-                ul class="task__progress" { @for line in progress { li { (line) } } }
+                ul class="task__progress" { @for line in progress { li { (progress_line(line)) } } }
             }
             @if let Some(o) = outcome { (o) }
         }
+    }
+}
+
+/// A progress line; a link the provider sent (the sign-in's authorize address) is copyable text in
+/// a `code` element, never an `href`: the dashboard refers only to its own addresses.
+fn progress_line(line: &str) -> Markup {
+    let trimmed = line.trim();
+    html! {
+        @if trimmed.starts_with("https://") { code class="code" { (trimmed) } } @else { (line) }
+    }
+}
+
+/// What a sign-in task waits for, under its panel: a form that posts the pasted code (write-only,
+/// a password field), or the device code and its link as copyable text. `back` is where the form's
+/// redirect returns, and `token` is the form token.
+pub fn task_input(task: &str, input: &TaskInput, back: &str, token: &str) -> Markup {
+    match input {
+        TaskInput::Paste => form(
+            "/do/accounts/signin-paste",
+            back,
+            token,
+            html! {
+                input type="hidden" name="task" value=(task);
+                (secret_field("code", "Pasted code or address", None))
+                button class="button button--primary" type="submit" { "Send code" }
+            },
+        ),
+        TaskInput::Device { code, link } => html! {
+            div class="task__input" {
+                span class="kv__label" { "Approve this code" }
+                code class="code" { (code) }
+                span class="kv__label" { "on this page" }
+                code class="code" { (link) }
+            }
+        },
     }
 }
 
@@ -630,5 +666,30 @@ mod tests {
         let m = once_box("Key", "nr_abc123").into_string();
         assert!(m.contains("This is the only time it is shown."), "{m}");
         assert!(m.contains("nr_abc123"), "{m}");
+    }
+
+    #[test]
+    fn a_paste_task_takes_a_write_only_code_for_its_task() {
+        let m = task_input("tk_abcdefghijklmnop", &TaskInput::Paste, "/providers", "tok").into_string();
+        assert!(m.contains(r#"action="/do/accounts/signin-paste""#), "{m}");
+        assert!(m.contains(r#"name="task" value="tk_abcdefghijklmnop""#), "{m}");
+        assert!(m.contains(r#"type="password" name="code""#) && !m.contains("value=\"\""), "{m}");
+    }
+
+    #[test]
+    fn a_device_task_shows_its_code_and_link_as_text_not_as_a_link() {
+        let input = TaskInput::Device { code: "ABCD-1234".into(), link: "https://auth.example/device".into() };
+        let m = task_input("tk_abcdefghijklmnop", &input, "/providers", "tok").into_string();
+        assert!(m.contains("<code class=\"code\">ABCD-1234</code>"), "{m}");
+        assert!(m.contains("<code class=\"code\">https://auth.example/device</code>"), "{m}");
+        assert!(!m.contains("href"), "no link a browser follows: {m}");
+    }
+
+    #[test]
+    fn a_progress_link_is_copyable_text() {
+        let progress = vec!["  https://auth.example/authorize?x=1  ".to_owned(), "waiting".to_owned()];
+        let m = task_panel("Sign in", "14:02", &progress, TaskState::Running).into_string();
+        assert!(m.contains("<code class=\"code\">https://auth.example/authorize?x=1</code>"), "{m}");
+        assert!(m.contains("<li>waiting</li>"), "{m}");
     }
 }

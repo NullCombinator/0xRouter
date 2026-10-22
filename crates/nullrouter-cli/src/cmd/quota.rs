@@ -15,13 +15,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Args as ClapArgs, Subcommand};
 use nullrouter_cli::quota_text;
-use nullrouter_engine::accounts::{self, Account, Accounts};
+use nullrouter_engine::accounts::{self, Accounts};
 use nullrouter_engine::clock;
 use nullrouter_engine::quota::fit::is_fitted_account;
-use nullrouter_engine::quota::fit::outside::{self, AckTarget, Alert, OutsideEntry, OutsideType};
+use nullrouter_engine::quota::fit::outside::{self, Alert, OutsideEntry, OutsideType};
 use nullrouter_engine::quota::history;
 use nullrouter_registry::OperatorHome;
-use nullrouter_registry::schema::parse_duration;
+use nullrouter_server::ops::quota::narrows;
+use nullrouter_server::ops::{self, Ctx, OpError};
 use nullrouter_server::operator::{self, CallError};
 use nullrouter_server::views;
 use serde_json::{Value, json};
@@ -94,6 +95,11 @@ fn fail(e: impl std::fmt::Display) -> ExitCode {
     ExitCode::from(1)
 }
 
+fn op_fail(e: OpError) -> ExitCode {
+    eprintln!("{}", e.text);
+    ExitCode::from(e.exit)
+}
+
 /// The server's answer; `Ok(None)` when no server runs.
 fn ask(home: &OperatorHome, req: &Value) -> Result<Option<Value>, ExitCode> {
     match operator::call(home, req) {
@@ -114,6 +120,7 @@ fn print(accounts: &[Value], as_json: bool) {
 
 pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<ExitCode, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
+    let ctx = Ctx { home: home.clone(), engine: None };
     let Some(cmd) = args.command else {
         let (provider, name) = (args.provider, args.name);
         let view =
@@ -126,37 +133,20 @@ pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<Ex
     };
     match cmd {
         Command::Poll { provider, name } => {
-            let req = json!({"op": "quota.poll", "provider": provider, "name": name});
-            let Some(_) = ask(&home, &req)? else {
-                eprintln!(
-                    "no server is running on {}; polls run in the server (start it with `nullrouter serve`)",
-                    operator::socket_path(&home).display()
-                );
-                return Err(ExitCode::from(4));
-            };
-            let list =
-                ask(&home, &json!({"op": "quota.list", "provider": provider, "name": name}))?.unwrap_or_default();
-            print(list["accounts"].as_array().map_or(&[][..], Vec::as_slice), as_json);
+            let report = ops::quota::poll_with(&ctx, &provider, &name).map_err(op_fail)?;
+            print(report.json.as_array().map_or(&[][..], Vec::as_slice), as_json);
         }
         Command::Interval { provider, name, every } => {
-            let wanted = match every.as_str() {
-                "default" => None,
-                s => Some(parse_duration(s).map_err(|e| fail(format!("{s:?}: {e}")))?),
-            };
-            let mut list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
-            let now = list.set_poll_interval(&provider, &name, wanted).map_err(fail)?;
-            list.save().map_err(fail)?;
-            let status = super::apply(&home).map_err(fail)?;
-            let raised = wanted.is_some_and(|w| w < now);
-            let note = if raised { " (raised to the floor)" } else { "" };
-            let every = quota_text::every(now.as_secs());
+            let mut log = Vec::new();
+            let result = ops::quota::interval_with(&ctx, &mut log, &provider, &name, &every);
+            for l in &log {
+                eprintln!("{l}");
+            }
+            let report = result.map_err(op_fail)?;
             if as_json {
-                println!(
-                    "{}",
-                    json!({"provider": provider, "name": name, "interval_s": now.as_secs(), "status": status})
-                );
+                println!("{}", report.json);
             } else {
-                println!("{provider}/{name}: polls every {every}{note}; {status}");
+                println!("{}", report.done.text);
             }
         }
         Command::History { provider, name, since, limit } => {
@@ -266,27 +256,11 @@ pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<Ex
             }
         }
         Command::Ack { id, provider, account } => {
-            // `all` names every open alert: the server reads a missing `id` that way.
-            let prefix = (id != "all").then_some(id.as_str());
-            let req = json!({"op": "quota.ack", "id": prefix, "provider": provider, "account": account});
-            let acknowledged = match ask(&home, &req)? {
-                Some(answer) => answer["acknowledged"].as_u64().unwrap_or(0) as usize,
-                None => {
-                    // No server: the files are all there is.
-                    let target = prefix.map_or(AckTarget::All, AckTarget::Id);
-                    let list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
-                    let now = clock::now();
-                    let mut n = 0;
-                    for a in list.iter().filter(|a| narrows(a, provider.as_deref(), account.as_deref())) {
-                        n += outside::ack(home.path(), &a.provider, &a.name, target, now).map_err(fail)?.len();
-                    }
-                    n
-                }
-            };
+            let report = ops::quota::ack_with(&ctx, &id, provider.as_deref(), account.as_deref()).map_err(op_fail)?;
             if as_json {
-                println!("{}", json!({"acknowledged": acknowledged}));
+                println!("{}", report.json);
             } else {
-                println!("acknowledged {acknowledged}");
+                println!("{}", report.done.text);
             }
         }
     }
@@ -303,11 +277,6 @@ fn since_arg(since: Option<String>) -> Result<Option<SystemTime>, ExitCode> {
             Err(ExitCode::from(2))
         }
     }
-}
-
-/// Whether `a` is one of the accounts `provider` and `account` (when given) narrow to.
-fn narrows(a: &Account, provider: Option<&str>, account: Option<&str>) -> bool {
-    provider.is_none_or(|p| a.provider == p) && account.is_none_or(|n| a.name == n)
 }
 
 /// `value` (a JSON object) with `provider` and `account` added.

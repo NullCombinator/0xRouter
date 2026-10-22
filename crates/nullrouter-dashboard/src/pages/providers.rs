@@ -8,11 +8,15 @@
 use std::collections::BTreeSet;
 
 use maud::{Markup, html};
+use nullrouter_server::ops::{self, signin::TERMS_WARNING};
 use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
 use crate::access::encode_component;
-use crate::components::{self, Tone, badge, disabled, disabled_switch, empty, icon, kv, modal, name, prose, status};
+use crate::components::{
+    self, Tone, badge, confirm_window, disabled, disabled_switch, empty, field, form, icon, kv, link_button, modal,
+    name, prose, secret_field, status,
+};
 use crate::page::{ViewName, Want};
 
 pub const VIEWS: &[ViewName] =
@@ -55,9 +59,15 @@ pub fn wants(req: &Req) -> Vec<Want> {
 pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
     let providers = rows(ctx.json(ViewName::Providers));
     let accounts = rows(ctx.json(ViewName::Accounts));
-    let window = match &ctx.req.window {
-        Some(token) => Some(window(ctx, providers, accounts, token)?),
-        None => None,
+    // A query window (`?window=signin&id=<p>`, `?window=remove-account&id=<p>&name=<n>`) is a confirm
+    // window of its own; otherwise the provider window the path names is open.
+    let window = match ctx.req.get("window") {
+        Some("signin") => Some(signin_window(ctx, providers)?),
+        Some("remove-account") => remove_window(ctx),
+        _ => match &ctx.req.window {
+            Some(token) => Some(window(ctx, providers, accounts, token)?),
+            None => None,
+        },
     };
     let q = ctx.req.get("q").map(str::to_lowercase);
     let shown: Vec<&Value> = providers.iter().filter(|p| q.as_deref().is_none_or(|q| matches(p, q))).collect();
@@ -241,6 +251,8 @@ fn window(ctx: &Ctx<'_>, providers: &[Value], accounts: &[Value], token: &str) -
                 } @else {
                     @for a in &mine { (account_row(ctx, a)) }
                 }
+                (add_account(ctx, id))
+                (sign_in(ctx, p))
             }
             section class="provider-window__section" {
                 h4 class="provider-window__heading" { "Models" }
@@ -260,6 +272,149 @@ fn window(ctx: &Ctx<'_>, providers: &[Value], accounts: &[Value], token: &str) -
         }
     };
     Ok(modal(id, &req.close_href(), body))
+}
+
+/// The terms warning as the confirm window words it: the CLI's text without its `[y/N]` prompt.
+fn terms_text() -> &'static str {
+    TERMS_WARNING.trim_end().trim_end_matches("Continue? [y/N]").trim_end()
+}
+
+/// The sign-in confirm window (`?window=signin&id=<p>`): the terms warning and the account name.
+/// Sign in posts `accept_terms`, so pressing it is the answer to the warning.
+fn signin_window(ctx: &Ctx<'_>, providers: &[Value]) -> Result<Markup, Failure> {
+    let id = ctx.req.get("id").unwrap_or_default();
+    if !providers.iter().any(|p| p["id"] == id) {
+        return Err(Failure::not_found(format!("not found: unknown provider {id:?}")));
+    }
+    // A refused sign-in reopens this window: `_window` names it, and `_back` keeps the provider.
+    let back = format!("/providers?id={}", encode_component(id));
+    let action = form(
+        "/do/accounts/signin",
+        &back,
+        &ctx.req.token,
+        html! {
+            input type="hidden" name="_window" value="signin";
+            input type="hidden" name="provider" value=(id);
+            input type="hidden" name="accept_terms" value="on";
+            (field("name", "Account name", None, None))
+            button class="button button--primary" type="submit" { "Sign in" }
+        },
+    );
+    let cancel = format!("/providers/{}", encode_component(id));
+    Ok(confirm_window("Sign in", terms_text(), &cancel, action))
+}
+
+/// The remove confirm window (`?window=remove-account&id=<p>&name=<n>`): what removing loses, the
+/// real form beside Cancel. Nothing opens without both the provider and the account name.
+fn remove_window(ctx: &Ctx<'_>) -> Option<Markup> {
+    let (id, account) = (ctx.req.get("id")?, ctx.req.get("name")?);
+    let loss = ops::describe_loss("accounts.remove", &format!("{id}/{account}")).unwrap_or_default();
+    // A refused remove reopens this window: `_back` names the account, and `_window` reopens it.
+    let back = format!("/providers?id={}&name={}", encode_component(id), encode_component(account));
+    let action = form(
+        "/do/accounts/remove",
+        &back,
+        &ctx.req.token,
+        html! {
+            input type="hidden" name="_window" value="remove-account";
+            input type="hidden" name="provider" value=(id);
+            input type="hidden" name="name" value=(account);
+            button class="button button--primary" type="submit" { "Remove account" }
+        },
+    );
+    let cancel = format!("/providers/{}", encode_component(id));
+    Some(confirm_window("Remove account", &loss, &cancel, action))
+}
+
+/// The add-account form: a name, the key (write-only, a password field) and the order it keeps.
+fn add_account(ctx: &Ctx<'_>, id: &str) -> Markup {
+    let back = ctx.req.href(&ctx.req.path(), &["done", "task"], &[]);
+    form(
+        "/do/accounts/add",
+        &back,
+        &ctx.req.token,
+        html! {
+            input type="hidden" name="provider" value=(id);
+            (field("name", "Account name", None, None))
+            (secret_field("secret", "API key", None))
+            (field("order", "Order", None, None))
+            button class="button button--primary" type="submit" { "Add account" }
+        },
+    )
+}
+
+/// Sign in, for a provider that declares sign-in (`signin` in the providers view). One with a
+/// terms warning opens its confirm window; any other posts its account name directly.
+fn sign_in(ctx: &Ctx<'_>, p: &Value) -> Markup {
+    if p["signin"] != true {
+        return html! {};
+    }
+    let id = p["id"].as_str().unwrap_or_default();
+    if p["terms_warning"] == true {
+        let href =
+            ctx.req.href("/providers", &["window", "id", "name", "done", "task"], &[("window", "signin"), ("id", id)]);
+        return link_button(&href, "Sign in", Some("key"), false);
+    }
+    let back = ctx.req.href(&ctx.req.path(), &["done", "task"], &[]);
+    form(
+        "/do/accounts/signin",
+        &back,
+        &ctx.req.token,
+        html! {
+            input type="hidden" name="provider" value=(id);
+            (field("name", "Account name", None, None))
+            button class="button button--secondary" type="submit" { "Sign in" }
+        },
+    )
+}
+
+/// An account's forms: priority, enable or disable (whichever the state doesn't already say),
+/// exclusive on and off, and Remove, which opens its confirm window and changes nothing itself.
+/// The view doesn't say whether an account is exclusive, so both choices are offered.
+fn account_controls(ctx: &Ctx<'_>, a: &Value) -> Markup {
+    let provider = a["provider"].as_str().unwrap_or_default();
+    let account = a["name"].as_str().unwrap_or_default();
+    let back = ctx.req.href(&ctx.req.path(), &["done", "task"], &[]);
+    let token = &ctx.req.token;
+    let priority = a["priority"].as_f64().map(|p| p.to_string());
+    let remove = ctx.req.href(
+        "/providers",
+        &["window", "id", "name", "done", "task"],
+        &[("window", "remove-account"), ("id", provider), ("name", account)],
+    );
+    html! {
+        (form("/do/accounts/priority", &back, token, html! {
+            input type="hidden" name="provider" value=(provider);
+            input type="hidden" name="name" value=(account);
+            (field("priority", "Priority", priority.as_deref(), None))
+            button class="button button--secondary" type="submit" { "Save priority" }
+        }))
+        @if a["state"] == "disabled" {
+            (form("/do/accounts/enable", &back, token, html! {
+                input type="hidden" name="provider" value=(provider);
+                input type="hidden" name="name" value=(account);
+                button class="button button--secondary" type="submit" { "Enable" }
+            }))
+        } @else {
+            (form("/do/accounts/disable", &back, token, html! {
+                input type="hidden" name="provider" value=(provider);
+                input type="hidden" name="name" value=(account);
+                button class="button button--secondary" type="submit" { "Disable" }
+            }))
+        }
+        (form("/do/accounts/exclusive", &back, token, html! {
+            input type="hidden" name="provider" value=(provider);
+            input type="hidden" name="name" value=(account);
+            input type="hidden" name="on" value="on";
+            button class="button button--secondary" type="submit" { "Make exclusive" }
+        }))
+        (form("/do/accounts/exclusive", &back, token, html! {
+            input type="hidden" name="provider" value=(provider);
+            input type="hidden" name="name" value=(account);
+            button class="button button--secondary" type="submit" { "Clear exclusive" }
+        }))
+        (link_button(&remove, "Remove", None, false))
+    }
 }
 
 /// The provider's last response in the last 24 hours (`latency`'s `last`): "resolved · <time>",
@@ -312,6 +467,7 @@ fn account_row(ctx: &Ctx<'_>, a: &Value) -> Markup {
             @if matches!(a["state"].as_str(), Some("needs_sign_in" | "refused")) {
                 p class="provider-window__account-run" { (prose(&command)) }
             }
+            (account_controls(ctx, a))
         }
     }
 }

@@ -4,7 +4,11 @@
 
 pub mod accounts;
 pub mod config_text;
+pub mod connection;
 pub mod keys;
+pub mod proxy;
+pub mod quota;
+pub mod routing;
 pub mod signin;
 
 use std::sync::Arc;

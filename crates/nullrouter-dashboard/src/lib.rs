@@ -225,7 +225,7 @@ async fn read(engine: &Arc<Engine>, req: &pages::Req) -> Result<page::Page, page
 /// What the page shows above its content: the flash a form's redirect named (`done`), or the task
 /// panel (`task`). A flash is read once; an unknown or foreign id shows nothing.
 fn top_of(shared: &Shared, req: &pages::Req, headers: &axum::http::HeaderMap) -> Option<maud::Markup> {
-    use components::{TaskState, flash_notice, once_box, task_panel};
+    use components::{TaskState, flash_notice, once_box, task_input, task_panel};
     use forms::FlashKind;
     use nullrouter_engine::tasks::TaskResult;
     if let Some(id) = req.get("done") {
@@ -245,5 +245,10 @@ fn top_of(shared: &Shared, req: &pages::Req, headers: &axum::http::HeaderMap) ->
         TaskResult::Done { text } => TaskState::Done(text),
         TaskResult::Failed { text } => TaskState::Failed(text),
     };
-    Some(task_panel(&view.subject, &started, &view.progress, state))
+    // What the operator must do now: paste a code back to this page, or read a device code (the
+    // paste form returns here, without the task id, which the redirect adds again).
+    let back = req.href(&req.path(), &["task", "done"], &[]);
+    let input = view.input.as_ref().map(|i| task_input(view.id.as_str(), i, &back, &req.token)).unwrap_or_default();
+    let panel = task_panel(&view.subject, &started, &view.progress, state);
+    Some(maud::html! { (panel) (input) })
 }

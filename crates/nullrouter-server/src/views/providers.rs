@@ -30,6 +30,8 @@ pub fn build(home: &OperatorHome, args: &Value, _live: &Live) -> Result<View, Vi
                 "category": p.category.as_str(),
                 "capabilities": p.capabilities.keys().map(|k| k.as_str()).collect::<Vec<_>>(),
                 "source": if p.is_bundled() { "bundled" } else { "user" },
+                "signin": p.signin.is_some(),
+                "terms_warning": p.signin.as_ref().is_some_and(|s| s.terms_warning),
             })
         })
         .collect();
