@@ -181,7 +181,8 @@ fn arc(cx: f64, cy: f64, r: f64, from: f64, to: f64) -> String {
 
 fn gauge(x: f64, y: f64, p50: Option<f64>, p95: Option<f64>, full: f64) -> Markup {
     let needle = p50.map(|v| point(x, y, DIAL_R - 2.0, scale_deg(v / full)));
-    let peak = p95.map(|v| (point(x, y, DIAL_R + 3.5, scale_deg(v / full)), point(x, y, DIAL_R - 2.5, scale_deg(v / full))));
+    let peak =
+        p95.map(|v| (point(x, y, DIAL_R + 3.5, scale_deg(v / full)), point(x, y, DIAL_R - 2.5, scale_deg(v / full))));
     let band = SWEEP / BANDS.len() as f64;
     let f = |v: f64| format!("{v:.1}");
     html! {
@@ -214,6 +215,10 @@ fn gauge(x: f64, y: f64, p50: Option<f64>, p95: Option<f64>, full: f64) -> Marku
         }
         path class="gauge__glare" d=(arc(x, y, FACE_R - 5.0, 160.0, 100.0)) stroke-width="2" {}
         text class="gauge__value" x=(f(x)) y=(f(y + 16.0)) text-anchor="middle" { (p50.map_or_else(|| "none".to_owned(), ms)) }
+        // The 95th percentile beside the dial, so its hover card adds nothing the page lacks (FR-027).
+        @if let Some(v) = p95 {
+            text class="gauge__p95" x=(f(x + FACE_R + 4.0)) y=(f(y + FACE_R)) { "p95 " (ms(v)) }
+        }
     }
 }
 
@@ -275,7 +280,10 @@ pub(crate) fn tip(
         label_w = label_w.max(l);
         value_w = value_w.max(v);
     }
-    let w = (32.0 + (label_w + value_w) * 6.4 + 24.0).max(chars(title) * 7.2 + 32.0).max(chars(window) * 6.0 + 32.0).min(bounds.1 - bounds.0 - 8.0);
+    let w = (32.0 + (label_w + value_w) * 6.4 + 24.0)
+        .max(chars(title) * 7.2 + 32.0)
+        .max(chars(window) * 6.0 + 32.0)
+        .min(bounds.1 - bounds.0 - 8.0);
     let h = 62.0 + 19.0 * rows.len() as f64;
     let x = (cx - w / 2.0).clamp(bounds.0 + 4.0, bounds.1 - 4.0 - w);
     let y = if (top + bottom) / 2.0 < mid { bottom + 8.0 } else { top - 8.0 - h };
@@ -398,7 +406,10 @@ pub(crate) fn hot(n: usize, class: &str, body: Markup, card: Markup) -> (Markup,
             Some(html! { g class=(format!("landscape__card landscape__card--{n}")) { (card) } }),
         )
     } else {
-        (html! { g class=(format!("landscape__hot {class}")) tabindex="0" { (body) g class="landscape__card" { (card) } } }, None)
+        (
+            html! { g class=(format!("landscape__hot {class}")) tabindex="0" { (body) g class="landscape__card" { (card) } } },
+            None,
+        )
     }
 }
 
@@ -548,9 +559,7 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
     let none = rows(&i.latency["agents"]).is_empty() && rows(&i.latency["providers"]).is_empty();
     let ay: Vec<f64> = (0..agents.len()).map(|n| column_y(n, agents.len(), mid)).collect();
     let py: Vec<f64> = (0..providers.len()).map(|n| column_y(n, providers.len(), mid)).collect();
-    let span = |ys: &[f64]| {
-        ys.iter().fold((mid, mid), |(lo, hi), y| (lo.min(*y), hi.max(*y)))
-    };
+    let span = |ys: &[f64]| ys.iter().fold((mid, mid), |(lo, hi), y| (lo.min(*y), hi.max(*y)));
     let window = format!("Last 24 h · as of {}", i.as_of.to_zoned(i.tz.clone()).strftime("%H:%M:%S"));
 
     // The tubes, then the liquid in them; then everything that shows a card on hover, and the
@@ -578,13 +587,24 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
         collars.push(collar(MANIFOLD_L - BORE / 2.0 - 6.0, y));
         if let Some(r) = a.row {
             let (gx, gy) = gauge_centre((x0 + MANIFOLD_L) / 2.0 - 6.0, y);
-            let stats = [Row::Stat("Router overhead p50 / p95", pair(&r["overhead"])), Row::Stat("Requests", r["requests"].to_string())];
+            let stats = [
+                Row::Stat("Router overhead p50 / p95", pair(&r["overhead"])),
+                Row::Stat("Requests", r["requests"].to_string()),
+            ];
             let body = gauge(gx, gy, r["overhead"]["p50"].as_f64(), r["overhead"]["p95"].as_f64(), OVERHEAD_FULL_MS);
-            add("gauge", body, tip(gx, gauge_span(gy), mid, (0.0, WIDTH), &format!("{} → router", a.name), &window, &stats));
+            add(
+                "gauge",
+                body,
+                tip(gx, gauge_span(gy), mid, (0.0, WIDTH), &format!("{} → router", a.name), &window, &stats),
+            );
         }
         let class = if a.revoked { "landscape__node landscape__node--revoked" } else { "landscape__node" };
         let body = node(AGENT_X, y, &a.name, sub_of(a).as_deref(), &Mark::Avatar(a.colour));
-        add(class, body, tip(AGENT_X + NODE_W / 2.0, node_span(y), mid, (0.0, WIDTH), &a.name, &window, &agent_rows(a, i)));
+        add(
+            class,
+            body,
+            tip(AGENT_X + NODE_W / 2.0, node_span(y), mid, (0.0, WIDTH), &a.name, &window, &agent_rows(a, i)),
+        );
     }
     let (lo, hi) = span(&ay);
     tubes.push(Run(MANIFOLD_L, lo, MANIFOLD_L, hi));
@@ -618,14 +638,33 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
         collars.push(collar(PROVIDER_X - 5.0, y));
         if let Some(r) = p.row {
             let (gx, gy) = gauge_centre((MANIFOLD_R + PROVIDER_X) / 2.0 + 6.0, y);
-            let mut stats = vec![Row::Stat("Own TTFT p50 / p95", pair(&r["own_ttft"])), Row::Stat("Requests", r["requests"].to_string())];
+            let mut stats = vec![
+                Row::Stat("Own TTFT p50 / p95", pair(&r["own_ttft"])),
+                Row::Stat("Requests", r["requests"].to_string()),
+            ];
             stats.extend(last_row(&r["last"], i));
             let body = gauge(gx, gy, r["own_ttft"]["p50"].as_f64(), r["own_ttft"]["p95"].as_f64(), TTFT_FULL_MS);
-            add("gauge", body, tip(gx, gauge_span(gy), mid, (0.0, WIDTH), &format!("router → {}", p.id), &window, &stats));
+            add(
+                "gauge",
+                body,
+                tip(gx, gauge_span(gy), mid, (0.0, WIDTH), &format!("router → {}", p.id), &window, &stats),
+            );
         }
         let sub = p.row.map(|r| format!("{} req", r["requests"]));
         let body = node(PROVIDER_X, y, p.id, sub.as_deref(), &provider_mark(p.id, i.logos));
-        add("landscape__node", body, tip(PROVIDER_X + NODE_W / 2.0, node_span(y), mid, (0.0, WIDTH), p.id, &window, &provider_rows(p, &agents, i)));
+        add(
+            "landscape__node",
+            body,
+            tip(
+                PROVIDER_X + NODE_W / 2.0,
+                node_span(y),
+                mid,
+                (0.0, WIDTH),
+                p.id,
+                &window,
+                &provider_rows(p, &agents, i),
+            ),
+        );
     }
     let flowing: Vec<&Fill> = fills.iter().filter(|f| !f.class.ends_with("--idle")).collect();
 
@@ -756,10 +795,21 @@ mod tests {
             assert!(html.contains(sub), "{sub}\n{html}");
         }
         // The gauge's card names the hop and both percentiles.
-        for text in [">claude-code → router<", ">Router overhead p50 / p95<", ">5 ms / 9 ms<", ">router → anthropic<", ">Own TTFT p50 / p95<", ">5.0 s / 6.0 s<"] {
+        for text in [
+            ">claude-code → router<",
+            ">Router overhead p50 / p95<",
+            ">5 ms / 9 ms<",
+            ">router → anthropic<",
+            ">Own TTFT p50 / p95<",
+            ">5.0 s / 6.0 s<",
+        ] {
             assert!(html.contains(text), "{text}\n{html}");
         }
         assert_eq!(html.matches("class=\"gauge__peak\"").count(), 3, "every dial marks its 95th percentile");
+        // FR-027: the card adds nothing the page lacks, so each 95th percentile is printed too.
+        for text in [">p95 9 ms<", ">p95 6.0 s<"] {
+            assert!(html.contains(text), "{text}\n{html}");
+        }
     }
 
     #[test]
@@ -770,7 +820,10 @@ mod tests {
         let items = html.matches("class=\"landscape__hot landscape__hot--").count();
         assert_eq!(html[layer..].matches("class=\"landscape__card landscape__card--").count(), items);
         for n in 0..items {
-            assert!(html.contains(&format!("landscape__hot--{n} ")) && html.contains(&format!("landscape__card--{n}\"")), "{n}");
+            assert!(
+                html.contains(&format!("landscape__hot--{n} ")) && html.contains(&format!("landscape__card--{n}\"")),
+                "{n}"
+            );
         }
         assert!(items < RAISED, "the stylesheet raises every card of this drawing");
     }
@@ -786,7 +839,10 @@ mod tests {
         assert!(pinned.contains(&format!("x2=\"{px:.1}\"")) && pinned.contains(&format!("y2=\"{py:.1}\"")), "{pinned}");
         assert!(pinned.contains(">5.0 s<"), "the value beyond full scale is still printed");
         let none = gauge(100.0, 100.0, None, None, TTFT_FULL_MS).into_string();
-        assert!(!none.contains("gauge__needle") && !none.contains("gauge__peak") && none.contains(">none<"), "no value: no needle, and `none` printed");
+        assert!(
+            !none.contains("gauge__needle") && !none.contains("gauge__peak") && none.contains(">none<"),
+            "no value: no needle, and `none` printed"
+        );
     }
 
     #[test]
@@ -821,19 +877,29 @@ mod tests {
     fn the_last_response_names_the_date_only_when_it_isnt_the_read_date() {
         let html = render(&keys(), &accounts(), &latency());
         assert!(html.contains("landscape__tip-value--ok\" x=") && html.contains(">resolved 14:01:58<"), "{html}");
-        assert!(html.contains("landscape__tip-value--failed\" x=") && html.contains(">failed 2026-10-05 13:00:31 (503)<"), "{html}");
+        assert!(
+            html.contains("landscape__tip-value--failed\" x=") && html.contains(">failed 2026-10-05 13:00:31 (503)<"),
+            "{html}"
+        );
     }
 
     #[test]
     fn the_drawing_has_no_script_or_external_reference() {
         let html = render(&keys(), &accounts(), &latency());
-        for banned in ["<script", "<style", "xlink", "http://", "https://", "onclick", "onload", "onbegin", "onend", "<set"] {
+        for banned in
+            ["<script", "<style", "xlink", "http://", "https://", "onclick", "onload", "onbegin", "onend", "<set"]
+        {
             assert!(!html.contains(banned), "{banned}\n{html}");
         }
         // The only animation moves the sheens and the bubbles.
         for (at, _) in html.match_indices("<animate") {
             let to = &html[at..];
-            assert!(to.starts_with("<animateMotion ") || to.starts_with("<animateTransform attributeName=\"gradientTransform\""), "{}", &to[..60]);
+            assert!(
+                to.starts_with("<animateMotion ")
+                    || to.starts_with("<animateTransform attributeName=\"gradientTransform\""),
+                "{}",
+                &to[..60]
+            );
         }
         // Images only from this server's assets and logos; paint only from the drawing's own gradients.
         for (at, _) in html.match_indices("href=\"") {
@@ -843,7 +909,8 @@ mod tests {
         for (at, _) in html.match_indices("url(#") {
             let id = &html[at + 5..at + 5 + html[at + 5..].find(')').unwrap()];
             assert!(
-                (id.starts_with("avatar-") || id.starts_with("flow-") || id == "card-shadow") && html.contains(&format!("id=\"{id}\"")),
+                (id.starts_with("avatar-") || id.starts_with("flow-") || id == "card-shadow")
+                    && html.contains(&format!("id=\"{id}\"")),
                 "url(#{id}) names no gradient here"
             );
         }

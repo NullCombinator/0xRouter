@@ -16,9 +16,8 @@ with scripts off, on branch `look/mockup-parity`.
   pressure-gauge dials on a red-only scale; mockup text sizes (names 16 px, tags 12 px); node
   boxes turn white on hover; hovering a gauge or a node shows a card over the whole drawing with
   that hop's numbers. Each dial prints its median inside and marks its 95th percentile on the
-  scale; the request count is on the node. Open for the user: the 95th-percentile number now
-  shows only in the hover cards, where FR-027 says hover shows nothing the page doesn't print
-  elsewhere.
+  scale; the request count is on the node. The 95th percentile is also printed beside each dial
+  ("p95 9 ms"), so the hover cards show nothing the page doesn't (FR-027; decided 2026-10-22).
 
 - Usage, user asks of 2026-10-21, done: model names in Recent Requests are black; topology nodes
   at the mockup's size (logo, name, "N req · last response"); moving dashes and dots on each edge

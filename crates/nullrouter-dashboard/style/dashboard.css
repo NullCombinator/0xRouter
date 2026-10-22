@@ -1090,6 +1090,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .gauge__hub { fill: var(--color-text-main); }
 .gauge__glare { fill: none; stroke: var(--color-white); stroke-opacity: var(--edge-last-opacity); stroke-linecap: round; }
 .gauge__value { fill: var(--color-text-muted); font-size: var(--text-10); font-weight: var(--weight-semibold); }
+.gauge__p95 { fill: var(--color-text-muted); font-size: var(--text-10); }
 .gauge__peak { stroke: var(--color-red-600); stroke-linecap: round; }
 .pipe { fill: none; stroke: var(--color-border); stroke-opacity: var(--edge-last-opacity); }
 .pipe__wall { stroke: var(--color-text-subtle); stroke-opacity: var(--edge-last-opacity); stroke-linecap: round; }
