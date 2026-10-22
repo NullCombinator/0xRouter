@@ -16,6 +16,9 @@ means stop and revisit the brief.
 
 - Q: Should the four history-deleting housekeeping commands also be in the browser? → A: No, they
   stay CLI-only for now (FR-001).
+- Q: What should the custom-provider form do with a private or local address (such as a model
+  server on this machine)? → A: Refuse it with the plugin check's text and point to a new Settings
+  switch for private endpoints (with a CLI twin), which applies to every plugin (FR-021).
 
 **Input**: User description: "Functional dashboard: the operator runs 0router entirely from the
 browser. Every change the CLI can make, the dashboard's pages can make too, in four areas: accounts
@@ -242,14 +245,15 @@ list all three in order with their results, and no entry contains a secret.
     provider; adapter install (local package and catalogue), review, build, approve, reject, clear,
     rebuild, remove, review settings, adapter alert acknowledgement;
   - combos and tests: declare, edit and remove unified models and combos; run model tests, combo
-    tests and Test All; mark and clear verdicts; test settings.
+    tests and Test All; mark and clear verdicts; test settings;
+  - the private-endpoints setting (FR-021).
 - **FR-003**: A change made in the browser MUST run the same operation as its CLI twin: the same
   checks, the same refusal text (shown on the page next to what it concerns), and the same effect on
   the files and the running server, applied at once.
 - **FR-004**: Changes that have no CLI command today MUST gain one in this slice, so every browser
   change keeps a CLI twin: declaring, editing and removing unified models and combos; enabling,
-  disabling, hiding and showing a provider; creating a custom compatible provider; and listing the
-  browser change log (FR-016).
+  disabling, hiding and showing a provider; creating a custom compatible provider; turning private
+  endpoints on and off (FR-021); and listing the browser change log (FR-016).
 - **FR-005**: A change MUST never be repeated by reloading or going back to the page it returned;
   after a change the browser lands on the page that shows the changed state.
 
@@ -309,6 +313,11 @@ list all three in order with their results, and no entry contains a secret.
 - **FR-019**: Every fact a page shows MUST keep its CLI twin (009 FR-009); new facts this slice adds
   (a task's progress, the change log) have theirs.
 - **FR-020**: The housekeeping chat box MUST stay disabled with its "not built yet" hint.
+- **FR-021**: A custom compatible provider whose address is private or local MUST be refused with
+  the plugin check's text while private endpoints are off, and the refusal MUST point to the setting.
+  Settings MUST show and change the private-endpoints setting (it applies to every plugin, as today),
+  with a CLI twin; turning it on MUST first open a confirm window saying that plugins may then reach
+  this machine and the local network.
 
 ### Key Entities
 
