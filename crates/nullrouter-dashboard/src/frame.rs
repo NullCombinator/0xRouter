@@ -248,6 +248,18 @@ fn respond(status: StatusCode, frame: &Frame<'_>, body: Body) -> Response {
     (status, Html(document(frame, body).into_string())).into_response()
 }
 
+/// `3 notes · 3 warnings`: the page's notices counted by level, errors first.
+fn counts(own: &[(&str, &str)]) -> String {
+    let n = |want: &str| own.iter().filter(|(l, _)| *l == want).count();
+    let plural = |k: usize, word: &str| if k == 1 { format!("1 {word}") } else { format!("{k} {word}s") };
+    [("error", n("error")), ("warning", n("warning")), ("note", own.len() - n("error") - n("warning"))]
+        .into_iter()
+        .filter(|(_, k)| *k > 0)
+        .map(|(w, k)| plural(k, w))
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -344,16 +356,4 @@ mod tests {
         let html = document(&frame(&req, &c, &a), Body::new(html! {})).into_string();
         assert!(html.contains("No notices."));
     }
-}
-
-/// `3 notes · 3 warnings`: the page's notices counted by level, errors first.
-fn counts(own: &[(&str, &str)]) -> String {
-    let n = |want: &str| own.iter().filter(|(l, _)| *l == want).count();
-    let plural = |k: usize, word: &str| if k == 1 { format!("1 {word}") } else { format!("{k} {word}s") };
-    [("error", n("error")), ("warning", n("warning")), ("note", own.len() - n("error") - n("warning"))]
-        .into_iter()
-        .filter(|(_, k)| *k > 0)
-        .map(|(w, k)| plural(k, w))
-        .collect::<Vec<_>>()
-        .join(" · ")
 }
