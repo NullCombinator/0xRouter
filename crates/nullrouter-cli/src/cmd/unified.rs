@@ -1,12 +1,94 @@
 //! `nullrouter unified [NAME]`: exit 2 when NAME isn't a loaded unified model.
 
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use clap::{Args as ClapArgs, Subcommand};
+
 use nullrouter_engine::verdict::State;
 use nullrouter_registry::OperatorHome;
+use nullrouter_server::ops::targets::{self, Kind};
+use nullrouter_server::ops::{Ctx, Status};
 use nullrouter_server::views;
 use serde_json::{Value, json};
+
+/// `nullrouter unified [NAME]` reads; `add`, `set` and `remove` change `config.toml`.
+#[derive(ClapArgs)]
+#[command(args_conflicts_with_subcommands = true)]
+pub(crate) struct Args {
+    /// A unified model to show; without it, all of them.
+    pub(crate) name: Option<String>,
+    #[command(subcommand)]
+    pub(crate) command: Option<Command>,
+}
+
+/// The changes, shared by `unified` and `combos`.
+#[derive(Subcommand)]
+pub(crate) enum Command {
+    /// Declare a new one. Members are `provider/model` for a unified model, names for a combo.
+    Add {
+        name: String,
+        #[arg(required = true)]
+        members: Vec<String>,
+    },
+    /// Replace the members of a declared one.
+    Set {
+        name: String,
+        #[arg(required = true)]
+        members: Vec<String>,
+    },
+    /// Remove one that no combo lists.
+    Remove {
+        name: String,
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+/// Runs a change: prints the one-line result, or the refusal and its exit code.
+pub(crate) fn change(home: Option<PathBuf>, kind: Kind, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
+    let fail = |text: String, code: u8| {
+        eprintln!("{text}");
+        ExitCode::from(code)
+    };
+    let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
+    let ctx = Ctx { home, engine: None };
+    let mut log = Vec::new();
+    let result = match cmd {
+        Command::Add { name, members } => targets::add_with(&ctx, &mut log, kind, &name, &members),
+        Command::Set { name, members } => targets::set_with(&ctx, &mut log, kind, &name, &members),
+        Command::Remove { name, yes } => {
+            if as_json && !yes {
+                return Err(fail("--json needs --yes".into(), 2));
+            }
+            if !yes {
+                eprint!("{} [y/N] ", targets::remove_question(kind, &name));
+                io::stderr().flush().map_err(|e| fail(e.to_string(), 1))?;
+                let mut line = String::new();
+                io::stdin().read_line(&mut line).map_err(|e| fail(e.to_string(), 1))?;
+                if !matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+                    println!("not removed");
+                    return Err(ExitCode::from(1));
+                }
+            }
+            targets::remove_with(&ctx, &mut log, kind, &name)
+        }
+    };
+    for l in &log {
+        eprintln!("{l}");
+    }
+    let r = result.map_err(|e| fail(e.text, e.exit))?;
+    if let Status::SavedNotApplied { reason } = &r.done.status {
+        return Err(fail(reason.clone(), 1));
+    }
+    if as_json {
+        println!("{}", r.json);
+    } else {
+        println!("{}", r.done.text);
+    }
+    Ok(ExitCode::SUCCESS)
+}
 
 /// `  verdicts: max BROKEN, pro PASS` after member `i`, when any member of the model has a
 /// verdict; a member with none reads `untested`.
@@ -47,7 +129,11 @@ fn print_model(entry: &Value, notes: &Value, verdicts: &Value, indent: &str) {
     }
 }
 
-pub(crate) fn run(home: Option<PathBuf>, name: Option<&str>, as_json: bool) -> Result<ExitCode, ExitCode> {
+pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<ExitCode, ExitCode> {
+    let name = match args.command {
+        Some(cmd) => return change(home, Kind::Unified, cmd, as_json),
+        None => args.name.as_deref(),
+    };
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
     let view = super::read(&home, views::unified::NEEDS, &json!({"name": name}), views::unified::build)?;
     let out = &view.json;

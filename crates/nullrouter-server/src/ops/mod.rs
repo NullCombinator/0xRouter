@@ -10,6 +10,8 @@ pub mod proxy;
 pub mod quota;
 pub mod routing;
 pub mod signin;
+pub mod targets;
+pub mod model_tests;
 
 use std::sync::Arc;
 

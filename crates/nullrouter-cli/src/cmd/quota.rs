@@ -21,9 +21,9 @@ use nullrouter_engine::quota::fit::is_fitted_account;
 use nullrouter_engine::quota::fit::outside::{self, Alert, OutsideEntry, OutsideType};
 use nullrouter_engine::quota::history;
 use nullrouter_registry::OperatorHome;
+use nullrouter_server::operator::{self, CallError};
 use nullrouter_server::ops::quota::narrows;
 use nullrouter_server::ops::{self, Ctx, OpError};
-use nullrouter_server::operator::{self, CallError};
 use nullrouter_server::views;
 use serde_json::{Value, json};
 
@@ -329,11 +329,7 @@ fn outside_line(label: &str, e: &OutsideEntry) -> String {
             let part = e.part.as_deref().unwrap_or("??").replace('-', "–");
             let since = e.start_time().map_or_else(|| "??".to_owned(), weekday_hm);
             let rate = e.rate_per_hour.unwrap_or(0.0);
-            let amount = if e.unit == "percent" {
-                format!("{rate:.1}%/h")
-            } else {
-                format!("{rate:.1} {}/h", e.unit)
-            };
+            let amount = if e.unit == "percent" { format!("{rate:.1}%/h") } else { format!("{rate:.1} {}/h", e.unit) };
             ("steady", format!("{part} since {since}"), amount)
         }
     };

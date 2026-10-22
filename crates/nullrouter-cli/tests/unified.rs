@@ -90,3 +90,64 @@ fn a_home_that_does_not_load_prints_the_startup_errors() {
     assert!(err(&o).starts_with("startup failed:\n"), "{}", err(&o));
     assert!(out(&o).is_empty());
 }
+
+#[test]
+fn add_set_and_remove_edit_the_config_and_say_when_it_applies() {
+    let home = homes::empty();
+    let o = nr(home.path(), &["unified", "add", "u", "openrouter/x/a", "openrouter/x/b"]);
+    // One provider cannot be listed twice, so the second member is refused and nothing is written.
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(err(&o).contains("already a member"), "{}", err(&o));
+    let o = nr(home.path(), &["unified", "add", "u", "openrouter/x/a"]);
+    assert_eq!(o.status.code(), Some(0), "{}", err(&o));
+    assert_eq!(out(&o), "u: declared (1 member), saved; applies at next start\n");
+    assert!(out(&nr(home.path(), &["unified", "u"])).contains("openrouter x/a"));
+    let o = nr(home.path(), &["unified", "add", "u", "openrouter/x/a"]);
+    assert_eq!((o.status.code(), err(&o).as_str()), (Some(1), "u: already declared; use set\n"));
+    let o = nr(home.path(), &["unified", "set", "u", "openrouter/x/c"]);
+    assert_eq!(out(&o), "u: updated (1 member), saved; applies at next start\n");
+    assert!(out(&nr(home.path(), &["unified", "u"])).contains("openrouter x/c"));
+    let o = nr(home.path(), &["unified", "set", "zz", "openrouter/x/c"]);
+    assert_eq!(err(&o), "zz: not declared; use add\n");
+    let o = nr(home.path(), &["unified", "remove", "u", "--yes"]);
+    assert_eq!(out(&o), "u: removed, saved; applies at next start\n");
+    assert_eq!(
+        out(&nr(home.path(), &["unified"])),
+        "no unified models; declare one with [[unified_model]] in config.toml\n"
+    );
+}
+
+#[test]
+fn a_model_a_combo_lists_cannot_be_removed() {
+    let home = homes::empty();
+    nr(home.path(), &["unified", "add", "u", "openrouter/x/a"]);
+    nr(home.path(), &["combos", "add", "fast", "u"]);
+    let o = nr(home.path(), &["unified", "remove", "u", "--yes"]);
+    assert_eq!(
+        (o.status.code(), err(&o).as_str()),
+        (Some(1), "u: combo fast uses it; remove it from the combo first\n")
+    );
+    assert!(out(&nr(home.path(), &["unified", "u"])).starts_with("u"));
+}
+
+#[test]
+fn remove_asks_first() {
+    use std::io::Write;
+    use std::process::Stdio;
+    let home = homes::empty();
+    nr(home.path(), &["unified", "add", "u", "openrouter/x/a"]);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_nullrouter"))
+        .arg("--home")
+        .arg(home.path())
+        .args(["unified", "remove", "u"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(b"n\n").unwrap();
+    let o = child.wait_with_output().unwrap();
+    assert_eq!(o.status.code(), Some(1));
+    assert!(err(&o).contains("unified model u is removed"), "{}", err(&o));
+    assert!(out(&nr(home.path(), &["unified", "u"])).starts_with("u"));
+}

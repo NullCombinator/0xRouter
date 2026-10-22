@@ -71,3 +71,34 @@ fn none_declared_and_not_found() {
     assert_eq!(o.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&o.stderr).contains("not found: no combo named \"nope\""));
 }
+
+#[test]
+fn add_set_and_remove_a_combo() {
+    let dir = home("");
+    let o = nr(dir.path(), &["combos", "add", "fast", "sonnet", "gpt"]);
+    assert_eq!(o.status.code(), Some(0), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(out(&o), "fast: declared (2 members), saved; applies at next start\n");
+    assert!(out(&nr(dir.path(), &["combos", "fast"])).contains("1. gpt"));
+    let o = nr(dir.path(), &["combos", "add", "fast", "glm"]);
+    assert_eq!(String::from_utf8_lossy(&o.stderr), "fast: already declared; use set\n");
+    let o = nr(dir.path(), &["combos", "set", "fast", "glm"]);
+    assert_eq!(out(&o), "fast: updated (1 member), saved; applies at next start\n");
+    let o = nr(dir.path(), &["combos", "add", "c2", "fast", "glm"]);
+    assert_eq!(o.status.code(), Some(0));
+    let o = nr(dir.path(), &["combos", "remove", "fast", "--yes"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&o.stderr), "fast: combo c2 uses it; remove it from the combo first\n");
+    assert_eq!(
+        out(&nr(dir.path(), &["combos", "remove", "c2", "--yes"])),
+        "c2: removed, saved; applies at next start\n"
+    );
+}
+
+#[test]
+fn an_unknown_member_is_refused() {
+    let dir = home("");
+    let o = nr(dir.path(), &["combos", "add", "fast", "x"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&o.stderr), "fast: member x is neither a unified model nor a combo\n");
+    assert_eq!(out(&nr(dir.path(), &["combos"])), "no combos; declare one with [[combo]] in config.toml\n");
+}
