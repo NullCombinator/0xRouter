@@ -329,15 +329,21 @@ fn remove_window(ctx: &Ctx<'_>) -> Option<Markup> {
 /// The add-account form: a name, the key (write-only, a password field) and the order it keeps.
 fn add_account(ctx: &Ctx<'_>, id: &str) -> Markup {
     let back = ctx.req.href(&ctx.req.path(), &["done", "task"], &[]);
+    // A refused add keeps its name and order and shows its refusal beside the field it names. Only
+    // this form posts `order` (the secret is never kept), so only its refusal has it; a refusal with
+    // no field is the name's (an account of that name exists, or the name is not valid).
+    let refusal = ctx.req.refused.as_ref().filter(|r| r.kept.iter().any(|(k, _)| k == "order"));
+    let kept = |k: &str| refusal.and_then(|r| r.kept.iter().find(|(n, _)| n == k)).map(|(_, v)| v.as_str());
+    let error = |k: &str| refusal.filter(|r| r.field.as_deref().unwrap_or("name") == k).map(|r| r.text.as_str());
     form(
         "/do/accounts/add",
         &back,
         &ctx.req.token,
         html! {
             input type="hidden" name="provider" value=(id);
-            (field("name", "Account name", None, None))
-            (secret_field("secret", "API key", None))
-            (field("order", "Order", None, None))
+            (field("name", "Account name", kept("name"), error("name")))
+            (secret_field("secret", "API key", error("secret")))
+            (field("order", "Order", kept("order"), error("order")))
             button class="button button--primary" type="submit" { "Add account" }
         },
     )

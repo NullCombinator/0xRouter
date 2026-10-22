@@ -61,7 +61,11 @@ impl Form {
 }
 
 mod accounts;
+mod connection;
 mod keys;
+mod proxy;
+mod quota;
+mod routing;
 
 /// What a handler returns: the typed subject for the log, and the result.
 pub type Ran = (String, Result<Done, OpError>);
@@ -85,6 +89,22 @@ pub fn lookup(area: &str, op: &str) -> Option<(String, Handler)> {
         "keys.tag" => keys::tag,
         "keys.set_break" => keys::set_break,
         "keys.set_adapter" => keys::set_adapter,
+        "behaviour.set_break" => routing::set_break,
+        "routing.set" => routing::set,
+        "routing.unset" => routing::unset,
+        "routing.set_plugin" => routing::set_plugin,
+        "routing.unset_plugin" => routing::unset_plugin,
+        "routing.window" => routing::window,
+        "connection.set" => connection::set,
+        "connection.unset" => connection::unset,
+        "proxy.add" => proxy::add,
+        "proxy.remove" => proxy::remove,
+        "proxy.use" => proxy::use_proxy,
+        "proxy.clear" => proxy::clear,
+        "proxy.fixed" => proxy::fixed,
+        "quota.interval" => quota::interval,
+        "quota.poll" => quota::poll,
+        "quota.ack" => quota::ack,
         #[cfg(any(test, feature = "testkit"))]
         "debug.noop" => testkit::noop,
         _ => return None,

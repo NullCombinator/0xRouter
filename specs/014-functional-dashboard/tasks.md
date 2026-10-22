@@ -59,7 +59,7 @@ pass unchanged; never edit a golden file to make a move pass.
 - [X] T015 [US1] Build the Providers forms in `crates/nullrouter-dashboard/src/pages/providers.rs`: the provider window gets "Add account" (name, secret_field, order) and "Sign in" (for OAuth providers; it opens a confirm window with the terms warning when the provider declares one). Account rows get priority, enable/disable and exclusive controls, plus Remove through `confirm_window` with `describe_loss`. The sign-in task panel shows the paste field or the device code.
 - [X] T016 [US1] Build the Endpoint & Key forms in `crates/nullrouter-dashboard/src/pages/endpoint.rs`: Issue key (name, harness tag, break, adapter), with the result in `once_box`. Key cards get tag, break and adapter controls, plus Revoke through the confirm window. Remove the disabled hints these replace.
 - [X] T017 [P] [US1] Add form handlers for every US1 op id in contracts/dashboard-forms.md to `crates/nullrouter-dashboard/src/changes.rs` (accounts.add, signin, signin_paste, priority, enable, disable, exclusive, remove; keys.issue, revoke, tag, set_break, set_adapter). Write-only fields go straight into `SecretString`.
-- [ ] T018 [US1] Test US1 in `crates/nullrouter-dashboard/tests/accounts_keys_forms.rs`:
+- [X] T018 [US1] Test US1 in `crates/nullrouter-dashboard/tests/accounts_keys_forms.rs`:
   - each US1 op through the browser matches the CLI on a twin home (same files, same `keys list --json` / `accounts list --json`);
   - a duplicate account shows the CLI's refusal next to the name field with the other fields kept;
   - a new key appears once and never after reload;
@@ -79,7 +79,7 @@ pass unchanged; never edit a golden file to make a move pass.
   - Proxy Pools (`pages/proxy_pools.rs`): add with a write-only password, use, clear, remove (confirm), fixed (task);
   - Quota Tracker (`pages/quota.rs`): poll interval, poll now (task), alert ack.
   Each refusal shows next to its field.
-- [ ] T024 [P] [US2] Add handlers for every US2 op id in `crates/nullrouter-dashboard/src/changes.rs`.
+- [X] T024 [P] [US2] Add handlers for every US2 op id in `crates/nullrouter-dashboard/src/changes.rs`.
 - [ ] T025 [US2] Test US2 in `crates/nullrouter-dashboard/tests/settings_forms.rs`:
   - browser equals CLI on twin homes for each US2 op;
   - an out-of-range override shows the CLI's text;

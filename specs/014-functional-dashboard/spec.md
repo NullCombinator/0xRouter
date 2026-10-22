@@ -80,8 +80,9 @@ browser; the CLI's `accounts list` and `keys list` show the same results.
 6. **Given** a key, **When** the operator revokes it, **Then** a confirm window says that clients
    using that key stop working at once, and after confirming the key is listed as revoked.
 7. **Given** an account name already used for that provider, **When** the operator adds it again,
-   **Then** the page shows the CLI's refusal text and the form keeps the other entered fields
-   (never the pasted secret).
+   **Then** the account's key is replaced and the page says so, as the CLI does. **Given** an add
+   the CLI refuses (such as an invalid name), **Then** the page shows the CLI's refusal text next to
+   the field and the form keeps the other entered fields (never the pasted secret).
 
 ---
 

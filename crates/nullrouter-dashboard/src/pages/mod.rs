@@ -133,6 +133,15 @@ impl Id {
     }
 }
 
+/// A refused change the page shows again (spec 014 R3): its text, the form field it belongs to, and
+/// the values the form had (secrets already left out).
+#[derive(Debug, Clone)]
+pub struct Refused {
+    pub text: String,
+    pub field: Option<String>,
+    pub kept: Vec<(String, String)>,
+}
+
 /// A page request: the route, the window it opens (a provider or a record id), and the query.
 #[derive(Debug, Clone)]
 pub struct Req {
@@ -143,6 +152,9 @@ pub struct Req {
     /// The form token for this request's session (`Forms::token`); the dashboard sets it before the
     /// page is built, and it is empty until then.
     pub token: String,
+    /// The refusal a `done` flash carried, when the last change was refused; the page keeps the
+    /// form's values beside it.
+    pub refused: Option<Refused>,
 }
 
 impl Req {
@@ -173,7 +185,7 @@ impl Req {
                 (id, Some(rest))
             }
         };
-        Some(Self { id, window, query, token: String::new() })
+        Some(Self { id, window, query, token: String::new(), refused: None })
     }
 
     /// The first value of `name` in the query, when it isn't empty.

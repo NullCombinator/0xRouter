@@ -14,7 +14,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::{get, post};
 use nullrouter_engine::state::Engine;
 use nullrouter_engine::status::DashboardStatus;
@@ -164,7 +164,7 @@ async fn gated(State(shared): State<Arc<Shared>>, req: Request) -> Response {
         access::Gate::SignedIn if path == "/debug/form-token" => {
             // Test-only: the form token no page carries yet.
             let session = access::session_cookie(&shared.engine, req.headers(), shared.rule.port()).unwrap_or_default();
-            shared.forms.token(session).into_response()
+            axum::response::IntoResponse::into_response(shared.forms.token(session))
         }
         access::Gate::SignedIn if path.starts_with("/logos/") => logos::serve(&shared.engine, path),
         access::Gate::SignedIn => match pages::Req::parse(path, req.uri().query().unwrap_or_default()) {
@@ -182,8 +182,8 @@ async fn gated(State(shared): State<Arc<Shared>>, req: Request) -> Response {
 /// markup, both in the guarded task so a panic or a stall is this page's error only.
 async fn page(shared: Arc<Shared>, req: pages::Req, headers: &axum::http::HeaderMap) -> Response {
     let (engine, version) = (shared.engine.clone(), shared.version.clone());
-    let top = top_of(&shared, &req, headers);
-    let r = req.clone();
+    let (top, refused) = top_of(&shared, &req, headers);
+    let r = pages::Req { refused, ..req.clone() };
     let built = shared
         .guard
         .run(move || async move {
@@ -223,21 +223,32 @@ async fn read(engine: &Arc<Engine>, req: &pages::Req) -> Result<page::Page, page
 }
 
 /// What the page shows above its content: the flash a form's redirect named (`done`), or the task
-/// panel (`task`). A flash is read once; an unknown or foreign id shows nothing.
-fn top_of(shared: &Shared, req: &pages::Req, headers: &axum::http::HeaderMap) -> Option<maud::Markup> {
+/// panel (`task`). A flash is read once; an unknown or foreign id shows nothing. A refused change's
+/// flash also comes back as the [`pages::Refused`] the page keeps its form's values with.
+fn top_of(
+    shared: &Shared,
+    req: &pages::Req,
+    headers: &axum::http::HeaderMap,
+) -> (Option<maud::Markup>, Option<pages::Refused>) {
     use components::{TaskState, flash_notice, once_box, task_input, task_panel};
     use forms::FlashKind;
     use nullrouter_engine::tasks::TaskResult;
     if let Some(id) = req.get("done") {
-        let session = access::session_cookie(&shared.engine, headers, shared.rule.port())?;
-        return Some(match shared.forms.take(session, id)? {
-            FlashKind::Done { text } => flash_notice(&text, false),
-            FlashKind::Refused { text, .. } => flash_notice(&text, true),
-            FlashKind::Once { label, value } => value.with_exposed(|v| once_box(&label, v)),
-        });
+        let Some(session) = access::session_cookie(&shared.engine, headers, shared.rule.port()) else {
+            return (None, None);
+        };
+        return match shared.forms.take(session, id) {
+            None => (None, None),
+            Some(FlashKind::Done { text }) => (Some(flash_notice(&text, false)), None),
+            Some(FlashKind::Refused { text, field, kept }) => {
+                (Some(flash_notice(&text, true)), Some(pages::Refused { text, field, kept }))
+            }
+            Some(FlashKind::Once { label, value }) => (Some(value.with_exposed(|v| once_box(&label, v))), None),
+        };
     }
-    let id = req.get("task")?.parse().ok()?;
-    let view = shared.engine.tasks.get(&id)?;
+    let Some(view) = req.get("task").and_then(|t| t.parse().ok()).and_then(|id| shared.engine.tasks.get(&id)) else {
+        return (None, None);
+    };
     let tz = time::local_zone();
     let started = time::local_text(&view.started.to_string(), &tz).unwrap_or_else(|| view.started.to_string());
     let state = match &view.result {
@@ -250,5 +261,5 @@ fn top_of(shared: &Shared, req: &pages::Req, headers: &axum::http::HeaderMap) ->
     let back = req.href(&req.path(), &["task", "done"], &[]);
     let input = view.input.as_ref().map(|i| task_input(view.id.as_str(), i, &back, &req.token)).unwrap_or_default();
     let panel = task_panel(&view.subject, &started, &view.progress, state);
-    Some(maud::html! { (panel) (input) })
+    (Some(maud::html! { (panel) (input) }), None)
 }
