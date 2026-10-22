@@ -198,6 +198,15 @@ fn member<'s>(
         true => None,
         false => broken_skip(verdicts, &provider.id, account, &upstream_id).map(Step::Skip),
     };
+    if !registry.settings(&provider.id).enabled {
+        return Ok(vec![Step::Skip(Skip {
+            provider: provider.id.clone(),
+            account: None,
+            model: upstream_id,
+            reason: "the provider is disabled".into(),
+            class: None,
+        })]);
+    }
     if provider.auth.as_ref().is_some_and(|a| a.no_auth) {
         return Ok(vec![broken(verdict::NO_ACCOUNT).unwrap_or_else(|| candidate(None))]);
     }

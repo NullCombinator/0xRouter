@@ -109,7 +109,7 @@ URIs).
 | Change log | `nullrouter dashboard log [--limit N]` |
 
 Unified models and combos are written to `config.toml`, where they are declared today, in their
-existing form. A provider's on/off and hidden state goes in a new `[providers.<id>]` table of
+existing form. A provider's on/off and hidden state goes in the existing `[provider.<id>]` table of
 `config.toml` (`enabled`, `hidden`). A disabled provider is skipped by routing like a disabled
 account; a hidden one is left out of model lists and the Providers grid. A custom provider is
 written as `plugins/<id>.toml`: a schema-2 plugin with one text section in the chosen style. It

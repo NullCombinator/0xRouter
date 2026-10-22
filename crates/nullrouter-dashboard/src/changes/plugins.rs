@@ -22,6 +22,17 @@ pub fn uninstall(ctx: &Ctx, form: &Form) -> Ran {
     (id.to_owned(), ops::uninstall(ctx, id))
 }
 
+macro_rules! visibility {
+    ($($name:ident),*) => {$(
+        pub fn $name(ctx: &Ctx, form: &Form) -> Ran {
+            let id = form.get("id");
+            (id.to_owned(), ops::$name(ctx, id))
+        }
+    )*};
+}
+
+visibility!(enable, disable, hide, show);
+
 pub fn private_endpoints(ctx: &Ctx, form: &Form) -> Ran {
     ("plugins.private_endpoints".to_owned(), ops::private_endpoints(ctx, form.flag("on")))
 }
@@ -51,6 +62,10 @@ mod tests {
             ("plugins", "uninstall", "plugins.uninstall"),
             ("plugins", "private-endpoints", "plugins.private_endpoints"),
             ("providers", "add-compatible", "providers.add_compatible"),
+            ("providers", "enable", "providers.enable"),
+            ("providers", "disable", "providers.disable"),
+            ("providers", "hide", "providers.hide"),
+            ("providers", "show", "providers.show"),
         ] {
             let (got, _) = lookup(area, op).expect(id);
             assert_eq!(got, id);

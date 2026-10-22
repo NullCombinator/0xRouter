@@ -106,8 +106,8 @@ pass unchanged; never edit a golden file to make a move pass.
 **Goal**: plugin and adapter lifecycle from the browser; the visibility, custom-provider and private-endpoint twins. **Independent test**: spec US4.
 
 - [X] T032 [US4] Move `plugins install|uninstall` (`crates/nullrouter-cli/src/cmd/plugins.rs`) to `crates/nullrouter-server/src/ops/plugins.rs`. Add `private_endpoints(on)` there, editing `allow_private_endpoints` in `config.toml` with the confirm text "Plugins may then reach this machine and your local network." Add the CLI `plugins private-endpoints on|off [--yes]`. `crates/nullrouter-cli/tests/plugins.rs` passes unchanged, and new cases are added.
-- [ ] T033 [US4] Add provider visibility:
-  - Registry and config: `[providers.<id>] enabled` (default true) and `hidden` (default false) in the operator config schema (`crates/nullrouter-registry`).
+- [X] T033 [US4] Add provider visibility:
+  - Registry and config: `[provider.<id>] enabled` (default true) and `hidden` (default false) in the operator config schema (`crates/nullrouter-registry`).
   - Routing: the engine's candidate filter skips disabled providers, as it skips disabled accounts (`crates/nullrouter-engine`).
   - Reads: model lists and the views' provider list leave hidden ones out, and the side panel still lists them.
   - Ops and CLI: `ops::plugins::{enable, disable, hide, show}` plus CLI `providers enable|disable|hide|show <id>` (`crates/nullrouter-cli/src/cmd/providers.rs`), with outputs per contracts/operator-cli.md.
@@ -142,7 +142,7 @@ pass unchanged; never edit a golden file to make a move pass.
 - [ ] T045 Extend `crates/nullrouter-dashboard/tests/style_guide.rs` (SC-008): no `<script`, and the CSP keeps no `script-src` and keeps `form-action 'self'`, on every page including windows, confirm windows and task panels.
 - [ ] T046 Add a bench in `crates/nullrouter-server/benches/` or extend the 013 overhead bench (SC-006): router overhead p95 with a loop posting dashboard changes as fast as possible, against the 013 baseline. Record the result in `specs/014-functional-dashboard/bench-baseline.md`.
 - [ ] T047 [P] Update the docs:
-  - `docs/operator-config.md`: the new commands, `[providers.<id>]`, and private endpoints;
+  - `docs/operator-config.md`: the new commands, `[provider.<id>] enabled|hidden`, and private endpoints;
   - `docs/dashboard/` (or the 009 docs): making changes, confirm windows, Console Log, the form-token note.
 - [ ] T048 Run a security review of the branch (security-auditor) over the forms layer, flash, change log, sign-in hand-back and custom-provider writes. Record it in `specs/014-functional-dashboard/security-review.md` and fix every High and Medium.
 - [ ] T049 Run quickstart.md §§ 1–4 on a scratch home and record the results in `specs/014-functional-dashboard/operator-runs.md`. § 5 (real OAuth sign-in) joins the user's whole-system live run.

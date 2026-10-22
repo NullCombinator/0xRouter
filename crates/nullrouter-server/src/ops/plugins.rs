@@ -179,6 +179,69 @@ pub fn add_compatible(
     add_compatible_with(ctx, &mut Vec::new(), id, name, style, base_url, models).map(|r| r.done)
 }
 
+/// Which visibility switch a provider op turns.
+#[derive(Clone, Copy)]
+enum Switch {
+    Enable,
+    Disable,
+    Hide,
+    Show,
+}
+
+impl Switch {
+    /// The key, its value (`None` removes it: the default), and the line's word.
+    fn parts(self) -> (&'static str, Option<&'static str>, &'static str) {
+        match self {
+            Self::Enable => ("enabled", None, "enabled"),
+            Self::Disable => ("enabled", Some("false"), "disabled (routing skips it)"),
+            Self::Hide => ("hidden", Some("true"), "hidden"),
+            Self::Show => ("hidden", None, "shown"),
+        }
+    }
+}
+
+fn visibility_with(ctx: &Ctx, log: &mut Vec<String>, id: &str, switch: Switch) -> Result<Report, OpError> {
+    let known = crate::views::open_registry(&ctx.home)
+        .map_err(|e| OpError { text: e.message, exit: e.code, field: None })?
+        .snapshot()
+        .provider(id)
+        .is_ok();
+    if !known {
+        return Err(in_field("id", 1, format!("{id}: no such provider")));
+    }
+    let file = ctx.home.config_file();
+    let text = match std::fs::read_to_string(&file) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(fail(format!("{}: {e}", file.display()))),
+    };
+    let (key, value, word) = switch.parts();
+    let (edited, changed) = config_text::edit(&text, &format!("provider.{id}"), key, value);
+    if changed {
+        config_text::write_checked(&ctx.home, &edited).map_err(fail)?;
+    }
+    Ok(finish(ctx, log, &format!("{id}: {word}"), json!({"id": id, "result": word})))
+}
+
+macro_rules! visibility_ops {
+    ($($name:ident, $with:ident, $switch:ident;)*) => {$(
+        pub fn $with(ctx: &Ctx, log: &mut Vec<String>, id: &str) -> Result<Report, OpError> {
+            visibility_with(ctx, log, id, Switch::$switch)
+        }
+
+        pub fn $name(ctx: &Ctx, id: &str) -> Result<Done, OpError> {
+            $with(ctx, &mut Vec::new(), id).map(|r| r.done)
+        }
+    )*};
+}
+
+visibility_ops! {
+    enable, enable_with, Enable;
+    disable, disable_with, Disable;
+    hide, hide_with, Hide;
+    show, show_with, Show;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,6 +293,23 @@ mod tests {
             std::fs::read_to_string(dir.path().join("config.toml")).unwrap(),
             "allow_private_endpoints = true\n"
         );
+    }
+
+    #[test]
+    fn visibility_edits_the_provider_table_and_refuses_unknown_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = ctx(&dir);
+        let cfg = dir.path().join("config.toml");
+        let d = disable(&c, "anthropic").unwrap();
+        assert_eq!(d.text, "anthropic: disabled (routing skips it), saved; applies at next start");
+        hide(&c, "anthropic").unwrap();
+        let t = std::fs::read_to_string(&cfg).unwrap();
+        assert!(t.contains("[provider.anthropic]") && t.contains("enabled = false") && t.contains("hidden = true"), "{t}");
+        enable(&c, "anthropic").unwrap();
+        show(&c, "anthropic").unwrap();
+        assert!(!std::fs::read_to_string(&cfg).unwrap().contains("provider.anthropic"));
+        let e = hide(&c, "nope").unwrap_err();
+        assert_eq!(e.field, Some("id"));
     }
 
     #[test]

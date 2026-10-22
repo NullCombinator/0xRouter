@@ -122,7 +122,11 @@ pub fn lookup(area: &str, op: &str) -> Option<(String, Handler)> {
         "plugins.uninstall" => plugins::uninstall,
         "plugins.private_endpoints" => plugins::private_endpoints,
         "providers.add_compatible" => plugins::add_compatible,
-        // T033: providers.enable/disable/hide/show; T035: adapters.*, catalogue.install, alerts.ack
+        "providers.enable" => plugins::enable,
+        "providers.disable" => plugins::disable,
+        "providers.hide" => plugins::hide,
+        "providers.show" => plugins::show,
+        // T035: adapters.*, catalogue.install, alerts.ack
         #[cfg(any(test, feature = "testkit"))]
         "debug.noop" => testkit::noop,
         _ => return None,

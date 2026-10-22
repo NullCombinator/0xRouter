@@ -11,7 +11,9 @@ exit: 0
     ],
     "source": "bundled",
     "signin": true,
-    "terms_warning": true
+    "terms_warning": true,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "elevenlabs",
@@ -23,7 +25,9 @@ exit: 0
     ],
     "source": "bundled",
     "signin": false,
-    "terms_warning": false
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "grok-cli",
@@ -34,7 +38,9 @@ exit: 0
     ],
     "source": "bundled",
     "signin": true,
-    "terms_warning": false
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "opencode-go",
@@ -46,7 +52,9 @@ exit: 0
     ],
     "source": "bundled",
     "signin": false,
-    "terms_warning": false
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "opencode-zen",
@@ -58,7 +66,9 @@ exit: 0
     ],
     "source": "bundled",
     "signin": false,
-    "terms_warning": false
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "openrouter",
@@ -74,7 +84,9 @@ exit: 0
     ],
     "source": "bundled",
     "signin": false,
-    "terms_warning": false
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "xai",
@@ -88,7 +100,9 @@ exit: 0
     ],
     "source": "bundled",
     "signin": true,
-    "terms_warning": false
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "bluesminds",
@@ -99,7 +113,9 @@ exit: 0
     ],
     "source": "user",
     "signin": false,
-    "terms_warning": false
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   }
 ]
 --- stderr

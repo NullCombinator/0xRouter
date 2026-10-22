@@ -21,6 +21,14 @@ pub(crate) struct Args {
 
 #[derive(Subcommand)]
 pub(crate) enum Command {
+    /// Let routing use the provider again.
+    Enable { id: String },
+    /// Routing skips the provider; its accounts stay.
+    Disable { id: String },
+    /// Leave the provider out of model lists and the provider list.
+    Hide { id: String },
+    /// Undo `hide`.
+    Show { id: String },
     /// Add a server that speaks the Chat Completions or Messages API as a provider.
     AddCompatible {
         id: String,
@@ -38,10 +46,18 @@ pub(crate) enum Command {
 }
 
 pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<ExitCode, ExitCode> {
-    if let Some(Command::AddCompatible { id, style, base_url, models, name }) = args.command {
+    if let Some(command) = args.command {
         let ctx = Ctx { home: home.map_or_else(OperatorHome::resolve, OperatorHome::new), engine: None };
         let mut log = Vec::new();
-        let result = plugins::add_compatible_with(&ctx, &mut log, &id, name.as_deref(), &style, &base_url, &models);
+        let result = match command {
+            Command::AddCompatible { id, style, base_url, models, name } => {
+                plugins::add_compatible_with(&ctx, &mut log, &id, name.as_deref(), &style, &base_url, &models)
+            }
+            Command::Enable { id } => plugins::enable_with(&ctx, &mut log, &id),
+            Command::Disable { id } => plugins::disable_with(&ctx, &mut log, &id),
+            Command::Hide { id } => plugins::hide_with(&ctx, &mut log, &id),
+            Command::Show { id } => plugins::show_with(&ctx, &mut log, &id),
+        };
         for l in &log {
             eprintln!("{l}");
         }
