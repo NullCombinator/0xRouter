@@ -71,7 +71,7 @@ pass unchanged; never edit a golden file to make a move pass.
 
 - [X] T019 [P] [US2] Move `behaviour set-break` (`crates/nullrouter-cli/src/cmd/behaviour.rs`) and `routing set|unset|set-plugin|unset-plugin|window` (`crates/nullrouter-cli/src/cmd/routing.rs`) to `crates/nullrouter-server/src/ops/routing.rs`. `crates/nullrouter-cli/tests/routing.rs` passes unchanged.
 - [X] T020 [P] [US2] Move `connection set|unset` (`crates/nullrouter-cli/src/cmd/connection.rs`) to `crates/nullrouter-server/src/ops/connection.rs`. Its tests pass unchanged.
-- [ ] T021 [P] [US2] Move `proxy add|remove|use|clear|fixed` (`crates/nullrouter-cli/src/cmd/proxy.rs`) to `crates/nullrouter-server/src/ops/proxy.rs`. `fixed` runs as a task. The password is a `SecretString`. `crates/nullrouter-cli/tests/proxy.rs` passes unchanged.
+- [X] T021 [P] [US2] Move `proxy add|remove|use|clear|fixed` (`crates/nullrouter-cli/src/cmd/proxy.rs`) to `crates/nullrouter-server/src/ops/proxy.rs`. `fixed` runs as a task. The password is a `SecretString`. `crates/nullrouter-cli/tests/proxy.rs` passes unchanged.
 - [X] T022 [P] [US2] Move `quota interval|poll|ack` (`crates/nullrouter-cli/src/cmd/quota.rs`) to `crates/nullrouter-server/src/ops/quota.rs`. `poll` runs as a task in-process. `prune` and `forget` stay CLI-only (spec FR-001). `crates/nullrouter-cli/tests/quota.rs` passes unchanged.
 - [ ] T023 [US2] Add the US2 forms to pages:
   - Settings (`pages/settings.rs`): default break behaviour, amortization window, test settings (`verdicts settings`);
