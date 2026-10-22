@@ -32,13 +32,13 @@ pass unchanged; never edit a golden file to make a move pass.
   - `confirm_window(title, loss_text, form)`, with a Cancel link that closes the window;
   - `task_panel(task)`, which adds `<meta http-equiv="refresh" content="3">` while the task runs.
   Styles go in `crates/nullrouter-dashboard/style/dashboard.css`, using only `var(--token)` values. New tokens go in `style/tokens.toml` with ref/9router source lines (style-guide tests).
-- [ ] T009 Add the `/do/<area>/<op>` dispatch in `crates/nullrouter-dashboard/src/changes.rs` and route it in `crates/nullrouter-dashboard/src/lib.rs` (POST only; GET gives 405).
+- [X] T009 Add the `/do/<area>/<op>` dispatch in `crates/nullrouter-dashboard/src/changes.rs` and route it in `crates/nullrouter-dashboard/src/lib.rs` (POST only; GET gives 405).
   - Each request runs, in order: `forms::check_post`, the parse into a typed op, the `ops` call under the dashboard guard, the change-log line, then `303` with the flash per contracts/dashboard-forms.md § Every form.
   - Started tasks redirect with `?task=<id>`.
   - Make the page reader in `crates/nullrouter-dashboard/src/lib.rs` consume `done`/`task` query parameters and pass them to frame rendering.
   - Rename the session cookie to `nrd_session_<port>` (R10) in `crates/nullrouter-dashboard/src/access.rs`, keeping sign-in working.
 - [X] T010 Add `ops::describe_loss(op, subject) -> String` in `crates/nullrouter-server/src/ops/mod.rs` for every irreversible op in spec FR-009 (account remove, key revoke, plugin uninstall, proxy remove, adapter remove, unified/combo remove, adapter clear, private endpoints on). Example: "clients using key work-laptop stop working at once". Unit-test that each op has a text.
-- [ ] T011 Test the foundation in `crates/nullrouter-dashboard/tests/forms.rs` (SC-005), using a no-op test route:
+- [X] T011 Test the foundation in `crates/nullrouter-dashboard/tests/forms.rs` (SC-005), using a no-op test route:
   - a post without `_t`, with a wrong `_t`, or with a foreign Origin gives 403 and writes no log line;
   - a GET to `/do/...` gives 405;
   - a good post gives 303 with `done`;

@@ -35,6 +35,8 @@ pub struct Frame<'a> {
     pub check: Option<&'a Value>,
     /// The `accounts` JSON, when the panel is open.
     pub accounts: Option<&'a Value>,
+    /// A flash or task panel, shown above the page's content.
+    pub top: Option<Markup>,
 }
 
 /// The whole document.
@@ -72,6 +74,7 @@ pub fn document(f: &Frame<'_>, body: Body) -> Markup {
                         @if !own.is_empty() {
                             div class="notices" { @for (level, text) in &own { (notice(level, text)) } }
                         }
+                        @if let Some(top) = &f.top { (top) }
                         (body.content)
                     }
                 }
@@ -181,13 +184,13 @@ fn account_line(a: &Value) -> Markup {
 }
 
 /// The page for `req` from its built state, inside the frame.
-pub fn render(req: &Req, page: &Page, version: &str, tz: &TimeZone, logos: &Index) -> Response {
+pub fn render(req: &Req, page: &Page, version: &str, tz: &TimeZone, logos: &Index, top: Option<Markup>) -> Response {
     let ctx = Ctx { req, page, tz, logos };
     let (status, body) = match pages::body(&ctx) {
         Ok(body) => (StatusCode::OK, body),
         Err(f) => (f.status, Body::new(failure_card(&f.message))),
     };
-    respond(status, &frame_for(req, page, version, tz), body)
+    respond(status, &frame_for(req, page, version, tz, top), body)
 }
 
 /// The page under a window that couldn't open: the page as it is, and the window showing the
@@ -199,14 +202,15 @@ pub fn render_missing_window(
     tz: &TimeZone,
     logos: &Index,
     message: &str,
+    top: Option<Markup>,
 ) -> Response {
     let ctx = Ctx { req, page, tz, logos };
     let mut body = pages::body(&ctx).unwrap_or_else(|f| Body::new(failure_card(&f.message)));
     body.window = Some(components::modal("Not found", &req.close_href(), html! { p { (message) } }));
-    respond(StatusCode::NOT_FOUND, &frame_for(req, page, version, tz), body)
+    respond(StatusCode::NOT_FOUND, &frame_for(req, page, version, tz, top), body)
 }
 
-fn frame_for<'a>(req: &'a Req, page: &'a Page, version: &'a str, tz: &TimeZone) -> Frame<'a> {
+fn frame_for<'a>(req: &'a Req, page: &'a Page, version: &'a str, tz: &TimeZone, top: Option<Markup>) -> Frame<'a> {
     Frame {
         current: Some(req.id),
         version,
@@ -214,13 +218,14 @@ fn frame_for<'a>(req: &'a Req, page: &'a Page, version: &'a str, tz: &TimeZone) 
         req: Some(req),
         check: page.view(ViewName::Check).map(|v| &v.json),
         accounts: page.view(ViewName::Accounts).map(|v| &v.json),
+        top,
     }
 }
 
 /// A page that could not be built at all (a view failed, the state kept changing, the build
 /// panicked or ran out of time, or the dashboard is busy): the frame and the reason.
 pub fn render_error(req: Option<&Req>, version: &str, status: StatusCode, text: &str) -> Response {
-    let frame = Frame { current: req.map(|r| r.id), version, as_of: None, req, check: None, accounts: None };
+    let frame = Frame { current: req.map(|r| r.id), version, as_of: None, req, check: None, accounts: None, top: None };
     respond(status, &frame, Body::new(failure_card(text)))
 }
 
@@ -251,6 +256,7 @@ mod tests {
             req: Some(req),
             check: Some(check),
             accounts: Some(accounts),
+            top: None,
         }
     }
 

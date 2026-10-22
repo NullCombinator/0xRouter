@@ -15,7 +15,10 @@ use subtle::ConstantTimeEq;
 
 use crate::headers::HostRule;
 
-pub const COOKIE_NAME: &str = "nr_dashboard";
+/// The session cookie's name on the dashboard bound to `port` (spec 014 R10).
+pub fn cookie_name(port: u16) -> String {
+    format!("nrd_session_{port}")
+}
 
 /// 400 days, the longest a browser keeps a cookie.
 const MAX_AGE: u64 = 34_560_000;
@@ -58,10 +61,10 @@ fn delay_for(failures: u32) -> Duration {
 }
 
 /// Where `headers` stand against the current token.
-pub fn gate(engine: &Engine, headers: &HeaderMap) -> Gate {
+pub fn gate(engine: &Engine, headers: &HeaderMap, port: u16) -> Gate {
     let snapshot = engine.snapshot();
     let Some(digest) = snapshot.dashboard.digest.as_deref() else { return Gate::NoToken };
-    if cookie_values(headers).any(|presented| token_matches(digest, presented)) {
+    if cookie_values(headers, port).any(|presented| token_matches(digest, presented)) {
         Gate::SignedIn
     } else {
         Gate::SignedOut
@@ -69,10 +72,10 @@ pub fn gate(engine: &Engine, headers: &HeaderMap) -> Gate {
 }
 
 /// The cookie value that is the current token: the session a form post belongs to.
-pub(crate) fn session_cookie<'a>(engine: &Engine, headers: &'a HeaderMap) -> Option<&'a str> {
+pub(crate) fn session_cookie<'a>(engine: &Engine, headers: &'a HeaderMap, port: u16) -> Option<&'a str> {
     let snapshot = engine.snapshot();
     let digest = snapshot.dashboard.digest.as_deref()?;
-    cookie_values(headers).find(|presented| token_matches(digest, presented))
+    cookie_values(headers, port).find(|presented| token_matches(digest, presented))
 }
 
 /// Whether `presented` is the token whose digest is `digest`.
@@ -84,18 +87,20 @@ pub fn token_matches(digest: &str, presented: &str) -> bool {
 /// Every value of the dashboard cookie, from any `Cookie` header. All of them, not the first: a
 /// server on another loopback port can set one with a longer path, which the browser sends first
 /// (security-review.md L3).
-fn cookie_values(headers: &HeaderMap) -> impl Iterator<Item = &str> {
+fn cookie_values(headers: &HeaderMap, port: u16) -> impl Iterator<Item = &str> {
+    let name = cookie_name(port);
     headers
         .get_all(COOKIE)
         .iter()
         .filter_map(|h| h.to_str().ok())
         .flat_map(|h| h.split(';'))
-        .filter_map(|pair| pair.trim().strip_prefix(COOKIE_NAME)?.strip_prefix('='))
+        .filter_map(move |pair| pair.trim().strip_prefix(name.as_str())?.strip_prefix('='))
 }
 
 /// The `Set-Cookie` value that signs a browser in.
-pub fn set_cookie(token: &str) -> String {
-    format!("{COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={MAX_AGE}")
+pub fn set_cookie(token: &str, port: u16) -> String {
+    let name = cookie_name(port);
+    format!("{name}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={MAX_AGE}")
 }
 
 /// Whether a sign-in post may come from `origin`: no `Origin` (a command-line client) or one of
@@ -226,31 +231,31 @@ mod tests {
         let token = "nrd_example";
         let digest = DashboardToken::digest_of(token);
         let mut h = HeaderMap::new();
-        h.append(COOKIE, HeaderValue::from_static("theme=dark; nr_dashboard=nrd_example; other=1"));
-        assert_eq!(cookie_values(&h).collect::<Vec<_>>(), [token]);
+        h.append(COOKIE, HeaderValue::from_static("theme=dark; nrd_session_1=nrd_example; other=1"));
+        assert_eq!(cookie_values(&h, 1).collect::<Vec<_>>(), [token]);
         assert!(token_matches(&digest, token));
         assert!(!token_matches(&digest, "nrd_exampl"));
         assert!(!token_matches(&digest, ""));
         assert!(!token_matches("short", token));
 
         let mut other = HeaderMap::new();
-        other.append(COOKIE, HeaderValue::from_static("nr_dashboard_x=nrd_example"));
-        assert_eq!(cookie_values(&other).count(), 0, "a longer cookie name is not ours");
-        assert_eq!(cookie_values(&HeaderMap::new()).count(), 0);
+        other.append(COOKIE, HeaderValue::from_static("nrd_session_1_x=nrd_example"));
+        assert_eq!(cookie_values(&other, 1).count(), 0, "a longer cookie name is not ours");
+        assert_eq!(cookie_values(&HeaderMap::new(), 1).count(), 0);
     }
 
     #[test]
     fn a_planted_cookie_sent_first_does_not_hide_the_right_one() {
         let mut h = HeaderMap::new();
-        h.append(COOKIE, HeaderValue::from_static("nr_dashboard=x; nr_dashboard=nrd_example"));
-        assert_eq!(cookie_values(&h).collect::<Vec<_>>(), ["x", "nrd_example"]);
+        h.append(COOKIE, HeaderValue::from_static("nrd_session_1=x; nrd_session_1=nrd_example"));
+        assert_eq!(cookie_values(&h, 1).collect::<Vec<_>>(), ["x", "nrd_example"]);
         let digest = DashboardToken::digest_of("nrd_example");
-        assert!(cookie_values(&h).any(|presented| token_matches(&digest, presented)));
+        assert!(cookie_values(&h, 1).any(|presented| token_matches(&digest, presented)));
     }
 
     #[test]
     fn the_cookie_is_the_one_the_contract_spells_out() {
-        assert_eq!(set_cookie("nrd_t"), "nr_dashboard=nrd_t; Path=/; HttpOnly; SameSite=Strict; Max-Age=34560000");
+        assert_eq!(set_cookie("nrd_t", 1), "nrd_session_1=nrd_t; Path=/; HttpOnly; SameSite=Strict; Max-Age=34560000");
     }
 
     #[test]

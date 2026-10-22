@@ -114,8 +114,8 @@ fn token(n: u8) -> String {
     format!("nrd_{:0>43}", format!("fixture{n}"))
 }
 
-fn cookie(token: &str) -> String {
-    format!("nr_dashboard={token}")
+fn cookie(port: u16, token: &str) -> String {
+    format!("nrd_session_{port}={token}")
 }
 
 /// Percent-encodes everything but unreserved characters.
@@ -209,7 +209,7 @@ async fn the_right_token_sets_a_long_lived_cookie_and_the_cookie_opens_pages() {
     }
 
     // A wrong cookie is no cookie.
-    let r = d.get("/endpoint").header(COOKIE, cookie(&token(2))).send().await.unwrap();
+    let r = d.get("/endpoint").header(COOKIE, cookie(d.port(), &token(2))).send().await.unwrap();
     assert!(is_sign_in_redirect(&r), "{}", r.status());
 
     // The right token: back to `/`, and the cookie the contract spells out.
@@ -217,16 +217,16 @@ async fn the_right_token_sets_a_long_lived_cookie_and_the_cookie_opens_pages() {
     assert_eq!(r.status(), StatusCode::SEE_OTHER);
     assert_eq!(location(&r), "/");
     let set = r.headers().get(SET_COOKIE).expect("a cookie").to_str().unwrap();
-    assert_eq!(set, format!("nr_dashboard={t}; Path=/; HttpOnly; SameSite=Strict; Max-Age=34560000"));
+    assert_eq!(set, format!("nrd_session_{}={t}; Path=/; HttpOnly; SameSite=Strict; Max-Age=34560000", d.port()));
 
     // With it, every route is open; the sign-in page and a repeated post go home.
     for path in gated() {
-        let r = d.get(path).header(COOKIE, cookie(&t)).send().await.unwrap();
+        let r = d.get(path).header(COOKIE, cookie(d.port(), &t)).send().await.unwrap();
         assert!(passes_the_gate(&r), "{path}: {}", r.status());
     }
-    let r = d.get("/signin").header(COOKIE, cookie(&t)).send().await.unwrap();
+    let r = d.get("/signin").header(COOKIE, cookie(d.port(), &t)).send().await.unwrap();
     assert_eq!((r.status(), location(&r)), (StatusCode::SEE_OTHER, "/"));
-    let r = d.sign_in("whatever", None).header(COOKIE, cookie(&t)).send().await.unwrap();
+    let r = d.sign_in("whatever", None).header(COOKIE, cookie(d.port(), &t)).send().await.unwrap();
     assert_eq!((r.status(), location(&r)), (StatusCode::SEE_OTHER, "/"));
 
     // Logos are behind the cookie like a page (a user plugin's logo names the plugin); assets are not.
@@ -273,17 +273,17 @@ async fn a_new_token_signs_the_old_cookie_out() {
     let d = Dash::start().await;
     let (first, second) = (token(1), token(2));
     d.issue(&first).await;
-    let r = d.get("/endpoint").header(COOKIE, cookie(&first)).send().await.unwrap();
+    let r = d.get("/endpoint").header(COOKIE, cookie(d.port(), &first)).send().await.unwrap();
     assert!(passes_the_gate(&r), "{}", r.status());
 
     d.issue(&second).await;
-    let r = d.get("/endpoint").header(COOKIE, cookie(&first)).send().await.unwrap();
+    let r = d.get("/endpoint").header(COOKIE, cookie(d.port(), &first)).send().await.unwrap();
     assert!(is_sign_in_redirect(&r), "{}", r.status());
 
     let r = d.sign_in(&second, None).send().await.unwrap();
     assert_eq!(r.status(), StatusCode::SEE_OTHER);
-    assert!(r.headers()[SET_COOKIE].to_str().unwrap().starts_with(&cookie(&second)));
-    let r = d.get("/endpoint").header(COOKIE, cookie(&second)).send().await.unwrap();
+    assert!(r.headers()[SET_COOKIE].to_str().unwrap().starts_with(&cookie(d.port(), &second)));
+    let r = d.get("/endpoint").header(COOKIE, cookie(d.port(), &second)).send().await.unwrap();
     assert!(passes_the_gate(&r), "{}", r.status());
 }
 
@@ -335,7 +335,7 @@ async fn a_foreign_host_gets_421_and_no_page() {
     d.issue(&t).await;
     let port = d.port();
     for host in ["evil.example", &format!("evil.example:{port}"), &format!("127.0.0.1:{}", port + 1)] {
-        for req in [d.get("/signin"), d.get("/endpoint").header(COOKIE, cookie(&t)), d.sign_in(&t, None)] {
+        for req in [d.get("/signin"), d.get("/endpoint").header(COOKIE, cookie(d.port(), &t)), d.sign_in(&t, None)] {
             let r = req.header("Host", host).send().await.unwrap();
             assert_eq!(r.status(), StatusCode::MISDIRECTED_REQUEST, "Host: {host}");
             assert!(r.headers()[CONTENT_TYPE].to_str().unwrap().starts_with("text/plain"));
@@ -369,7 +369,7 @@ async fn no_write_routes() {
                 }
                 let mut req = d.req(method.clone(), path);
                 if issued {
-                    req = req.header(COOKIE, cookie(&t));
+                    req = req.header(COOKIE, cookie(d.port(), &t));
                 }
                 let r = req.send().await.unwrap();
                 assert_eq!(r.status(), StatusCode::METHOD_NOT_ALLOWED, "{method} {path} (token issued: {issued})");

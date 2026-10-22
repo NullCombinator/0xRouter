@@ -14,8 +14,8 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
-use axum::response::Response;
-use axum::routing::get;
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
 use nullrouter_engine::state::Engine;
 use nullrouter_engine::status::DashboardStatus;
 use nullrouter_registry::schema::DashboardSettings;
@@ -24,6 +24,7 @@ use tokio::task::JoinHandle;
 
 pub mod access;
 pub mod assets;
+pub mod changes;
 pub mod components;
 pub mod forms;
 pub mod frame;
@@ -47,6 +48,8 @@ pub struct Shared {
     pub rule: headers::HostRule,
     /// Wrong tokens since the last right one.
     pub access: access::Access,
+    /// The form token key and the flashes (spec 014).
+    pub forms: forms::Forms,
 }
 
 /// A running dashboard (or the record of why there isn't one).
@@ -118,6 +121,7 @@ pub async fn spawn(
         guard: guard::Guard::default(),
         rule: headers::HostRule::new(host, port),
         access: access::Access::default(),
+        forms: forms::Forms::new(),
     });
     let app = router(shared);
     status.serving = true;
@@ -137,6 +141,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
     let rule = shared.rule.clone();
     Router::new()
         .route("/signin", get(pages::signin::get).post(pages::signin::post))
+        .route("/do/{area}/{op}", post(changes::dispatch))
         .fallback(gated)
         .with_state(shared)
         .layer(axum::middleware::from_fn_with_state(rule, headers::enforce))
@@ -148,16 +153,22 @@ async fn gated(State(shared): State<Arc<Shared>>, req: Request) -> Response {
     if path.starts_with("/assets/") {
         return assets::serve(path);
     }
-    match access::gate(&shared.engine, req.headers()) {
+    match access::gate(&shared.engine, req.headers(), shared.rule.port()) {
         access::Gate::NoToken => pages::signin::see_other("/signin"),
         access::Gate::SignedOut => {
             let wanted = req.uri().path_and_query().map_or(path, |p| p.as_str());
             pages::signin::see_other(&format!("/signin?next={}", access::encode_component(wanted)))
         }
         access::Gate::SignedIn if path == "/" => pages::signin::see_other("/endpoint"),
+        #[cfg(any(test, feature = "testkit"))]
+        access::Gate::SignedIn if path == "/debug/form-token" => {
+            // Test-only: the form token no page carries yet.
+            let session = access::session_cookie(&shared.engine, req.headers(), shared.rule.port()).unwrap_or_default();
+            shared.forms.token(session).into_response()
+        }
         access::Gate::SignedIn if path.starts_with("/logos/") => logos::serve(&shared.engine, path),
         access::Gate::SignedIn => match pages::Req::parse(path, req.uri().query().unwrap_or_default()) {
-            Some(page_req) => page(shared, page_req).await,
+            Some(page_req) => page(shared, page_req, req.headers()).await,
             None => frame::render_error(None, &shared.version, StatusCode::NOT_FOUND, "No such page."),
         },
     }
@@ -165,8 +176,9 @@ async fn gated(State(shared): State<Arc<Shared>>, req: Request) -> Response {
 
 /// One page, built under the guard (research R8): its views in one consistent state, then the
 /// markup, both in the guarded task so a panic or a stall is this page's error only.
-async fn page(shared: Arc<Shared>, req: pages::Req) -> Response {
+async fn page(shared: Arc<Shared>, req: pages::Req, headers: &axum::http::HeaderMap) -> Response {
     let (engine, version) = (shared.engine.clone(), shared.version.clone());
+    let top = top_of(&shared, &req, headers);
     let r = req.clone();
     let built = shared
         .guard
@@ -174,12 +186,12 @@ async fn page(shared: Arc<Shared>, req: pages::Req) -> Response {
             let tz = time::local_zone();
             let logos = logos::Index::of(&engine);
             match read(&engine, &r).await {
-                Ok(p) => frame::render(&r, &p, &version, &tz, &logos),
+                Ok(p) => frame::render(&r, &p, &version, &tz, &logos, top),
                 // A window whose id doesn't exist: the page under it, and the CLI's message.
                 Err(page::PageError::View(e)) if r.window.is_some() => {
                     let base = pages::Req { window: None, ..r.clone() };
                     match read(&engine, &base).await {
-                        Ok(p) => frame::render_missing_window(&r, &p, &version, &tz, &logos, &e.message),
+                        Ok(p) => frame::render_missing_window(&r, &p, &version, &tz, &logos, &e.message, top),
                         Err(e) => frame::render_error(
                             Some(&r),
                             &version,
@@ -204,4 +216,30 @@ async fn read(engine: &Arc<Engine>, req: &pages::Req) -> Result<page::Page, page
         Some(id) => Err(page::PageError::View(nullrouter_server::views::ViewError::failed(format!("no record {id}")))),
         None => page::build(engine, &pages::wants(req)).await,
     }
+}
+
+/// What the page shows above its content: the flash a form's redirect named (`done`), or the task
+/// panel (`task`). A flash is read once; an unknown or foreign id shows nothing.
+fn top_of(shared: &Shared, req: &pages::Req, headers: &axum::http::HeaderMap) -> Option<maud::Markup> {
+    use components::{TaskState, flash_notice, once_box, task_panel};
+    use forms::FlashKind;
+    use nullrouter_engine::tasks::TaskResult;
+    if let Some(id) = req.get("done") {
+        let session = access::session_cookie(&shared.engine, headers, shared.rule.port())?;
+        return Some(match shared.forms.take(session, id)? {
+            FlashKind::Done { text } => flash_notice(&text, false),
+            FlashKind::Refused { text, .. } => flash_notice(&text, true),
+            FlashKind::Once { label, value } => value.with_exposed(|v| once_box(&label, v)),
+        });
+    }
+    let id = req.get("task")?.parse().ok()?;
+    let view = shared.engine.tasks.get(&id)?;
+    let tz = time::local_zone();
+    let started = time::local_text(&view.started.to_string(), &tz).unwrap_or_else(|| view.started.to_string());
+    let state = match &view.result {
+        TaskResult::Running => TaskState::Running,
+        TaskResult::Done { text } => TaskState::Done(text),
+        TaskResult::Failed { text } => TaskState::Failed(text),
+    };
+    Some(task_panel(&view.subject, &started, &view.progress, state))
 }

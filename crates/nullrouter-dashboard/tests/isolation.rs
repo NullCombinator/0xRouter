@@ -89,7 +89,7 @@ async fn run(mock: &MockUpstream, enabled: bool, fault: Fault) -> (Duration, usi
                 let mut i = w;
                 while !done.load(Ordering::Relaxed) {
                     let path = Id::ALL[i % Id::ALL.len()].path();
-                    let req = http.get(format!("http://{addr}{path}")).header(COOKIE, format!("nr_dashboard={TOKEN}"));
+                    let req = http.get(format!("http://{addr}{path}")).header(COOKIE, format!("nrd_session_{}={TOKEN}", addr.port()));
                     let _ = tokio::time::timeout(Duration::from_secs(1), req.send()).await;
                     i += 1;
                 }

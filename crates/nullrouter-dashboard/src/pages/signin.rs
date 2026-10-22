@@ -74,7 +74,7 @@ pub fn see_other(to: &str) -> Response {
 }
 
 pub async fn get(State(shared): State<Arc<Shared>>, req: Request) -> Response {
-    match access::gate(&shared.engine, req.headers()) {
+    match access::gate(&shared.engine, req.headers(), shared.rule.port()) {
         Gate::NoToken => html_response(StatusCode::OK, &Screen::NoToken),
         Gate::SignedIn => see_other("/"),
         Gate::SignedOut => {
@@ -90,7 +90,7 @@ pub async fn post(State(shared): State<Arc<Shared>>, req: Request) -> Response {
     if !access::origin_ok(&shared.rule, parts.headers.get(ORIGIN)) {
         return (StatusCode::FORBIDDEN, "This sign-in did not come from the dashboard.\n").into_response();
     }
-    match access::gate(&shared.engine, &parts.headers) {
+    match access::gate(&shared.engine, &parts.headers, shared.rule.port()) {
         Gate::NoToken => return html_response(StatusCode::OK, &Screen::NoToken),
         Gate::SignedIn => return see_other("/"),
         Gate::SignedOut => {}
@@ -105,7 +105,7 @@ pub async fn post(State(shared): State<Arc<Shared>>, req: Request) -> Response {
     if access::token_matches(&digest, presented) {
         shared.access.right_token();
         let mut response = see_other(&next);
-        if let Ok(cookie) = HeaderValue::try_from(access::set_cookie(presented)) {
+        if let Ok(cookie) = HeaderValue::try_from(access::set_cookie(presented, shared.rule.port())) {
             response.headers_mut().insert(SET_COOKIE, cookie);
         }
         return response;

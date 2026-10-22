@@ -97,7 +97,7 @@ impl Dash {
         let r = self
             .http
             .get(format!("http://{}{path}", self.addr))
-            .header(COOKIE, format!("nr_dashboard={TOKEN}"))
+            .header(COOKIE, format!("nrd_session_{}={TOKEN}", self.addr.port()))
             .send()
             .await
             .unwrap();

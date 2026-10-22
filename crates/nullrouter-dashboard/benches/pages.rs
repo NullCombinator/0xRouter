@@ -113,7 +113,7 @@ fn bench(c: &mut Criterion) {
         let load = || async {
             let r = http
                 .get(format!("http://{addr}{path}"))
-                .header(COOKIE, format!("nr_dashboard={TOKEN}"))
+                .header(COOKIE, format!("nrd_session_{}={TOKEN}", addr.port()))
                 .send()
                 .await
                 .unwrap();
