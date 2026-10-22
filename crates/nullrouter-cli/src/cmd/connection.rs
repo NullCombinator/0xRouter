@@ -12,6 +12,7 @@ use std::process::ExitCode;
 use clap::Subcommand;
 use nullrouter_registry::OperatorHome;
 use nullrouter_registry::schema::{OperatorConfig, parse_duration};
+use nullrouter_server::ops::config_text::{edit, write_checked};
 use nullrouter_server::operator::{self, CallError};
 use serde_json::{Value, json};
 
@@ -231,66 +232,12 @@ fn change(
     if !changed {
         return Ok(format!("{what}: was not set"));
     }
-    // The file must still load: a config the server would refuse is never written.
-    toml::from_str::<OperatorConfig>(&edited)
-        .map_err(|e| format!("{}: the edit would not load: {e}", path.display()))?;
-    std::fs::create_dir_all(home.path()).map_err(|e| e.to_string())?;
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, &edited)
-        .and_then(|()| std::fs::rename(&tmp, &path))
-        .map_err(|e| format!("{}: {e}", path.display()))?;
+    write_checked(home, &edited)?;
     let status = crate::cmd::apply(home)?;
     Ok(match value {
         Some(v) => format!("{what} = {v}: {status}"),
         None => format!("{what} unset: {status}"),
     })
-}
-
-/// `text` with `key` set to `value` (or removed) in the table `[header]`; every other line is
-/// kept as written. The flag is whether anything changed.
-pub(crate) fn edit(text: &str, header: &str, key: &str, value: Option<&str>) -> (String, bool) {
-    let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
-    let is_table = |l: &str| l.trim_start().starts_with('[');
-    let is_key = |l: &str| l.split_once('=').is_some_and(|(k, _)| k.trim() == key);
-    let start = lines.iter().position(|l| l.trim() == format!("[{header}]"));
-    let join = |lines: Vec<String>| {
-        let mut out = lines.join("\n");
-        out.push('\n');
-        out
-    };
-    let Some(start) = start else {
-        let Some(v) = value else { return (text.to_owned(), false) };
-        let mut out = text.to_owned();
-        if !out.is_empty() && !out.ends_with('\n') {
-            out.push('\n');
-        }
-        if !out.is_empty() {
-            out.push('\n');
-        }
-        let _ = write!(out, "[{header}]\n{key} = {v}\n");
-        return (out, true);
-    };
-    let end = lines[start + 1..].iter().position(|l| is_table(l)).map_or(lines.len(), |i| start + 1 + i);
-    let at = (start + 1..end).find(|&i| is_key(&lines[i]));
-    match (at, value) {
-        (Some(i), Some(v)) => lines[i] = format!("{key} = {v}"),
-        (None, Some(v)) => {
-            // After the table's last line that isn't blank.
-            let after = (start + 1..end).rev().find(|&i| !lines[i].trim().is_empty()).map_or(start + 1, |i| i + 1);
-            lines.insert(after, format!("{key} = {v}"));
-        }
-        (None, None) => return (text.to_owned(), false),
-        (Some(i), None) => {
-            lines.remove(i);
-            let end = end - 1;
-            // A table with nothing left goes too, with the blank line that followed it.
-            if (start + 1..end).all(|j| lines[j].trim().is_empty()) {
-                let upto = if lines.get(end).is_some_and(|l| l.trim().is_empty()) { end + 1 } else { end };
-                lines.drain(start..upto.min(lines.len()));
-            }
-        }
-    }
-    (join(lines), true)
 }
 
 fn source(s: &Value) -> String {
@@ -360,41 +307,6 @@ fn render(view: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const H: &str = "provider.acme.connection";
-
-    #[test]
-    fn a_setting_is_added_replaced_and_given_a_table() {
-        assert_eq!(
-            edit("", H, "header_timeout_ms", Some("10000")),
-            ("[provider.acme.connection]\nheader_timeout_ms = 10000\n".into(), true)
-        );
-        let with =
-            "schema = 1\n[provider.acme.connection]\n# note\nheader_timeout_ms = 5\n\n[server]\nlisten = \"x\"\n";
-        assert_eq!(
-            edit(with, H, "header_timeout_ms", Some("9")).0,
-            "schema = 1\n[provider.acme.connection]\n# note\nheader_timeout_ms = 9\n\n[server]\nlisten = \"x\"\n"
-        );
-        // A new key goes after the table's last line, ahead of the blank line before the next.
-        assert_eq!(
-            edit(with, H, "stall_timeout_ms", Some("7")).0,
-            "schema = 1\n[provider.acme.connection]\n# note\nheader_timeout_ms = 5\nstall_timeout_ms = 7\n\n[server]\nlisten = \"x\"\n"
-        );
-        assert_eq!(
-            edit("schema = 1", H, "stall_timeout_ms", Some("7")).0,
-            "schema = 1\n\n[provider.acme.connection]\nstall_timeout_ms = 7\n"
-        );
-    }
-
-    #[test]
-    fn unsetting_the_last_key_removes_the_table_and_other_tables_stay() {
-        let text = "schema = 1\n\n[provider.acme.connection]\nheader_timeout_ms = 5\n\n[server]\nlisten = \"x\"\n";
-        assert_eq!(edit(text, H, "header_timeout_ms", None), ("schema = 1\n\n[server]\nlisten = \"x\"\n".into(), true));
-        let two = "[provider.acme.connection]\nheader_timeout_ms = 5\nstall_timeout_ms = 7\n";
-        assert_eq!(edit(two, H, "header_timeout_ms", None).0, "[provider.acme.connection]\nstall_timeout_ms = 7\n");
-        assert_eq!(edit(two, H, "connect_timeout_ms", None), (two.into(), false));
-        assert_eq!(edit("", H, "connect_timeout_ms", None), (String::new(), false));
-    }
 
     #[test]
     fn values_are_durations_and_only_first_token_may_be_off() {

@@ -29,6 +29,7 @@ pub mod frame;
 pub mod guard;
 pub mod headers;
 pub mod landscape;
+pub mod log;
 pub mod logos;
 pub mod page;
 pub mod pages;

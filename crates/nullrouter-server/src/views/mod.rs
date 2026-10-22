@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 
 pub mod accounts;
 pub mod behaviour;
+pub mod change_log;
 pub mod check;
 pub mod combos;
 pub mod dashboard;

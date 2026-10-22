@@ -249,7 +249,7 @@ fn assign(home: &OperatorHome, target: &Target, value: Option<&str>) -> Result<S
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
     let quoted = value.map(|v| format!("\"{v}\""));
-    let (edited, changed) = crate::cmd::connection::edit(&text, &header, "proxy", quoted.as_deref());
+    let (edited, changed) = nullrouter_server::ops::config_text::edit(&text, &header, "proxy", quoted.as_deref());
     if !changed {
         return Ok(format!("{what}: no proxy was assigned"));
     }

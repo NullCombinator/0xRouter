@@ -22,9 +22,9 @@ nullrouter-registry.workspace = true
 url.workspace = true
 thiserror.workspace = true
 jiff.workspace = true
+toml.workspace = true
 
 [dev-dependencies]
-toml.workspace = true
 nullrouter-engine = { workspace = true, features = ["testkit"] }
 criterion.workspace = true
 tempfile.workspace = true

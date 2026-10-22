@@ -7,26 +7,16 @@ pub mod routing_text;
 pub mod signin;
 
 use nullrouter_registry::OperatorHome;
-use nullrouter_server::operator::{self, CallError};
-use serde_json::json;
+use nullrouter_server::ops::{self, Ctx};
 
 /// After a file was saved: asks the running server to reload it. `Ok` carries what to
 /// print (`applied`, or `saved; applies at next start` with no server); `Err` the reason
 /// a running server refused the files, which then keeps its previous state. The reload's
 /// notes (unified models whose members' limits differ) go to stderr.
 pub fn apply(home: &OperatorHome) -> Result<&'static str, String> {
-    match operator::call(home, &json!({"op": "reload"})) {
-        Ok(a) if a["ok"] == true => {
-            for n in a["notes"].as_array().into_iter().flatten().filter_map(|n| n.as_str()) {
-                eprintln!("note: {n}");
-            }
-            Ok("applied")
-        }
-        Ok(a) => Err(format!(
-            "saved, but the running server kept its previous state: {}",
-            a["error"].as_str().unwrap_or("unknown error")
-        )),
-        Err(CallError::NoServer(_)) => Ok("saved; applies at next start"),
-        Err(e) => Err(format!("saved, but the running server wasn't told: {e}")),
+    let applied = ops::apply(&Ctx { home: home.clone(), engine: None })?;
+    for n in &applied.notes {
+        eprintln!("note: {n}");
     }
+    Ok(applied.text)
 }

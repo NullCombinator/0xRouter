@@ -7,6 +7,7 @@ pub mod count;
 pub mod media;
 pub mod models;
 pub mod operator;
+pub mod ops;
 pub mod quota;
 pub mod relay;
 pub mod router;

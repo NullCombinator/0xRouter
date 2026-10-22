@@ -118,6 +118,8 @@ pub struct Engine {
     pub cooldowns: Cooldowns,
     /// Requests in flight, for `live.snapshot` (spec 013). In memory only.
     pub live: crate::live::Live,
+    /// Background tasks the dashboard starts (spec 014). In memory only.
+    pub tasks: crate::tasks::Tasks,
     /// The proxies that are paused, and why (spec 013, research R8). Kept across reloads.
     pub proxy_board: ProxyBoard,
     /// Video jobs by their `vj_` id.
@@ -382,6 +384,7 @@ impl Engine {
             router,
             cooldowns: Cooldowns::default(),
             live: Default::default(),
+            tasks: Default::default(),
             proxy_board,
             jobs: crate::jobs::JobMap::default(),
             tokens,

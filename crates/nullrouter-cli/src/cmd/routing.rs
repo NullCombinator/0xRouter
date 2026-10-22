@@ -16,10 +16,9 @@ use nullrouter_cli::routing_text;
 use nullrouter_engine::accounts::{self, Accounts, PriceOverride, RoutingOverrides, WindowOverride};
 use nullrouter_registry::OperatorHome;
 use nullrouter_registry::schema::{OperatorConfig, PartialTokenWeights, Percent, parse_duration};
+use nullrouter_server::ops::config_text::{edit, quoted};
 use nullrouter_server::views;
 use serde_json::json;
-
-use super::connection::edit;
 
 /// `routing [target]` shows the routing view; the subcommands change the settings.
 #[derive(ClapArgs)]
@@ -341,11 +340,6 @@ fn inline_weights(t: PartialTokenWeights) -> String {
 fn inline_multipliers<'a>(m: impl Iterator<Item = (&'a String, &'a f64)>) -> String {
     let parts: Vec<String> = m.map(|(glob, f)| format!("\"{}\" = {f:?}", quoted(glob))).collect();
     format!("{{ {} }}", parts.join(", "))
-}
-
-/// A TOML basic-string body: backslashes and quotes escaped.
-fn quoted(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 /// Loads `config.toml`, lets `change` edit one plugin's per-window weights and multipliers, checks
