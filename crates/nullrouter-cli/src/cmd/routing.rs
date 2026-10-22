@@ -74,8 +74,6 @@ fn fail(e: impl std::fmt::Display) -> ExitCode {
     ExitCode::from(1)
 }
 
-pub(crate) use nullrouter_server::ops::routing::edit_key;
-
 fn report(r: Result<Report, OpError>, log: &[String]) -> Result<ExitCode, ExitCode> {
     for l in log {
         eprintln!("{l}");
