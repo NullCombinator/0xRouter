@@ -1,26 +1,37 @@
-//! Endpoint & Key (contracts/dashboard-http.md "Endpoint & Key"): where agents connect, and one
-//! card per agent key as `keys list` shows it. Every fact comes from `check` (the endpoint) and
-//! `keys`; the page adds none. There is no copy button (it needs a script), and a key is never
-//! shown beyond the last four characters the CLI prints.
+//! Endpoint & Key (contracts/dashboard-http.md "Endpoint & Key"): where agents connect, and one card
+//! per agent key as `keys list` shows it. Every fact comes from `check` (the endpoint) and `keys`;
+//! the page adds none. Spec 014 adds the forms: Add Agent opens the issue window, each card has its
+//! tag, break and adapter forms, and Revoke opens the key's confirm window. There is no copy button
+//! (it needs a script), and a key is never shown beyond the last four characters the CLI prints; a
+//! new key is shown once by the flash at the top of the page, not here.
 
 use maud::{Markup, html};
+use nullrouter_server::ops;
 use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
-use crate::components::{Head, Tone, badge, card, disabled, empty, kv, name, section_bar, side_panel, side_section};
-use crate::landscape;
+use crate::components::{
+    Head, Tone, badge, card, confirm_window, empty, field, form, kv, link_button, modal, name, section_bar, select,
+    side_panel, side_section,
+};
 use crate::page::{ViewName, Want};
+use crate::{access, landscape};
 
 pub const VIEWS: &[ViewName] =
     &[ViewName::Check, ViewName::Keys, ViewName::Accounts, ViewName::Latency, ViewName::Usage];
 
-/// The hint beside the disabled "Add Agent" (research R15).
-pub const ADD_HINT: &str = "In the CLI: `nullrouter keys issue <name>`";
 pub const NO_AGENTS: &str = "No agent keys.";
 pub const NO_AGENTS_HINT: &str = "Run `nullrouter keys issue <name>`.";
 pub const ADAPTERS: &str = "Client-side adapters are not built yet.";
 /// What the endpoint card adds when no server answered (`check` says the same).
 pub const CONFIGURED: &str = "(configured; no server running)";
+
+/// Where every form here returns: this page, with its window closed.
+const BACK: &str = "/endpoint";
+/// The break choices of the issue form: the empty value is the default, which the op reads as none.
+const ISSUE_BREAKS: &[(&str, &str)] = &[("", "default"), ("restart", "restart"), ("error_event", "error_event")];
+/// The break choices of a key card: `default` clears the key's own choice.
+const SET_BREAKS: &[(&str, &str)] = &[("default", "default"), ("restart", "restart"), ("error_event", "error_event")];
 
 pub fn wants(_req: &Req) -> Vec<Want> {
     vec![
@@ -44,7 +55,7 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
             tz: ctx.tz,
             as_of: ctx.page.as_of,
         }))
-        (section_bar("Agents", disabled("Add Agent", Some("add"), ADD_HINT)))
+        (section_bar("Agents", link_button(&ctx.req.href(BACK, &["done", "task", "key"], &[("window", "add")]), "Add Agent", Some("add"), true)))
         @if keys.is_empty() {
             (empty("key", NO_AGENTS, NO_AGENTS_HINT))
         } @else {
@@ -54,7 +65,54 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
         }
     };
     let adapters = side_section("Adapters", html! { p class="hint" { (ADAPTERS) } });
-    Ok(Body { content, side: Some(side_panel("extension", "Client adapters", adapters)), window: None })
+    Ok(Body { content, side: Some(side_panel("extension", "Client adapters", adapters)), window: window(ctx) })
+}
+
+/// The window open on top: Add Agent for `?window=add`, a key's confirm window for
+/// `?window=revoke&key=<id>`. Any other window, or a revoke without a key, opens nothing.
+fn window(ctx: &Ctx<'_>) -> Option<Markup> {
+    match ctx.req.get("window")? {
+        "add" => Some(issue_window(ctx)),
+        "revoke" => Some(revoke_window(ctx, ctx.req.get("key")?)),
+        _ => None,
+    }
+}
+
+/// The issue form in its window: name, harness tag, break behaviour and adapter. The key it makes
+/// is shown once by the flash the redirect returns with.
+fn issue_window(ctx: &Ctx<'_>) -> Markup {
+    let body = form(
+        "/do/keys/issue",
+        BACK,
+        &ctx.req.token,
+        html! {
+            input type="hidden" name="_window" value="add";
+            (field("name", "Name", None, None))
+            (field("harness", "Harness tag", None, None))
+            (select("break", "Break behaviour", ISSUE_BREAKS, Some("")))
+            (field("adapter", "Adapter", None, None))
+            button class="button button--primary" type="submit" { "Issue key" }
+        },
+    );
+    modal("Add Agent", BACK, body)
+}
+
+/// The confirm window of one key: what revoking loses, the real form beside Cancel.
+fn revoke_window(ctx: &Ctx<'_>, key: &str) -> Markup {
+    let loss = ops::describe_loss("keys.revoke", key).unwrap_or_default();
+    // A refused revoke returns to this window: `_back` names the key, and `_window` reopens it.
+    let back = format!("{BACK}?key={}", access::encode_component(key));
+    let action = form(
+        "/do/keys/revoke",
+        &back,
+        &ctx.req.token,
+        html! {
+            input type="hidden" name="_window" value="revoke";
+            input type="hidden" name="key" value=(key);
+            button class="button button--primary" type="submit" { "Revoke key" }
+        },
+    );
+    confirm_window("Revoke key", &loss, BACK, action)
 }
 
 /// The "API Endpoint" card: the URL as selectable text, and the note when it is only configured.
@@ -82,7 +140,7 @@ fn today(usage: &Value, id: &str) -> u64 {
 }
 
 /// One key as `keys list` shows it: name, id, `…last4`, created, revoked, break behaviour and
-/// last used, with a place for the day's requests.
+/// last used, with a place for the day's requests, then the key's own forms.
 fn key_card(ctx: &Ctx<'_>, k: &Value) -> Markup {
     let text = |field: &str| k[field].as_str().unwrap_or_default();
     let revoked = k["revoked"].as_str();
@@ -105,7 +163,34 @@ fn key_card(ctx: &Ctx<'_>, k: &Value) -> Markup {
                 }))
             }
             (kv("requests today", html! { (today(ctx.json(ViewName::Usage), text("id"))) }))
+            @if revoked.is_none() { (controls(ctx, k)) }
         }
+    }
+}
+
+/// A key's forms: tag, break and adapter, each a POST that returns here, and Revoke, which opens
+/// the confirm window (`?window=revoke&key=<id>`) and changes nothing by itself.
+fn controls(ctx: &Ctx<'_>, k: &Value) -> Markup {
+    let id = k["id"].as_str().unwrap_or_default();
+    let token = &ctx.req.token;
+    let revoke = ctx.req.href(BACK, &["done", "task"], &[("window", "revoke"), ("key", id)]);
+    html! {
+        (form("/do/keys/tag", BACK, token, html! {
+            input type="hidden" name="key" value=(id);
+            (field("text", "Tag", k["harness"].as_str(), None))
+            button class="button button--secondary" type="submit" { "Save tag" }
+        }))
+        (form("/do/keys/set-break", BACK, token, html! {
+            input type="hidden" name="key" value=(id);
+            (select("behaviour", "Break", SET_BREAKS, Some(k["break"].as_str().unwrap_or("default"))))
+            button class="button button--secondary" type="submit" { "Save break" }
+        }))
+        (form("/do/keys/set-adapter", BACK, token, html! {
+            input type="hidden" name="key" value=(id);
+            (field("harness", "Adapter", k["adapter"].as_str(), None))
+            button class="button button--secondary" type="submit" { "Save adapter" }
+        }))
+        (link_button(&revoke, "Revoke", None, false))
     }
 }
 

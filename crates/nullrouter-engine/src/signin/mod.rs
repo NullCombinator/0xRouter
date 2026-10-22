@@ -566,6 +566,14 @@ impl PkceSignIn {
         self.kind
     }
 
+    /// Makes the loopback listener answer a good callback with a `303` to `url` (the dashboard
+    /// page that follows the sign-in). Nothing happens without a listener.
+    pub fn set_return(&mut self, url: &str) {
+        if let Some(l) = self.listener.as_mut() {
+            l.set_return(url);
+        }
+    }
+
     /// Whether the loopback listener is waiting for the redirect.
     pub fn listening(&self) -> bool {
         self.listener.is_some()

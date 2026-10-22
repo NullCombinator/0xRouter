@@ -5,6 +5,7 @@
 pub mod accounts;
 pub mod config_text;
 pub mod keys;
+pub mod signin;
 
 use std::sync::Arc;
 

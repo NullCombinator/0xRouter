@@ -3,10 +3,13 @@
 //! the CLI prints on stderr comes back in `log`, in order.
 
 use nullrouter_engine::accounts::{self, Account, AccountError, Accounts, SecretSource};
+use nullrouter_engine::signin::SignInHttp;
+use nullrouter_engine::tasks::{TaskHandle, TaskId, TaskInput, TaskKind};
 use nullrouter_engine::{clock, tokens};
 use nullrouter_registry::SecretString;
 use serde_json::{Value, json};
 
+use super::signin::{EXIT_ENDED, Hooks, SignIn};
 use super::{Ctx, Done, OpError, Status, apply};
 
 /// What an operation produced: the result for the caller, the JSON the CLI prints with
@@ -250,4 +253,175 @@ pub fn exclusive_with(
 
 pub fn exclusive(ctx: &Ctx, provider: &str, name: &str, on: bool) -> Result<Done, OpError> {
     exclusive_with(ctx, &mut Vec::new(), provider, name, on).map(|r| r.done)
+}
+
+/// `Write` into a task's progress: one line per `\n`; a prompt without one waits for the rest.
+struct Lines<'a> {
+    task: &'a TaskHandle,
+    buf: Vec<u8>,
+}
+
+impl std::io::Write for Lines<'_> {
+    fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+        self.buf.extend_from_slice(b);
+        while let Some(i) = self.buf.iter().position(|c| *c == b'\n') {
+            let line: Vec<u8> = self.buf.drain(..=i).collect();
+            self.task.progress(String::from_utf8_lossy(&line[..i]).into_owned());
+        }
+        Ok(b.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Starts a sign-in as an engine task (spec 014 R4, R5) and returns at once with its id. The
+/// flow is the CLI's ([`SignIn`]) on its own thread; its prompts become progress lines, a code
+/// page waits for [`signin_paste`], a device flow shows its code and link as the task's input.
+///
+/// A provider that declares a terms warning needs `accept_terms`, as the CLI needs
+/// `--accept-terms-risk`. `dashboard_return` is the dashboard's origin (`http://host:port`): a
+/// loopback redirect then ends with a `303` to `<origin>/providers?window=provider&id=<p>&task=<id>`.
+pub fn signin(
+    ctx: &Ctx,
+    provider: &str,
+    name: &str,
+    accept_terms: bool,
+    dashboard_return: Option<&str>,
+) -> Result<Done, OpError> {
+    let Some(engine) = ctx.engine.clone() else {
+        return Err(fail("sign-in from the dashboard needs the running server"));
+    };
+    if !accounts::valid_name(name) {
+        return Err(fail_in("name", AccountError::BadName(name.into())));
+    }
+    let reg = engine.snapshot().registry.clone();
+    let entity = reg.provider(provider).map_err(|e| fail_in("provider", e))?;
+    let Some(decl) = &entity.signin else {
+        return Err(fail_in(
+            "provider",
+            format!("{provider} has no sign-in; add a key with `nullrouter accounts add {provider} {name}`"),
+        ));
+    };
+    if decl.terms_warning && !accept_terms {
+        return Err(OpError {
+            text: format!("{provider}/{name}: sign-in ended: the terms risk was not accepted; nothing saved"),
+            exit: EXIT_ENDED,
+            field: Some("accept_terms"),
+        });
+    }
+    let (provider_id, subject) = (entity.id.clone(), format!("{}/{name}", entity.id));
+    let task = engine.tasks.start(TaskKind::Signin, subject).map_err(fail)?;
+    let id = task.id().clone();
+    let return_to = dashboard_return.and_then(|base| {
+        let mut u = url::Url::parse(base).ok().filter(|u| matches!(u.scheme(), "http" | "https"))?;
+        u.set_path("/providers");
+        u.query_pairs_mut()
+            .clear()
+            .append_pair("window", "provider")
+            .append_pair("id", &provider_id)
+            .append_pair("task", id.as_str());
+        Some(u.to_string())
+    });
+    let paste = task.paste_receiver();
+    let (home, name_owned, thread_id) = (ctx.home.clone(), name.to_owned(), id.clone());
+    let spawned = std::thread::Builder::new().name(format!("signin-{id}")).spawn(move || {
+        run_signin(&engine, &home, &provider_id, &name_owned, accept_terms, return_to.as_deref(), task, paste);
+    });
+    spawned.map_err(|e| fail(format!("could not start the sign-in: {e}")))?;
+    Ok(Done {
+        status: Status::Started { task: thread_id },
+        text: format!("{provider}/{name}: sign-in started"),
+        once: None,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_signin(
+    engine: &std::sync::Arc<nullrouter_engine::state::Engine>,
+    home: &nullrouter_registry::OperatorHome,
+    provider: &str,
+    name: &str,
+    accept_terms: bool,
+    return_to: Option<&str>,
+    task: TaskHandle,
+    paste: std::sync::mpsc::Receiver<SecretString>,
+) {
+    let reg = engine.snapshot().registry.clone();
+    let Ok(entity) = reg.provider(provider) else {
+        return task.fail(format!("{provider}: no such provider"));
+    };
+    let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+        return task.fail("could not start the sign-in runtime");
+    };
+    // The paste channel is std; the driver reads lines from a tokio one. The bridge ends when
+    // the task does (its sender drops, so `recv` fails).
+    let (tx, mut input) = tokio::sync::mpsc::unbounded_channel();
+    std::thread::spawn(move || {
+        for code in paste {
+            if code.with_exposed(|c| tx.send(c.to_owned())).is_err() {
+                break;
+            }
+        }
+    });
+    let http = SignInHttp::new(reg.runtime().allow_private_endpoints);
+    let job = SignIn { home, provider: entity, name, http: &http, accept_terms_risk: accept_terms, browser: None };
+    let on_input = |i: TaskInput| task.set_input(Some(i));
+    let hooks = Hooks { engine: Some(engine.clone()), on_input: Some(&on_input), return_to };
+    let mut out = Lines { task: &task, buf: Vec::new() };
+    let result = rt.block_on(job.run_with(&hooks, &mut input, &mut out, &tokio_util::sync::CancellationToken::new()));
+    match result {
+        Ok(done) => task.done(done.line()),
+        Err(e) => task.fail(e.message),
+    }
+}
+
+/// Hands the code the operator pasted to a sign-in task that waits for one. Nothing here keeps or
+/// shows the code; a task that isn't waiting refuses.
+pub fn signin_paste(ctx: &Ctx, task: &TaskId, code: SecretString) -> Result<Done, OpError> {
+    let Some(engine) = &ctx.engine else {
+        return Err(fail("sign-in from the dashboard needs the running server"));
+    };
+    engine.tasks.paste(task, code).map_err(fail)?;
+    Ok(Done { status: Status::Started { task: task.clone() }, text: "code received".to_owned(), once: None })
+}
+
+#[cfg(test)]
+mod signin_tests {
+    use std::sync::Arc;
+
+    use nullrouter_engine::state::Engine;
+    use nullrouter_registry::OperatorHome;
+
+    use super::*;
+
+    fn ctx(dir: &std::path::Path) -> Ctx {
+        let (engine, _) = Engine::open(OperatorHome::new(dir)).unwrap();
+        Ctx { home: OperatorHome::new(dir), engine: Some(Arc::new(engine)) }
+    }
+
+    #[test]
+    fn paste_refuses_a_task_that_is_not_waiting() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = ctx(dir.path());
+        let task = ctx.engine.as_ref().unwrap().tasks.start(TaskKind::Signin, "xai/main").unwrap();
+        let id = task.id().clone();
+        let e = signin_paste(&ctx, &id, SecretString::new("sekrit-code")).unwrap_err();
+        assert_eq!(e.text, format!("{id}: not waiting for a code"));
+        assert!(!format!("{e:?}").contains("sekrit-code"));
+        task.done("x");
+        assert!(signin_paste(&ctx, &id, SecretString::new("c")).is_err());
+    }
+
+    #[test]
+    fn signin_needs_terms_and_a_provider_with_a_signin() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = ctx(dir.path());
+        let e = signin(&ctx, "anthropic", "max", false, None).unwrap_err();
+        assert_eq!((e.exit, e.field), (5, Some("accept_terms")));
+        assert!(signin(&ctx, "opencode-go", "main", true, None).unwrap_err().text.contains("no sign-in"));
+        assert!(signin(&ctx, "nope", "main", true, None).is_err());
+        assert!(signin(&ctx, "xai", "Bad Name", true, None).is_err());
+    }
 }

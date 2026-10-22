@@ -168,7 +168,11 @@ async fn gated(State(shared): State<Arc<Shared>>, req: Request) -> Response {
         }
         access::Gate::SignedIn if path.starts_with("/logos/") => logos::serve(&shared.engine, path),
         access::Gate::SignedIn => match pages::Req::parse(path, req.uri().query().unwrap_or_default()) {
-            Some(page_req) => page(shared, page_req, req.headers()).await,
+            Some(mut page_req) => {
+                let session = access::session_cookie(&shared.engine, req.headers(), shared.rule.port());
+                page_req.token = shared.forms.token(session.unwrap_or_default());
+                page(shared, page_req, req.headers()).await
+            }
             None => frame::render_error(None, &shared.version, StatusCode::NOT_FOUND, "No such page."),
         },
     }

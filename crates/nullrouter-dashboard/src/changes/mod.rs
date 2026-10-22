@@ -42,7 +42,16 @@ impl Form {
     pub fn flag(&self, name: &str) -> bool {
         matches!(self.get(name), "on" | "true" | "1")
     }
+
+    /// A form from `(field, value)` pairs, for the handler tests.
+    #[cfg(test)]
+    pub fn from_pairs(pairs: &[(&str, &str)]) -> Self {
+        Self(pairs.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect())
+    }
 }
+
+mod accounts;
+mod keys;
 
 /// What a handler returns: the typed subject for the log, and the result.
 pub type Ran = (String, Result<Done, OpError>);
@@ -53,6 +62,18 @@ pub type Handler = fn(&Ctx, &Form) -> Ran;
 pub fn lookup(area: &str, op: &str) -> Option<(String, Handler)> {
     let id = format!("{area}.{}", op.replace('-', "_"));
     let handler: Handler = match id.as_str() {
+        "accounts.add" => accounts::add,
+        "accounts.priority" => accounts::priority,
+        "accounts.enable" => accounts::enable,
+        "accounts.disable" => accounts::disable,
+        "accounts.exclusive" => accounts::exclusive,
+        "accounts.remove" => accounts::remove,
+        // T014: accounts.signin, accounts.signin_paste
+        "keys.issue" => keys::issue,
+        "keys.revoke" => keys::revoke,
+        "keys.tag" => keys::tag,
+        "keys.set_break" => keys::set_break,
+        "keys.set_adapter" => keys::set_adapter,
         #[cfg(any(test, feature = "testkit"))]
         "debug.noop" => testkit::noop,
         _ => return None,

@@ -140,6 +140,9 @@ pub struct Req {
     /// `/providers/<id>` or `/usage/records/<id>`: the window open on top of the page.
     pub window: Option<String>,
     pub query: Vec<(String, String)>,
+    /// The form token for this request's session (`Forms::token`); the dashboard sets it before the
+    /// page is built, and it is empty until then.
+    pub token: String,
 }
 
 impl Req {
@@ -170,7 +173,7 @@ impl Req {
                 (id, Some(rest))
             }
         };
-        Some(Self { id, window, query })
+        Some(Self { id, window, query, token: String::new() })
     }
 
     /// The first value of `name` in the query, when it isn't empty.
