@@ -2,7 +2,9 @@
 //! one changes files or the running engine and says what happened. The CLI prints the result;
 //! the dashboard shows it.
 
+pub mod accounts;
 pub mod config_text;
+pub mod keys;
 
 use std::sync::Arc;
 

@@ -48,8 +48,8 @@ pass unchanged; never edit a golden file to make a move pass.
 
 **Goal**: add, sign in, order, enable, make exclusive and remove accounts; issue, revoke, tag and bind keys, all from the browser. **Independent test**: spec US1.
 
-- [ ] T012 [US1] Move the `accounts add|priority|disable|enable|exclusive|remove` logic from `crates/nullrouter-cli/src/cmd/accounts.rs` to `crates/nullrouter-server/src/ops/accounts.rs`. Secrets arrive as `SecretString` (stdin or `--env` resolution stays in the CLI). `crates/nullrouter-cli/tests/accounts_keys.rs` passes unchanged.
-- [ ] T013 [US1] Move the `keys issue|revoke|tag|set-break|set-adapter` logic from `crates/nullrouter-cli/src/cmd/keys.rs` to `crates/nullrouter-server/src/ops/keys.rs`. `issue` returns the new key in `Done.once`. `crates/nullrouter-cli/tests/accounts_keys.rs` passes unchanged.
+- [X] T012 [US1] Move the `accounts add|priority|disable|enable|exclusive|remove` logic from `crates/nullrouter-cli/src/cmd/accounts.rs` to `crates/nullrouter-server/src/ops/accounts.rs`. Secrets arrive as `SecretString` (stdin or `--env` resolution stays in the CLI). `crates/nullrouter-cli/tests/accounts_keys.rs` passes unchanged.
+- [X] T013 [US1] Move the `keys issue|revoke|tag|set-break|set-adapter` logic from `crates/nullrouter-cli/src/cmd/keys.rs` to `crates/nullrouter-server/src/ops/keys.rs`. `issue` returns the new key in `Done.once`. `crates/nullrouter-cli/tests/accounts_keys.rs` passes unchanged.
 - [ ] T014 [US1] Move sign-in to `crates/nullrouter-server/src/ops/accounts.rs::signin`, which runs as a task (T004). The engine flow writes the token entry and the account exactly as `crates/nullrouter-cli/src/signin.rs` does today, and the CLI follows the task and prints as today.
   - **Loopback redirect**: the listener's success response becomes a `303` to `<dashboard>/providers?window=provider&id=<p>&task=<id>` when the sign-in was started from the dashboard; otherwise it keeps the CLI page.
   - **Code page**: the task waits on a paste channel fed by `accounts.signin_paste`.

@@ -4,8 +4,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Subcommand;
-use nullrouter_engine::keys::{self, BreakBehaviour, HarnessName, Keys};
 use nullrouter_registry::OperatorHome;
+use nullrouter_server::ops::accounts::Report;
+use nullrouter_server::ops::{self, Ctx, OpError, Status};
 use nullrouter_server::views;
 use serde_json::{Value, json};
 
@@ -55,13 +56,27 @@ fn fail(e: impl std::fmt::Display) -> ExitCode {
     ExitCode::from(1)
 }
 
-fn harness_name(s: &str) -> Result<HarnessName, ExitCode> {
-    HarnessName::new(s).map_err(fail)
-}
-
-fn behaviour(s: &str) -> Result<BreakBehaviour, ExitCode> {
-    BreakBehaviour::parse(s)
-        .ok_or_else(|| fail(format!("unknown break behaviour {s:?}; allowed: restart, error_event")))
+fn report(r: Result<Report, OpError>, log: &[String], as_json: bool, issued: bool) -> Result<ExitCode, ExitCode> {
+    for l in log {
+        eprintln!("{l}");
+    }
+    let r = r.map_err(|e| {
+        eprintln!("{}", e.text);
+        ExitCode::from(e.exit)
+    })?;
+    if let Status::SavedNotApplied { reason } = &r.done.status {
+        return Err(fail(reason));
+    }
+    if as_json {
+        println!("{}", r.json);
+    } else if let (true, Some(once)) = (issued, &r.done.once) {
+        // The only time the key is shown: stdout carries just the key, for scripts.
+        eprintln!("{}", r.done.text);
+        once.value.with_exposed(|k| println!("{k}"));
+    } else {
+        println!("{}", r.done.text);
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
@@ -71,88 +86,24 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
         print_list(&view.json, as_json);
         return Ok(ExitCode::SUCCESS);
     }
-    let mut list = Keys::load(&home.path().join(keys::FILE)).map_err(fail)?;
-    let done = match cmd {
+    let ctx = Ctx { home, engine: None };
+    let mut log = Vec::new();
+    let log = &mut log;
+    let mut issued = false;
+    let result = match cmd {
         Command::List => unreachable!("handled above"),
         Command::Issue { name, break_behaviour, harness, adapter } => {
-            let b = break_behaviour.as_deref().map(behaviour).transpose()?;
-            // Checked before anything is issued, so a refused tag or adapter writes nothing.
-            let tag = harness.as_deref().map(keys::check_harness).transpose().map_err(fail)?;
-            let h = adapter.as_deref().map(harness_name).transpose()?;
-            let (key, rec) = list.issue(&name, b).map_err(fail)?;
-            let (id, name) = (rec.id.clone(), rec.name.clone());
-            if tag.is_some() {
-                list.set_harness(&id, tag.as_deref()).map_err(fail)?;
-            }
-            if h.is_some() {
-                list.set_adapter(&id, h.clone()).map_err(fail)?;
-            }
-            list.save().map_err(fail)?;
-            let status = super::apply(&home).map_err(fail)?;
-            // The only time the key is shown: stdout carries just the key, for scripts.
-            if as_json {
-                let adapter = h.as_ref().map(HarnessName::as_str);
-                println!(
-                    "{}",
-                    json!({"id": id, "name": name, "harness": tag, "adapter": adapter, "key": key, "status": status})
-                );
-            } else {
-                eprintln!("issued {id} ({name}), {status}; it is shown once, only its digest is stored:");
-                println!("{key}");
-            }
-            return Ok(ExitCode::SUCCESS);
+            issued = true;
+            ops::keys::issue_with(&ctx, log, &name, break_behaviour.as_deref(), harness.as_deref(), adapter.as_deref())
         }
-        Command::Revoke { key } => {
-            list.revoke(&key).map_err(fail)?;
-            key
-        }
-        Command::Tag { key, text, clear } => {
-            let text = match (text, clear) {
-                (Some(t), false) => Some(t),
-                (None, true) => None,
-                _ => return Err(fail("give a TEXT or --clear")),
-            };
-            list.set_harness(&key, text.as_deref()).map_err(|e| match e {
-                keys::KeyError::NotFound(_) => {
-                    eprintln!("no key {key:?}");
-                    ExitCode::from(2)
-                }
-                e => fail(e),
-            })?;
-            let rec = list.iter().find(|k| k.id == key || k.name == key).expect("just tagged");
-            let (id, name, tag) = (rec.id.clone(), rec.name.clone(), rec.harness.clone());
-            list.save().map_err(fail)?;
-            let status = super::apply(&home).map_err(fail)?;
-            if as_json {
-                println!("{}", json!({"id": id, "name": name, "harness": tag, "status": status}));
-            } else {
-                match &tag {
-                    Some(t) => println!("{name}: harness {t}"),
-                    None => println!("{name}: no harness"),
-                }
-                println!("{status}");
-            }
-            return Ok(ExitCode::SUCCESS);
-        }
-        Command::SetBreak { key, behaviour: b } => {
-            let b = if b == "default" { None } else { Some(behaviour(&b)?) };
-            list.set_break(&key, b).map_err(fail)?;
-            key
-        }
+        Command::Revoke { key } => ops::keys::revoke_with(&ctx, log, &key),
+        Command::Tag { key, text, clear } => ops::keys::tag_with(&ctx, log, &key, text.as_deref(), clear),
+        Command::SetBreak { key, behaviour } => ops::keys::set_break_with(&ctx, log, &key, &behaviour),
         Command::SetAdapter { key, harness, clear } => {
-            let h = if clear { None } else { harness.as_deref().map(harness_name).transpose()? };
-            list.set_adapter(&key, h).map_err(fail)?;
-            key
+            ops::keys::set_adapter_with(&ctx, log, &key, harness.as_deref(), clear)
         }
     };
-    list.save().map_err(fail)?;
-    let status = super::apply(&home).map_err(fail)?;
-    if as_json {
-        println!("{}", json!({"key": done, "status": status}));
-    } else {
-        println!("{done}: {status}");
-    }
-    Ok(ExitCode::SUCCESS)
+    report(result, log, as_json, issued)
 }
 
 fn print_list(rows: &Value, as_json: bool) {
