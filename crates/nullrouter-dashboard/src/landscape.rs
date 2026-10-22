@@ -231,7 +231,7 @@ fn last_text(last: &Value, i: &Inputs<'_>) -> Option<String> {
 }
 
 /// One line of a hover card.
-enum Row {
+pub(crate) enum Row {
     /// A label on the left and its value on the right.
     Stat(&'static str, String),
     /// The last response, coloured by its result.
@@ -240,6 +240,8 @@ enum Row {
     Section(&'static str),
     /// One agent's share: its colour, its name and its count.
     Share(usize, String, String),
+    /// A label that isn't fixed (a provider's id) and its value.
+    Item(String, String),
 }
 
 fn last_row(last: &Value, i: &Inputs<'_>) -> Option<Row> {
@@ -249,7 +251,16 @@ fn last_row(last: &Value, i: &Inputs<'_>) -> Option<Row> {
 /// A hover card: title, the window it reads, a rule, then the rows. Cards are drawn in their
 /// own layer after everything else (see `landscape`), and placed towards the drawing's middle so
 /// they stay inside it.
-fn tip(cx: f64, (top, bottom): (f64, f64), mid: f64, title: &str, window: &str, rows: &[Row]) -> Markup {
+/// `bounds` is the drawing's left and right edge.
+pub(crate) fn tip(
+    cx: f64,
+    (top, bottom): (f64, f64),
+    mid: f64,
+    bounds: (f64, f64),
+    title: &str,
+    window: &str,
+    rows: &[Row],
+) -> Markup {
     // Text widths, near enough for the sans at 12 px.
     let chars = |t: &str| t.chars().count() as f64;
     let (mut label_w, mut value_w): (f64, f64) = (0.0, 0.0);
@@ -259,13 +270,14 @@ fn tip(cx: f64, (top, bottom): (f64, f64), mid: f64, title: &str, window: &str, 
             Row::Last(v, _) => (chars("Last response"), chars(v)),
             Row::Section(l) => (chars(l), 0.0),
             Row::Share(_, l, v) => (chars(l) + 2.0, chars(v)),
+            Row::Item(l, v) => (chars(l), chars(v)),
         };
         label_w = label_w.max(l);
         value_w = value_w.max(v);
     }
-    let w = (32.0 + (label_w + value_w) * 6.4 + 24.0).max(chars(title) * 7.2 + 32.0).max(chars(window) * 6.0 + 32.0).min(WIDTH - 8.0);
+    let w = (32.0 + (label_w + value_w) * 6.4 + 24.0).max(chars(title) * 7.2 + 32.0).max(chars(window) * 6.0 + 32.0).min(bounds.1 - bounds.0 - 8.0);
     let h = 62.0 + 19.0 * rows.len() as f64;
-    let x = (cx - w / 2.0).clamp(4.0, WIDTH - 4.0 - w);
+    let x = (cx - w / 2.0).clamp(bounds.0 + 4.0, bounds.1 - 4.0 - w);
     let y = if (top + bottom) / 2.0 < mid { bottom + 8.0 } else { top - 8.0 - h };
     let f = |v: f64| format!("{v:.1}");
     let (left, right) = (x + 16.0, x + w - 16.0);
@@ -284,6 +296,10 @@ fn tip(cx: f64, (top, bottom): (f64, f64), mid: f64, title: &str, window: &str, 
                 Row::Last(v, ok) => {
                     text class="landscape__tip-label" x=(f(left)) y=(f(ry)) { "Last response" }
                     text class=(if *ok { "landscape__tip-value landscape__tip-value--ok" } else { "landscape__tip-value landscape__tip-value--failed" }) x=(f(right)) y=(f(ry)) text-anchor="end" { (v) }
+                }
+                Row::Item(l, v) => {
+                    text class="landscape__tip-label" x=(f(left)) y=(f(ry)) { (l) }
+                    text class="landscape__tip-value" x=(f(right)) y=(f(ry)) text-anchor="end" { (v) }
                 }
                 Row::Section(l) => {
                     text class="landscape__tip-section" x=(f(left)) y=(f(ry)) { (l) }
@@ -375,7 +391,7 @@ const RAISED: usize = 64;
 
 /// Something that shows a card while hovered or focused, the `n`th in the drawing. Returns the
 /// item, and its card for the top layer (or `None` when the card stays in the item).
-fn hot(n: usize, class: &str, body: Markup, card: Markup) -> (Markup, Option<Markup>) {
+pub(crate) fn hot(n: usize, class: &str, body: Markup, card: Markup) -> (Markup, Option<Markup>) {
     if n < RAISED {
         (
             html! { g class=(format!("landscape__hot landscape__hot--{n} {class}")) tabindex="0" { (body) } },
@@ -473,6 +489,16 @@ impl Run {
     }
 }
 
+/// The soft shadow under a hover card (`url(#card-shadow)`).
+pub(crate) fn card_shadow() -> Markup {
+    html! {
+        filter id="card-shadow" x="-20%" y="-20%" width="140%" height="160%" {
+            feDropShadow class="landscape__shadow" dx="0" dy="8" stdDeviation="9" flood-opacity="0.16" {}
+            feDropShadow class="landscape__shadow" dx="0" dy="1" stdDeviation="1" flood-opacity="0.06" {}
+        }
+    }
+}
+
 /// A sheen gradient: a soft white band every `SHEEN` units, sliding along `(dx, dy)`.
 fn sheen_def(id: &str, (dx, dy): (f64, f64)) -> Markup {
     html! {
@@ -554,11 +580,11 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
             let (gx, gy) = gauge_centre((x0 + MANIFOLD_L) / 2.0 - 6.0, y);
             let stats = [Row::Stat("Router overhead p50 / p95", pair(&r["overhead"])), Row::Stat("Requests", r["requests"].to_string())];
             let body = gauge(gx, gy, r["overhead"]["p50"].as_f64(), r["overhead"]["p95"].as_f64(), OVERHEAD_FULL_MS);
-            add("gauge", body, tip(gx, gauge_span(gy), mid, &format!("{} → router", a.name), &window, &stats));
+            add("gauge", body, tip(gx, gauge_span(gy), mid, (0.0, WIDTH), &format!("{} → router", a.name), &window, &stats));
         }
         let class = if a.revoked { "landscape__node landscape__node--revoked" } else { "landscape__node" };
         let body = node(AGENT_X, y, &a.name, sub_of(a).as_deref(), &Mark::Avatar(a.colour));
-        add(class, body, tip(AGENT_X + NODE_W / 2.0, node_span(y), mid, &a.name, &window, &agent_rows(a, i)));
+        add(class, body, tip(AGENT_X + NODE_W / 2.0, node_span(y), mid, (0.0, WIDTH), &a.name, &window, &agent_rows(a, i)));
     }
     let (lo, hi) = span(&ay);
     tubes.push(Run(MANIFOLD_L, lo, MANIFOLD_L, hi));
@@ -595,11 +621,11 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
             let mut stats = vec![Row::Stat("Own TTFT p50 / p95", pair(&r["own_ttft"])), Row::Stat("Requests", r["requests"].to_string())];
             stats.extend(last_row(&r["last"], i));
             let body = gauge(gx, gy, r["own_ttft"]["p50"].as_f64(), r["own_ttft"]["p95"].as_f64(), TTFT_FULL_MS);
-            add("gauge", body, tip(gx, gauge_span(gy), mid, &format!("router → {}", p.id), &window, &stats));
+            add("gauge", body, tip(gx, gauge_span(gy), mid, (0.0, WIDTH), &format!("router → {}", p.id), &window, &stats));
         }
         let sub = p.row.map(|r| format!("{} req", r["requests"]));
         let body = node(PROVIDER_X, y, p.id, sub.as_deref(), &provider_mark(p.id, i.logos));
-        add("landscape__node", body, tip(PROVIDER_X + NODE_W / 2.0, node_span(y), mid, p.id, &window, &provider_rows(p, &agents, i)));
+        add("landscape__node", body, tip(PROVIDER_X + NODE_W / 2.0, node_span(y), mid, (0.0, WIDTH), p.id, &window, &provider_rows(p, &agents, i)));
     }
     let flowing: Vec<&Fill> = fills.iter().filter(|f| !f.class.ends_with("--idle")).collect();
 
@@ -612,10 +638,7 @@ pub fn landscape(i: &Inputs<'_>) -> Markup {
                     (sheen_def("flow-left", (-SHEEN, 0.0)))
                     (sheen_def("flow-down", (0.0, SHEEN)))
                     (sheen_def("flow-up", (0.0, -SHEEN)))
-                    filter id="card-shadow" x="-20%" y="-20%" width="140%" height="160%" {
-                        feDropShadow class="landscape__shadow" dx="0" dy="8" stdDeviation="9" flood-opacity="0.16" {}
-                        feDropShadow class="landscape__shadow" dx="0" dy="1" stdDeviation="1" flood-opacity="0.06" {}
-                    }
+                    (card_shadow())
                 }
                 // Wall, glass, liquid, shine: each layer over the whole network, so joints stay clean.
                 @for t in &tubes { (t.line("pipe__wall", BORE + 4.0)) }

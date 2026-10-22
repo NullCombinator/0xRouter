@@ -23,6 +23,7 @@
   --color-black-10: color-mix(in oklab, #000 10%, transparent);
   --color-black-50: color-mix(in oklab, #000 50%, transparent);
   --color-brand-500-10: color-mix(in oklab, var(--color-brand-500) 10%, transparent);
+  --color-primary-5: color-mix(in oklab, var(--color-primary) 5%, transparent);
   --color-brand-500-30: color-mix(in oklab, var(--color-brand-500) 30%, transparent);
   --color-brand-500-40: color-mix(in oklab, var(--color-brand-500) 40%, transparent);
   --color-primary-10: color-mix(in oklab, var(--color-primary) 10%, transparent);

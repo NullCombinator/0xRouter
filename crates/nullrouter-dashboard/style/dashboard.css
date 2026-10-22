@@ -743,6 +743,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .usage-recent__table th, .usage-recent__table td { padding: var(--space-1-5) var(--space-1); font-size: var(--text-xs); line-height: var(--text-xs-leading); }
 .usage-recent__table th { text-transform: none; }
 .usage-recent__num { text-align: right; white-space: nowrap; }
+.usage-recent__model { color: var(--color-text-main); font-family: var(--font-mono); font-weight: var(--weight-medium); }
 .usage-recent__in { color: var(--color-brand-500); }
 .usage-recent__out { color: var(--color-green-500); }
 .usage-recent__dot { display: block; width: var(--size-1-5); height: var(--size-1-5); border-radius: var(--radius-full); }
@@ -1067,15 +1068,23 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .topology__edge { fill: none; stroke: var(--color-border); stroke-width: var(--edge-idle-width); opacity: var(--edge-idle-opacity); }
 .topology__edge--last { stroke: var(--edge-last); stroke-width: var(--edge-last-width); opacity: var(--edge-last-opacity); }
 .topology__edge--failed { stroke: var(--edge-failed); stroke-width: var(--edge-failed-width); opacity: var(--edge-failed-opacity); }
-.topology__node { fill: var(--color-surface); stroke: var(--color-border); stroke-width: var(--node-border-width); }
+.topology__flow { fill: none; stroke: var(--color-brand-500); stroke-width: var(--edge-last-width); stroke-linecap: round; }
+.topology__flow--last { stroke: var(--edge-last); }
+.topology__flow--failed { stroke: var(--edge-failed); }
+.topology__dot { fill: var(--color-brand-500); }
+.topology__dot.topology__flow--last { fill: var(--edge-last); }
+.topology__dot.topology__flow--failed { fill: var(--edge-failed); }
+@media (prefers-reduced-motion: reduce) { .topology__flow, .topology__dot { display: none; } }
+.topology__node { fill: var(--color-bg); stroke: var(--color-border); stroke-width: var(--node-border-width); transition: fill var(--duration-node); }
+.topology__hot { outline: none; cursor: default; }
+.topology__hot:hover .topology__node, .topology__hot:focus-visible .topology__node { fill: var(--color-surface); }
 .topology__node--last { stroke: var(--edge-last); }
 .topology__node--failed { stroke: var(--edge-failed); }
-.topology__router { fill: var(--color-surface); stroke: var(--color-primary); stroke-width: var(--node-border-width); }
+.topology__router { fill: var(--color-primary-5); stroke: var(--color-primary); stroke-width: var(--node-border-width); }
 .topology__name { fill: var(--color-text-main); font-size: var(--text-base); font-weight: var(--weight-medium); }
-.topology__count { fill: var(--color-text-muted); font-size: var(--text-xs); }
-.topology__name--router { fill: var(--color-primary); font-weight: var(--weight-semibold); }
-.topology__letters { fill: var(--color-primary); font-size: var(--text-xs); font-weight: var(--weight-semibold); }
-.topology__last { fill: var(--color-text-muted); font-size: var(--text-10); }
+.topology__name--router { fill: var(--color-primary); font-size: var(--text-sm); font-weight: var(--weight-bold); }
+.topology__letters { fill: var(--color-primary); font-size: var(--text-13); font-weight: var(--weight-bold); }
+.topology__last { fill: var(--color-text-muted); font-size: var(--text-11); }
 .landscape { min-width: 0; overflow-x: auto; }
 .landscape__svg { padding: var(--space-4); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-brand-lg); }
 .landscape__svg { display: block; width: var(--size-full); height: auto; min-width: var(--landscape-width); }
@@ -1108,70 +1117,70 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
 .landscape__tag { fill: var(--color-text-muted); font-size: var(--text-xs); }
 .landscape__card { visibility: hidden; pointer-events: none; }
 .landscape__hot:hover > .landscape__card, .landscape__hot:focus-visible > .landscape__card { visibility: visible; }
-.landscape__svg:has(.landscape__hot--0:hover) .landscape__card--0, .landscape__svg:has(.landscape__hot--0:focus-visible) .landscape__card--0 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--1:hover) .landscape__card--1, .landscape__svg:has(.landscape__hot--1:focus-visible) .landscape__card--1 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--2:hover) .landscape__card--2, .landscape__svg:has(.landscape__hot--2:focus-visible) .landscape__card--2 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--3:hover) .landscape__card--3, .landscape__svg:has(.landscape__hot--3:focus-visible) .landscape__card--3 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--4:hover) .landscape__card--4, .landscape__svg:has(.landscape__hot--4:focus-visible) .landscape__card--4 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--5:hover) .landscape__card--5, .landscape__svg:has(.landscape__hot--5:focus-visible) .landscape__card--5 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--6:hover) .landscape__card--6, .landscape__svg:has(.landscape__hot--6:focus-visible) .landscape__card--6 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--7:hover) .landscape__card--7, .landscape__svg:has(.landscape__hot--7:focus-visible) .landscape__card--7 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--8:hover) .landscape__card--8, .landscape__svg:has(.landscape__hot--8:focus-visible) .landscape__card--8 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--9:hover) .landscape__card--9, .landscape__svg:has(.landscape__hot--9:focus-visible) .landscape__card--9 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--10:hover) .landscape__card--10, .landscape__svg:has(.landscape__hot--10:focus-visible) .landscape__card--10 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--11:hover) .landscape__card--11, .landscape__svg:has(.landscape__hot--11:focus-visible) .landscape__card--11 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--12:hover) .landscape__card--12, .landscape__svg:has(.landscape__hot--12:focus-visible) .landscape__card--12 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--13:hover) .landscape__card--13, .landscape__svg:has(.landscape__hot--13:focus-visible) .landscape__card--13 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--14:hover) .landscape__card--14, .landscape__svg:has(.landscape__hot--14:focus-visible) .landscape__card--14 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--15:hover) .landscape__card--15, .landscape__svg:has(.landscape__hot--15:focus-visible) .landscape__card--15 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--16:hover) .landscape__card--16, .landscape__svg:has(.landscape__hot--16:focus-visible) .landscape__card--16 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--17:hover) .landscape__card--17, .landscape__svg:has(.landscape__hot--17:focus-visible) .landscape__card--17 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--18:hover) .landscape__card--18, .landscape__svg:has(.landscape__hot--18:focus-visible) .landscape__card--18 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--19:hover) .landscape__card--19, .landscape__svg:has(.landscape__hot--19:focus-visible) .landscape__card--19 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--20:hover) .landscape__card--20, .landscape__svg:has(.landscape__hot--20:focus-visible) .landscape__card--20 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--21:hover) .landscape__card--21, .landscape__svg:has(.landscape__hot--21:focus-visible) .landscape__card--21 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--22:hover) .landscape__card--22, .landscape__svg:has(.landscape__hot--22:focus-visible) .landscape__card--22 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--23:hover) .landscape__card--23, .landscape__svg:has(.landscape__hot--23:focus-visible) .landscape__card--23 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--24:hover) .landscape__card--24, .landscape__svg:has(.landscape__hot--24:focus-visible) .landscape__card--24 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--25:hover) .landscape__card--25, .landscape__svg:has(.landscape__hot--25:focus-visible) .landscape__card--25 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--26:hover) .landscape__card--26, .landscape__svg:has(.landscape__hot--26:focus-visible) .landscape__card--26 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--27:hover) .landscape__card--27, .landscape__svg:has(.landscape__hot--27:focus-visible) .landscape__card--27 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--28:hover) .landscape__card--28, .landscape__svg:has(.landscape__hot--28:focus-visible) .landscape__card--28 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--29:hover) .landscape__card--29, .landscape__svg:has(.landscape__hot--29:focus-visible) .landscape__card--29 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--30:hover) .landscape__card--30, .landscape__svg:has(.landscape__hot--30:focus-visible) .landscape__card--30 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--31:hover) .landscape__card--31, .landscape__svg:has(.landscape__hot--31:focus-visible) .landscape__card--31 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--32:hover) .landscape__card--32, .landscape__svg:has(.landscape__hot--32:focus-visible) .landscape__card--32 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--33:hover) .landscape__card--33, .landscape__svg:has(.landscape__hot--33:focus-visible) .landscape__card--33 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--34:hover) .landscape__card--34, .landscape__svg:has(.landscape__hot--34:focus-visible) .landscape__card--34 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--35:hover) .landscape__card--35, .landscape__svg:has(.landscape__hot--35:focus-visible) .landscape__card--35 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--36:hover) .landscape__card--36, .landscape__svg:has(.landscape__hot--36:focus-visible) .landscape__card--36 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--37:hover) .landscape__card--37, .landscape__svg:has(.landscape__hot--37:focus-visible) .landscape__card--37 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--38:hover) .landscape__card--38, .landscape__svg:has(.landscape__hot--38:focus-visible) .landscape__card--38 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--39:hover) .landscape__card--39, .landscape__svg:has(.landscape__hot--39:focus-visible) .landscape__card--39 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--40:hover) .landscape__card--40, .landscape__svg:has(.landscape__hot--40:focus-visible) .landscape__card--40 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--41:hover) .landscape__card--41, .landscape__svg:has(.landscape__hot--41:focus-visible) .landscape__card--41 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--42:hover) .landscape__card--42, .landscape__svg:has(.landscape__hot--42:focus-visible) .landscape__card--42 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--43:hover) .landscape__card--43, .landscape__svg:has(.landscape__hot--43:focus-visible) .landscape__card--43 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--44:hover) .landscape__card--44, .landscape__svg:has(.landscape__hot--44:focus-visible) .landscape__card--44 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--45:hover) .landscape__card--45, .landscape__svg:has(.landscape__hot--45:focus-visible) .landscape__card--45 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--46:hover) .landscape__card--46, .landscape__svg:has(.landscape__hot--46:focus-visible) .landscape__card--46 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--47:hover) .landscape__card--47, .landscape__svg:has(.landscape__hot--47:focus-visible) .landscape__card--47 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--48:hover) .landscape__card--48, .landscape__svg:has(.landscape__hot--48:focus-visible) .landscape__card--48 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--49:hover) .landscape__card--49, .landscape__svg:has(.landscape__hot--49:focus-visible) .landscape__card--49 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--50:hover) .landscape__card--50, .landscape__svg:has(.landscape__hot--50:focus-visible) .landscape__card--50 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--51:hover) .landscape__card--51, .landscape__svg:has(.landscape__hot--51:focus-visible) .landscape__card--51 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--52:hover) .landscape__card--52, .landscape__svg:has(.landscape__hot--52:focus-visible) .landscape__card--52 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--53:hover) .landscape__card--53, .landscape__svg:has(.landscape__hot--53:focus-visible) .landscape__card--53 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--54:hover) .landscape__card--54, .landscape__svg:has(.landscape__hot--54:focus-visible) .landscape__card--54 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--55:hover) .landscape__card--55, .landscape__svg:has(.landscape__hot--55:focus-visible) .landscape__card--55 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--56:hover) .landscape__card--56, .landscape__svg:has(.landscape__hot--56:focus-visible) .landscape__card--56 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--57:hover) .landscape__card--57, .landscape__svg:has(.landscape__hot--57:focus-visible) .landscape__card--57 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--58:hover) .landscape__card--58, .landscape__svg:has(.landscape__hot--58:focus-visible) .landscape__card--58 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--59:hover) .landscape__card--59, .landscape__svg:has(.landscape__hot--59:focus-visible) .landscape__card--59 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--60:hover) .landscape__card--60, .landscape__svg:has(.landscape__hot--60:focus-visible) .landscape__card--60 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--61:hover) .landscape__card--61, .landscape__svg:has(.landscape__hot--61:focus-visible) .landscape__card--61 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--62:hover) .landscape__card--62, .landscape__svg:has(.landscape__hot--62:focus-visible) .landscape__card--62 { visibility: visible; }
-.landscape__svg:has(.landscape__hot--63:hover) .landscape__card--63, .landscape__svg:has(.landscape__hot--63:focus-visible) .landscape__card--63 { visibility: visible; }
+svg:has(.landscape__hot--0:hover) .landscape__card--0, svg:has(.landscape__hot--0:focus-visible) .landscape__card--0 { visibility: visible; }
+svg:has(.landscape__hot--1:hover) .landscape__card--1, svg:has(.landscape__hot--1:focus-visible) .landscape__card--1 { visibility: visible; }
+svg:has(.landscape__hot--2:hover) .landscape__card--2, svg:has(.landscape__hot--2:focus-visible) .landscape__card--2 { visibility: visible; }
+svg:has(.landscape__hot--3:hover) .landscape__card--3, svg:has(.landscape__hot--3:focus-visible) .landscape__card--3 { visibility: visible; }
+svg:has(.landscape__hot--4:hover) .landscape__card--4, svg:has(.landscape__hot--4:focus-visible) .landscape__card--4 { visibility: visible; }
+svg:has(.landscape__hot--5:hover) .landscape__card--5, svg:has(.landscape__hot--5:focus-visible) .landscape__card--5 { visibility: visible; }
+svg:has(.landscape__hot--6:hover) .landscape__card--6, svg:has(.landscape__hot--6:focus-visible) .landscape__card--6 { visibility: visible; }
+svg:has(.landscape__hot--7:hover) .landscape__card--7, svg:has(.landscape__hot--7:focus-visible) .landscape__card--7 { visibility: visible; }
+svg:has(.landscape__hot--8:hover) .landscape__card--8, svg:has(.landscape__hot--8:focus-visible) .landscape__card--8 { visibility: visible; }
+svg:has(.landscape__hot--9:hover) .landscape__card--9, svg:has(.landscape__hot--9:focus-visible) .landscape__card--9 { visibility: visible; }
+svg:has(.landscape__hot--10:hover) .landscape__card--10, svg:has(.landscape__hot--10:focus-visible) .landscape__card--10 { visibility: visible; }
+svg:has(.landscape__hot--11:hover) .landscape__card--11, svg:has(.landscape__hot--11:focus-visible) .landscape__card--11 { visibility: visible; }
+svg:has(.landscape__hot--12:hover) .landscape__card--12, svg:has(.landscape__hot--12:focus-visible) .landscape__card--12 { visibility: visible; }
+svg:has(.landscape__hot--13:hover) .landscape__card--13, svg:has(.landscape__hot--13:focus-visible) .landscape__card--13 { visibility: visible; }
+svg:has(.landscape__hot--14:hover) .landscape__card--14, svg:has(.landscape__hot--14:focus-visible) .landscape__card--14 { visibility: visible; }
+svg:has(.landscape__hot--15:hover) .landscape__card--15, svg:has(.landscape__hot--15:focus-visible) .landscape__card--15 { visibility: visible; }
+svg:has(.landscape__hot--16:hover) .landscape__card--16, svg:has(.landscape__hot--16:focus-visible) .landscape__card--16 { visibility: visible; }
+svg:has(.landscape__hot--17:hover) .landscape__card--17, svg:has(.landscape__hot--17:focus-visible) .landscape__card--17 { visibility: visible; }
+svg:has(.landscape__hot--18:hover) .landscape__card--18, svg:has(.landscape__hot--18:focus-visible) .landscape__card--18 { visibility: visible; }
+svg:has(.landscape__hot--19:hover) .landscape__card--19, svg:has(.landscape__hot--19:focus-visible) .landscape__card--19 { visibility: visible; }
+svg:has(.landscape__hot--20:hover) .landscape__card--20, svg:has(.landscape__hot--20:focus-visible) .landscape__card--20 { visibility: visible; }
+svg:has(.landscape__hot--21:hover) .landscape__card--21, svg:has(.landscape__hot--21:focus-visible) .landscape__card--21 { visibility: visible; }
+svg:has(.landscape__hot--22:hover) .landscape__card--22, svg:has(.landscape__hot--22:focus-visible) .landscape__card--22 { visibility: visible; }
+svg:has(.landscape__hot--23:hover) .landscape__card--23, svg:has(.landscape__hot--23:focus-visible) .landscape__card--23 { visibility: visible; }
+svg:has(.landscape__hot--24:hover) .landscape__card--24, svg:has(.landscape__hot--24:focus-visible) .landscape__card--24 { visibility: visible; }
+svg:has(.landscape__hot--25:hover) .landscape__card--25, svg:has(.landscape__hot--25:focus-visible) .landscape__card--25 { visibility: visible; }
+svg:has(.landscape__hot--26:hover) .landscape__card--26, svg:has(.landscape__hot--26:focus-visible) .landscape__card--26 { visibility: visible; }
+svg:has(.landscape__hot--27:hover) .landscape__card--27, svg:has(.landscape__hot--27:focus-visible) .landscape__card--27 { visibility: visible; }
+svg:has(.landscape__hot--28:hover) .landscape__card--28, svg:has(.landscape__hot--28:focus-visible) .landscape__card--28 { visibility: visible; }
+svg:has(.landscape__hot--29:hover) .landscape__card--29, svg:has(.landscape__hot--29:focus-visible) .landscape__card--29 { visibility: visible; }
+svg:has(.landscape__hot--30:hover) .landscape__card--30, svg:has(.landscape__hot--30:focus-visible) .landscape__card--30 { visibility: visible; }
+svg:has(.landscape__hot--31:hover) .landscape__card--31, svg:has(.landscape__hot--31:focus-visible) .landscape__card--31 { visibility: visible; }
+svg:has(.landscape__hot--32:hover) .landscape__card--32, svg:has(.landscape__hot--32:focus-visible) .landscape__card--32 { visibility: visible; }
+svg:has(.landscape__hot--33:hover) .landscape__card--33, svg:has(.landscape__hot--33:focus-visible) .landscape__card--33 { visibility: visible; }
+svg:has(.landscape__hot--34:hover) .landscape__card--34, svg:has(.landscape__hot--34:focus-visible) .landscape__card--34 { visibility: visible; }
+svg:has(.landscape__hot--35:hover) .landscape__card--35, svg:has(.landscape__hot--35:focus-visible) .landscape__card--35 { visibility: visible; }
+svg:has(.landscape__hot--36:hover) .landscape__card--36, svg:has(.landscape__hot--36:focus-visible) .landscape__card--36 { visibility: visible; }
+svg:has(.landscape__hot--37:hover) .landscape__card--37, svg:has(.landscape__hot--37:focus-visible) .landscape__card--37 { visibility: visible; }
+svg:has(.landscape__hot--38:hover) .landscape__card--38, svg:has(.landscape__hot--38:focus-visible) .landscape__card--38 { visibility: visible; }
+svg:has(.landscape__hot--39:hover) .landscape__card--39, svg:has(.landscape__hot--39:focus-visible) .landscape__card--39 { visibility: visible; }
+svg:has(.landscape__hot--40:hover) .landscape__card--40, svg:has(.landscape__hot--40:focus-visible) .landscape__card--40 { visibility: visible; }
+svg:has(.landscape__hot--41:hover) .landscape__card--41, svg:has(.landscape__hot--41:focus-visible) .landscape__card--41 { visibility: visible; }
+svg:has(.landscape__hot--42:hover) .landscape__card--42, svg:has(.landscape__hot--42:focus-visible) .landscape__card--42 { visibility: visible; }
+svg:has(.landscape__hot--43:hover) .landscape__card--43, svg:has(.landscape__hot--43:focus-visible) .landscape__card--43 { visibility: visible; }
+svg:has(.landscape__hot--44:hover) .landscape__card--44, svg:has(.landscape__hot--44:focus-visible) .landscape__card--44 { visibility: visible; }
+svg:has(.landscape__hot--45:hover) .landscape__card--45, svg:has(.landscape__hot--45:focus-visible) .landscape__card--45 { visibility: visible; }
+svg:has(.landscape__hot--46:hover) .landscape__card--46, svg:has(.landscape__hot--46:focus-visible) .landscape__card--46 { visibility: visible; }
+svg:has(.landscape__hot--47:hover) .landscape__card--47, svg:has(.landscape__hot--47:focus-visible) .landscape__card--47 { visibility: visible; }
+svg:has(.landscape__hot--48:hover) .landscape__card--48, svg:has(.landscape__hot--48:focus-visible) .landscape__card--48 { visibility: visible; }
+svg:has(.landscape__hot--49:hover) .landscape__card--49, svg:has(.landscape__hot--49:focus-visible) .landscape__card--49 { visibility: visible; }
+svg:has(.landscape__hot--50:hover) .landscape__card--50, svg:has(.landscape__hot--50:focus-visible) .landscape__card--50 { visibility: visible; }
+svg:has(.landscape__hot--51:hover) .landscape__card--51, svg:has(.landscape__hot--51:focus-visible) .landscape__card--51 { visibility: visible; }
+svg:has(.landscape__hot--52:hover) .landscape__card--52, svg:has(.landscape__hot--52:focus-visible) .landscape__card--52 { visibility: visible; }
+svg:has(.landscape__hot--53:hover) .landscape__card--53, svg:has(.landscape__hot--53:focus-visible) .landscape__card--53 { visibility: visible; }
+svg:has(.landscape__hot--54:hover) .landscape__card--54, svg:has(.landscape__hot--54:focus-visible) .landscape__card--54 { visibility: visible; }
+svg:has(.landscape__hot--55:hover) .landscape__card--55, svg:has(.landscape__hot--55:focus-visible) .landscape__card--55 { visibility: visible; }
+svg:has(.landscape__hot--56:hover) .landscape__card--56, svg:has(.landscape__hot--56:focus-visible) .landscape__card--56 { visibility: visible; }
+svg:has(.landscape__hot--57:hover) .landscape__card--57, svg:has(.landscape__hot--57:focus-visible) .landscape__card--57 { visibility: visible; }
+svg:has(.landscape__hot--58:hover) .landscape__card--58, svg:has(.landscape__hot--58:focus-visible) .landscape__card--58 { visibility: visible; }
+svg:has(.landscape__hot--59:hover) .landscape__card--59, svg:has(.landscape__hot--59:focus-visible) .landscape__card--59 { visibility: visible; }
+svg:has(.landscape__hot--60:hover) .landscape__card--60, svg:has(.landscape__hot--60:focus-visible) .landscape__card--60 { visibility: visible; }
+svg:has(.landscape__hot--61:hover) .landscape__card--61, svg:has(.landscape__hot--61:focus-visible) .landscape__card--61 { visibility: visible; }
+svg:has(.landscape__hot--62:hover) .landscape__card--62, svg:has(.landscape__hot--62:focus-visible) .landscape__card--62 { visibility: visible; }
+svg:has(.landscape__hot--63:hover) .landscape__card--63, svg:has(.landscape__hot--63:focus-visible) .landscape__card--63 { visibility: visible; }
 .landscape__tip { fill: var(--color-surface); stroke: var(--color-border-subtle); stroke-width: var(--border-width); }
 .landscape__shadow { flood-color: var(--color-text-main); }
 .landscape__tip-title { fill: var(--color-text-main); font-size: var(--text-13); font-weight: var(--weight-semibold); }

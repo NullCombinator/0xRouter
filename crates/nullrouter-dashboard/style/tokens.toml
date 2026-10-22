@@ -103,6 +103,11 @@ value = "color-mix(in oklab, var(--color-brand-500) 10%, transparent)"
 source = "src/shared/components/Badge.js:7"
 class = "bg-brand-500/10"
 
+[token.color-primary-5]
+value = "color-mix(in oklab, var(--color-primary) 5%, transparent)"
+source = "src/app/(dashboard)/dashboard/cli-tools/components/MitmServerCard.js:136"
+class = "bg-primary/5"
+
 [token.color-brand-500-30]
 value = "color-mix(in oklab, var(--color-brand-500) 30%, transparent)"
 source = "src/shared/components/Card.js:30"
@@ -922,7 +927,7 @@ uses = ["space-3", "space-1", "color-text-muted", "text-xs", "text-xs-leading", 
 source = "src/app/(dashboard)/dashboard/usage/components/OverviewCards.js:12"
 
 [component.usage-recent]
-uses = ["size-full", "space-3", "color-text-muted", "text-sm", "text-sm-leading", "space-1-5", "space-1", "text-xs", "text-xs-leading", "size-1-5", "radius-full", "color-green-500", "color-red-500", "color-blue-500", "space-2", "weight-semibold", "color-brand-500"]
+uses = ["size-full", "space-3", "color-text-muted", "text-sm", "text-sm-leading", "space-1-5", "space-1", "text-xs", "text-xs-leading", "size-1-5", "radius-full", "color-green-500", "color-red-500", "color-blue-500", "space-2", "weight-semibold", "color-brand-500", "color-text-main", "font-mono", "weight-medium"]
 source = "src/app/(dashboard)/dashboard/usage/components/UsageTable.js:163"
 
 [component.usage-table]
@@ -990,7 +995,7 @@ uses = ["color-border", "border-width", "edge-idle-opacity", "agent-1", "agent-2
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:294"
 
 [component.topology]
-uses = ["size-full", "color-surface", "color-border", "color-primary", "node-border-width", "edge-failed", "edge-last", "edge-failed-width", "edge-last-width", "edge-idle-width", "edge-failed-opacity", "edge-last-opacity", "edge-idle-opacity", "color-text-main", "color-text-muted", "text-base", "text-xs", "text-10", "weight-medium", "weight-semibold"]
+uses = ["size-full", "color-surface", "color-border", "color-primary", "node-border-width", "edge-failed", "edge-last", "edge-failed-width", "edge-last-width", "edge-idle-width", "edge-failed-opacity", "edge-last-opacity", "edge-idle-opacity", "color-text-main", "color-text-muted", "text-base", "text-xs", "text-10", "weight-medium", "weight-semibold", "color-brand-500", "color-bg", "duration-node", "color-primary-5", "text-sm", "weight-bold", "text-13", "text-11"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:35"
 
 [component.landscape]

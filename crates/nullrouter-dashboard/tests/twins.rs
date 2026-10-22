@@ -98,7 +98,9 @@ async fn every_word_on_a_page_is_the_dashboards_own_or_in_its_views() {
             );
         }
         let built = page::build(&d.engine, &wants).await.expect("the page's views build");
-        let mut known = BTreeSet::new();
+        // The built-in adapters are core code, not state: `adapters list` prints them from the
+        // same constant the Client adapters panel reads.
+        let mut known: BTreeSet<String> = nullrouter_adapters::BUILTIN.iter().map(|h| (*h).to_owned()).collect();
         for f in &built.views {
             json_words(&f.value.json, &mut known);
             json_words(&f.value.extra, &mut known);
