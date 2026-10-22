@@ -63,9 +63,11 @@ impl Form {
 mod accounts;
 mod connection;
 mod keys;
+mod model_tests;
 mod proxy;
 mod quota;
 mod routing;
+mod targets;
 
 /// What a handler returns: the typed subject for the log, and the result.
 pub type Ran = (String, Result<Done, OpError>);
@@ -105,6 +107,16 @@ pub fn lookup(area: &str, op: &str) -> Option<(String, Handler)> {
         "quota.interval" => quota::interval,
         "quota.poll" => quota::poll,
         "quota.ack" => quota::ack,
+        "unified.add" => targets::unified_add,
+        "unified.set" => targets::unified_set,
+        "unified.remove" => targets::unified_remove,
+        "combos.add" => targets::combos_add,
+        "combos.set" => targets::combos_set,
+        "combos.remove" => targets::combos_remove,
+        "test.run" => model_tests::run,
+        "verdicts.mark" => model_tests::mark,
+        "verdicts.clear" => model_tests::clear,
+        "verdicts.settings" => model_tests::settings,
         #[cfg(any(test, feature = "testkit"))]
         "debug.noop" => testkit::noop,
         _ => return None,
@@ -253,7 +265,13 @@ fn answer(shared: &Shared, a: &Answer<'_>, subject: String, result: Result<Done,
             let kind = match (done.once, done.status) {
                 (Some(once), _) => FlashKind::Once { label: once.label, value: once.value },
                 (None, Status::SavedNotApplied { reason }) => {
-                    FlashKind::Done { text: format!("{}: saved but not applied: {reason}", done.text) }
+                    // The ops put the reason in `text` too when the reload was refused: say it once.
+                    let text = if done.text == reason {
+                        format!("saved but not applied: {reason}")
+                    } else {
+                        format!("{}: saved but not applied: {reason}", done.text)
+                    };
+                    FlashKind::Done { text }
                 }
                 (None, _) => FlashKind::Done { text: done.text },
             };

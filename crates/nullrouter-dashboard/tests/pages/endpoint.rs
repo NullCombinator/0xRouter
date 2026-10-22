@@ -86,7 +86,9 @@ async fn active_key_cards_have_tag_break_and_adapter_forms_and_a_revoke_link() {
             continue;
         }
         active += 1;
-        for (action, field) in [("/do/keys/tag", "text"), ("/do/keys/set-break", "behaviour"), ("/do/keys/set-adapter", "harness")] {
+        for (action, field) in
+            [("/do/keys/tag", "text"), ("/do/keys/set-break", "behaviour"), ("/do/keys/set-adapter", "harness")]
+        {
             let form = form_to(card, action);
             assert!(form.contains(&format!("name=\"key\" value=\"{id}\"")), "{what}: {action}\n{form}");
             assert!(form.contains(&format!("name=\"{field}\"")), "{what}: {action} has {field}\n{form}");
@@ -108,7 +110,10 @@ async fn revoke_opens_the_confirm_window_with_what_is_lost() {
     let form = form_to(&html, "/do/keys/revoke");
     assert!(form.contains(&format!("name=\"key\" value=\"{id}\"")), "{form}");
     assert!(form.contains("name=\"_window\" value=\"revoke\""), "{form}");
-    assert!(form.contains(&format!("name=\"_back\" value=\"/endpoint?key={id}\"")), "a refusal reopens this window: {form}");
+    assert!(
+        form.contains(&format!("name=\"_back\" value=\"/endpoint?key={id}\"")),
+        "a refusal reopens this window: {form}"
+    );
     assert!(html.contains("class=\"modal\"") && !html.contains("<script"), "a window, no script");
 }
 

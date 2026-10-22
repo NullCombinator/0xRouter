@@ -94,7 +94,14 @@ async fn no_route_carries_a_secret_or_a_prompt() {
     let (dir, agent) = home(&mock, &proxy);
     let mut sentinels = home_secrets(dir.path());
     assert!(sentinels.iter().any(|s| s == KEY) && sentinels.len() >= 4, "{sentinels:?}");
-    sentinels.extend([agent.clone(), TOKEN.to_owned(), PROMPT.to_owned(), ANSWER.to_owned(), PROXY_USER.to_owned(), PROXY_PASSWORD.to_owned()]);
+    sentinels.extend([
+        agent.clone(),
+        TOKEN.to_owned(),
+        PROMPT.to_owned(),
+        ANSWER.to_owned(),
+        PROXY_USER.to_owned(),
+        PROXY_PASSWORD.to_owned(),
+    ]);
     let d = Dash::start(dir).await;
 
     // A served request whose prompt and answer are sentinels: the provider got the key, so the

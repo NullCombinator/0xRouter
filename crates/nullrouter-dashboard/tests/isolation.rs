@@ -47,8 +47,11 @@ fn home(mock: &MockUpstream) -> (tempfile::TempDir, String) {
     fs::write(h.join("config.toml"), format!("allow_private_endpoints = true\n{config}")).unwrap();
     let file = h.join(nullrouter_engine::accounts::FILE);
     let accounts = fs::read_to_string(&file).unwrap();
-    write_private(&file, &format!("{accounts}\n[[account]]\nprovider = \"iso\"\nname = \"main\"\nsecret = \"sk-iso-0001\"\norder = 9\n"))
-        .unwrap();
+    write_private(
+        &file,
+        &format!("{accounts}\n[[account]]\nprovider = \"iso\"\nname = \"main\"\nsecret = \"sk-iso-0001\"\norder = 9\n"),
+    )
+    .unwrap();
     let mut keys = Keys::load(&h.join(keys::FILE)).unwrap();
     let (agent, _) = keys.issue("iso-agent", None).unwrap();
     write_private(&h.join(keys::FILE), &keys.to_toml()).unwrap();
@@ -89,7 +92,9 @@ async fn run(mock: &MockUpstream, enabled: bool, fault: Fault) -> (Duration, usi
                 let mut i = w;
                 while !done.load(Ordering::Relaxed) {
                     let path = Id::ALL[i % Id::ALL.len()].path();
-                    let req = http.get(format!("http://{addr}{path}")).header(COOKIE, format!("nrd_session_{}={TOKEN}", addr.port()));
+                    let req = http
+                        .get(format!("http://{addr}{path}"))
+                        .header(COOKIE, format!("nrd_session_{}={TOKEN}", addr.port()));
                     let _ = tokio::time::timeout(Duration::from_secs(1), req.send()).await;
                     i += 1;
                 }
@@ -138,7 +143,11 @@ async fn page_loads_and_faulty_builds_leave_client_traffic_alone() {
         )
     });
     let (base_p95, base_failures) = run(&mock, false, Fault::None).await;
-    for (what, fault) in [("pages loading", Fault::None), ("every build panics", Fault::Panic), ("every build sleeps 20 s", Fault::Sleep)] {
+    for (what, fault) in [
+        ("pages loading", Fault::None),
+        ("every build panics", Fault::Panic),
+        ("every build sleeps 20 s", Fault::Sleep),
+    ] {
         let (p95, failures) = run(&mock, true, fault).await;
         println!("{what}: p95 {p95:?} (baseline {base_p95:?}), failures {failures} (baseline {base_failures})");
         assert!(p95 <= base_p95 + Duration::from_millis(1), "{what}: p95 {p95:?} against {base_p95:?}");

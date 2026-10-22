@@ -3,6 +3,7 @@
 //! the dashboard shows it.
 
 pub mod accounts;
+pub mod adapters;
 pub mod config_text;
 pub mod connection;
 pub mod keys;
@@ -12,6 +13,7 @@ pub mod routing;
 pub mod signin;
 pub mod targets;
 pub mod model_tests;
+pub mod plugins;
 
 use std::sync::Arc;
 

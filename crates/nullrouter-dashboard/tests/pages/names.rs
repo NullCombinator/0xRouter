@@ -40,7 +40,10 @@ async fn long_names_are_shown_whole_or_titled_and_stay_apart() {
     let file = h.join(nullrouter_engine::accounts::FILE);
     let mut text = fs::read_to_string(&file).unwrap();
     for (i, a) in accounts.iter().enumerate() {
-        text += &format!("\n[[account]]\nprovider = \"longnames\"\nname = \"{a}\"\nsecret = \"sk-long-{i}\"\norder = {}\n", 20 + i);
+        text += &format!(
+            "\n[[account]]\nprovider = \"longnames\"\nname = \"{a}\"\nsecret = \"sk-long-{i}\"\norder = {}\n",
+            20 + i
+        );
     }
     write_private(&file, &text).unwrap();
     let mut keys = Keys::load(&h.join(keys::FILE)).unwrap();
@@ -52,7 +55,9 @@ async fn long_names_are_shown_whole_or_titled_and_stay_apart() {
 
     let window = d.ok("/providers/longnames").await;
     let endpoint = d.ok("/endpoint").await;
-    for (html, names, what) in [(&window, &models, "model"), (&window, &accounts, "account"), (&endpoint, &keys_, "key")] {
+    for (html, names, what) in
+        [(&window, &models, "model"), (&window, &accounts, "account"), (&endpoint, &keys_, "key")]
+    {
         assert_ne!(names[0], names[1]);
         for n in names {
             assert!(shown(html, n), "the {what} name {n:?} is not shown whole with its title");

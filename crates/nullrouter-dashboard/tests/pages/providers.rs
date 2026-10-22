@@ -23,13 +23,15 @@ fn in_kind(m: &Value, kind: &str) -> bool {
 fn filter(html: &str) -> Vec<(String, usize, String)> {
     let start = html.find("<nav class=\"kind-filter\"").expect("the window has a kind filter");
     let nav = &html[start..start + html[start..].find("</nav>").unwrap()];
-    nav.split("<a class=\"kind-filter__item").skip(1).map(|a| {
-        let href = a.split("href=\"").nth(1).unwrap().split('"').next().unwrap().to_owned();
-        let text = text_of(a.split_once('>').unwrap().1);
-        let (label, count) = text.rsplit_once(' ').expect("a label and a count");
-        (label.to_owned(), count.parse().expect("the count is a number"), href)
-    })
-    .collect()
+    nav.split("<a class=\"kind-filter__item")
+        .skip(1)
+        .map(|a| {
+            let href = a.split("href=\"").nth(1).unwrap().split('"').next().unwrap().to_owned();
+            let text = text_of(a.split_once('>').unwrap().1);
+            let (label, count) = text.rsplit_once(' ').expect("a label and a count");
+            (label.to_owned(), count.parse().expect("the count is a number"), href)
+        })
+        .collect()
 }
 
 /// The model ids a window lists.
@@ -70,7 +72,8 @@ async fn the_kind_filter_lists_exactly_the_declared_kinds_with_counts() {
         assert_eq!(listed(&html).len(), models.len(), "{id}: All lists every model");
 
         for (label, count, href) in &links[1..] {
-            let ids: Vec<&str> = models.iter().filter(|m| in_kind(m, label)).map(|m| m["model"].as_str().unwrap()).collect();
+            let ids: Vec<&str> =
+                models.iter().filter(|m| in_kind(m, label)).map(|m| m["model"].as_str().unwrap()).collect();
             assert_eq!(*count, ids.len(), "{id}: count of {label}");
             assert_eq!(href, &format!("/providers/{id}?kind={label}"), "{id}: link of {label}");
 
@@ -279,6 +282,26 @@ async fn the_provider_window_has_the_routing_plugin_and_connection_forms() {
         let name = a["name"].as_str().unwrap();
         assert!(html.contains(&format!("name=\"_window\" value=\"routing-set-{name}\"")), "{name}: its override form");
     }
+    assert!(!html.contains("<script"), "no script");
+}
+
+/// Each model row of the provider window has a Test link to `provider/model`, and the verdict forms
+/// that mark and clear it on one of the provider's connections; no script runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_model_rows_have_a_test_link_and_verdict_forms() {
+    let d = Dash::dashboard().await;
+    let models = d.view(ViewName::Model, json!({"provider": "anthropic"})).await;
+    let html = d.ok("/providers/anthropic").await;
+    assert!(html.contains("href=\"/combo?window=test&amp;target=anthropic"), "a Test link per model");
+    for m in rows(&models) {
+        let id = m["model"].as_str().unwrap();
+        assert!(html.contains(&format!("name=\"model\" value=\"{id}\"")), "{id}: its verdict names it");
+    }
+    let mark = form_to(&html, "/do/verdicts/mark");
+    assert!(mark.contains("name=\"provider\" value=\"anthropic\"") && mark.contains("name=\"account\""), "{mark}");
+    assert!(mark.contains("name=\"note\""), "a note is optional: {mark}");
+    let clear = form_to(&html, "/do/verdicts/clear");
+    assert!(clear.contains("name=\"account\"") && clear.contains("name=\"model\""), "{clear}");
     assert!(!html.contains("<script"), "no script");
 }
 

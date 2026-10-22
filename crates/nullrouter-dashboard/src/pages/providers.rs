@@ -15,7 +15,7 @@ use super::{Body, Ctx, Failure, Refused, Req};
 use crate::access::encode_component;
 use crate::components::{
     self, Tone, badge, confirm_window, disabled, disabled_switch, empty, field, form, icon, kv, link_button, modal,
-    name, prose, secret_field, status,
+    name, prose, secret_field, select, status,
 };
 use crate::page::{ViewName, Want};
 
@@ -266,7 +266,7 @@ fn window(ctx: &Ctx<'_>, providers: &[Value], accounts: &[Value], token: &str) -
                         @if models.is_empty() { "This provider declares no models." } @else { "No models of this kind." }
                     }
                 } @else {
-                    div class="provider-window__models" { @for m in &shown { (model_row(m)) } }
+                    div class="provider-window__models" { @for m in &shown { (model_row(ctx, id, &mine, m)) } }
                 }
             }
             section class="provider-window__section" {
@@ -632,14 +632,20 @@ fn kind_link(href: &str, label: &str, count: usize, current: bool) -> Markup {
     }
 }
 
-/// A model with what `model <provider> <model>` prints for it.
-fn model_row(m: &Value) -> Markup {
+/// A model with what `model <provider> <model>` prints for it, its Test link (a test of
+/// `provider/model`), and its verdict forms. A verdict names one of the provider's connections, so a
+/// provider with none gets no verdict forms.
+fn model_row(ctx: &Ctx<'_>, provider: &str, accounts: &[&Value], m: &Value) -> Markup {
     let list = |k: &str| m[k].as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "));
     let fact = |label: &str, value: Option<String>| html! { @if let Some(v) = value { (kv(label, html! { (v) })) } };
+    let id = m["model"].as_str().unwrap_or_default();
+    let test = format!("/combo?window=test&target={}", encode_component(&format!("{provider}/{id}")));
+    let connections: Vec<(&str, &str)> = accounts.iter().filter_map(|a| a["name"].as_str()).map(|n| (n, n)).collect();
+    let back = ctx.req.href(&ctx.req.path(), &["done", "task"], &[]);
+    let token = &ctx.req.token;
     html! {
         div class="model-row" {
             div class="model-row__head" {
-                @let id = m["model"].as_str().unwrap_or_default();
                 code class="code model-row__id" title=(id) { (id) }
                 @if let Some(k) = m["kind"].as_str() { (badge(Tone::Primary, k)) } @else { (badge(Tone::Default, "untyped")) }
             }
@@ -651,6 +657,26 @@ fn model_row(m: &Value) -> Markup {
                 (fact("quota family", m["quota_family"].as_str().map(str::to_owned)))
                 (fact("strip", list("strip")))
                 (fact("upstream id", m["upstream_id"].as_str().map(str::to_owned)))
+            }
+            div class="model-row__actions" {
+                (link_button(&test, "Test", Some("check"), false))
+                @if connections.is_empty() {
+                    p class="hint" { "No connection to give a verdict on this model." }
+                } @else {
+                    (form("/do/verdicts/mark", &back, token, html! {
+                        input type="hidden" name="provider" value=(provider);
+                        input type="hidden" name="model" value=(id);
+                        (select("account", "Connection", &connections, None))
+                        (field("note", "Note (optional)", None, None))
+                        button class="button button--secondary" type="submit" { "Mark verdict" }
+                    }))
+                    (form("/do/verdicts/clear", &back, token, html! {
+                        input type="hidden" name="provider" value=(provider);
+                        input type="hidden" name="model" value=(id);
+                        (select("account", "Connection", &connections, None))
+                        button class="button button--secondary" type="submit" { "Clear verdict" }
+                    }))
+                }
             }
         }
     }

@@ -342,6 +342,18 @@ pub fn field(name: &str, label: &str, value: Option<&str>, error: Option<&str>) 
     }
 }
 
+/// A multi-line text field under its label, with the value it had and its error beside it (members,
+/// one per line).
+pub fn textarea(name: &str, label: &str, value: Option<&str>, error: Option<&str>) -> Markup {
+    html! {
+        label class="field" {
+            span class="field__label" { (label) }
+            textarea class=(input_class(error)) name=(name) rows="4" { (value.unwrap_or_default()) }
+            (field_error(error))
+        }
+    }
+}
+
 /// A drop-down under its label; `selected` is the option's value that is chosen.
 pub fn select(name: &str, label: &str, options: &[(&str, &str)], selected: Option<&str>) -> Markup {
     html! {

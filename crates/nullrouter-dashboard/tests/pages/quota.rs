@@ -182,9 +182,8 @@ fn expiring_first_sorts_windows_by_reset() {
             routing(vec![route("anthropic", "main", "polled", json!({}))]),
         )
     };
-    let at = |html: &str, name: &str| {
-        html.find(&format!(">{name}<")).unwrap_or_else(|| panic!("{name} is not on the page"))
-    };
+    let at =
+        |html: &str, name: &str| html.find(&format!(">{name}<")).unwrap_or_else(|| panic!("{name} is not on the page"));
     let plain = page("");
     assert!(at(&plain, "weekly") < at(&plain, "monthly") && at(&plain, "monthly") < at(&plain, "5-hour"));
     let sorted = page("order=expiring");
@@ -235,7 +234,11 @@ async fn each_card_has_its_interval_form_and_poll_now_where_quota_is_reported() 
         assert!(form.contains(&format!("name=\"name\" value=\"{n}\"")), "{p}/{n}: {form}");
         assert!(form.contains("name=\"every\"") && form.contains("name=\"_back\" value=\"/quota\""), "{form}");
         assert!(form.contains("name=\"_t\" value=\""), "{form}");
-        assert_eq!(card.contains("/do/quota/poll"), q["reported"] == true, "{p}/{n}: Poll now only where quota is reported");
+        assert_eq!(
+            card.contains("/do/quota/poll"),
+            q["reported"] == true,
+            "{p}/{n}: Poll now only where quota is reported"
+        );
     }
     let ack = form_to(&html, "/do/quota/ack");
     assert!(ack.contains("name=\"id\"") && ack.contains("name=\"_t\" value=\""), "{ack}");

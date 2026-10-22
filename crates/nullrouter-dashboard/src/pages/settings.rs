@@ -4,6 +4,7 @@
 //! carries only the time it was issued.
 
 use maud::{Markup, html};
+use nullrouter_server::ops::model_tests;
 use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Refused, Req};
@@ -81,7 +82,8 @@ fn changes(ctx: &Ctx<'_>) -> Markup {
     let (break_err, window_err) = (refused_form(req, "break"), refused_form(req, "amortization"));
     let now_break = ctx.json(ViewName::Behaviour)["break_behaviour"]["value"].as_str().unwrap_or("restart");
     let now_window = ctx.json(ViewName::Routing)["amortization"]["length"].as_str().unwrap_or_default();
-    // US3: verdicts settings. The test settings form goes in this card, under the two forms.
+    let verdict_err = refused_form(req, "verdicts-settings");
+    let verdict_fields: &[&str] = &["setting", "type", "value"];
     card(
         Some(head),
         html! {
@@ -104,6 +106,14 @@ fn changes(ctx: &Ctx<'_>) -> Markup {
                 ))
                 p class="hint" { (prose("A duration such as `5h`, or `default` for the built-in window.")) }
                 button class="button button--secondary" type="submit" { "Save amortization window" }
+            }))
+            (form("/do/verdicts/settings", BACK, &req.token, html! {
+                input type="hidden" name="_window" value="verdicts-settings";
+                (field("setting", "Test setting", kept(verdict_err, "setting"), error_on(verdict_err, "setting", verdict_fields)))
+                (field("type", "Model type (optional)", kept(verdict_err, "type"), error_on(verdict_err, "type", verdict_fields)))
+                (field("value", "Value", kept(verdict_err, "value"), error_on(verdict_err, "value", verdict_fields)))
+                p class="hint" { (prose(&model_tests::settings_usage().text)) }
+                button class="button button--secondary" type="submit" { "Save test settings" }
             }))
         },
     )

@@ -9,9 +9,11 @@
 #![allow(dead_code)]
 
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use nullrouter_dashboard::access::encode_component;
 use nullrouter_dashboard::page::{self, ViewName, Want};
 use nullrouter_dashboard::spawn;
 use nullrouter_engine::files::DashboardToken;
@@ -19,8 +21,9 @@ use nullrouter_engine::state::Engine;
 use nullrouter_engine::testkit::homes;
 use nullrouter_registry::OperatorHome;
 use nullrouter_registry::schema::DashboardSettings;
+use nullrouter_server::ops::{Ctx, OpError};
 use nullrouter_server::serve::{self, App};
-use reqwest::header::COOKIE;
+use reqwest::header::{CONTENT_TYPE, COOKIE, LOCATION, ORIGIN};
 use reqwest::{Client, StatusCode, redirect};
 use serde_json::{Value, json};
 use tokio::sync::oneshot;
@@ -239,4 +242,185 @@ pub fn home_with_traffic() -> tempfile::TempDir {
     let old = std::fs::read_to_string(&path).unwrap_or_default();
     std::fs::write(path, old + &text).unwrap();
     dir
+}
+
+/// What a post's redirect showed: the place it went, the refusal's text if it was refused, and
+/// the page itself.
+pub struct Flash {
+    pub location: String,
+    pub refused: Option<String>,
+    pub page: String,
+}
+
+/// A served dashboard, signed in, with a client that records every body and location it sees.
+pub struct Site {
+    pub d: Dash,
+    pub http: Client,
+    pub cookie: String,
+    pub seen: Mutex<Vec<String>>,
+}
+
+impl Site {
+    pub async fn start() -> Self {
+        Self::start_on(homes::empty()).await
+    }
+
+    /// A signed-in site on `dir`, which may hold anything the test put there.
+    pub async fn start_on(dir: tempfile::TempDir) -> Self {
+        let d = Dash::start(dir).await;
+        let http = Client::builder()
+            .redirect(redirect::Policy::none())
+            .no_proxy()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap();
+        let cookie = format!("nrd_session_{}={TOKEN}", d.addr.port());
+        Self { d, http, cookie, seen: Mutex::new(Vec::new()) }
+    }
+
+    pub fn url(&self, path: &str) -> String {
+        format!("http://{}{path}", self.d.addr)
+    }
+
+    pub fn own_origin(&self) -> String {
+        format!("http://{}", self.d.addr)
+    }
+
+    pub fn home(&self) -> &Path {
+        self.d.dir.path()
+    }
+
+    pub fn record(&self, s: String) {
+        self.seen.lock().unwrap().push(s);
+    }
+
+    /// `GET path` with the cookie: the status and the body.
+    pub async fn get(&self, path: &str) -> (StatusCode, String) {
+        let r = self.http.get(self.url(path)).header(COOKIE, &self.cookie).send().await.unwrap();
+        let status = r.status();
+        let body = r.text().await.unwrap();
+        self.record(body.clone());
+        (status, body)
+    }
+
+    pub async fn token(&self) -> String {
+        self.get("/debug/form-token").await.1
+    }
+
+    /// Posts `fields` to `/do/<route>` the way the page's form does: its token, its `_back`, and
+    /// the dashboard's own `Origin`.
+    pub async fn post(&self, route: &str, back: &str, fields: &[(&str, String)]) -> reqwest::Response {
+        let mut body = format!("_t={}&_back={}", self.token().await, encode_component(back));
+        for (k, v) in fields {
+            body.push_str(&format!("&{k}={}", encode_component(v)));
+        }
+        self.http
+            .post(self.url(&format!("/do/{route}")))
+            .header(COOKIE, &self.cookie)
+            .header(ORIGIN, self.own_origin())
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await
+            .unwrap()
+    }
+
+    /// One post and the page it leads to: the 303 must go back to `back` with a `done` flash, and
+    /// that page must show the flash (a notice, or a once box).
+    pub async fn flow(&self, route: &str, back: &str, fields: &[(&str, String)]) -> Flash {
+        let r = self.post(route, back, fields).await;
+        assert_eq!(r.status(), StatusCode::SEE_OTHER, "{route}");
+        let location = r.headers()[LOCATION].to_str().unwrap().to_owned();
+        self.record(location.clone());
+        assert!(location.starts_with(&format!("{back}?done=")), "{route} went to {location}");
+        let (status, page) = self.get(&location).await;
+        assert_eq!(status, StatusCode::OK, "{location}");
+        let note = notice(&page);
+        assert!(note.is_some() || page.contains("once__value"), "{route}: no flash on {location}");
+        let refused = note.and_then(|(refused, text)| refused.then_some(text));
+        Flash { location, refused, page }
+    }
+}
+
+/// The first flash notice on a page: whether it is a refusal, and its text.
+pub fn notice(page: &str) -> Option<(bool, String)> {
+    let marker = "<p class=\"notice__text\">";
+    let at = page.find(marker)?;
+    let rest = &page[at + marker.len()..];
+    let text = decode(&rest[..rest.find("</p>")?]);
+    let start = page[..at].rfind("class=\"notice ")?;
+    Some((page[start..at].contains("notice--error"), text))
+}
+
+/// The section of `page` from `start` to the next `end`, or the page's failure.
+pub fn section<'a>(page: &'a str, start: &str, end: &str) -> &'a str {
+    let from = page.find(start).unwrap_or_else(|| panic!("{start} is not on the page"));
+    let rest = &page[from..];
+    &rest[..rest.find(end).unwrap_or_else(|| panic!("{end} after {start} is not on the page"))]
+}
+
+/// A copy of `from`: the regular files and the directories, not sockets.
+pub fn copy_tree(from: &Path, to: &Path) {
+    for e in std::fs::read_dir(from).unwrap() {
+        let e = e.unwrap();
+        let (src, dst) = (e.path(), to.join(e.file_name()));
+        let kind = e.file_type().unwrap();
+        if kind.is_dir() {
+            std::fs::create_dir_all(&dst).unwrap();
+            copy_tree(&src, &dst);
+        } else if kind.is_file() {
+            std::fs::copy(&src, &dst).unwrap();
+        }
+    }
+}
+
+pub fn twin_of(home: &Path) -> tempfile::TempDir {
+    let twin = tempfile::tempdir().unwrap();
+    copy_tree(home, twin.path());
+    twin
+}
+
+pub fn ctx_of(home: &Path) -> Ctx {
+    Ctx { home: OperatorHome::new(home), engine: None }
+}
+
+/// Timestamps as `<ts>`, so two homes that stamped at different instants compare equal.
+pub fn normal(v: &Value) -> Value {
+    match v {
+        Value::String(s) if s.parse::<jiff::Timestamp>().is_ok() => json!("<ts>"),
+        Value::Array(a) => Value::Array(a.iter().map(normal).collect()),
+        Value::Object(o) => Value::Object(o.iter().map(|(k, v)| (k.clone(), normal(v))).collect()),
+        other => other.clone(),
+    }
+}
+
+/// `accounts.toml` as data, timestamps normalised; `Null` when the home has none.
+pub fn accounts_file(home: &Path) -> Value {
+    match std::fs::read_to_string(home.join(nullrouter_engine::accounts::FILE)) {
+        Ok(text) => normal(&serde_json::to_value(toml::from_str::<toml::Table>(&text).unwrap()).unwrap()),
+        Err(_) => Value::Null,
+    }
+}
+
+/// The refusal's text the CLI would print, or `None` when the op went through.
+pub fn refusal(r: Result<(), OpError>) -> Option<String> {
+    r.err().map(|e| e.text)
+}
+
+/// The files under `dir`, as paths relative to it.
+pub fn files_under(dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(&d).unwrap() {
+            let p = e.unwrap().path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.is_file() {
+                out.push(p.strip_prefix(dir).unwrap().display().to_string());
+            }
+        }
+    }
+    out.sort();
+    out
 }

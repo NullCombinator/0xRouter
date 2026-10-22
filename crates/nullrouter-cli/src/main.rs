@@ -45,12 +45,8 @@ enum Command {
     /// Show what a provider declares about a model, or, without MODEL, about every model it
     /// declares. Exit 2 if the provider is unknown.
     Model { provider: String, model: Option<String> },
-    /// List providers.
-    Providers {
-        /// Only providers that offer this capability (e.g. `tts`).
-        #[arg(long, value_name = "KIND")]
-        capability: Option<String>,
-    },
+    /// List providers, or `add-compatible` one.
+    Providers(cmd::providers::Args),
     /// Router overhead and time to first token for the last 24 hours, per agent and per provider.
     Latency,
     /// Request and token totals and Est. Cost for one period.
@@ -127,7 +123,7 @@ fn main() -> ExitCode {
         Command::Unified(a) => cmd::unified::run(cli.home, a, cli.json),
         Command::Combos(a) => cmd::combos::run(cli.home, a, cli.json),
         Command::Model { provider, model } => cmd::model::run(cli.home, &provider, model.as_deref(), cli.json),
-        Command::Providers { capability } => cmd::providers::run(cli.home, capability.as_deref(), cli.json),
+        Command::Providers(a) => cmd::providers::run(cli.home, a, cli.json),
         Command::Latency => cmd::latency::run(cli.home, cli.json),
         Command::Usage { period } => cmd::usage::run(cli.home, &period, cli.json),
         Command::Serve { listen } => cmd::serve::run(cli.home, listen),

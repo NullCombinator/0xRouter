@@ -54,7 +54,8 @@ fn components(guide: &toml::Table) -> Vec<(String, BTreeSet<String>, String)> {
 }
 
 fn render(tokens: &[Token]) -> String {
-    let mut css = String::from("/* Generated from tokens.toml by tests/style_guide.rs (NR_BLESS=1); do not edit. */\n:root {\n");
+    let mut css =
+        String::from("/* Generated from tokens.toml by tests/style_guide.rs (NR_BLESS=1); do not edit. */\n:root {\n");
     for t in tokens {
         css.push_str(&format!("  --{}: {};\n", t.name, t.value));
     }

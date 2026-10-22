@@ -53,6 +53,40 @@ pub fn edit(text: &str, header: &str, key: &str, value: Option<&str>) -> (String
     (join(lines), true)
 }
 
+/// `text` with the top-level `key` set to `value` (or removed); every other line is kept as
+/// written. A new key goes ahead of the first table. The flag is whether anything changed.
+pub fn edit_top(text: &str, key: &str, value: Option<&str>) -> (String, bool) {
+    let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
+    let first_table = lines.iter().position(|l| l.trim_start().starts_with('[')).unwrap_or(lines.len());
+    let at = (0..first_table).find(|&i| lines[i].split_once('=').is_some_and(|(k, _)| k.trim() == key));
+    match (at, value) {
+        (Some(i), Some(v)) => {
+            let line = format!("{key} = {v}");
+            if lines[i] == line {
+                return (text.to_owned(), false);
+            }
+            lines[i] = line;
+        }
+        (Some(i), None) => {
+            lines.remove(i);
+        }
+        (None, Some(v)) => {
+            // After the last non-blank line before the first table.
+            let after = (0..first_table).rev().find(|&i| !lines[i].trim().is_empty()).map_or(0, |i| i + 1);
+            lines.insert(after, format!("{key} = {v}"));
+            if after + 1 == first_table + 1 && first_table < lines.len() - 1 {
+                lines.insert(after + 1, String::new());
+            }
+        }
+        (None, None) => return (text.to_owned(), false),
+    }
+    let mut out = lines.join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    (out, true)
+}
+
 /// A TOML basic-string body: backslashes and quotes escaped.
 pub fn quoted(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
@@ -99,6 +133,17 @@ mod tests {
             edit("schema = 1", H, "stall_timeout_ms", Some("7")).0,
             "schema = 1\n\n[provider.acme.connection]\nstall_timeout_ms = 7\n"
         );
+    }
+
+    #[test]
+    fn a_top_level_key_is_set_in_place_or_ahead_of_the_first_table() {
+        assert_eq!(edit_top("", "a", Some("true")), ("a = true\n".into(), true));
+        assert_eq!(edit_top("schema = 1\n", "a", Some("true")).0, "schema = 1\na = true\n");
+        assert_eq!(edit_top("a = false\n[t]\na = 1\n", "a", Some("true")).0, "a = true\n[t]\na = 1\n");
+        assert_eq!(edit_top("[t]\na = 1\n", "a", Some("true")).0, "a = true\n\n[t]\na = 1\n");
+        assert_eq!(edit_top("a = true\n[t]\na = 1\n", "a", None).0, "[t]\na = 1\n");
+        assert_eq!(edit_top("a = true\n", "a", Some("true")), ("a = true\n".into(), false));
+        assert_eq!(edit_top("[t]\n", "a", None), ("[t]\n".into(), false));
     }
 
     #[test]

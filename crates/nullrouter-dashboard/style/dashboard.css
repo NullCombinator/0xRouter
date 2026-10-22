@@ -797,6 +797,8 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
   border-radius: var(--radius-lg);
 }
 .model-row__head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.model-row__actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
+.model-row__actions .form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
 .model-row__id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-row__facts { display: flex; flex-wrap: wrap; column-gap: var(--space-4); }
 .model-row__facts .kv { gap: var(--space-1-5); padding: 0; border-top-width: 0; font-size: var(--text-xs); line-height: var(--text-xs-leading); }

@@ -80,7 +80,7 @@ pass unchanged; never edit a golden file to make a move pass.
   - Quota Tracker (`pages/quota.rs`): poll interval, poll now (task), alert ack.
   Each refusal shows next to its field.
 - [X] T024 [P] [US2] Add handlers for every US2 op id in `crates/nullrouter-dashboard/src/changes.rs`.
-- [ ] T025 [US2] Test US2 in `crates/nullrouter-dashboard/tests/settings_forms.rs`:
+- [X] T025 [US2] Test US2 in `crates/nullrouter-dashboard/tests/settings_forms.rs`:
   - browser equals CLI on twin homes for each US2 op;
   - an out-of-range override shows the CLI's text;
   - a server that refuses the reload yields "saved but not applied" with the reason;
@@ -94,7 +94,7 @@ pass unchanged; never edit a golden file to make a move pass.
 - [X] T027 [US3] Add the CLI subcommands `unified add|set|remove` (`crates/nullrouter-cli/src/cmd/unified.rs`) and `combos add|set|remove` (`crates/nullrouter-cli/src/cmd/combos.rs`), calling T026, with the bare `unified [name]` / `combos [name]` reads unchanged. Tests go in `crates/nullrouter-cli/tests/unified.rs` and `combos.rs`.
 - [X] T028 [P] [US3] Move `test` (`crates/nullrouter-cli/src/cmd/test.rs`) and `verdicts mark|clear|settings` (`crates/nullrouter-cli/src/cmd/verdicts.rs`) to `crates/nullrouter-server/src/ops/model_tests.rs`. `test` plans, then runs as a task whose progress lines are the CLI's streamed lines. The CLI's `[y/N]` question text comes from `ops`. `crates/nullrouter-cli/tests/model_test.rs` and `verdicts.rs` pass unchanged.
 - [ ] T029 [US3] Build the Combo page forms in `crates/nullrouter-dashboard/src/pages/combo.rs`: declare/edit/remove unified models and combos (members one per line; remove via confirm), and Test buttons per target plus Test All. When the plan bills more than one call, a confirm window asks the CLI's question. The task panel shows progress and the verdict. Add a Test button and verdict mark/clear to the provider window's model rows in `pages/providers.rs`.
-- [ ] T030 [P] [US3] Add handlers for unified.*, combos.*, test.run, verdicts.* in `crates/nullrouter-dashboard/src/changes.rs`.
+- [X] T030 [P] [US3] Add handlers for unified.*, combos.*, test.run, verdicts.* in `crates/nullrouter-dashboard/src/changes.rs`.
 - [ ] T031 [US3] Test US3 in `crates/nullrouter-dashboard/tests/targets_forms.rs`:
   - browser equals CLI for the target ops;
   - an unknown member shows the refusal;
@@ -105,14 +105,14 @@ pass unchanged; never edit a golden file to make a move pass.
 
 **Goal**: plugin and adapter lifecycle from the browser; the visibility, custom-provider and private-endpoint twins. **Independent test**: spec US4.
 
-- [ ] T032 [US4] Move `plugins install|uninstall` (`crates/nullrouter-cli/src/cmd/plugins.rs`) to `crates/nullrouter-server/src/ops/plugins.rs`. Add `private_endpoints(on)` there, editing `allow_private_endpoints` in `config.toml` with the confirm text "Plugins may then reach this machine and your local network." Add the CLI `plugins private-endpoints on|off [--yes]`. `crates/nullrouter-cli/tests/plugins.rs` passes unchanged, and new cases are added.
+- [X] T032 [US4] Move `plugins install|uninstall` (`crates/nullrouter-cli/src/cmd/plugins.rs`) to `crates/nullrouter-server/src/ops/plugins.rs`. Add `private_endpoints(on)` there, editing `allow_private_endpoints` in `config.toml` with the confirm text "Plugins may then reach this machine and your local network." Add the CLI `plugins private-endpoints on|off [--yes]`. `crates/nullrouter-cli/tests/plugins.rs` passes unchanged, and new cases are added.
 - [ ] T033 [US4] Add provider visibility:
   - Registry and config: `[providers.<id>] enabled` (default true) and `hidden` (default false) in the operator config schema (`crates/nullrouter-registry`).
   - Routing: the engine's candidate filter skips disabled providers, as it skips disabled accounts (`crates/nullrouter-engine`).
   - Reads: model lists and the views' provider list leave hidden ones out, and the side panel still lists them.
   - Ops and CLI: `ops::plugins::{enable, disable, hide, show}` plus CLI `providers enable|disable|hide|show <id>` (`crates/nullrouter-cli/src/cmd/providers.rs`), with outputs per contracts/operator-cli.md.
   - Tests: routing skips a disabled provider; a hidden provider is absent from `/v1/models`.
-- [ ] T034 [US4] Add the custom compatible provider:
+- [X] T034 [US4] Add the custom compatible provider:
   - `crates/nullrouter-registry/src/compatible.rs` builds a schema-2 plugin TOML from (id, name, style ∈ {openai-chat, anthropic-messages}, base_url, models), following data-model.md § Custom compatible provider: id "lowercase letters, digits and dashes, up to 32 characters, not an existing provider", 1 to 200 model ids, one text section, API-key auth in the style's header, a static model list.
   - `ops::plugins::add_compatible` runs `check_user_plugin` with the operator's `allow_private`, then writes `plugins/<id>.toml` and applies. A private address while the setting is off gives the refusal text in contracts/operator-cli.md (exit 3).
   - Add the CLI `providers add-compatible`.

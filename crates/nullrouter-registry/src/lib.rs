@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use arc_swap::ArcSwap;
 
 pub mod community;
+pub mod compatible;
 mod combos;
 mod convert;
 mod credentials;
