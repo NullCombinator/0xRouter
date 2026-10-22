@@ -132,7 +132,7 @@ pass unchanged; never edit a golden file to make a move pass.
 
 - [X] T039 [US5] Build the Console Log page in `crates/nullrouter-dashboard/src/pages/console_log.rs`: entries newest first from `log.rs` (local time with zone, op, subject, result, text). The empty state reads "No changes made from the dashboard yet." Drop the page's placeholder hint.
 - [X] T040 [US5] Add the CLI `nullrouter dashboard log [--limit N] [--json]` (`crates/nullrouter-cli/src/cmd/dashboard.rs`), default limit 50, with lines `<local time>  <op>  <subject>  <result>[: text]`. It reads the same file through a reader shared in `nullrouter_server::views` (move the reader from T007 there if needed so the CLI doesn't depend on the dashboard).
-- [ ] T041 [US5] Test US5 in `crates/nullrouter-dashboard/tests/console_log.rs`: three changes, one refused, appear in order on the page and in `dashboard log --json`; no entry contains a pasted marker secret.
+- [X] T041 [US5] Test US5 in `crates/nullrouter-dashboard/tests/console_log.rs`: three changes, one refused, appear in order on the page and in `dashboard log --json`; no entry contains a pasted marker secret.
 
 ## Phase 8: Polish & cross-cutting
 
