@@ -61,6 +61,7 @@ impl Form {
 }
 
 mod accounts;
+mod adapters;
 mod connection;
 mod keys;
 mod model_tests;
@@ -126,7 +127,17 @@ pub fn lookup(area: &str, op: &str) -> Option<(String, Handler)> {
         "providers.disable" => plugins::disable,
         "providers.hide" => plugins::hide,
         "providers.show" => plugins::show,
-        // T035: adapters.*, catalogue.install, alerts.ack
+        "adapters.install" => adapters::install,
+        "adapters.review" => adapters::review,
+        "adapters.build" => adapters::build,
+        "adapters.approve" => adapters::approve,
+        "adapters.reject" => adapters::reject,
+        "adapters.clear" => adapters::clear,
+        "adapters.rebuild" => adapters::rebuild,
+        "adapters.remove" => adapters::remove,
+        "adapters.review_settings" => adapters::review_settings,
+        "catalogue.install" => adapters::catalogue_install,
+        "alerts.ack" => adapters::ack,
         #[cfg(any(test, feature = "testkit"))]
         "debug.noop" => testkit::noop,
         _ => return None,

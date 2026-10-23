@@ -7,10 +7,13 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Subcommand;
-use jiff::Timestamp;
-use nullrouter_adapters::alerts::{Alert, AlertId, AlertLog};
-use nullrouter_adapters::store::Store;
+
+use super::adapters::print_report;
+use nullrouter_adapters::alerts::Alert;
 use nullrouter_registry::OperatorHome;
+use nullrouter_server::ops::Ctx;
+use nullrouter_server::ops::adapters as ops;
+use nullrouter_server::views;
 use serde_json::{Value, json};
 
 #[derive(Subcommand)]
@@ -43,14 +46,6 @@ fn emit(as_json: bool, value: &Value, text: &str) {
     }
 }
 
-/// The store, or `None` while there is no `adapters/` (a read creates nothing).
-fn existing_store(home: &OperatorHome) -> Result<Option<Store>, ExitCode> {
-    if !home.path().join("adapters").is_dir() {
-        return Ok(None);
-    }
-    Store::open(home.path()).map(Some).map_err(fail)
-}
-
 pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
     match cmd {
@@ -67,38 +62,16 @@ fn alert_line(a: &Alert) -> String {
 }
 
 fn list(home: &OperatorHome, all: bool, as_json: bool) -> Result<ExitCode, ExitCode> {
-    let stored = match existing_store(home)? {
-        Some(store) => AlertLog::open(&store).list().map_err(fail)?,
-        None => Vec::new(),
-    };
-    // The log is kept oldest first; the listing is newest first.
-    let shown: Vec<&Alert> = stored.iter().rev().filter(|a| all || a.acked.is_none()).collect();
-    let value = serde_json::to_value(&shown).map_err(fail)?;
-    let text: Vec<String> = shown.iter().copied().map(alert_line).collect();
-    emit(as_json, &value, &text.join("\n"));
+    let view = super::read(home, views::alerts::NEEDS, &json!({"all": all}), views::alerts::build)?;
+    let shown: Vec<Alert> = serde_json::from_value(view.json.clone()).map_err(fail)?;
+    let text: Vec<String> = shown.iter().map(alert_line).collect();
+    emit(as_json, &view.json, &text.join("\n"));
     Ok(ExitCode::SUCCESS)
 }
 
 fn ack(home: &OperatorHome, id: Option<&str>, all: bool, as_json: bool) -> Result<ExitCode, ExitCode> {
-    let store = existing_store(home)?;
-    if all {
-        let n = match &store {
-            Some(s) => AlertLog::open(s).ack_all(Timestamp::now()).map_err(fail)?,
-            None => 0,
-        };
-        emit(as_json, &json!({"acknowledged": n}), &format!("acknowledged {n}"));
-        return Ok(ExitCode::SUCCESS);
-    }
-    let Some(raw) = id else {
-        eprintln!("nullrouter alerts ack: give an alert id, or --all");
-        return Err(ExitCode::from(2));
-    };
-    let unknown = || fail(format!("no open alert {raw}"));
-    let Some(id) = AlertId::parse(raw) else { return Err(unknown()) };
-    let Some(store) = store else { return Err(unknown()) };
-    if !AlertLog::open(&store).ack(&id, Timestamp::now()).map_err(fail)? {
-        return Err(unknown());
-    }
-    emit(as_json, &json!({"acknowledged": 1, "id": id}), &format!("acknowledged {id}"));
-    Ok(ExitCode::SUCCESS)
+    let ctx = Ctx { home: home.clone(), engine: None };
+    let mut log = Vec::new();
+    let r = ops::alerts_ack_with(&ctx, &mut log, id, all);
+    print_report(&log, r, as_json)
 }

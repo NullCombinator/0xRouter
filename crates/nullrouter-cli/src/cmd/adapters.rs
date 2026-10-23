@@ -5,23 +5,20 @@
 //! it; with no server the review starts when `serve` starts (`Engine::resume_reviews`).
 
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::Arc;
 
 use clap::Subcommand;
-use nullrouter_adapters::alerts::{Alert, AlertKind, AlertLog};
 use nullrouter_adapters::loader::Manifest;
 use nullrouter_adapters::review::ReviewReport;
-use nullrouter_adapters::store::{Index, ReviewConfig, Store, VersionEntry, VersionId, VersionState};
-use nullrouter_adapters::{BUILD_TIMEOUT, BUILTIN, HarnessName, InstallError, InstallOptions, Installed};
-use nullrouter_engine::keys::{self, Keys};
-use nullrouter_engine::state::Engine;
+use nullrouter_adapters::store::{Index, Store, VersionEntry, VersionId};
+use nullrouter_adapters::HarnessName;
 use nullrouter_registry::OperatorHome;
-use nullrouter_server::operator::{self, CallError};
+use nullrouter_server::ops::adapters::{self as ops, Failure};
+use nullrouter_server::ops::accounts::Report;
+use nullrouter_server::ops::{Ctx, OpError, Status};
+use nullrouter_server::views;
 use serde_json::{Value, json};
-
-const REFUSED: u8 = 3;
 
 #[derive(Subcommand)]
 pub(crate) enum Command {
@@ -124,229 +121,153 @@ fn emit(as_json: bool, value: &Value, text: &str) {
     }
 }
 
-/// Asks the running server to reload. `applied`, or `saved; applies at next start`.
-fn reload(home: &OperatorHome) -> Result<&'static str, ExitCode> {
-    match operator::call(home, &json!({"op": "reload"})) {
-        Ok(a) if a["ok"] == true => Ok("applied"),
-        Ok(a) => Err(fail(a["error"].as_str().unwrap_or("the server refused the reload"))),
-        Err(CallError::NoServer(_)) => Ok("saved; applies at next start"),
-        Err(e) => Err(fail(e)),
+/// Prints what an op returned, as the other commands do: the log on stderr, then the text, or
+/// the JSON with `--json`. A change the running server did not take is an error.
+pub(crate) fn print_report(log: &[String], r: Result<Report, OpError>, as_json: bool) -> Result<ExitCode, ExitCode> {
+    for l in log {
+        eprintln!("{l}");
+    }
+    let r = r.map_err(|e| fail_with(&e.text, e.exit))?;
+    printed(&r, as_json)
+}
+
+fn printed(r: &Report, as_json: bool) -> Result<ExitCode, ExitCode> {
+    if let Status::SavedNotApplied { reason } = &r.done.status {
+        return Err(fail_with(reason, 1));
+    }
+    if as_json {
+        println!("{:#}", r.json);
+    } else {
+        println!("{}", r.done.text);
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// [`print_report`] for the steps that can end in a refusal, which have their own shapes.
+pub(crate) fn print_ended(log: &[String], r: Result<Report, Box<Failure>>, as_json: bool) -> Result<ExitCode, ExitCode> {
+    for l in log {
+        eprintln!("{l}");
+    }
+    match r {
+        Ok(r) => printed(&r, as_json),
+        Err(f) => {
+            match (&f.json, &f.out) {
+                (Some(j), _) if as_json => println!("{j:#}"),
+                (_, Some(out)) => {
+                    println!("{out}");
+                    if let Some(t) = f.tail {
+                        eprintln!("{t}");
+                    }
+                }
+                _ => eprintln!("{}", f.error.text),
+            }
+            Err(ExitCode::from(f.error.exit))
+        }
     }
 }
 
-/// After a step that left a version `in_review`: reload, then have the server review it. With no
-/// server, the review starts when `serve` does.
-pub(crate) fn start_review(
-    home: &OperatorHome,
-    harness: &HarnessName,
-    version: &VersionId,
-) -> Result<&'static str, ExitCode> {
-    if reload(home)? != "applied" {
-        return Ok("the review starts when `serve` starts");
-    }
-    let req = json!({"op": "adapters.review", "harness": harness.as_str(), "version": version.as_str()});
-    match operator::call(home, &req) {
-        Ok(a) if a["ok"] == true => Ok("review queued"),
-        Ok(a) => Err(fail(a["error"].as_str().unwrap_or("the server refused the review"))),
-        Err(CallError::NoServer(_)) => Ok("the review starts when `serve` starts"),
-        Err(e) => Err(fail(e)),
-    }
+fn fail_with(text: &str, code: u8) -> ExitCode {
+    eprintln!("{text}");
+    ExitCode::from(code)
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime, ExitCode> {
-    tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(fail)
+/// Asks `question` on stderr; true on `y` or `yes`.
+fn confirmed(question: &str) -> Result<bool, ExitCode> {
+    eprint!("{question} [y/N] ");
+    io::stderr().flush().map_err(fail)?;
+    let mut line = String::new();
+    io::stdin().read_line(&mut line).map_err(fail)?;
+    Ok(matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
 }
 
 pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
+    let ctx = Ctx { home: home.clone(), engine: None };
+    let mut log = Vec::new();
     match cmd {
         Command::List => list(&home, as_json),
-        Command::Install { package } => install(&home, &package, as_json),
+        Command::Install { package } => {
+            let r = ops::install_with(&ctx, &mut log, &package);
+            print_ended(&log, r, as_json)
+        }
         Command::Show { harness, version } => show(&home, &harness_of(&harness)?, version.as_deref(), as_json),
         Command::Review { harness, version, retry } => {
-            review(&home, &harness_of(&harness)?, &VersionId::from_run(&version), retry, as_json)
+            if !retry {
+                return review(&home, &harness_of(&harness)?, &VersionId::from_run(&version), as_json);
+            }
+            let r = ops::review_with(&ctx, &mut log, &harness, &version);
+            print_ended(&log, r, as_json)
         }
         Command::Build { harness, version, retry } => {
             if !retry {
                 eprintln!("nullrouter adapters build: pass --retry to requeue the build");
                 return Err(ExitCode::from(2));
             }
-            build(&home, &harness_of(&harness)?, &VersionId::from_run(&version), as_json)
+            let r = ops::build_with(&ctx, &mut log, &harness, &version);
+            print_ended(&log, r, as_json)
         }
         Command::Approve { harness, version, note } => {
-            let (h, v) = (harness_of(&harness)?, VersionId::from_run(&version));
-            nullrouter_adapters::approve(home.path(), &h, &v, note.as_deref()).map_err(fail)?;
-            decided(&home, &h, &v, "approved", as_json)
+            let r = ops::approve_with(&ctx, &mut log, &harness, &version, note.as_deref());
+            print_report(&log, r, as_json)
         }
         Command::Reject { harness, version, note } => {
-            let (h, v) = (harness_of(&harness)?, VersionId::from_run(&version));
-            nullrouter_adapters::reject(home.path(), &h, &v, note.as_deref()).map_err(fail)?;
-            decided(&home, &h, &v, "rejected", as_json)
+            let r = ops::reject_with(&ctx, &mut log, &harness, &version, note.as_deref());
+            print_report(&log, r, as_json)
         }
-        Command::Clear { harness, version, yes } => {
-            clear(&home, &harness_of(&harness)?, &VersionId::from_run(&version), yes, as_json)
-        }
+        Command::Clear { harness, version, yes } => clear(&ctx, &harness, &version, yes, as_json),
         Command::ReviewSettings { model, budget, reserve_output, clear } => {
-            review_settings(&home, model, budget, reserve_output, clear, as_json)
+            let r = ops::review_settings_with(&ctx, &mut log, model.as_deref(), budget, reserve_output, clear);
+            print_report(&log, r, as_json)
         }
         Command::Rebuild { harness } => {
-            let only = harness.as_deref().map(harness_of).transpose()?;
-            rebuild(&home, only.as_ref(), as_json)
+            let r = ops::rebuild_with(&ctx, &mut log, harness.as_deref());
+            print_ended(&log, r, as_json)
         }
         Command::Remove { harness, version, force, yes } => {
-            let version = version.as_deref().map(VersionId::from_run);
-            remove(&home, &harness_of(&harness)?, version.as_ref(), force, yes, as_json)
+            remove(&ctx, &harness, version.as_deref(), force, yes, as_json)
         }
     }
 }
 
 /// One version as a text line, without its indent: id, semver, state, then any rebuild flags.
-fn version_line(v: &VersionEntry) -> String {
-    let flags: Vec<&str> = [(v.rebuilding, "rebuilding"), (v.rebuild_failed, "rebuild_failed")]
+fn version_line(v: &Value) -> String {
+    let flags: Vec<&str> = [("rebuilding", "rebuilding"), ("rebuild_failed", "rebuild_failed")]
         .into_iter()
-        .filter(|(on, _)| *on)
+        .filter(|(key, _)| v[*key] == true)
         .map(|(_, flag)| flag)
         .collect();
     let flags = if flags.is_empty() { String::new() } else { format!(" {}", flags.join(" ")) };
-    format!("{}  {}  {}{flags}", v.id, v.semver, v.state)
-}
-
-fn version_json(v: &VersionEntry) -> Value {
-    json!({"id": v.id, "semver": v.semver, "state": v.state,
-           "rebuilding": v.rebuilding, "rebuild_failed": v.rebuild_failed})
+    let text = |k: &str| v[k].as_str().unwrap_or_default().to_owned();
+    format!("{}  {}  {}{flags}", text("id"), text("semver"), text("state"))
 }
 
 /// Every harness: hermes as `built-in`, then each third-party harness in the index with its
-/// active version, the state of that version, its unacknowledged alerts and its versions. Reads
-/// only: with no `adapters/` directory there is nothing to list.
+/// active version, the state of that version, its unacknowledged alerts and its versions. The
+/// read is the `adapters` view, which the dashboard reads too.
 fn list(home: &OperatorHome, as_json: bool) -> Result<ExitCode, ExitCode> {
-    let index = read_index(home)?;
-    let alerts: Vec<Alert> = if home.path().join("adapters").is_dir() {
-        AlertLog::open(&store_of(home)?).list().map_err(fail)?
-    } else {
-        Vec::new()
-    };
-    let unacked = |name: &HarnessName| alerts.iter().filter(|a| a.acked.is_none() && &a.harness == name).count();
-
-    let mut rows: Vec<Value> = BUILTIN.iter().map(|h| json!({"harness": h, "built_in": true})).collect();
-    let mut lines: Vec<String> = BUILTIN.iter().map(|h| format!("{h}  built-in")).collect();
-    for h in index.harnesses.iter().filter(|h| !h.name.is_builtin()) {
-        let n = unacked(&h.name);
-        let active_entry = h.active.as_ref().and_then(|id| h.versions.iter().find(|v| &v.id == id));
-        let active = h.active.as_ref().map_or_else(|| "-".to_owned(), ToString::to_string);
-        let active_state = active_entry.map_or_else(|| "-".to_owned(), |v| v.state.to_string());
-        lines.push(format!("{}  {active}  {active_state}  {n} alerts", h.name));
-        for v in &h.versions {
-            lines.push(format!("  {}", version_line(v)));
+    let view = super::read(home, views::adapters::NEEDS, &json!({}), views::adapters::build)?;
+    let mut lines: Vec<String> = Vec::new();
+    for h in view.json.as_array().into_iter().flatten() {
+        let name = h["harness"].as_str().unwrap_or_default();
+        if h["built_in"] == true {
+            lines.push(format!("{name}  built-in"));
+            continue;
         }
-        rows.push(json!({"harness": h.name, "built_in": false, "active": h.active, "alerts": n,
-                         "versions": h.versions.iter().map(version_json).collect::<Vec<Value>>()}));
+        let versions = h["versions"].as_array().map_or(&[][..], Vec::as_slice);
+        let active = h["active"].as_str();
+        let active_state = active
+            .and_then(|id| versions.iter().find(|v| v["id"] == id))
+            .and_then(|v| v["state"].as_str())
+            .unwrap_or("-");
+        lines.push(format!("{name}  {}  {active_state}  {} alerts", active.unwrap_or("-"), h["alerts"]));
+        lines.extend(versions.iter().map(|v| format!("  {}", version_line(v))));
     }
-    emit(as_json, &Value::Array(rows), &lines.join("\n"));
+    emit(as_json, &view.json, &lines.join("\n"));
     Ok(ExitCode::SUCCESS)
 }
 
-fn print_installed(done: &Installed, hint: Option<&str>, as_json: bool) {
-    let mut text = format!("{} {}: {}", done.harness, done.version, done.state);
-    if !done.reasons.is_empty() {
-        // One line per gate reason, as `gate/invalid/*.expected` lists them.
-        text = format!("{text}\n{}", done.reasons.join("\n"));
-    } else if !done.reason.is_empty() {
-        text = format!("{text} ({})", done.reason);
-    }
-    if let Some(h) = hint {
-        text = format!("{text}\n{h}");
-    }
-    let value = json!({"harness": done.harness, "version": done.version, "state": done.state,
-                       "reason": done.reason, "reasons": done.reasons, "note": hint});
-    emit(as_json, &value, &text);
-}
-
-/// Prints where an install or build ended, and the follow-up each end calls for.
-pub(crate) fn finish(home: &OperatorHome, done: &Installed, as_json: bool) -> Result<ExitCode, ExitCode> {
-    match done.state {
-        VersionState::Refused => {
-            print_installed(done, None, as_json);
-            if !as_json {
-                eprintln!("refused by the gate or by verification");
-            }
-            Ok(ExitCode::from(REFUSED))
-        }
-        VersionState::InReview => {
-            let note = start_review(home, &done.harness, &done.version)?;
-            print_installed(done, Some(note), as_json);
-            Ok(ExitCode::SUCCESS)
-        }
-        _ => {
-            let hint = format!(
-                "install the builder, then run `nullrouter adapters build {} {} --retry`",
-                done.harness, done.version
-            );
-            print_installed(done, Some(&hint), as_json);
-            Ok(ExitCode::SUCCESS)
-        }
-    }
-}
-
-fn install(home: &OperatorHome, package: &Path, as_json: bool) -> Result<ExitCode, ExitCode> {
-    let (engine, _) = Engine::open(home.clone()).map_err(|e| fail(format!("startup failed:\n{e}")))?;
-    let engine = Arc::new(engine);
-    let rt = runtime()?;
-    let builder = engine.snapshot().settings().adapters.builder.clone();
-    let result = rt.block_on(engine.install_adapter_only(package, builder.as_deref()));
-    match result {
-        Ok(done) => finish(home, &done, as_json),
-        Err(InstallError::Refused(reasons)) => {
-            let lines: Vec<String> = reasons.iter().map(ToString::to_string).collect();
-            if as_json {
-                println!("{:#}", json!({"state": "refused", "reasons": lines}));
-            } else {
-                for l in &lines {
-                    eprintln!("{l}");
-                }
-                eprintln!("refused by the gate or by verification");
-            }
-            Ok(ExitCode::from(REFUSED))
-        }
-        Err(e) => Err(fail(e)),
-    }
-}
-
-fn build(home: &OperatorHome, harness: &HarnessName, version: &VersionId, as_json: bool) -> Result<ExitCode, ExitCode> {
-    let (engine, _) = Engine::open(home.clone()).map_err(|e| fail(format!("startup failed:\n{e}")))?;
-    let engine = Arc::new(engine);
-    let st = engine.snapshot();
-    let styles: Vec<&str> = st.styles.keys().map(String::as_str).collect();
-    let opts = InstallOptions {
-        styles: &styles,
-        builder: st.settings().adapters.builder.as_deref(),
-        origin: nullrouter_adapters::store::Origin::Local(String::new()),
-        build_timeout: BUILD_TIMEOUT,
-    };
-    let done = runtime()?.block_on(nullrouter_adapters::build(home.path(), harness, version, &opts)).map_err(fail)?;
-    finish(home, &done, as_json)
-}
-
-fn review(
-    home: &OperatorHome,
-    harness: &HarnessName,
-    version: &VersionId,
-    retry: bool,
-    as_json: bool,
-) -> Result<ExitCode, ExitCode> {
-    if retry {
-        let store = store_of(home)?;
-        let mut index = store.load_index().map_err(fail)?;
-        index.transition(harness, version, VersionState::InReview, "").map_err(fail)?;
-        store.save_index(&index).map_err(fail)?;
-        let note = start_review(home, harness, version)?;
-        emit(
-            as_json,
-            &json!({"harness": harness, "version": version, "state": "in_review", "note": note}),
-            &format!("{harness} {version}: in_review\n{note}"),
-        );
-        return Ok(ExitCode::SUCCESS);
-    }
+/// `review` without `--retry`: the report of a version, read from the store.
+fn review(home: &OperatorHome, harness: &HarnessName, version: &VersionId, as_json: bool) -> Result<ExitCode, ExitCode> {
     let index = read_index(home)?;
     let entry = index
         .version(harness, version)
@@ -355,7 +276,7 @@ fn review(
     if as_json {
         println!("{:#}", json!({"state": entry.state, "reason": entry.state_reason, "report": report}));
     } else if let Some(r) = &report {
-        print_report(r);
+        print_report_text(r);
     } else {
         println!("{harness} {version}: {}{}", entry.state, reason_suffix(&entry.state_reason));
         println!("no review report");
@@ -376,7 +297,7 @@ fn read_report(home: &OperatorHome, harness: &HarnessName, entry: &VersionEntry)
     serde_json::from_str(&read_file(home, harness, entry, "review.json")?).ok()
 }
 
-fn print_report(r: &ReviewReport) {
+fn print_report_text(r: &ReviewReport) {
     println!(
         "risk: {}",
         serde_json::to_value(r.risk).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
@@ -434,7 +355,7 @@ fn show(
         println!("response selectors: {}", m.response.selectors.join(", "));
     }
     if let Some(r) = &report {
-        print_report(r);
+        print_report_text(r);
     }
     if let Some(d) = &decision {
         println!("decision: {d}");
@@ -442,124 +363,34 @@ fn show(
     Ok(ExitCode::SUCCESS)
 }
 
-/// One guardrail event as a line: when, the record it came from, what happened.
-fn event_line(a: &Alert) -> String {
-    let record = a.record.as_deref().unwrap_or("-");
-    let times = if a.count > 1 { format!("  (x{})", a.count) } else { String::new() };
-    format!("{}  {record}  {}{times}", a.at, a.detail)
-}
-
-/// `suspect` → `approved`: the version serves again. Lists its guardrail events first, then asks
-/// unless `--yes`.
-fn clear(
-    home: &OperatorHome,
-    harness: &HarnessName,
-    version: &VersionId,
-    yes: bool,
-    as_json: bool,
-) -> Result<ExitCode, ExitCode> {
+/// `suspect` to `approved`: the version serves again. Lists its guardrail events first, then
+/// asks unless `--yes`.
+fn clear(ctx: &Ctx, harness: &str, version: &str, yes: bool, as_json: bool) -> Result<ExitCode, ExitCode> {
     if as_json && !yes {
         eprintln!("--json needs --yes");
         return Err(ExitCode::from(2));
     }
-    let index = read_index(home)?;
-    let state = index
-        .version(harness, version)
-        .ok_or_else(|| fail(format!("no version {version} of {harness} in the index")))?
-        .state;
-    if state != VersionState::Suspect {
-        return Err(fail(format!("{harness} {version} is {state}, not suspect")));
-    }
-    let store = store_of(home)?;
-    let events: Vec<Alert> = AlertLog::open(&store)
-        .list()
-        .map_err(fail)?
-        .into_iter()
-        .filter(|a| a.kind == AlertKind::Guardrail && &a.harness == harness && &a.version == version)
-        .collect();
+    let events = ops::clear_events(ctx, harness, version).map_err(|e| fail_with(&e.text, e.exit))?;
     if !as_json {
         for a in &events {
-            println!("{}", event_line(a));
+            println!("{}", ops::event_line(a));
         }
     }
-    if !yes {
-        eprint!("clear {harness} {version}: it serves again from the next request [y/N] ");
-        io::stderr().flush().map_err(fail)?;
-        let mut line = String::new();
-        io::stdin().read_line(&mut line).map_err(fail)?;
-        if !matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-            println!("not cleared");
-            return Err(ExitCode::from(1));
-        }
+    if !yes && !confirmed(&ops::clear_question(harness, version))? {
+        println!("not cleared");
+        return Err(ExitCode::from(1));
     }
-    let mut index = store.load_index().map_err(fail)?;
-    index.transition(harness, version, VersionState::Approved, "cleared by the operator").map_err(fail)?;
-    store.save_index(&index).map_err(fail)?;
-    let status = reload(home)?;
-    emit(
-        as_json,
-        &json!({"harness": harness, "version": version, "state": "approved", "status": status, "events": events}),
-        &format!("{harness} {version}: approved: {status}"),
-    );
-    Ok(ExitCode::SUCCESS)
-}
-
-fn rebuild(home: &OperatorHome, only: Option<&HarnessName>, as_json: bool) -> Result<ExitCode, ExitCode> {
-    if let Some(h) = only
-        && read_index(home)?.harness(h).is_none()
-    {
-        return Err(fail(format!("no harness {h} in the index")));
-    }
-    let (engine, _) = Engine::open(home.clone()).map_err(|e| fail(format!("startup failed:\n{e}")))?;
-    let builder = engine.snapshot().settings().adapters.builder.clone();
-    let opts = InstallOptions {
-        styles: &[],
-        builder: builder.as_deref(),
-        origin: nullrouter_adapters::store::Origin::Local("kit-upgrade".into()),
-        build_timeout: BUILD_TIMEOUT,
-    };
-    // A reload that cannot reach a server is fine: the next start reads the store.
-    let reload_server = || {
-        let _ = reload(home);
-    };
-    let done = runtime()?
-        .block_on(nullrouter_adapters::rebuilds_for(home.path(), &opts, &reload_server, only))
-        .map_err(fail)?;
-    let index = read_index(home)?;
-    let failed: Vec<Value> = index
-        .harnesses
-        .iter()
-        .filter(|h| only.is_none_or(|o| &h.name == o))
-        .flat_map(|h| h.versions.iter().filter(|v| v.rebuild_failed).map(move |v| json!([h.name, v.id])))
-        .collect();
-    let rebuilt: Vec<Value> = done.iter().map(|(h, v)| json!([h, v])).collect();
-    if as_json {
-        println!("{:#}", json!({"rebuilt": rebuilt, "failed": failed}));
-    } else if rebuilt.is_empty() && failed.is_empty() {
-        println!("nothing to rebuild");
-    } else {
-        for (h, v) in &done {
-            println!("{h} {v}: rebuilt");
-        }
-        for f in &failed {
-            println!("{} {}: rebuild failed", f[0].as_str().unwrap_or(""), f[1].as_str().unwrap_or(""));
-        }
-    }
-    Ok(if failed.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
-}
-
-/// Names of the keys bound to `harness`, revoked ones included (they keep the binding).
-fn bound_keys(home: &OperatorHome, harness: &HarnessName) -> Result<Vec<String>, ExitCode> {
-    let keys = Keys::load(&home.path().join(keys::FILE)).map_err(fail)?;
-    Ok(keys.iter().filter(|k| k.adapter.as_ref() == Some(harness)).map(|k| k.name.clone()).collect())
+    let mut log = Vec::new();
+    let r = ops::clear_with(ctx, &mut log, harness, version);
+    print_report(&log, r, as_json)
 }
 
 /// Removes a version, or the whole harness. Lists the bound keys first, then asks unless `--yes`.
 /// The active version needs `--force`.
 fn remove(
-    home: &OperatorHome,
-    harness: &HarnessName,
-    version: Option<&VersionId>,
+    ctx: &Ctx,
+    harness: &str,
+    version: Option<&str>,
     force: bool,
     yes: bool,
     as_json: bool,
@@ -568,95 +399,17 @@ fn remove(
         eprintln!("--json needs --yes");
         return Err(ExitCode::from(2));
     }
-    let index = read_index(home)?;
-    let entry = index.harness(harness).ok_or_else(|| fail(format!("no harness {harness} in the index")))?;
-    if let Some(v) = version {
-        if index.version(harness, v).is_none() {
-            return Err(fail(format!("no version {v} of {harness} in the index")));
-        }
-        if entry.active.as_ref() == Some(v) && !force {
-            return Err(fail(format!("{harness} {v} is the active version; pass --force to remove it")));
-        }
-    }
-    // Removing the last version leaves the keys with nothing to run, as removing the harness does.
-    let whole = version.is_none() || entry.versions.len() == 1;
-    let bound = if whole { bound_keys(home, harness)? } else { Vec::new() };
+    let preview = ops::remove_preview(ctx, harness, version, force).map_err(|e| fail_with(&e.text, e.exit))?;
     if !as_json {
-        for k in &bound {
+        for k in &preview.bound {
             println!("key {k} becomes a plain client");
         }
     }
-    if !yes {
-        let what = version.map_or_else(|| format!("{harness} and all its versions"), |v| format!("{harness} {v}"));
-        eprint!("remove {what} [y/N] ");
-        io::stderr().flush().map_err(fail)?;
-        let mut line = String::new();
-        io::stdin().read_line(&mut line).map_err(fail)?;
-        if !matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-            println!("not removed");
-            return Err(ExitCode::from(1));
-        }
+    if !yes && !confirmed(&ops::remove_question(harness, version))? {
+        println!("not removed");
+        return Err(ExitCode::from(1));
     }
-    let done = nullrouter_adapters::remove(home.path(), harness, version, force).map_err(fail)?;
-    let status = reload(home)?;
-    let removed: Vec<&str> = done.versions.iter().map(VersionId::as_str).collect();
-    emit(
-        as_json,
-        &json!({"harness": harness, "removed": removed, "keys": bound, "status": status}),
-        &format!("{harness}: removed {} version(s): {status}", removed.len()),
-    );
-    Ok(ExitCode::SUCCESS)
-}
-
-fn decided(
-    home: &OperatorHome,
-    harness: &HarnessName,
-    version: &VersionId,
-    state: &str,
-    as_json: bool,
-) -> Result<ExitCode, ExitCode> {
-    let status = reload(home)?;
-    emit(
-        as_json,
-        &json!({"harness": harness, "version": version, "state": state, "status": status}),
-        &format!("{harness} {version}: {state}: {status}"),
-    );
-    Ok(ExitCode::SUCCESS)
-}
-
-fn review_settings(
-    home: &OperatorHome,
-    model: Option<String>,
-    budget: Option<u64>,
-    reserve_output: Option<u32>,
-    clear: bool,
-    as_json: bool,
-) -> Result<ExitCode, ExitCode> {
-    let config = if clear {
-        None
-    } else {
-        let (Some(model), Some(budget_tokens)) = (model, budget) else {
-            return Err(fail("review-settings needs --model and --budget, or --clear"));
-        };
-        if model.trim().is_empty() || budget_tokens == 0 {
-            return Err(fail("--model must be named and --budget must be above 0"));
-        }
-        let mut c: ReviewConfig =
-            serde_json::from_value(json!({"model": model, "budget_tokens": budget_tokens})).map_err(fail)?;
-        if let Some(r) = reserve_output {
-            c.reserve_output = r;
-        }
-        Some(c)
-    };
-    let store = store_of(home)?;
-    let mut index = store.load_index().map_err(fail)?;
-    index.review.clone_from(&config);
-    store.save_index(&index).map_err(fail)?;
-    let status = reload(home)?;
-    let text = match &config {
-        Some(c) => format!("review: {} budget {} reserve {}: {status}", c.model, c.budget_tokens, c.reserve_output),
-        None => format!("review settings cleared: {status}"),
-    };
-    emit(as_json, &json!({"review": config, "status": status}), &text);
-    Ok(ExitCode::SUCCESS)
+    let mut log = Vec::new();
+    let r = ops::remove_with(ctx, &mut log, harness, version, force);
+    print_report(&log, r, as_json)
 }

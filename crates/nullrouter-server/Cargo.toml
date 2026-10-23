@@ -19,6 +19,7 @@ serde_json.workspace = true
 nullrouter-engine.workspace = true
 nullrouter-wire.workspace = true
 nullrouter-registry.workspace = true
+nullrouter-adapters.workspace = true
 url.workspace = true
 thiserror.workspace = true
 jiff.workspace = true

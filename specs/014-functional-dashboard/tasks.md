@@ -117,12 +117,12 @@ pass unchanged; never edit a golden file to make a move pass.
   - `ops::plugins::add_compatible` runs `check_user_plugin` with the operator's `allow_private`, then writes `plugins/<id>.toml` and applies. A private address while the setting is off gives the refusal text in contracts/operator-cli.md (exit 3).
   - Add the CLI `providers add-compatible`.
   - Tests cover openai and anthropic styles, a taken id, a bad URL and a private URL.
-- [ ] T035 [P] [US4] Move `adapters install|review|build|approve|reject|clear|rebuild|remove|review-settings` (`crates/nullrouter-cli/src/cmd/adapters.rs`), `catalogue install` (`cmd/catalogue.rs`) and `alerts ack` (`cmd/alerts.rs`) to `crates/nullrouter-server/src/ops/adapters.rs`. Review, build, rebuild and catalogue install run as tasks. The `[y/N]` texts for clear and remove come from `ops`. `crates/nullrouter-cli/tests/adapter_output.rs` and the adapters crate's lifecycle tests pass unchanged.
+- [X] T035 [P] [US4] Move `adapters install|review|build|approve|reject|clear|rebuild|remove|review-settings` (`crates/nullrouter-cli/src/cmd/adapters.rs`), `catalogue install` (`cmd/catalogue.rs`) and `alerts ack` (`cmd/alerts.rs`) to `crates/nullrouter-server/src/ops/adapters.rs`. Review, build, rebuild and catalogue install run as tasks. The `[y/N]` texts for clear and remove come from `ops`. `crates/nullrouter-cli/tests/adapter_output.rs` and the adapters crate's lifecycle tests pass unchanged.
 - [ ] T036 [US4] Make the side panels and settings windows work:
   - Providers settings window (`pages/providers.rs`): Show on page / Enabled switches, Install, Uninstall (confirm), and the "Add OpenAI Compatible" / "Add Anthropic Compatible" windows (id, name, base URL, models one per line), showing the private-endpoint refusal with a link to Settings.
   - Settings (`pages/settings.rs`): the private-endpoints switch, with a confirm window when turning it on.
   - Endpoint & Key adapter settings window (`pages/endpoint.rs`): install from path, install from catalogue (task), review settings, per-version review/build/approve/reject/clear (confirm)/remove (confirm), and alert ack.
-- [ ] T037 [P] [US4] Add handlers for plugins.*, providers.*, adapters.*, catalogue.install and alerts.ack in `crates/nullrouter-dashboard/src/changes.rs`.
+- [X] T037 [P] [US4] Add handlers for plugins.*, providers.*, adapters.*, catalogue.install and alerts.ack in `crates/nullrouter-dashboard/src/changes.rs`.
 - [ ] T038 [US4] Test US4 in `crates/nullrouter-dashboard/tests/plugins_adapters_forms.rs`:
   - browser equals CLI for each US4 op that needs no network (catalogue install uses the existing catalogue mock);
   - a custom provider created in the browser serves a request through the mock upstream;

@@ -156,6 +156,10 @@ fn scan(dir: &Path, hits: &mut Vec<String>) {
         if path.is_dir() {
             scan(&path, hits);
         } else if path.extension().and_then(|x| x.to_str()) == Some("rs") {
+            // The operator's `catalogue install` (shared by the CLI and the dashboard) lives here.
+            if path.ends_with("src/ops/adapters.rs") {
+                continue;
+            }
             let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
             for (i, line) in text.lines().enumerate() {
                 if line.contains("catalogue::") {
