@@ -74,8 +74,10 @@ async fn every_request_in_flight_is_listed_in_its_phase_and_gone_soon_after_it_e
         .collect();
 
     // Half sit in headers, half in first token. At every poll, no request whose record is still
-    // in progress is missing from the list (the record is read first, so a request that ends
-    // in between shows up as finished, not missing).
+    // in progress and has started an attempt is missing from the list (the record is read first,
+    // so a request that ends in between shows up as finished, not missing). A record is written
+    // on arrival and the request joins the list when routing starts, after its body is decoded;
+    // attempts begin only after that, so a request without one may not be listed yet.
     let (mut most, mut split) = (0, false);
     while sent.elapsed() < Duration::from_millis(1200) {
         let open: Vec<String> = s
@@ -83,7 +85,7 @@ async fn every_request_in_flight_is_listed_in_its_phase_and_gone_soon_after_it_e
             .records
             .query(&Query::default())
             .into_iter()
-            .filter(|r| r.outcome == Outcome::InProgress)
+            .filter(|r| r.outcome == Outcome::InProgress && !r.attempts.is_empty())
             .map(|r| r.id)
             .collect();
         let a = snapshot(&s).await;
