@@ -18,6 +18,8 @@ pub const KEEP: usize = 200;
 pub const MAX_RUNNING: usize = 4;
 
 const ALPHABET: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
+/// Tries at a unused id before `start` gives up.
+const REROLLS: usize = 8;
 const STOPPED: &str = "the task stopped unexpectedly";
 
 /// `tk_` + 16 base32 characters.
@@ -25,13 +27,13 @@ const STOPPED: &str = "the task stopped unexpectedly";
 pub struct TaskId(String);
 
 impl TaskId {
-    fn random() -> Self {
+    /// A fresh id, or `None` when the system random source fails: never a fixed id.
+    fn random() -> Option<Self> {
         let mut b = [0u8; 16];
-        // A failed system RNG leaves zeros: the id is still unique-checked by `start`.
-        let _ = getrandom::fill(&mut b);
+        getrandom::fill(&mut b).ok()?;
         let mut s = String::from("tk_");
         s.extend(b.iter().map(|x| ALPHABET[(x & 31) as usize] as char));
-        Self(s)
+        Some(Self(s))
     }
 
     pub fn as_str(&self) -> &str {
@@ -107,6 +109,9 @@ pub struct TaskView {
     pub progress: Vec<String>,
     pub result: TaskResult,
     pub input: Option<TaskInput>,
+    /// The digest of the dashboard session that started the task, when one did (see
+    /// [`Tasks::set_owner`]); `None` for a task no session owns.
+    pub owner: Option<String>,
 }
 
 /// The table is full of running tasks.
@@ -159,10 +164,17 @@ impl Tasks {
         if t.running() >= MAX_RUNNING {
             return Err(Busy);
         }
-        let mut id = TaskId::random();
-        while t.entries.iter().any(|e| e.view.id == id) {
-            id = TaskId::random();
+        // 80 random bits make a repeat all but impossible; a bounded re-roll still ends if the
+        // source misbehaves, and a source that fails refuses the task rather than reusing an id.
+        let mut fresh = None;
+        for _ in 0..REROLLS {
+            let Some(id) = TaskId::random() else { return Err(Busy) };
+            if !t.entries.iter().any(|e| e.view.id == id) {
+                fresh = Some(id);
+                break;
+            }
         }
+        let Some(id) = fresh else { return Err(Busy) };
         t.entries.push_back(Entry {
             view: TaskView {
                 id: id.clone(),
@@ -173,6 +185,7 @@ impl Tasks {
                 progress: Vec::new(),
                 result: TaskResult::Running,
                 input: None,
+                owner: None,
             },
             paste: None,
         });
@@ -186,6 +199,14 @@ impl Tasks {
             }
         }
         Ok(TaskHandle { table: self.table.clone(), id, ended: false })
+    }
+
+    /// Records the dashboard session (its digest) that started the task, so its panel and paste
+    /// belong to that session alone.
+    pub fn set_owner(&self, id: &TaskId, owner: impl Into<String>) {
+        if let Some(e) = lock(&self.table).find(id) {
+            e.view.owner = Some(owner.into());
+        }
     }
 
     pub fn get(&self, id: &TaskId) -> Option<TaskView> {
@@ -289,6 +310,20 @@ mod tests {
         assert!("xx_abcdefghijklmnop".parse::<TaskId>().is_err());
         assert!("tk_abcdefghijklmn01".parse::<TaskId>().is_err());
         assert_eq!(TaskKind::AdapterRebuild.as_str(), "adapter_rebuild");
+    }
+
+    #[test]
+    fn an_owner_is_recorded() {
+        let t = Tasks::default();
+        let h = t.start(TaskKind::Test, "x").unwrap();
+        assert_eq!(t.get(h.id()).unwrap().owner, None);
+        t.set_owner(h.id(), "abc");
+        assert_eq!(t.get(h.id()).unwrap().owner.as_deref(), Some("abc"));
+    }
+
+    #[test]
+    fn random_ids_differ() {
+        assert_ne!(TaskId::random().unwrap(), TaskId::random().unwrap());
     }
 
     #[test]

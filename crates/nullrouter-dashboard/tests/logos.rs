@@ -9,7 +9,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use common::{Dash, TOKEN};
+use common::Dash;
 use nullrouter_dashboard::headers::IMMUTABLE;
 use nullrouter_dashboard::logos::Index;
 use nullrouter_engine::accounts;
@@ -162,7 +162,7 @@ async fn a_bad_logo_is_ignored_and_a_good_one_is_served_as_an_image() {
     // Served as an image only, cacheable under its hash, and only to a signed-in browser.
     let get = |path: &str, cookie: bool| {
         let req = http.get(format!("http://{}{path}", d.addr));
-        if cookie { req.header(COOKIE, format!("nrd_session_{}={TOKEN}", d.addr.port())) } else { req }
+        if cookie { req.header(COOKIE, d.cookie.clone()) } else { req }
     };
     let r = get(&href, true).send().await.unwrap();
     assert_eq!(r.status(), StatusCode::OK);

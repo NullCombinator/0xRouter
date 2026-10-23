@@ -485,14 +485,22 @@ and the change forms under `/do/` are the exceptions.
 
 ### What the cookie reaches
 
-Browsers scope a cookie by host name, not by port. The dashboard cookie is therefore also sent to
-any other web server you run on `127.0.0.1` and visit in the same browser. This is a known and
-accepted limit: a process running as your own user can already read `~/.0router`. (Security review
-finding L1, accepted on 2026-10-06 when the dashboard was read-only. The cookie now also opens the
-change forms, so that acceptance needs to be checked against them.) To give the dashboard its own
-cookie host on Linux, where every `127.0.0.0/8` address is loopback, set
-`listen = "127.0.0.2:20130"` and open that address.
-The default stays `127.0.0.1:20130` on every system.
+Browsers scope a cookie by host name, not by port. A cookie set by `127.0.0.1:20130` is also sent
+to every other web server you open on `127.0.0.1` in the same browser, such as a development
+server, a container's published port or another user's server. Since the dashboard can make
+changes, that cookie is worth protecting. It is a sign-in session, not your dashboard token. It
+ends after 12 hours unused and 7 days at most, and **Sign out** or `nullrouter dashboard token`
+ends every session at once. Sessions live in the server's memory, so restarting `nullrouter serve`
+ends them too. Whoever holds a live session can do anything the dashboard can do, including
+issuing client keys, until it ends. The form token and the origin check stop other web pages from
+posting through your browser, but they don't stop a program that has the cookie and can connect to
+this machine's loopback.
+
+To keep the cookie away from other local servers on Linux, where every `127.0.0.0/8` address is
+loopback, set `listen = "127.0.0.2:20130"` in `[dashboard]` and open that address. The default
+stays `127.0.0.1:20130` on every system. If other people or untrusted programs share this
+machine, use a separate address, sign out when you're done, and reissue the token if you think the
+cookie was seen.
 
 ### Making changes from the dashboard
 

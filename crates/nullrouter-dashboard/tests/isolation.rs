@@ -61,6 +61,20 @@ fn home(mock: &MockUpstream) -> (tempfile::TempDir, String) {
     (dir, agent)
 }
 
+/// Signs in as the sign-in form does: the `Cookie` header value for the session it makes.
+async fn sign_in(addr: std::net::SocketAddr) -> String {
+    let http = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).no_proxy().build().unwrap();
+    let r = http
+        .post(format!("http://{addr}/signin"))
+        .header("content-type", "application/x-www-form-urlencoded")
+        .body(format!("token={TOKEN}"))
+        .send()
+        .await
+        .unwrap();
+    let set = r.headers()[reqwest::header::SET_COOKIE].to_str().unwrap().to_owned();
+    set.split(';').next().unwrap().to_owned()
+}
+
 /// The client p95 and the failures of [`REQUESTS`] requests, with the dashboard on or off and,
 /// when on, [`WORKERS`] workers loading every page meanwhile.
 async fn run(mock: &MockUpstream, enabled: bool, fault: Fault) -> (Duration, usize) {
@@ -88,13 +102,12 @@ async fn run(mock: &MockUpstream, enabled: bool, fault: Fault) -> (Duration, usi
         for w in 0..WORKERS {
             let done = done.clone();
             workers.push(tokio::spawn(async move {
+                let cookie = sign_in(addr).await;
                 let http = Client::builder().no_proxy().timeout(Duration::from_secs(30)).build().unwrap();
                 let mut i = w;
                 while !done.load(Ordering::Relaxed) {
                     let path = Id::ALL[i % Id::ALL.len()].path();
-                    let req = http
-                        .get(format!("http://{addr}{path}"))
-                        .header(COOKIE, format!("nrd_session_{}={TOKEN}", addr.port()));
+                    let req = http.get(format!("http://{addr}{path}")).header(COOKIE, &cookie);
                     let _ = tokio::time::timeout(Duration::from_secs(1), req.send()).await;
                     i += 1;
                 }

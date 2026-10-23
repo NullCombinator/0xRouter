@@ -118,6 +118,7 @@ fn revoke_window(ctx: &Ctx<'_>, key: &str) -> Markup {
         &ctx.req.token,
         html! {
             input type="hidden" name="_window" value="revoke";
+            input type="hidden" name="confirmed" value="on";
             input type="hidden" name="key" value=(key);
             button class="button button--primary" type="submit" { "Revoke key" }
         },
@@ -135,6 +136,7 @@ fn clear_window(ctx: &Ctx<'_>, harness: &str, version: &str) -> Markup {
         &ctx.req.token,
         html! {
             input type="hidden" name="_window" value="clear-adapter";
+            input type="hidden" name="confirmed" value="on";
             input type="hidden" name="harness" value=(harness);
             input type="hidden" name="version" value=(version);
             button class="button button--primary" type="submit" { "Clear version" }
@@ -159,6 +161,7 @@ fn remove_window(ctx: &Ctx<'_>, harness: &str, version: &str) -> Markup {
         &ctx.req.token,
         html! {
             input type="hidden" name="_window" value="remove-adapter";
+            input type="hidden" name="confirmed" value="on";
             input type="hidden" name="harness" value=(harness);
             input type="hidden" name="version" value=(version);
             @if active { (switch("force", "Remove even though it is the active version", false)) }

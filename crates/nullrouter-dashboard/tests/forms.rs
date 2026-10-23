@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{Dash, TOKEN};
+use common::Dash;
 use nullrouter_server::views::change_log;
 use reqwest::header::{CONTENT_TYPE, COOKIE, LOCATION, ORIGIN};
 use reqwest::{Client, StatusCode, redirect};
@@ -19,7 +19,7 @@ impl Browser {
     async fn start() -> Self {
         let d = Dash::empty().await;
         let http = Client::builder().redirect(redirect::Policy::none()).no_proxy().build().unwrap();
-        let cookie = format!("nrd_session_{}={TOKEN}", d.addr.port());
+        let cookie = d.cookie.clone();
         Self { d, http, cookie }
     }
 

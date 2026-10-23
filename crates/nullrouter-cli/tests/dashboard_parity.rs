@@ -177,12 +177,7 @@ const OPS: &[Op] = &[
         id: "keys.tag",
         back: BACK,
         steps: &[
-            on_key(
-                "ci",
-                "keys/tag",
-                &[("key", "@key@"), ("text", "nightly")],
-                &["keys", "tag", "@key@", "nightly"],
-            ),
+            on_key("ci", "keys/tag", &[("key", "@key@"), ("text", "nightly")], &["keys", "tag", "@key@", "nightly"]),
             on_key("ci", "keys/tag", &[("key", "@key@"), ("text", "")], &["keys", "tag", "@key@", "--clear"]),
         ],
     },
@@ -222,7 +217,11 @@ const OPS: &[Op] = &[
     Op {
         id: "behaviour.set_break",
         back: BACK,
-        steps: &[go("behaviour/set-break", &[("behaviour", "error_event")], &["behaviour", "set-break", "error_event"])],
+        steps: &[go(
+            "behaviour/set-break",
+            &[("behaviour", "error_event")],
+            &["behaviour", "set-break", "error_event"],
+        )],
     },
     Op {
         id: "routing.set",
@@ -331,11 +330,7 @@ const OPS: &[Op] = &[
             &["proxy", "clear", "--provider", "anthropic"],
         )],
     },
-    Op {
-        id: "proxy.remove",
-        back: BACK,
-        steps: &[go("proxy/remove", &[("name", "eu")], &["proxy", "remove", "eu"])],
-    },
+    Op { id: "proxy.remove", back: BACK, steps: &[go("proxy/remove", &[("name", "eu")], &["proxy", "remove", "eu"])] },
     Op {
         id: "quota.interval",
         back: BACK,
@@ -345,11 +340,7 @@ const OPS: &[Op] = &[
             &["quota", "interval", "anthropic", "work", "15m"],
         )],
     },
-    Op {
-        id: "quota.ack",
-        back: BACK,
-        steps: &[go("quota/ack", &[("id", "all")], &["quota", "ack", "all"])],
-    },
+    Op { id: "quota.ack", back: BACK, steps: &[go("quota/ack", &[("id", "all")], &["quota", "ack", "all"])] },
     Op {
         id: "plugins.install",
         back: BACK,
@@ -498,11 +489,7 @@ const OPS: &[Op] = &[
             &["adapters", "remove", "claude-code", "0.1.0", "--yes"],
         )],
     },
-    Op {
-        id: "alerts.ack",
-        back: BACK,
-        steps: &[go("alerts/ack", &[("id", "all")], &["alerts", "ack", "--all"])],
-    },
+    Op { id: "alerts.ack", back: BACK, steps: &[go("alerts/ack", &[("id", "all")], &["alerts", "ack", "--all"])] },
     Op {
         id: "unified.add",
         back: BACK,
@@ -512,13 +499,21 @@ const OPS: &[Op] = &[
                 &[("name", "u"), ("members", "openrouter/x/a\nopenrouter/x/b")],
                 &["unified", "add", "u", "openrouter/x/a", "openrouter/x/b"],
             ),
-            go("unified/add", &[("name", "u"), ("members", "openrouter/x/a")], &["unified", "add", "u", "openrouter/x/a"]),
+            go(
+                "unified/add",
+                &[("name", "u"), ("members", "openrouter/x/a")],
+                &["unified", "add", "u", "openrouter/x/a"],
+            ),
         ],
     },
     Op {
         id: "unified.set",
         back: BACK,
-        steps: &[go("unified/set", &[("name", "u"), ("members", "openrouter/x/c")], &["unified", "set", "u", "openrouter/x/c"])],
+        steps: &[go(
+            "unified/set",
+            &[("name", "u"), ("members", "openrouter/x/c")],
+            &["unified", "set", "u", "openrouter/x/c"],
+        )],
     },
     Op {
         id: "combos.add",
@@ -566,7 +561,11 @@ const OPS: &[Op] = &[
         id: "verdicts.settings",
         back: BACK,
         steps: &[
-            go("verdicts/settings", &[("setting", "concurrency"), ("value", "2")], &["verdicts", "settings", "concurrency", "2"]),
+            go(
+                "verdicts/settings",
+                &[("setting", "concurrency"), ("value", "2")],
+                &["verdicts", "settings", "concurrency", "2"],
+            ),
             go(
                 "verdicts/settings",
                 &[("setting", "timeout"), ("type", "image"), ("value", "10m")],
@@ -914,11 +913,23 @@ impl Site {
             .timeout(Duration::from_secs(30))
             .build()
             .unwrap();
+        // Sign in with the token the CLI issued, as the sign-in form does; the cookie is the
+        // session id the dashboard makes, never the token.
+        let signed = http
+            .post(format!("http://127.0.0.1:{dash}/signin"))
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(format!("token={session}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(signed.status(), StatusCode::SEE_OTHER, "the issued token signs in");
+        let cookie =
+            signed.headers()[reqwest::header::SET_COOKIE].to_str().unwrap().split(';').next().unwrap().to_owned();
         let mut site = Self {
             http,
             base: format!("http://127.0.0.1:{dash}"),
             origin: format!("http://127.0.0.1:{dash}"),
-            cookie: format!("nrd_session_{dash}={session}"),
+            cookie,
             token: String::new(),
         };
         let (status, body) = site.get(BACK).await;
@@ -942,6 +953,12 @@ impl Site {
         let mut body = format!("_t={}&_back={}", enc(&self.token), enc(back));
         for (k, v) in fields {
             body.push_str(&format!("&{k}={}", enc(v)));
+        }
+        // The op's confirm window posts `confirmed=on`; turning private endpoints off needs none.
+        let op = route.replace('-', "_").replace('/', ".");
+        let turns_on = op != "plugins.private_endpoints" || fields.iter().any(|(k, _)| *k == "on");
+        if nullrouter_server::ops::IRREVERSIBLE.contains(&op.as_str()) && turns_on {
+            body.push_str("&confirmed=on");
         }
         let r = self
             .http

@@ -127,7 +127,7 @@ impl Forms {
         Self { key: random::<32>(), flashes: Mutex::new(VecDeque::new()) }
     }
 
-    /// The form token for `session` (the cookie value): nothing is stored.
+    /// The form token for `session` (the session id, not the dashboard token): nothing is stored.
     pub fn token(&self, session: &str) -> String {
         hex_of(&hmac_sha256(&self.key, session.as_bytes()))[..32].to_owned()
     }
@@ -137,11 +137,12 @@ impl Forms {
     pub fn check_post(
         &self,
         engine: &Engine,
+        sessions: &access::Sessions,
         rule: &HostRule,
         headers: &HeaderMap,
         form: &HashMap<String, String>,
     ) -> Result<String, Refusal> {
-        let session = access::session_cookie(engine, headers, rule.port()).ok_or(Refusal::SignIn)?;
+        let session = access::session_cookie(engine, sessions, headers, rule.port()).ok_or(Refusal::SignIn)?;
         self.check_rest(session, rule, headers, form)?;
         Ok(session.to_owned())
     }

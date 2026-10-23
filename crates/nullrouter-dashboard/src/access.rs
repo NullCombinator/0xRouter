@@ -1,16 +1,21 @@
 //! Who may see a page (contracts/dashboard-http.md "Access"): the dashboard token's cookie, the
 //! delay a wrong token costs, the `next` a sign-in returns to, and the `Origin` of a sign-in post.
 //!
-//! The token is never stored: the snapshot holds its SHA-256, and a cookie is checked by hashing
-//! what the browser sent and comparing the two digests in constant time.
+//! The token is never stored: the snapshot holds its SHA-256, and a sign-in is checked by hashing
+//! what the browser sent and comparing the two digests in constant time. The cookie is not the
+//! token: it is a random session id made at sign-in (security-review.md M1), and the server keeps
+//! only its SHA-256 in [`Sessions`].
 
+use std::collections::VecDeque;
 use std::fmt::Write as _;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::http::header::{COOKIE, HeaderMap, HeaderValue};
 use nullrouter_engine::files::DashboardToken;
 use nullrouter_engine::state::Engine;
+use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 use crate::headers::HostRule;
@@ -20,8 +25,122 @@ pub fn cookie_name(port: u16) -> String {
     format!("nrd_session_{port}")
 }
 
-/// 400 days, the longest a browser keeps a cookie.
-const MAX_AGE: u64 = 34_560_000;
+/// The cookie's `Max-Age`: the absolute session lifetime, 7 days.
+const MAX_AGE: u64 = 7 * 24 * 3600;
+
+/// How long a session may sit unused, and how long it lives at most, whatever its use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    pub idle: Duration,
+    pub absolute: Duration,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self { idle: Duration::from_secs(12 * 3600), absolute: Duration::from_secs(MAX_AGE) }
+    }
+}
+
+/// The most sessions kept; a new sign-in beyond it evicts the oldest.
+pub const MAX_SESSIONS: usize = 64;
+
+struct Session {
+    /// SHA-256 of the session id; the id itself is never kept.
+    digest: [u8; 32],
+    /// The dashboard token digest current at sign-in: a reissued token ends the session.
+    token: String,
+    created: Instant,
+    seen: Instant,
+}
+
+/// The live sign-ins. In memory only: a restart of `serve` ends every session, and the operator
+/// signs in again. That is deliberate; nothing about a session is written to disk.
+pub struct Sessions {
+    limits: Limits,
+    table: Mutex<VecDeque<Session>>,
+}
+
+impl Default for Sessions {
+    fn default() -> Self {
+        Self::new(Limits::default())
+    }
+}
+
+impl Sessions {
+    pub fn new(limits: Limits) -> Self {
+        Self { limits, table: Mutex::new(VecDeque::new()) }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<Session>> {
+        self.table.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// A new session for the token whose digest is `token_digest`: its 256-bit id (hex), made from
+    /// OS randomness. `None` when the OS gives none: the sign-in is then refused, never made with
+    /// a weaker id.
+    pub fn create(&self, token_digest: &str, now: Instant) -> Option<String> {
+        let mut id = [0u8; 32];
+        getrandom::fill(&mut id).ok()?;
+        let mut t = self.lock();
+        t.retain(|s| self.live(s, token_digest, now));
+        while t.len() >= MAX_SESSIONS {
+            t.pop_front();
+        }
+        // The cookie carries the id in hex; the digest is of that text, as `check` hashes it.
+        let text = id.iter().fold(String::with_capacity(64), |mut s, b| {
+            let _ = write!(s, "{b:02x}");
+            s
+        });
+        t.push_back(Session {
+            digest: Sha256::digest(text.as_bytes()).into(),
+            token: token_digest.to_owned(),
+            created: now,
+            seen: now,
+        });
+        Some(text)
+    }
+
+    fn live(&self, s: &Session, token_digest: &str, now: Instant) -> bool {
+        s.token == token_digest
+            && now.saturating_duration_since(s.created) < self.limits.absolute
+            && now.saturating_duration_since(s.seen) < self.limits.idle
+    }
+
+    /// Whether `presented` is a live session id for the current token; a live one counts as used.
+    pub fn check(&self, presented: &str, token_digest: &str, now: Instant) -> bool {
+        let want: [u8; 32] = Sha256::digest(presented.as_bytes()).into();
+        let mut t = self.lock();
+        t.retain(|s| self.live(s, token_digest, now));
+        let mut found = false;
+        for s in t.iter_mut() {
+            if bool::from(s.digest.ct_eq(&want)) {
+                s.seen = now;
+                found = true;
+            }
+        }
+        found
+    }
+
+    /// Ends the session `presented` names.
+    pub fn end(&self, presented: &str) {
+        let want: [u8; 32] = Sha256::digest(presented.as_bytes()).into();
+        self.lock().retain(|s| !bool::from(s.digest.ct_eq(&want)));
+    }
+
+    /// Ends every session.
+    pub fn clear(&self) {
+        self.lock().clear();
+    }
+
+    /// How many sessions are kept.
+    pub fn len(&self) -> usize {
+        self.lock().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
 
 /// The longest a wrong token waits.
 const MAX_DELAY: Duration = Duration::from_secs(30);
@@ -60,22 +179,29 @@ fn delay_for(failures: u32) -> Duration {
     Duration::from_secs(1u64 << failures.min(5)).min(MAX_DELAY)
 }
 
-/// Where `headers` stand against the current token.
-pub fn gate(engine: &Engine, headers: &HeaderMap, port: u16) -> Gate {
+/// Where `headers` stand against the live sessions of the current token.
+pub fn gate(engine: &Engine, sessions: &Sessions, headers: &HeaderMap, port: u16) -> Gate {
     let snapshot = engine.snapshot();
     let Some(digest) = snapshot.dashboard.digest.as_deref() else { return Gate::NoToken };
-    if cookie_values(headers, port).any(|presented| token_matches(digest, presented)) {
+    let now = Instant::now();
+    if cookie_values(headers, port).any(|presented| sessions.check(presented, digest, now)) {
         Gate::SignedIn
     } else {
         Gate::SignedOut
     }
 }
 
-/// The cookie value that is the current token: the session a form post belongs to.
-pub(crate) fn session_cookie<'a>(engine: &Engine, headers: &'a HeaderMap, port: u16) -> Option<&'a str> {
+/// The cookie value that is a live session id: the session a form post and a flash belong to.
+pub(crate) fn session_cookie<'a>(
+    engine: &Engine,
+    sessions: &Sessions,
+    headers: &'a HeaderMap,
+    port: u16,
+) -> Option<&'a str> {
     let snapshot = engine.snapshot();
     let digest = snapshot.dashboard.digest.as_deref()?;
-    cookie_values(headers, port).find(|presented| token_matches(digest, presented))
+    let now = Instant::now();
+    cookie_values(headers, port).find(|presented| sessions.check(presented, digest, now))
 }
 
 /// Whether `presented` is the token whose digest is `digest`.
@@ -97,10 +223,25 @@ fn cookie_values(headers: &HeaderMap, port: u16) -> impl Iterator<Item = &str> {
         .filter_map(move |pair| pair.trim().strip_prefix(name.as_str())?.strip_prefix('='))
 }
 
-/// The `Set-Cookie` value that signs a browser in.
-pub fn set_cookie(token: &str, port: u16) -> String {
+/// The SHA-256 (hex) of a session id: what a task records as its owner. The id never leaves the
+/// cookie.
+pub(crate) fn session_digest(id: &str) -> String {
+    Sha256::digest(id.as_bytes()).iter().fold(String::with_capacity(64), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
+}
+
+/// The `Set-Cookie` value that signs a browser in with the session `id`.
+pub fn set_cookie(id: &str, port: u16) -> String {
     let name = cookie_name(port);
-    format!("{name}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={MAX_AGE}")
+    format!("{name}={id}; Path=/; HttpOnly; SameSite=Strict; Max-Age={MAX_AGE}")
+}
+
+/// The `Set-Cookie` value that removes the cookie (sign out).
+pub fn clear_cookie(port: u16) -> String {
+    let name = cookie_name(port);
+    format!("{name}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0")
 }
 
 /// Whether a sign-in post may come from `origin`: no `Origin` (a command-line client) or one of
@@ -255,7 +396,45 @@ mod tests {
 
     #[test]
     fn the_cookie_is_the_one_the_contract_spells_out() {
-        assert_eq!(set_cookie("nrd_t", 1), "nrd_session_1=nrd_t; Path=/; HttpOnly; SameSite=Strict; Max-Age=34560000");
+        assert_eq!(set_cookie("abc", 1), "nrd_session_1=abc; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800");
+        assert_eq!(clear_cookie(1), "nrd_session_1=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+    }
+
+    #[test]
+    fn a_session_ends_idle_absolute_on_sign_out_on_a_new_token_and_is_capped() {
+        let s = Sessions::default();
+        let t0 = Instant::now();
+        let id = s.create("tok", t0).unwrap();
+        assert_eq!(id.len(), 64);
+        assert!(s.check(&id, "tok", t0));
+        assert!(!s.check("other", "tok", t0));
+        // Use keeps it alive past the idle limit measured from the sign-in.
+        let h = Duration::from_secs(3600);
+        assert!(s.check(&id, "tok", t0 + 11 * h));
+        assert!(s.check(&id, "tok", t0 + 22 * h));
+        // Idle: 12 h unused.
+        assert!(!s.check(&id, "tok", t0 + 35 * h));
+        assert!(s.is_empty());
+        // Absolute: 7 days, however busy.
+        let id = s.create("tok", t0).unwrap();
+        for k in 1..=16 {
+            assert!(s.check(&id, "tok", t0 + 10 * k * h));
+        }
+        assert!(!s.check(&id, "tok", t0 + 7 * 24 * h));
+        // Sign out, and a new token.
+        let id = s.create("tok", t0).unwrap();
+        s.end(&id);
+        assert!(!s.check(&id, "tok", t0));
+        let id = s.create("tok", t0).unwrap();
+        assert!(!s.check(&id, "new", t0));
+        assert!(!s.check(&id, "tok", t0), "a session of the old token does not come back");
+        // The cap evicts the oldest.
+        let first = s.create("tok", t0).unwrap();
+        for _ in 0..MAX_SESSIONS {
+            s.create("tok", t0).unwrap();
+        }
+        assert_eq!(s.len(), MAX_SESSIONS);
+        assert!(!s.check(&first, "tok", t0));
     }
 
     #[test]

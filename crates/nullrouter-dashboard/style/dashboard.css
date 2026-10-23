@@ -160,6 +160,7 @@ td { padding: var(--space-3) var(--space-6); border-top: var(--border-width) sol
   font-size: var(--text-xs);
   line-height: var(--text-xs-leading);
 }
+.page-header__signout { flex: none; margin: 0; }
 .page-header__as-of .icon { width: var(--icon-badge); height: var(--icon-badge); }
 
 /* notice: 9router's callout boxes, one per check level */

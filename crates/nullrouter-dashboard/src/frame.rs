@@ -69,6 +69,12 @@ pub fn document(f: &Frame<'_>, body: Body) -> Markup {
                         @if let Some(as_of) = &f.as_of {
                             span class="page-header__as-of" { (icon("schedule")) (as_of) }
                         }
+                        @if let Some(req) = f.req.filter(|r| !r.token.is_empty()) {
+                            form class="page-header__signout" method="post" action="/signout" {
+                                input type="hidden" name="_t" value=(req.token);
+                                button class="button button--secondary" type="submit" { "Sign out" }
+                            }
+                        }
                     }
                     div class="main__column" {
                         @if !own.is_empty() {

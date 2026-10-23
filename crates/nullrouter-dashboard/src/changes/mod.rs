@@ -60,6 +60,35 @@ impl Form {
     }
 }
 
+#[cfg(test)]
+mod confirm_tests {
+    use super::*;
+
+    #[test]
+    fn every_irreversible_op_has_a_window() {
+        for op in nullrouter_server::ops::IRREVERSIBLE {
+            assert!(CONFIRM_WINDOWS.iter().any(|(o, ..)| o == op), "{op}");
+        }
+        assert_eq!(CONFIRM_WINDOWS.len(), nullrouter_server::ops::IRREVERSIBLE.len());
+    }
+
+    #[test]
+    fn the_window_url_carries_the_subject() {
+        let f = Form::from_pairs(&[("provider", "anthropic"), ("name", "a b")]);
+        assert_eq!(
+            unconfirmed("accounts.remove", &f).as_deref(),
+            Some("/providers?window=remove-account&id=anthropic&name=a%20b")
+        );
+        let f = Form::from_pairs(&[("confirmed", "on")]);
+        assert_eq!(unconfirmed("accounts.remove", &f), None);
+        assert_eq!(unconfirmed("plugins.private_endpoints", &Form::from_pairs(&[])), None);
+        assert_eq!(
+            unconfirmed("plugins.private_endpoints", &Form::from_pairs(&[("on", "on")])).as_deref(),
+            Some("/settings?window=private-endpoints")
+        );
+    }
+}
+
 mod accounts;
 mod adapters;
 mod connection;
@@ -188,6 +217,28 @@ fn now() -> String {
     Zoned::now().strftime("%Y-%m-%dT%H:%M:%S%:z").to_string()
 }
 
+/// `POST /signout`: the same Origin and `_t` checks as a change, then the session ends, the cookie
+/// is cleared and the browser goes to sign in.
+pub async fn signout(State(shared): State<Arc<Shared>>, req: Request) -> Response {
+    let (parts, body) = req.into_parts();
+    let Ok(body) = to_bytes(body, 8 * 1024).await else {
+        return plain(StatusCode::PAYLOAD_TOO_LARGE, "That form is too large.\n");
+    };
+    let fields: HashMap<String, String> = access::pairs(&String::from_utf8_lossy(&body)).into_iter().rev().collect();
+    let session = match shared.forms.check_post(&shared.engine, &shared.sessions, &shared.rule, &parts.headers, &fields)
+    {
+        Ok(s) => s,
+        Err(Refusal::SignIn) => return see_other("/signin"),
+        Err(Refusal::Foreign) => return plain(StatusCode::FORBIDDEN, "This change didn't come from the dashboard.\n"),
+    };
+    shared.sessions.end(&session);
+    let mut response = see_other("/signin");
+    if let Ok(cookie) = header::HeaderValue::try_from(access::clear_cookie(shared.rule.port())) {
+        response.headers_mut().insert(header::SET_COOKIE, cookie);
+    }
+    response
+}
+
 pub async fn dispatch(State(shared): State<Arc<Shared>>, req: Request) -> Response {
     let (parts, body) = req.into_parts();
     let Some(route) = parts.uri.path().strip_prefix("/do/") else {
@@ -197,7 +248,8 @@ pub async fn dispatch(State(shared): State<Arc<Shared>>, req: Request) -> Respon
         return plain(StatusCode::PAYLOAD_TOO_LARGE, "That form is too large.\n");
     };
     let fields: HashMap<String, String> = access::pairs(&String::from_utf8_lossy(&body)).into_iter().rev().collect();
-    let session = match shared.forms.check_post(&shared.engine, &shared.rule, &parts.headers, &fields) {
+    let session = match shared.forms.check_post(&shared.engine, &shared.sessions, &shared.rule, &parts.headers, &fields)
+    {
         Ok(s) => s,
         Err(Refusal::SignIn) => return see_other("/signin"),
         Err(Refusal::Foreign) => {
@@ -229,6 +281,39 @@ pub async fn dispatch(State(shared): State<Arc<Shared>>, req: Request) -> Respon
         .map(|h| format!("http://{h}"));
     let form = Form { fields, origin };
 
+    // An irreversible op does nothing until the post says it was confirmed (FR-009): the home is
+    // untouched and the browser goes to the op's confirm window, which posts `confirmed=on`.
+    if let Some(to) = unconfirmed(&handler_id, &form) {
+        let entry = log::Entry {
+            at: now(),
+            op: handler_id.clone(),
+            subject: String::new(),
+            result: Outcome::Refused,
+            text: "not confirmed".into(),
+        };
+        if let Err(e) = log::append(shared.engine.home(), &entry) {
+            tracing::warn!("the dashboard change log could not be written: {e}");
+        }
+        return see_other(&to);
+    }
+
+    // A pasted code goes only to a task this session started (security-review.md I3). The refusal
+    // is the one a task that isn't waiting gives, so a foreign id learns nothing.
+    if handler_id == "accounts.signin_paste" {
+        let owned = form
+            .get("task")
+            .parse::<nullrouter_engine::tasks::TaskId>()
+            .ok()
+            .and_then(|id| shared.engine.tasks.get(&id))
+            .is_some_and(|t| t.owner.as_ref().is_some_and(|o| *o != access::session_digest(&session)));
+        if owned {
+            let text = format!("{}: not waiting for a code", form.get("task"));
+            let err = OpError { text, exit: 1, field: None };
+            let a = Answer { session: &session, op: &handler_id, back: &back, window: window.as_deref(), kept };
+            return answer(&shared, &a, format!("task {}", form.get("task")), Err(err));
+        }
+    }
+
     let engine = shared.engine.clone();
     let ran = shared
         .guard
@@ -252,6 +337,38 @@ pub async fn dispatch(State(shared): State<Arc<Shared>>, req: Request) -> Respon
         subject,
         result,
     )
+}
+
+/// Where the button of each irreversible op (`ops::IRREVERSIBLE`) opens its confirm window: the
+/// page, the window, and the window's parameters as `(query name, form field)`.
+type Window = (&'static str, &'static str, &'static str, &'static [(&'static str, &'static str)]);
+const CONFIRM_WINDOWS: [Window; 9] = [
+    ("accounts.remove", "/providers", "remove-account", &[("id", "provider"), ("name", "name")]),
+    ("keys.revoke", "/endpoint", "revoke", &[("key", "key")]),
+    ("plugins.uninstall", "/providers", "uninstall-plugin", &[("id", "id")]),
+    ("proxy.remove", "/proxy-pools", "remove", &[("name", "name")]),
+    ("adapters.remove", "/endpoint", "remove-adapter", &[("harness", "harness"), ("version", "version")]),
+    ("adapters.clear", "/endpoint", "clear-adapter", &[("harness", "harness"), ("version", "version")]),
+    ("unified.remove", "/combo", "remove-unified", &[("name", "name")]),
+    ("combos.remove", "/combo", "remove-combo", &[("name", "name")]),
+    ("plugins.private_endpoints", "/settings", "private-endpoints", &[]),
+];
+
+/// The confirm window to send the browser to when `op` is irreversible and `form` is not
+/// confirmed. Turning private endpoints off needs no confirmation; only turning them on does.
+fn unconfirmed(op: &str, form: &Form) -> Option<String> {
+    if form.flag("confirmed") || (op == "plugins.private_endpoints" && !form.flag("on")) {
+        return None;
+    }
+    let (_, page, window, params) = CONFIRM_WINDOWS.iter().find(|(o, ..)| *o == op)?;
+    let mut to = format!("{page}?window={window}");
+    for (name, field) in *params {
+        to.push('&');
+        to.push_str(name);
+        to.push('=');
+        to.push_str(&access::encode_component(form.get(field)));
+    }
+    Some(to)
 }
 
 /// What a post's answer needs besides the result.
@@ -281,7 +398,10 @@ fn answer(shared: &Shared, a: &Answer<'_>, subject: String, result: Result<Done,
         tracing::warn!("the dashboard change log could not be written: {e}");
     }
     let to = match result {
-        Ok(Done { status: Status::Started { task }, .. }) => join(back, &[("task", task.as_str())]),
+        Ok(Done { status: Status::Started { task }, .. }) => {
+            shared.engine.tasks.set_owner(&task, access::session_digest(session));
+            join(back, &[("task", task.as_str())])
+        }
         Ok(done) => {
             let kind = match (done.once, done.status) {
                 (Some(once), _) => FlashKind::Once { label: once.label, value: once.value },

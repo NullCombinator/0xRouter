@@ -77,6 +77,7 @@ fn private_window(ctx: &Ctx<'_>) -> Markup {
         &ctx.req.token,
         html! {
             input type="hidden" name="_window" value="private-endpoints";
+            input type="hidden" name="confirmed" value="on";
             input type="hidden" name="on" value="on";
             button class="button button--primary" type="submit" { "Turn on private endpoints" }
         },

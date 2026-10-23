@@ -18,6 +18,7 @@ fn local(url: &str) -> bool {
         || path.starts_with("/logos/")
         || path == "/"
         || path == "/signin"
+        || path == "/signout"
         || path.starts_with("/do/")
         || Id::ALL.iter().any(|id| path == id.path() || path.starts_with(&format!("{}/", id.path())))
 }

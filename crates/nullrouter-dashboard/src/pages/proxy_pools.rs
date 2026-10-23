@@ -145,6 +145,7 @@ fn remove_window(req: &Req) -> Option<Markup> {
         &req.token,
         html! {
             input type="hidden" name="_window" value="remove";
+            input type="hidden" name="confirmed" value="on";
             input type="hidden" name="name" value=(name);
             button class="button button--primary" type="submit" { "Remove proxy" }
         },

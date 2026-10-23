@@ -31,12 +31,28 @@ use tokio::sync::oneshot;
 /// The token every suite signs in with.
 pub const TOKEN: &str = "nrd_fixture00000000000000000000000000000000000";
 
+/// Signs in with [`TOKEN`] as the sign-in form does: the `Cookie` header value the browser keeps.
+pub async fn sign_in(http: &Client, addr: SocketAddr) -> String {
+    let r = http
+        .post(format!("http://{addr}/signin"))
+        .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(format!("token={TOKEN}&next=%2F"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::SEE_OTHER, "the fixture signs in");
+    let set = r.headers()[reqwest::header::SET_COOKIE].to_str().unwrap();
+    set.split(';').next().unwrap().to_owned()
+}
+
 /// A served home, signed in.
 pub struct Dash {
     pub dir: tempfile::TempDir,
     pub engine: Arc<Engine>,
     pub addr: SocketAddr,
     pub client_addr: SocketAddr,
+    /// The `Cookie` header value of the signed-in browser: a session id, not the token.
+    pub cookie: String,
     http: Client,
     _stops: (oneshot::Sender<()>, oneshot::Sender<()>),
 }
@@ -88,7 +104,8 @@ impl Dash {
             .timeout(Duration::from_secs(30))
             .build()
             .unwrap();
-        Self { dir, engine, addr, client_addr, http, _stops: (stop, client_stop) }
+        let cookie = sign_in(&http, addr).await;
+        Self { dir, engine, addr, client_addr, cookie, http, _stops: (stop, client_stop) }
     }
 
     pub fn home(&self) -> OperatorHome {
@@ -97,13 +114,7 @@ impl Dash {
 
     /// `GET path` with the cookie: the status and the body.
     pub async fn page(&self, path: &str) -> (StatusCode, String) {
-        let r = self
-            .http
-            .get(format!("http://{}{path}", self.addr))
-            .header(COOKIE, format!("nrd_session_{}={TOKEN}", self.addr.port()))
-            .send()
-            .await
-            .unwrap();
+        let r = self.http.get(format!("http://{}{path}", self.addr)).header(COOKIE, &self.cookie).send().await.unwrap();
         let status = r.status();
         (status, r.text().await.unwrap())
     }
@@ -258,6 +269,9 @@ pub struct Site {
     pub http: Client,
     pub cookie: String,
     pub seen: Mutex<Vec<String>>,
+    /// Whether `post` adds `confirmed=on` to an irreversible op, as the op's confirm window does.
+    /// Only the confirm sweep turns it off.
+    pub auto_confirm: std::sync::atomic::AtomicBool,
 }
 
 impl Site {
@@ -274,8 +288,8 @@ impl Site {
             .timeout(Duration::from_secs(30))
             .build()
             .unwrap();
-        let cookie = format!("nrd_session_{}={TOKEN}", d.addr.port());
-        Self { d, http, cookie, seen: Mutex::new(Vec::new()) }
+        let cookie = d.cookie.clone();
+        Self { d, http, cookie, seen: Mutex::new(Vec::new()), auto_confirm: true.into() }
     }
 
     pub fn url(&self, path: &str) -> String {
@@ -313,6 +327,15 @@ impl Site {
         let mut body = format!("_t={}&_back={}", self.token().await, encode_component(back));
         for (k, v) in fields {
             body.push_str(&format!("&{k}={}", encode_component(v)));
+        }
+        let op = route.replace('-', "_").replace('/', ".");
+        let turns_on = op != "plugins.private_endpoints" || fields.iter().any(|(k, _)| *k == "on");
+        if self.auto_confirm.load(std::sync::atomic::Ordering::Relaxed)
+            && nullrouter_server::ops::IRREVERSIBLE.contains(&op.as_str())
+            && turns_on
+            && !fields.iter().any(|(k, _)| *k == "confirmed")
+        {
+            body.push_str("&confirmed=on");
         }
         self.http
             .post(self.url(&format!("/do/{route}")))

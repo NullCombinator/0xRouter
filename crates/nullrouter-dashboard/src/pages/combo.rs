@@ -230,6 +230,7 @@ fn remove_window(ctx: &Ctx<'_>, a: &Area) -> Option<Markup> {
         &ctx.req.token,
         html! {
             input type="hidden" name="_window" value=(a.remove);
+            input type="hidden" name="confirmed" value="on";
             input type="hidden" name="name" value=(name);
             button class="button button--primary" type="submit" { "Remove " (a.noun) }
         },

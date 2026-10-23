@@ -98,6 +98,18 @@ fn bench(c: &mut Criterion) {
     let handle = rt.block_on(spawn(engine, &settings, "nullrouter bench", std::future::pending::<()>()));
     let addr = handle.addr().expect("the dashboard bound a loopback port");
     let http = reqwest::Client::builder().no_proxy().timeout(Duration::from_secs(30)).build().unwrap();
+    let cookie = rt.block_on(async {
+        let once = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).no_proxy().build().unwrap();
+        let r = once
+            .post(format!("http://{addr}/signin"))
+            .header("content-type", "application/x-www-form-urlencoded")
+            .body(format!("token={TOKEN}"))
+            .send()
+            .await
+            .unwrap();
+        let set = r.headers()[reqwest::header::SET_COOKIE].to_str().unwrap().to_owned();
+        set.split(';').next().unwrap().to_owned()
+    });
 
     let mut paths: Vec<String> = Id::ALL.iter().map(|id| id.path().to_owned()).collect();
     paths.extend([
@@ -111,12 +123,7 @@ fn bench(c: &mut Criterion) {
     group.sample_size(10);
     for path in &paths {
         let load = || async {
-            let r = http
-                .get(format!("http://{addr}{path}"))
-                .header(COOKIE, format!("nrd_session_{}={TOKEN}", addr.port()))
-                .send()
-                .await
-                .unwrap();
+            let r = http.get(format!("http://{addr}{path}")).header(COOKIE, &cookie).send().await.unwrap();
             assert!(r.status().is_success(), "{path}: {}", r.status());
             r.bytes().await.unwrap()
         };

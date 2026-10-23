@@ -158,10 +158,20 @@ remove) reuse the same question text from `ops`.
 
 ## R10. What the cookie scope note (007 L1) means now
 
-**Decision**: the session cookie's name gains the port (`nrd_session_<port>`). The quickstart
-recommends a distinct loopback address for the dashboard when other local servers run. The form
-token (R3) is bound to the cookie value, so a cookie sent to another local server is still useless
-for posting here without the page's token.
+**Decision**: the cookie is a short-lived session, not the dashboard token. At sign-in the server
+makes a random 256-bit session id from OS randomness (no sign-in if the OS gives none) and keeps
+only its SHA-256, in memory. The cookie carries the id, with `Max-Age` of 7 days; a session also
+ends after 12 hours unused, on sign-out (`POST /signout`), when `dashboard token` issues a new
+token, and when the server restarts. At most 64 sessions are kept; the oldest goes first. The
+cookie's name gains the port (`nrd_session_<port>`). The form token (R3), the flashes and a task's
+owner are bound to the session id. The quickstart still recommends a distinct loopback address
+(`127.0.0.2` on Linux) for the dashboard when other local servers run.
 
-**Rationale**: write access raises the stakes of 007's open Low L1. The token closes the posting
-path; the per-port name stops two dashboards on different ports from clobbering each other.
+**Rationale**: write access raises the stakes of 007's open Low L1 (security-review.md M1). An
+earlier draft said a cookie sent to another local server is useless for posting without the page's
+token. That is false for any non-browser client: with the cookie it sends its own `Host` and
+`Origin`, reads the form token from a page and posts. When the cookie was the dashboard token, it
+was also the CLI's authority for 400 days. A session id leaks only a session that expires, and never
+reveals the token. The port in the name stops two dashboards on different ports from clobbering
+each other.
+

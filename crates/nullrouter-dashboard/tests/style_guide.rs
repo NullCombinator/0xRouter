@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use common::{Dash, TOKEN, text_of};
+use common::{Dash, text_of};
 use nullrouter_dashboard::page::ViewName;
 use nullrouter_dashboard::pages::Id;
 use nullrouter_engine::tasks::TaskKind;
@@ -325,7 +325,7 @@ async fn fetch(d: &Dash, url: &str) -> (Option<String>, String) {
     let http = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).no_proxy().build().unwrap();
     let r = http
         .get(format!("http://{}{url}", d.addr))
-        .header(reqwest::header::COOKIE, format!("nrd_session_{}={TOKEN}", d.addr.port()))
+        .header(reqwest::header::COOKIE, &d.cookie)
         .send()
         .await
         .unwrap();

@@ -336,6 +336,7 @@ fn remove_window(ctx: &Ctx<'_>) -> Option<Markup> {
         &ctx.req.token,
         html! {
             input type="hidden" name="_window" value="remove-account";
+            input type="hidden" name="confirmed" value="on";
             input type="hidden" name="provider" value=(id);
             input type="hidden" name="name" value=(account);
             button class="button button--primary" type="submit" { "Remove account" }
@@ -728,6 +729,7 @@ fn uninstall_window(ctx: &Ctx<'_>) -> Option<Markup> {
         &ctx.req.token,
         html! {
             input type="hidden" name="_window" value="uninstall-plugin";
+            input type="hidden" name="confirmed" value="on";
             input type="hidden" name="id" value=(id);
             button class="button button--primary" type="submit" { "Uninstall provider" }
         },

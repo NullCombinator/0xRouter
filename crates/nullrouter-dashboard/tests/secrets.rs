@@ -160,7 +160,7 @@ async fn no_route_carries_a_secret_or_a_prompt() {
         for cookie in [true, false] {
             let mut req = http.get(format!("http://{}{path}", d.addr));
             if cookie {
-                req = req.header(COOKIE, format!("nrd_session_{}={TOKEN}", d.addr.port()));
+                req = req.header(COOKIE, &d.cookie);
             }
             let r = req.send().await.unwrap();
             let headers: String =

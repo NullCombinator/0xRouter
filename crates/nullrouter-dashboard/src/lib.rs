@@ -50,6 +50,8 @@ pub struct Shared {
     pub access: access::Access,
     /// The form token key and the flashes (spec 014).
     pub forms: forms::Forms,
+    /// The live sign-ins (security-review.md M1).
+    pub sessions: access::Sessions,
 }
 
 /// A running dashboard (or the record of why there isn't one).
@@ -89,6 +91,17 @@ pub async fn spawn(
     version: impl Into<String>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> DashboardHandle {
+    spawn_with(engine, settings, version, shutdown, access::Limits::default()).await
+}
+
+/// [`spawn`] with other session lifetimes, for the tests that age a session.
+pub async fn spawn_with(
+    engine: Arc<Engine>,
+    settings: &DashboardSettings,
+    version: impl Into<String>,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+    limits: access::Limits,
+) -> DashboardHandle {
     let mut status =
         DashboardStatus { enabled: settings.enabled, listen: settings.listen.clone(), serving: false, error: None };
     if !settings.enabled {
@@ -122,6 +135,7 @@ pub async fn spawn(
         rule: headers::HostRule::new(host, port),
         access: access::Access::default(),
         forms: forms::Forms::new(),
+        sessions: access::Sessions::new(limits),
     });
     let app = router(shared);
     status.serving = true;
@@ -142,6 +156,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
     Router::new()
         .route("/signin", get(pages::signin::get).post(pages::signin::post))
         .route("/do/{area}/{op}", post(changes::dispatch))
+        .route("/signout", post(changes::signout))
         .fallback(gated)
         .with_state(shared)
         .layer(axum::middleware::from_fn_with_state(rule, headers::enforce))
@@ -153,7 +168,7 @@ async fn gated(State(shared): State<Arc<Shared>>, req: Request) -> Response {
     if path.starts_with("/assets/") {
         return assets::serve(path);
     }
-    match access::gate(&shared.engine, req.headers(), shared.rule.port()) {
+    match access::gate(&shared.engine, &shared.sessions, req.headers(), shared.rule.port()) {
         access::Gate::NoToken => pages::signin::see_other("/signin"),
         access::Gate::SignedOut => {
             let wanted = req.uri().path_and_query().map_or(path, |p| p.as_str());
@@ -163,13 +178,15 @@ async fn gated(State(shared): State<Arc<Shared>>, req: Request) -> Response {
         #[cfg(any(test, feature = "testkit"))]
         access::Gate::SignedIn if path == "/debug/form-token" => {
             // Test-only: the form token no page carries yet.
-            let session = access::session_cookie(&shared.engine, req.headers(), shared.rule.port()).unwrap_or_default();
+            let session = access::session_cookie(&shared.engine, &shared.sessions, req.headers(), shared.rule.port())
+                .unwrap_or_default();
             axum::response::IntoResponse::into_response(shared.forms.token(session))
         }
         access::Gate::SignedIn if path.starts_with("/logos/") => logos::serve(&shared.engine, path),
         access::Gate::SignedIn => match pages::Req::parse(path, req.uri().query().unwrap_or_default()) {
             Some(mut page_req) => {
-                let session = access::session_cookie(&shared.engine, req.headers(), shared.rule.port());
+                let session =
+                    access::session_cookie(&shared.engine, &shared.sessions, req.headers(), shared.rule.port());
                 page_req.token = shared.forms.token(session.unwrap_or_default());
                 page(shared, page_req, req.headers()).await
             }
@@ -234,7 +251,8 @@ fn top_of(
     use forms::FlashKind;
     use nullrouter_engine::tasks::TaskResult;
     if let Some(id) = req.get("done") {
-        let Some(session) = access::session_cookie(&shared.engine, headers, shared.rule.port()) else {
+        let Some(session) = access::session_cookie(&shared.engine, &shared.sessions, headers, shared.rule.port())
+        else {
             return (None, None);
         };
         return match shared.forms.take(session, id) {
@@ -249,6 +267,14 @@ fn top_of(
     let Some(view) = req.get("task").and_then(|t| t.parse().ok()).and_then(|id| shared.engine.tasks.get(&id)) else {
         return (None, None);
     };
+    // A task started by one session is not shown to another (security-review.md I3).
+    if let Some(owner) = &view.owner {
+        let mine = access::session_cookie(&shared.engine, &shared.sessions, headers, shared.rule.port())
+            .is_some_and(|s| access::session_digest(s) == *owner);
+        if !mine {
+            return (None, None);
+        }
+    }
     let tz = time::local_zone();
     let started = time::local_text(&view.started.to_string(), &tz).unwrap_or_else(|| view.started.to_string());
     let state = match &view.result {

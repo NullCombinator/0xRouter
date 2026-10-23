@@ -9,7 +9,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use nullrouter_dashboard::spawn;
+use nullrouter_dashboard::access::Limits;
+use nullrouter_dashboard::spawn_with;
 use nullrouter_engine::files::DashboardToken;
 use nullrouter_engine::state::Engine;
 use nullrouter_engine::testkit::homes;
@@ -57,14 +58,24 @@ struct Dash {
 
 impl Dash {
     async fn start() -> Self {
+        Self::start_with(Limits::default()).await
+    }
+
+    async fn start_with(limits: Limits) -> Self {
         let dir = homes::empty();
         let (engine, _) = Engine::open(OperatorHome::new(dir.path())).unwrap();
         let engine = Arc::new(engine);
         let settings = DashboardSettings { enabled: true, listen: "127.0.0.1:0".into() };
         let (stop, stopped) = oneshot::channel::<()>();
-        let handle = spawn(engine.clone(), &settings, "test", async move {
-            let _ = stopped.await;
-        })
+        let handle = spawn_with(
+            engine.clone(),
+            &settings,
+            "test",
+            async move {
+                let _ = stopped.await;
+            },
+            limits,
+        )
         .await;
         let addr = handle.addr().expect("the dashboard bound a loopback port");
         let http = Client::builder()
@@ -86,6 +97,31 @@ impl Dash {
             .save(self.dir.path())
             .unwrap();
         self.engine.reload().await.unwrap();
+    }
+
+    /// Signs in with `token`: the `Cookie` header value of the session it makes.
+    async fn session(&self, token: &str) -> String {
+        let r = self.sign_in(token, None).send().await.unwrap();
+        assert_eq!(r.status(), StatusCode::SEE_OTHER);
+        r.headers()[SET_COOKIE].to_str().unwrap().split(';').next().unwrap().to_owned()
+    }
+
+    /// The form token of the session `cookie` (the test-only route).
+    async fn form_token(&self, cookie: &str) -> String {
+        self.get("/debug/form-token").header(COOKIE, cookie).send().await.unwrap().text().await.unwrap()
+    }
+
+    /// `POST /signout` as the page's Sign out form does.
+    async fn sign_out(&self, cookie: &str) -> Response {
+        let body = format!("_t={}", self.form_token(cookie).await);
+        self.req(Method::POST, "/signout")
+            .header(COOKIE, cookie)
+            .header("Origin", format!("http://{}", self.addr))
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await
+            .unwrap()
     }
 
     fn req(&self, method: Method, path: &str) -> RequestBuilder {
@@ -216,17 +252,23 @@ async fn the_right_token_sets_a_long_lived_cookie_and_the_cookie_opens_pages() {
     let r = d.sign_in(&t, None).send().await.unwrap();
     assert_eq!(r.status(), StatusCode::SEE_OTHER);
     assert_eq!(location(&r), "/");
-    let set = r.headers().get(SET_COOKIE).expect("a cookie").to_str().unwrap();
-    assert_eq!(set, format!("nrd_session_{}={t}; Path=/; HttpOnly; SameSite=Strict; Max-Age=34560000", d.port()));
+    let set = r.headers().get(SET_COOKIE).expect("a cookie").to_str().unwrap().to_owned();
+    let prefix = format!("nrd_session_{}=", d.port());
+    let id = set.strip_prefix(&prefix).and_then(|r| r.split_once(';')).expect("the session cookie").0.to_owned();
+    assert_eq!(set, format!("{prefix}{id}; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800"));
+    assert_eq!(id.len(), 64, "a 256-bit id in hex");
+    assert_ne!(id, t, "the cookie is a session id, never the token");
+    assert!(!set.contains(&t));
+    let session = cookie(d.port(), &id);
 
     // With it, every route is open; the sign-in page and a repeated post go home.
     for path in gated() {
-        let r = d.get(path).header(COOKIE, cookie(d.port(), &t)).send().await.unwrap();
+        let r = d.get(path).header(COOKIE, session.clone()).send().await.unwrap();
         assert!(passes_the_gate(&r), "{path}: {}", r.status());
     }
-    let r = d.get("/signin").header(COOKIE, cookie(d.port(), &t)).send().await.unwrap();
+    let r = d.get("/signin").header(COOKIE, session.clone()).send().await.unwrap();
     assert_eq!((r.status(), location(&r)), (StatusCode::SEE_OTHER, "/"));
-    let r = d.sign_in("whatever", None).header(COOKIE, cookie(d.port(), &t)).send().await.unwrap();
+    let r = d.sign_in("whatever", None).header(COOKIE, session.clone()).send().await.unwrap();
     assert_eq!((r.status(), location(&r)), (StatusCode::SEE_OTHER, "/"));
 
     // Logos are behind the cookie like a page (a user plugin's logo names the plugin); assets are not.
@@ -273,17 +315,19 @@ async fn a_new_token_signs_the_old_cookie_out() {
     let d = Dash::start().await;
     let (first, second) = (token(1), token(2));
     d.issue(&first).await;
-    let r = d.get("/endpoint").header(COOKIE, cookie(d.port(), &first)).send().await.unwrap();
+    let old = d.session(&first).await;
+    let r = d.get("/endpoint").header(COOKIE, &old).send().await.unwrap();
     assert!(passes_the_gate(&r), "{}", r.status());
 
     d.issue(&second).await;
+    let r = d.get("/endpoint").header(COOKIE, &old).send().await.unwrap();
+    assert!(is_sign_in_redirect(&r), "reissuing the token ends a live session: {}", r.status());
+    // Nor does the old token's cookie come back.
     let r = d.get("/endpoint").header(COOKIE, cookie(d.port(), &first)).send().await.unwrap();
     assert!(is_sign_in_redirect(&r), "{}", r.status());
 
-    let r = d.sign_in(&second, None).send().await.unwrap();
-    assert_eq!(r.status(), StatusCode::SEE_OTHER);
-    assert!(r.headers()[SET_COOKIE].to_str().unwrap().starts_with(&cookie(d.port(), &second)));
-    let r = d.get("/endpoint").header(COOKIE, cookie(d.port(), &second)).send().await.unwrap();
+    let new = d.session(&second).await;
+    let r = d.get("/endpoint").header(COOKIE, &new).send().await.unwrap();
     assert!(passes_the_gate(&r), "{}", r.status());
 }
 
@@ -357,8 +401,10 @@ async fn no_write_routes() {
     let d = Dash::start().await;
     let t = token(1);
     for issued in [false, true] {
+        let mut session = String::new();
         if issued {
             d.issue(&t).await;
+            session = d.session(&t).await;
         }
         for path in ROUTES {
             for method in
@@ -369,7 +415,7 @@ async fn no_write_routes() {
                 }
                 let mut req = d.req(method.clone(), path);
                 if issued {
-                    req = req.header(COOKIE, cookie(d.port(), &t));
+                    req = req.header(COOKIE, &session);
                 }
                 let r = req.send().await.unwrap();
                 assert_eq!(r.status(), StatusCode::METHOD_NOT_ALLOWED, "{method} {path} (token issued: {issued})");
@@ -378,4 +424,86 @@ async fn no_write_routes() {
             }
         }
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cookie_reused_after_sign_out_is_refused() {
+    let d = Dash::start().await;
+    let t = token(1);
+    d.issue(&t).await;
+    let session = d.session(&t).await;
+    let r = d.get("/endpoint").header(COOKIE, &session).send().await.unwrap();
+    assert!(passes_the_gate(&r), "{}", r.status());
+    // The frame carries the form.
+    let page = r.text().await.unwrap();
+    assert!(page.contains("action=\"/signout\"") && page.contains(">Sign out<"), "no Sign out form");
+
+    // Without the form token or from another origin, nothing ends.
+    let r = d
+        .req(Method::POST, "/signout")
+        .header(COOKIE, &session)
+        .header("Origin", format!("http://{}", d.addr))
+        .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body("_t=nope")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::FORBIDDEN);
+    let r = d.get("/endpoint").header(COOKIE, &session).send().await.unwrap();
+    assert!(passes_the_gate(&r), "a refused sign-out leaves the session: {}", r.status());
+
+    let r = d.sign_out(&session).await;
+    assert_eq!((r.status(), location(&r)), (StatusCode::SEE_OTHER, "/signin"));
+    let cleared = r.headers()[SET_COOKIE].to_str().unwrap();
+    assert!(cleared.starts_with(&format!("nrd_session_{}=;", d.port())) && cleared.contains("Max-Age=0"), "{cleared}");
+
+    let r = d.get("/endpoint").header(COOKIE, &session).send().await.unwrap();
+    assert!(is_sign_in_redirect(&r), "the old cookie still opens a page: {}", r.status());
+    let r = d.sign_out(&session).await;
+    assert!(is_sign_in_redirect(&r) || r.status() == StatusCode::FORBIDDEN, "{}", r.status());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_past_its_idle_limit_is_refused_and_use_keeps_it_alive() {
+    let limits = Limits { idle: Duration::from_millis(1500), absolute: Duration::from_secs(60) };
+    let d = Dash::start_with(limits).await;
+    let t = token(1);
+    d.issue(&t).await;
+    let session = d.session(&t).await;
+    for _ in 0..3 {
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        let r = d.get("/endpoint").header(COOKIE, &session).send().await.unwrap();
+        assert!(passes_the_gate(&r), "use renews the idle limit: {}", r.status());
+    }
+    tokio::time::sleep(Duration::from_millis(1800)).await;
+    let r = d.get("/endpoint").header(COOKIE, &session).send().await.unwrap();
+    assert!(is_sign_in_redirect(&r), "an idle session is refused: {}", r.status());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_past_its_absolute_limit_is_refused_however_busy() {
+    let limits = Limits { idle: Duration::from_secs(60), absolute: Duration::from_millis(1500) };
+    let d = Dash::start_with(limits).await;
+    let t = token(1);
+    d.issue(&t).await;
+    let session = d.session(&t).await;
+    for _ in 0..2 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let r = d.get("/endpoint").header(COOKIE, &session).send().await.unwrap();
+        assert!(passes_the_gate(&r), "{}", r.status());
+    }
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    let r = d.get("/endpoint").header(COOKIE, &session).send().await.unwrap();
+    assert!(is_sign_in_redirect(&r), "{}", r.status());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_cookie_is_not_the_token_and_the_token_as_a_cookie_opens_nothing() {
+    let d = Dash::start().await;
+    let t = token(1);
+    d.issue(&t).await;
+    let session = d.session(&t).await;
+    assert!(!session.contains(&t), "{session}");
+    let r = d.get("/endpoint").header(COOKIE, cookie(d.port(), &t)).send().await.unwrap();
+    assert!(is_sign_in_redirect(&r), "{}", r.status());
 }
