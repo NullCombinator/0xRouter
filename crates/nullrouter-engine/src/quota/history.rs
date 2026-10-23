@@ -660,13 +660,20 @@ struct Resume {
 
 impl Resume {
     /// Whether the reloaded tally already holds the attempt that ended at `at` with sequence
-    /// `seq`. By sequence when both sides have one; by time for files written before it.
+    /// `seq`. By sequence when both sides have one; by time for files written before it. The
+    /// resume time is cut to the millisecond, so the attempt's end is compared at that precision:
+    /// one that ended earlier in the millisecond the checkpoint was written in is held.
     fn holds(&self, at: SystemTime, seq: Option<u64>) -> bool {
         match (self.seq, seq) {
             (Some(r), Some(s)) => s <= r,
-            _ => self.at.is_some_and(|f| at <= f),
+            _ => self.at.is_some_and(|f| millis(at) <= millis(f)),
         }
     }
+}
+
+/// `t` cut to the millisecond since the epoch.
+fn millis(t: SystemTime) -> u128 {
+    t.duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis())
 }
 
 fn resume_point(home: &Path, provider: &str, account: &str) -> Resume {
@@ -693,5 +700,21 @@ impl crate::state::Engine {
             tracing::error!("tally checkpoint failed: {e}");
             0
         })
+    }
+}
+
+#[cfg(test)]
+mod resume_tests {
+    use super::*;
+    use std::time::UNIX_EPOCH;
+
+    #[test]
+    fn an_attempt_ended_in_the_checkpoints_millisecond_is_held_by_time() {
+        let t = |ns: u64| UNIX_EPOCH + Duration::from_nanos(1_792_750_862_000_000_000 + ns);
+        // The checkpoint was written at .472 6 ms and stored as .472; the attempt ended at .472 3 ms.
+        let cp = Resume { at: clock::parse_rfc3339(&super::super::extract::rfc3339_millis(t(472_600_000))), seq: None };
+        assert!(cp.holds(t(472_300_000), Some(2)), "same millisecond, before the write");
+        assert!(cp.holds(t(471_900_000), None));
+        assert!(!cp.holds(t(473_000_000), Some(2)), "the next millisecond is after it");
     }
 }
