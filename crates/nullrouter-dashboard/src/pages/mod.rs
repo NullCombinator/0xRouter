@@ -321,9 +321,14 @@ impl Ctx<'_> {
         self.page.views.iter().filter(move |f| f.view == name).map(|f| (&f.args, &f.value.json))
     }
 
-    /// An instant as `<time>` in this machine's zone.
+    /// An instant as `<time>` in this machine's zone; one from the page's day shows only its clock.
     pub fn time(&self, rfc3339: &str) -> Markup {
-        crate::time::time_element(rfc3339, self.tz)
+        crate::time::time_element_since(rfc3339, self.tz, self.page.as_of)
+    }
+
+    /// `2s ago`, counted from the page's "as of" instant.
+    pub fn ago(&self, rfc3339: &str) -> Markup {
+        crate::time::ago_element(rfc3339, self.tz, self.page.as_of)
     }
 }
 

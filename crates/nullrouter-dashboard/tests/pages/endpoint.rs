@@ -143,6 +143,12 @@ async fn the_adapters_panel_lists_the_harnesses_and_has_the_install_and_review_f
         assert!(form.contains("name=\"_t\" value=\""), "{action} carries the token: {form}");
     }
     assert!(!html.contains("<script"), "no script");
+    // Look's panel: the third-party section names the CLI listing, the gear opens the settings window.
+    assert!(text.contains("Client adapters") && text.contains("In the CLI: nullrouter adapters list"), "{text}");
+    assert!(text.contains("Built in · 1") && text.contains("hermes") && text.contains("built-in"), "{text}");
+    assert!(panel.contains(&format!("for=\"{}\"", nullrouter_dashboard::pages::endpoint::SETTINGS)), "the gear opens the settings window");
+    let settings = text_of(&html[html.find(&format!("id=\"{}\"", nullrouter_dashboard::pages::endpoint::SETTINGS)).expect("the settings window")..]);
+    assert!(settings.contains("Client adapter settings") && settings.contains("nullrouter adapters install"), "{settings}");
 }
 
 /// A clear or remove window opens only for a named version, and names what it loses.

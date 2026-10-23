@@ -168,14 +168,52 @@ fn every_component_source_exists() {
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
 
-/// dashboard.css as (selector, [(property, value)]), comments removed. It has no nested blocks.
+/// `css` with its two kinds of nested block flattened: an `@media` block's rules stand as they are,
+/// and each step of `@keyframes name` becomes a rule for `.name`, so its values are checked
+/// against the component the name belongs to.
+fn flatten(css: &str) -> String {
+    let mut out = String::new();
+    let mut rest = css;
+    while let Some(at) = rest.find('@') {
+        out.push_str(&rest[..at]);
+        let open = rest[at..].find('{').expect("an at-rule has a block") + at;
+        let head = rest[at + 1..open].trim();
+        let (mut depth, mut close) = (0, open);
+        for (i, c) in rest[open..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+            if depth == 0 {
+                close = open + i;
+                break;
+            }
+        }
+        let inner = &rest[open + 1..close];
+        if let Some(name) = head.strip_prefix("keyframes ") {
+            for step in inner.split('}').filter(|r| !r.trim().is_empty()) {
+                let body = step.split_once('{').expect("a keyframe step").1;
+                out.push_str(&format!(".{} {{{body}}}\n", name.trim()));
+            }
+        } else {
+            assert!(head.starts_with("media "), "only @media and @keyframes blocks: @{head}");
+            out.push_str(inner);
+        }
+        rest = &rest[close + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// dashboard.css as (selector, [(property, value)]), comments removed, at-rules flattened.
 fn rules() -> Vec<(String, Vec<(String, String)>)> {
     let mut css = style("dashboard.css");
     while let Some(start) = css.find("/*") {
         let end = css[start..].find("*/").map_or(css.len(), |e| start + e + 2);
         css.replace_range(start..end, "");
     }
-    css.split('}')
+    flatten(&css).split('}')
         .filter(|r| !r.trim().is_empty())
         .map(|r| {
             let (sel, body) = r.split_once('{').unwrap_or_else(|| panic!("not a rule: {r}"));

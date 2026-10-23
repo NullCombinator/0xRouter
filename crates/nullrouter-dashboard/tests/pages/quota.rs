@@ -193,10 +193,12 @@ fn expiring_first_sorts_windows_by_reset() {
     assert!(at(&plain, "weekly") < at(&plain, "monthly") && at(&plain, "monthly") < at(&plain, "5-hour"));
     let sorted = page("order=expiring");
     assert!(at(&sorted, "5-hour") < at(&sorted, "weekly") && at(&sorted, "weekly") < at(&sorted, "monthly"));
-    assert!(sorted.contains("checked"), "the toggle shows it is on");
+    assert!(sorted.contains("quota-filters__pill--on"), "the toggle shows it is on");
+    assert!(!plain.contains("quota-filters__pill--on"), "and off without it");
 }
 
-/// Narrowing keeps its place in the form: the chosen provider and account are selected.
+/// Narrowing keeps its place in the filters: the chosen provider and account name their pills and
+/// are marked in their menus, every provider is offered, and each link keeps the other choices.
 #[test]
 fn the_filters_show_what_is_chosen() {
     let html = render(
@@ -205,10 +207,12 @@ fn the_filters_show_what_is_chosen() {
         json!([unreported("anthropic", "main")]),
         routing(vec![]),
     );
-    assert!(html.contains("<option value=\"anthropic\" selected>"), "{html}");
-    assert!(html.contains("<option value=\"main\" selected>"), "{html}");
-    assert!(html.contains("<option value=\"xai\">"), "every provider is offered: {html}");
-    assert!(html.contains("name=\"order\"") && html.contains("Expiring first"), "{html}");
+    assert!(html.contains("<span class=\"quota-filters__label\">anthropic</span>"), "{html}");
+    assert!(html.contains("<span class=\"quota-filters__label\">main</span>"), "{html}");
+    assert!(html.contains("pick__item--current\" href=\"/quota?provider=anthropic\">anthropic<"), "{html}");
+    assert!(html.contains("href=\"/quota?provider=xai\">xai<"), "every provider is offered: {html}");
+    assert!(html.contains("href=\"/quota?provider=anthropic&amp;account=main&amp;order=expiring\""), "{html}");
+    assert!(html.contains("Expiring first") && !html.contains("<form class=\"quota-filters"), "{html}");
 }
 
 /// The first `<form>` posting to `action`, through its `</form>`.

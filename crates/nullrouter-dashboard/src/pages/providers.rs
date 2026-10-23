@@ -14,8 +14,8 @@ use serde_json::{Value, json};
 use super::{Body, Ctx, Failure, Refused, Req};
 use crate::access::encode_component;
 use crate::components::{
-    self, Tone, badge, confirm_window, disabled, empty, field, form, icon, kv, link_button, modal, name, prose,
-    secret_field, select, status, textarea,
+    self, Tone, badge, confirm_window, disabled_button, empty, field, form, icon, kv, link_button, modal, name, prose,
+    secret_field, select, side_row, side_section, status, textarea,
 };
 use crate::page::{ViewName, Want};
 
@@ -80,18 +80,23 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
         },
     };
     let q = ctx.req.get("q").map(str::to_lowercase);
-    let shown: Vec<&Value> = providers.iter().filter(|p| q.as_deref().is_none_or(|q| matches(p, q))).collect();
+    let has = ctx.req.get("has");
+    let shown: Vec<&Value> = providers
+        .iter()
+        .filter(|p| q.as_deref().is_none_or(|q| matches(p, q)))
+        .filter(|p| has.is_none_or(|k| rows(&p["capabilities"]).iter().any(|c| c == k)))
+        .collect();
 
     let content = html! {
-        (search(ctx.req))
+        (search(ctx.req, providers))
         (custom_section(ctx, &shown, accounts))
         @for (title, categories) in SECTIONS {
             @let mine: Vec<&Value> = shown.iter().copied().filter(|p| section_of(p) == *title && is_in(p, categories)).collect();
             @if !mine.is_empty() {
-                (section(ctx, title, disabled("Test All", None, TEST_HINT), &mine, accounts))
+                (section(ctx, title, test_all(), &mine, accounts))
             }
         }
-        @if shown.is_empty() && q.is_some() {
+        @if shown.is_empty() && (q.is_some() || has.is_some()) {
             (empty("search", "No provider matches", "Search by provider id or alias."))
         }
     };
@@ -128,42 +133,73 @@ fn matches(p: &Value, q: &str) -> bool {
     ["id", "alias"].iter().any(|k| p[*k].as_str().is_some_and(|s| s.to_lowercase().contains(q)))
 }
 
-/// The `q` search, a `GET` form (research R4).
-fn search(req: &Req) -> Markup {
+/// The `q` search, a `GET` form (research R4) at the top right, as the mockup draws it: Enter
+/// submits it.
+fn search(req: &Req, providers: &[Value]) -> Markup {
+    let has = req.get("has");
     html! {
         form class="provider-grid__search" method="get" action=(req.base()) role="search" {
             @if req.notices_open() { input type="hidden" name="notices" value=""; }
-            (icon("search"))
-            input class="input" type="search" name="q" value=(req.get("q").unwrap_or_default())
-                placeholder="Search providers..." aria-label="Search providers";
-            button class="button button--secondary" type="submit" { "Search" }
+            @if let Some(k) = has { input type="hidden" name="has" value=(k); }
+            label class="provider-grid__field" {
+                (icon("search"))
+                input class="provider-grid__input" type="search" name="q" value=(req.get("q").unwrap_or_default())
+                    placeholder="Search providers..." aria-label="Search providers";
+            }
+            (kinds_menu(req, providers, has))
         }
     }
+}
+
+/// "All kinds": a menu of the model kinds the loaded plugins declare, as links; a provider is
+/// listed under a kind when its `capabilities` (as `providers` prints them) include it.
+fn kinds_menu(req: &Req, providers: &[Value], has: Option<&str>) -> Markup {
+    let kinds: BTreeSet<&str> =
+        providers.iter().flat_map(|p| rows(&p["capabilities"])).filter_map(Value::as_str).collect();
+    let path = req.path();
+    html! {
+        details class="pick" {
+            summary class="pick__button" { (has.unwrap_or("All kinds")) (icon("expand_more")) }
+            div class="pick__menu" {
+                a class=(if has.is_none() { "pick__item pick__item--current" } else { "pick__item" }) href=(req.href(&path, &["has"], &[])) { "All kinds" }
+                @for kind in kinds {
+                    a class=(if has == Some(kind) { "pick__item pick__item--current" } else { "pick__item" }) href=(req.href(&path, &[], &[("has", kind)])) { (kind) }
+                }
+            }
+        }
+    }
+}
+
+/// A section's "Test All", disabled, with its hint as the bar's note.
+fn test_all() -> (Markup, Markup) {
+    (prose(TEST_HINT), disabled_button("Test All", Some("play_arrow"), false))
 }
 
 /// "Custom Providers", always drawn: it holds the two disabled "Add … Compatible" controls.
 fn custom_section(ctx: &Ctx<'_>, shown: &[&Value], accounts: &[Value]) -> Markup {
     let mine: Vec<&Value> = shown.iter().copied().filter(|p| section_of(p) == CUSTOM).collect();
-    let controls = html! {
-        @for (window, _, title) in COMPATIBLE {
-            (link_button(&ctx.req.href(BACK, &["window", "id", "name", "done", "task"], &[("window", window)]), title, Some("add"), false))
+    // The add buttons open the add windows (`?window=add-…`); the first is drawn in the brand fill.
+    let buttons = html! {
+        @for (n, (window, _, title)) in COMPATIBLE.iter().enumerate() {
+            (link_button(&ctx.req.href(BACK, &["window", "id", "name", "done", "task"], &[("window", window)]), title, Some("add"), n == 0))
         }
     };
+    let controls = (html! {}, buttons);
     if mine.is_empty() {
         return html! {
             div class="provider-grid" {
-                (components::section_bar(CUSTOM, controls))
-                (empty("extension", "No custom providers", "Add one with the buttons above, or with a plugin file; see docs/plugins.md."))
+                (components::section_bar_noted(CUSTOM, controls.0, controls.1))
+                p class="provider-grid__none" { (icon("extension")) "No custom providers. Add one with the buttons above, or with a plugin file; see docs/plugins.md." }
             }
         };
     }
     section(ctx, CUSTOM, controls, &mine, accounts)
 }
 
-fn section(ctx: &Ctx<'_>, title: &str, controls: Markup, providers: &[&Value], accounts: &[Value]) -> Markup {
+fn section(ctx: &Ctx<'_>, title: &str, controls: (Markup, Markup), providers: &[&Value], accounts: &[Value]) -> Markup {
     html! {
         div class="provider-grid" {
-            (components::section_bar(title, controls))
+            (components::section_bar_noted(title, controls.0, controls.1))
             div class="provider-grid__cards" {
                 @for p in providers { (card(ctx, p, &accounts_of(accounts, p["id"].as_str().unwrap_or_default()))) }
             }
@@ -248,6 +284,9 @@ fn window(ctx: &Ctx<'_>, providers: &[Value], accounts: &[Value], token: &str) -
                 span class="provider-window__logo" { (components::logo(ctx.logos.href(id), alias)) }
                 div class="provider-window__titles" {
                     h3 class="provider-window__name" { (id) }
+                    p class="provider-window__count" {
+                        (accounts_line(&mine)) " · " (models.len()) (if models.len() == 1 { " model" } else { " models" })
+                    }
                     div class="provider-window__facts" {
                         @if let Some(a) = p["alias"].as_str() { (kv("alias", html! { (a) })) }
                         (kv("category", html! { (p["category"].as_str().unwrap_or_default()) }))
@@ -255,8 +294,11 @@ fn window(ctx: &Ctx<'_>, providers: &[Value], accounts: &[Value], token: &str) -
                     }
                 }
             }
-            section class="provider-window__section" {
-                h4 class="provider-window__heading" { "Accounts" }
+            section class="provider-window__card" {
+                div class="provider-window__card-head" {
+                    h4 class="provider-window__heading" { "Connections" }
+                    (last_response(ctx, id))
+                }
                 @if mine.is_empty() {
                     p class="provider-window__none" { "No connections" }
                 } @else {
@@ -265,8 +307,8 @@ fn window(ctx: &Ctx<'_>, providers: &[Value], accounts: &[Value], token: &str) -
                 (add_account(ctx, id))
                 (sign_in(ctx, p))
             }
-            section class="provider-window__section" {
-                h4 class="provider-window__heading" { "Models" }
+            section class="provider-window__card" {
+                div class="provider-window__card-head" { h4 class="provider-window__heading" { "Available Models" } }
                 (kind_filter(req, providers, models, chosen))
                 @if shown.is_empty() {
                     p class="provider-window__none" {
@@ -290,7 +332,8 @@ fn window(ctx: &Ctx<'_>, providers: &[Value], accounts: &[Value], token: &str) -
             }
         }
     };
-    Ok(modal(id, &req.close_href(), body))
+    let what = format!("provider plugin · {}", p["source"].as_str().unwrap_or_default());
+    Ok(components::wide_modal(id, &what, &req.close_href(), body))
 }
 
 /// The terms warning as the confirm window words it: the CLI's text without its `[y/N]` prompt.
@@ -556,13 +599,14 @@ fn last_response(ctx: &Ctx<'_>, id: &str) -> Markup {
     let row = rows(&ctx.json(ViewName::Latency)["providers"]).iter().find(|r| r["id"] == id);
     let last = row.map(|r| &r["last"]).filter(|l| l["at"].is_string());
     html! {
-        @if let Some(l) = last {
-            p {
-                (l["result"].as_str().unwrap_or_default()) " · " (ctx.time(l["at"].as_str().unwrap_or_default()))
+        span class="provider-window__last" {
+            "Last response "
+            @if let Some(l) = last {
+                (status(l["result"].as_str().unwrap_or_default())) " · " (ctx.time(l["at"].as_str().unwrap_or_default()))
                 @if let Some(status) = l["status"].as_u64() { " · " (status) }
+            } @else {
+                (NO_RESPONSE)
             }
-        } @else {
-            p class="provider-window__none" { (NO_RESPONSE) }
         }
     }
 }
@@ -576,27 +620,31 @@ fn account_row(ctx: &Ctx<'_>, a: &Value) -> Markup {
         Some(t) => ctx.time(t),
         None => html! { "-" },
     };
+    let signin = a["kind"] == "signin";
     let command = format!("Run: `nullrouter accounts signin {} {}`", text("provider"), text("name"));
     html! {
         div class="provider-window__account" {
-            div class="provider-window__account-head" {
+            span class="provider-window__account-icon" { (icon(if signin { "lock" } else { "key" })) }
+            div class="provider-window__account-main" {
                 b class="provider-window__account-name" { (name(&text("name"))) }
-                (status(&text("state_text")))
-            }
-            div class="provider-window__account-facts" {
-                (kv("kind", html! { (text("kind")) }))
-                (kv("order", html! { (a["order"].to_string()) }))
-                (kv("priority", html! { (priority) }))
-                (kv("secret", html! { (text("secret")) }))
-                @if a["kind"] == "signin" {
-                    (kv("email", html! { (text("email")) }))
-                    (kv("tier", html! { (text("tier")) }))
-                    (kv("expires", when("expires_at")))
-                    (kv("refreshed", when("last_refresh_at")))
+                div class="provider-window__account-badges" {
+                    (status(&text("state_text")))
+                    (badge(Tone::Default, &text("kind")))
+                    span class="provider-window__account-order" { "order " (a["order"].to_string()) }
                 }
-            }
-            @if matches!(a["state"].as_str(), Some("needs_sign_in" | "refused")) {
-                p class="provider-window__account-run" { (prose(&command)) }
+                div class="provider-window__account-facts" {
+                    (kv("priority", html! { (priority) }))
+                    (kv("secret", html! { (text("secret")) }))
+                    @if signin {
+                        (kv("email", html! { (text("email")) }))
+                        (kv("tier", html! { (text("tier")) }))
+                        (kv("expires", when("expires_at")))
+                        (kv("refreshed", when("last_refresh_at")))
+                    }
+                }
+                @if matches!(a["state"].as_str(), Some("needs_sign_in" | "refused")) {
+                    p class="provider-window__account-run" { (prose(&command)) }
+                }
             }
             (account_controls(ctx, a))
             (overrides(ctx, a))
@@ -612,11 +660,11 @@ fn kind_filter(req: &Req, providers: &[Value], models: &[Value], chosen: Option<
     let all = req.href(&path, &["kind"], &[]);
     html! {
         nav class="kind-filter" aria-label="Model kinds" {
-            (kind_link(&all, "All", models.len(), chosen.is_none()))
+            (kind_link(&all, "All", None, models.len(), chosen.is_none()))
             @for kind in kinds.iter().copied() {
                 @let href = req.href(&path, &[], &[("kind", kind)]);
                 @let count = models.iter().filter(|m| in_kind(m, kind)).count();
-                (kind_link(&href, kind, count, chosen == Some(kind)))
+                (kind_link(&href, kind, Some(kind_icon(kind)), count, chosen == Some(kind)))
             }
         }
     }
@@ -631,10 +679,31 @@ fn in_kind(m: &Value, kind: &str) -> bool {
     }
 }
 
-fn kind_link(href: &str, label: &str, count: usize, current: bool) -> Markup {
-    let class = if current { "kind-filter__item kind-filter__item--current" } else { "kind-filter__item" };
+/// The icon of a model kind, as the mockups draw the kind chips.
+fn kind_icon(kind: &str) -> &'static str {
+    match kind {
+        "image" => "brush",
+        "image_to_text" => "monitor",
+        "video" => "movie",
+        "tts" => "record_voice_over",
+        "stt" => "mic",
+        "embedding" => "data_array",
+        "web_search" => "search",
+        "web_fetch" => "link",
+        "systemone" => "psychology",
+        _ => "smart_toy",
+    }
+}
+
+fn kind_link(href: &str, label: &str, icon_name: Option<&str>, count: usize, current: bool) -> Markup {
+    let class = match (current, count) {
+        (true, _) => "kind-filter__item kind-filter__item--current",
+        (false, 0) => "kind-filter__item kind-filter__item--none",
+        (false, _) => "kind-filter__item",
+    };
     html! {
         a class=(class) href=(href) aria-current=[current.then_some("true")] {
+            @if let Some(i) = icon_name { (icon(i)) }
             (label) " " span class="kind-filter__count" { (count) }
         }
     }
@@ -647,24 +716,28 @@ fn model_row(ctx: &Ctx<'_>, provider: &str, accounts: &[&Value], m: &Value) -> M
     let list = |k: &str| m[k].as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "));
     let fact = |label: &str, value: Option<String>| html! { @if let Some(v) = value { (kv(label, html! { (v) })) } };
     let id = m["model"].as_str().unwrap_or_default();
+    let kind = m["kind"].as_str();
     let test = format!("/combo?window=test&target={}", encode_component(&format!("{provider}/{id}")));
     let connections: Vec<(&str, &str)> = accounts.iter().filter_map(|a| a["name"].as_str()).map(|n| (n, n)).collect();
     let back = ctx.req.href(&ctx.req.path(), &["done", "task"], &[]);
     let token = &ctx.req.token;
     html! {
         div class="model-row" {
-            div class="model-row__head" {
+            span class="model-row__icon" { (icon(kind_icon(kind.unwrap_or("llm")))) }
+            div class="model-row__main" {
                 code class="code model-row__id" title=(id) { (id) }
-                @if let Some(k) = m["kind"].as_str() { (badge(Tone::Primary, k)) } @else { (badge(Tone::Default, "untyped")) }
-            }
-            div class="model-row__facts" {
-                (fact("name", m["name"].as_str().map(str::to_owned)))
-                (fact("declared", m["declared"].as_bool().map(|d| d.to_string())))
-                (fact("target format", m["target_format"].as_str().map(str::to_owned)))
-                (fact("supported formats", list("supported_formats")))
-                (fact("quota family", m["quota_family"].as_str().map(str::to_owned)))
-                (fact("strip", list("strip")))
-                (fact("upstream id", m["upstream_id"].as_str().map(str::to_owned)))
+                div class="model-row__head" {
+                    @if let Some(n) = m["name"].as_str() { i class="model-row__name" { (n) } }
+                    @if let Some(k) = kind { (badge(Tone::Primary, k)) } @else { (badge(Tone::Default, "untyped")) }
+                }
+                div class="model-row__facts" {
+                    (fact("declared", m["declared"].as_bool().map(|d| d.to_string())))
+                    (fact("target format", m["target_format"].as_str().map(str::to_owned)))
+                    (fact("supported formats", list("supported_formats")))
+                    (fact("quota family", m["quota_family"].as_str().map(str::to_owned)))
+                    (fact("strip", list("strip")))
+                    (fact("upstream id", m["upstream_id"].as_str().map(str::to_owned)))
+                }
             }
             div class="model-row__actions" {
                 (link_button(&test, "Test", Some("check"), false))
@@ -737,6 +810,9 @@ fn uninstall_window(ctx: &Ctx<'_>) -> Option<Markup> {
     Some(confirm_window("Uninstall provider", &loss, BACK, action))
 }
 
+/// The id of the "Provider plugin settings" window: the checkbox the panel's gear toggles.
+pub const SETTINGS: &str = "plugin-settings";
+
 /// "Provider plugins": what `plugins list --community` lists, each with its Enabled and Show on
 /// page switches, an Install form for the community plugins that fit, and Uninstall (confirm) for
 /// the installed ones.
@@ -762,43 +838,51 @@ fn side(ctx: &Ctx<'_>) -> Markup {
             .unwrap_or_default()
             .to_owned()
     };
-    let row = |r: &Value, state: &str, uninstall: bool| plugin_row(ctx, r, state, all, uninstall);
-    let back = ctx.req.href(&ctx.req.path(), &["done", "task"], &[]);
+    let row = |r: &Value, state: &str| {
+        let id = r["id"].as_str().unwrap_or_default();
+        let set = r["set"].as_str().unwrap_or_default();
+        let line = match all.iter().find(|p| p["id"] == id).and_then(|p| p["category"].as_str()) {
+            Some(category) => format!("{set} · {category}"),
+            None => set.to_owned(),
+        };
+        side_row(components::logo(ctx.logos.href(id), id), id, &line, status(state))
+    };
     let sections = html! {
-        (components::side_section(&format!("Bundled · {}", bundled.len()), html! {
-            @for r in &bundled { (row(r, r["status"].as_str().unwrap_or_default(), false)) }
+        (side_section(&format!("Bundled · {}", bundled.len()), html! {
+            @for r in &bundled { (row(r, r["status"].as_str().unwrap_or_default())) }
         }))
-        (components::side_section(&format!("Installed from community · {}", installed.len()), html! {
-            @for r in &installed { (row(r, &state_of(r), true)) }
+        (side_section(&format!("Installed from community · {}", installed.len()), html! {
+            @for r in &installed { (row(r, &state_of(r))) }
         }))
         @if !own.is_empty() {
-            (components::side_section(&format!("Your own · {}", own.len()), html! {
-                @for r in &own { (row(r, r["status"].as_str().unwrap_or_default(), false)) }
+            (side_section(&format!("Your own · {}", own.len()), html! {
+                @for r in &own { (row(r, r["status"].as_str().unwrap_or_default())) }
             }))
         }
-        (components::side_section(&format!("Community · not installed: {not_installed} available."), html! {
-            @if fits.is_empty() {
-                p class="hint" { "No community plugin is left to install." }
-            } @else {
-                (form("/do/plugins/install", &back, &ctx.req.token, html! {
-                    (select("id", "Plugin", &fits, None))
-                    button class="button button--secondary" type="submit" { "Install" }
-                }))
-            }
+        (side_section(&format!("Community · not installed: {not_installed} available."), html! {
+            p class="side-section__text" { "Open settings to install one." }
         }))
     };
-    components::side_panel("extension", "Provider plugins", sections)
+    let listed: Vec<(&Value, bool)> = bundled
+        .iter()
+        .map(|r| (*r, false))
+        .chain(installed.iter().map(|r| (*r, true)))
+        .chain(own.iter().map(|r| (*r, false)))
+        .collect();
+    html! {
+        (components::side_panel("extension", "Provider plugins", "Search plugins...", SETTINGS, sections))
+        (components::settings(SETTINGS, "Provider plugin settings", settings_body(ctx, &listed, all, &fits, not_installed)))
+    }
 }
 
-/// One plugin: its source and state as `plugins list` shows them, and, for a plugin the registry
-/// loaded, its Enabled and Show on page switches (each posts the opposite of what the providers
-/// view says) and, for a community plugin, Uninstall.
-fn plugin_row(ctx: &Ctx<'_>, r: &Value, state: &str, all: &[Value], uninstall: bool) -> Markup {
-    let id = r["id"].as_str().unwrap_or_default();
-    let settings = all.iter().find(|p| p["id"] == id);
+/// "Provider plugin settings": each plugin with its Enabled and Show on page switches (each posts
+/// the opposite of what the providers view says, for a plugin the registry loaded) and, for a
+/// community plugin, Uninstall (a link to its confirm window); then the Install form for the
+/// community plugins that fit.
+fn settings_body(ctx: &Ctx<'_>, listed: &[(&Value, bool)], all: &[Value], fits: &[(&str, &str)], available: usize) -> Markup {
     let back = ctx.req.href(&ctx.req.path(), &["done", "task"], &[]);
     let token = &ctx.req.token;
-    let switch_form = |action: &str, label: &str| {
+    let switch_form = |action: &str, id: &str, label: &str| {
         form(
             action,
             &back,
@@ -809,33 +893,60 @@ fn plugin_row(ctx: &Ctx<'_>, r: &Value, state: &str, all: &[Value], uninstall: b
             },
         )
     };
-    let remove =
-        ctx.req.href(BACK, &["window", "id", "name", "done", "task"], &[("window", "uninstall-plugin"), ("id", id)]);
     html! {
-        div class="plugin-row" {
-            span class="plugin-row__logo" { (components::logo(ctx.logos.href(id), id)) }
-            div class="plugin-row__text" {
-                b class="plugin-row__id" { (name(id)) }
-                span class="plugin-row__source" { (r["set"].as_str().unwrap_or_default()) }
-            }
-            (status(state))
-            @if let Some(p) = settings {
-                div class="plugin-row__switches" {
-                    span class="hint" { "Enabled: " (if p["enabled"] == false { "no" } else { "yes" }) }
-                    @if p["enabled"] == false {
-                        (switch_form("/do/providers/enable", "Enable"))
-                    } @else {
-                        (switch_form("/do/providers/disable", "Disable"))
-                    }
-                    span class="hint" { "Show on page: " (if p["hidden"] == true { "no" } else { "yes" }) }
-                    @if p["hidden"] == true {
-                        (switch_form("/do/providers/show", "Show on page"))
-                    } @else {
-                        (switch_form("/do/providers/hide", "Hide from page"))
+        table class="settings-table" {
+            thead { tr { th { "Plugin" } th { "Source" } th { "Show on page" } th { "Enabled" } th {} } }
+            tbody {
+                @for (r, community) in listed {
+                    @let id = r["id"].as_str().unwrap_or_default();
+                    @let loaded = all.iter().find(|p| p["id"] == id);
+                    @let remove = ctx.req.href(BACK, &["window", "id", "name", "done", "task"], &[("window", "uninstall-plugin"), ("id", id)]);
+                    tr {
+                        td { b { (name(id)) } }
+                        td class="settings-table__muted" { (r["set"].as_str().unwrap_or_default()) }
+                        td {
+                            @if let Some(p) = loaded {
+                                span class="hint" { (if p["hidden"] == true { "no" } else { "yes" }) }
+                                @if p["hidden"] == true {
+                                    (switch_form("/do/providers/show", id, "Show on page"))
+                                } @else {
+                                    (switch_form("/do/providers/hide", id, "Hide from page"))
+                                }
+                            }
+                        }
+                        td {
+                            @if let Some(p) = loaded {
+                                span class="hint" { (if p["enabled"] == false { "no" } else { "yes" }) }
+                                @if p["enabled"] == false {
+                                    (switch_form("/do/providers/enable", id, "Enable"))
+                                } @else {
+                                    (switch_form("/do/providers/disable", id, "Disable"))
+                                }
+                            }
+                        }
+                        td class="settings-table__action" {
+                            @if *community { (link_button(&remove, "Uninstall", None, false)) }
+                        }
                     }
                 }
             }
-            @if uninstall { (link_button(&remove, "Uninstall", None, false)) }
         }
+        (components::section_bar("Install a community plugin", html! {}))
+        div class="settings-install" {
+            label class="side-panel__search settings-install__search" title=(components::SEARCH_HINT) {
+                (icon("search"))
+                @let placeholder = format!("Search {available} community plugins...");
+                input class="side-panel__input" type="search" placeholder=(placeholder) aria-label=(placeholder) disabled;
+            }
+        }
+        @if fits.is_empty() {
+            p class="hint" { "No community plugin is left to install." }
+        } @else {
+            (form("/do/plugins/install", &back, token, html! {
+                (select("id", "Plugin", fits, None))
+                button class="button button--secondary" type="submit" { "Install" }
+            }))
+        }
+        p class="settings-table__note" { (prose("In the CLI: `nullrouter plugins list --community`")) }
     }
 }

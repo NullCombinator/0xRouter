@@ -85,8 +85,11 @@ fn private_window(ctx: &Ctx<'_>) -> Markup {
     confirm_window("Turn on private endpoints", &loss, BACK, action)
 }
 
+/// What each `[pipeline]` setting decides, under its name.
+const MEANS: &[(&str, &str)] = &[("break_behaviour", "What happens when a conversation cannot stay on its account")];
+
 /// "Routing": each `[pipeline]` setting as `behaviour show` prints it, `(default)` where the value
-/// is the built-in one.
+/// is the built-in one, in a badge as the mockup draws it.
 fn routing(behaviour: &Value) -> Markup {
     let head = Head::new("route", "Routing").subtitle("Same as nullrouter behaviour show");
     card(
@@ -95,7 +98,16 @@ fn routing(behaviour: &Value) -> Markup {
             div class="settings-list" {
                 @for (setting, v) in behaviour.as_object().into_iter().flatten() {
                     @let tag = if v["default"] == true { " (default)" } else { "" };
-                    (kv(setting, html! { (v["value"].as_str().unwrap_or_default()) (tag) }))
+                    @let means = MEANS.iter().find(|(k, _)| k == setting).map(|(_, m)| *m);
+                    div class="kv" {
+                        span class="kv__label" {
+                            (setting)
+                            @if let Some(m) = means { span class="settings-list__note" { (m) } }
+                        }
+                        span class="settings-list__badge" {
+                            (badge(Tone::Default, &format!("{}{tag}", v["value"].as_str().unwrap_or_default())))
+                        }
+                    }
                 }
             }
         },
@@ -190,14 +202,21 @@ fn dashboard(ctx: &Ctx<'_>, v: &Value) -> Markup {
     card(
         Some(head),
         html! {
-            div class="settings-list" {
+            div class="settings-list settings-list--plain" {
                 (kv("Status", html! { (state(v)) }))
-                (kv("Address", html! { code class="code" { (v["listen"].as_str().unwrap_or_default()) } }))
-                (kv("Token issued", match v["token_issued"].as_str() {
-                    Some(at) => ctx.time(at),
-                    None => html! { "none" },
-                }))
-                p class="settings-list__note" { (prose(CHANGE_TOKEN)) }
+                (kv("Address", html! { (v["listen"].as_str().unwrap_or_default()) }))
+                div class="kv" {
+                    span class="kv__label" {
+                        "Token issued"
+                        span class="settings-list__note" { (prose(CHANGE_TOKEN)) }
+                    }
+                    span class="kv__value" {
+                        @match v["token_issued"].as_str() {
+                            Some(at) => (ctx.time(at)),
+                            None => "none",
+                        }
+                    }
+                }
             }
         },
     )

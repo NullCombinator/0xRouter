@@ -77,8 +77,14 @@ pub fn document(f: &Frame<'_>, body: Body) -> Markup {
                         }
                     }
                     div class="main__column" {
-                        @if !own.is_empty() {
+                        @if own.len() == 1 {
                             div class="notices" { @for (level, text) in &own { (notice(level, text)) } }
+                        } @else if !own.is_empty() {
+                            // Several notices fold under one line that counts them; an error keeps it open.
+                            details class="notices-fold" open[own.iter().any(|(l, _)| *l == "error")] {
+                                summary class="notices-fold__summary" { (icon("info")) (counts(&own)) }
+                                div class="notices" { @for (level, text) in &own { (notice(level, text)) } }
+                            }
                         }
                         @if let Some(top) = &f.top { (top) }
                         (body.content)
@@ -104,7 +110,7 @@ fn sidebar(current: Option<Id>, version: &str) -> Markup {
     html! {
         aside class="sidebar" {
             div class="sidebar__brand" {
-                span class="sidebar__mark" { (icon("hub")) }
+                (mark())
                 div class="sidebar__names" {
                     span class="sidebar__name" { "0Router Proxy" }
                     span class="sidebar__version" { (version) }
@@ -123,6 +129,11 @@ fn sidebar(current: Option<Id>, version: &str) -> Markup {
             }
         }
     }
+}
+
+/// The brand mark: the project logo, as the mockups' sidebar shows it.
+pub fn mark() -> Markup {
+    html! { img class="sidebar__mark" src=(assets::href("logo-mark.png")) alt="" width="36" height="36"; }
 }
 
 /// The housekeeping panel (FR-024, research R4): every `check` notice by level, then the accounts
@@ -256,6 +267,18 @@ fn failure_card(text: &str) -> Markup {
 
 fn respond(status: StatusCode, frame: &Frame<'_>, body: Body) -> Response {
     (status, Html(document(frame, body).into_string())).into_response()
+}
+
+/// `3 notes · 3 warnings`: the page's notices counted by level, errors first.
+fn counts(own: &[(&str, &str)]) -> String {
+    let n = |want: &str| own.iter().filter(|(l, _)| *l == want).count();
+    let plural = |k: usize, word: &str| if k == 1 { format!("1 {word}") } else { format!("{k} {word}s") };
+    [("error", n("error")), ("warning", n("warning")), ("note", own.len() - n("error") - n("warning"))]
+        .into_iter()
+        .filter(|(_, k)| *k > 0)
+        .map(|(w, k)| plural(k, w))
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 #[cfg(test)]

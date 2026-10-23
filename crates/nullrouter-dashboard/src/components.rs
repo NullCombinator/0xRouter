@@ -59,6 +59,7 @@ icons!(
     "movie",
     "notifications",
     "open_in_new",
+    "play_arrow",
     "psychology",
     "record_voice_over",
     "remove",
@@ -174,8 +175,17 @@ impl<'a> Head<'a> {
 
 /// `Card.js` at `padding = "md"`, with an optional header.
 pub fn card(head: Option<Head<'_>>, body: Markup) -> Markup {
+    card_as("card", head, body)
+}
+
+/// A card's head over a body with no card around it: the body brings its own frame.
+pub fn bare_card(head: Head<'_>, body: Markup) -> Markup {
+    card_as("card card--bare", Some(head), body)
+}
+
+fn card_as(class: &str, head: Option<Head<'_>>, body: Markup) -> Markup {
     html! {
-        section class="card" {
+        section class=(class) {
             @if let Some(h) = head {
                 div class="card__head" {
                     span class="card__tile" { (icon(h.icon)) }
@@ -201,6 +211,17 @@ pub fn section_bar(title: &str, right: Markup) -> Markup {
     html! { div class="section-bar" { h2 class="section-bar__title" { (title) } div class="section-bar__controls" { (right) } } }
 }
 
+/// A section bar with a muted note before its controls (the mockups' "Agents" bar): where a group
+/// of disabled controls shares one hint, the hint is the note.
+pub fn section_bar_noted(title: &str, note: Markup, right: Markup) -> Markup {
+    html! {
+        div class="section-bar" {
+            h2 class="section-bar__title" { (title) }
+            div class="section-bar__controls" { span class="section-bar__note" { (note) } (right) }
+        }
+    }
+}
+
 /// A label and a value on one line.
 pub fn kv(label: &str, value: Markup) -> Markup {
     html! { div class="kv" { span class="kv__label" { (label) } span class="kv__value" { (value) } } }
@@ -221,6 +242,13 @@ pub fn disabled(label: &str, icon_name: Option<&str>, hint: &str) -> Markup {
             span class="hint" { (prose(hint)) }
         }
     }
+}
+
+/// A disabled button alone, for a group whose hint is its section bar's note
+/// ([`section_bar_noted`]); `primary` draws it in the brand fill, as the mockups' first button.
+pub fn disabled_button(label: &str, icon_name: Option<&str>, primary: bool) -> Markup {
+    let class = if primary { "button button--primary" } else { "button button--secondary" };
+    html! { button class=(class) type="button" disabled { @if let Some(i) = icon_name { (icon(i)) } (label) } }
 }
 
 /// A switch drawn off and disabled, with its hint (plugin enable, disable, hide).
@@ -249,15 +277,27 @@ pub fn modal(title: &str, close: &str, body: Markup) -> Markup {
     }
 }
 
-/// The right side panel (Client adapters, Provider plugins), always rendered; its chevron is a
-/// `<details>` summary, so it opens and closes without a script.
-pub fn side_panel(icon_name: &str, title: &str, sections: Markup) -> Markup {
+/// The hint on a panel's search, which isn't built yet.
+pub const SEARCH_HINT: &str = "Not built yet: the search comes with the functional dashboard.";
+
+/// The right side panel (Client adapters, Provider plugins), always rendered and closed at first,
+/// as the mockups draw it: a chevron tab at the page's edge. The tab is a `<details>` summary, so
+/// it opens and closes without a script. Under the title: a search (disabled) and the gear that
+/// opens the [`settings`] window `gear`.
+pub fn side_panel(icon_name: &str, title: &str, search: &str, gear: &str, sections: Markup) -> Markup {
     html! {
-        details class="side-panel" open {
+        details class="side-panel" {
             summary class="side-panel__head" {
                 (icon(icon_name)) b class="side-panel__title" { (title) }
                 span class="side-panel__chevron side-panel__chevron--open" { (icon("chevron_right")) }
                 span class="side-panel__chevron side-panel__chevron--closed" { (icon("chevron_left")) }
+            }
+            div class="side-panel__tools" {
+                label class="side-panel__search" title=(SEARCH_HINT) {
+                    (icon("search"))
+                    input class="side-panel__input" type="search" placeholder=(search) aria-label=(search) disabled;
+                }
+                label class="side-panel__gear" for=(gear) title="Settings" aria-label="Settings" { (icon("settings")) }
             }
             div class="side-panel__body" { (sections) }
         }
@@ -267,6 +307,60 @@ pub fn side_panel(icon_name: &str, title: &str, sections: Markup) -> Markup {
 /// A titled group inside a side panel.
 pub fn side_section(heading: &str, body: Markup) -> Markup {
     html! { div class="side-section" { h5 class="side-section__heading" { (heading) } (body) } }
+}
+
+/// One row of a side panel: a logo tile, the name, a short line under it, and a status badge.
+pub fn side_row(tile: Markup, title: &str, line: &str, state: Markup) -> Markup {
+    html! {
+        div class="plugin-row" {
+            span class="plugin-row__logo" { (tile) }
+            div class="plugin-row__text" {
+                b class="plugin-row__id" { (name(title)) }
+                span class="plugin-row__source" { (line) }
+            }
+            (state)
+        }
+    }
+}
+
+/// A settings window opened by a panel's gear, over the page and the open panel: a hidden
+/// checkbox `id` that the gear, the backdrop, the close button and Cancel are labels for (the
+/// mockups' CSS toggle). There is no script; each form in the body saves on its own, so the foot
+/// only closes the window.
+pub fn settings(id: &str, title: &str, body: Markup) -> Markup {
+    html! {
+        input class="modal-toggle" type="checkbox" id=(id) aria-label=(title);
+        div class="modal modal--toggled" role="dialog" aria-modal="true" aria-label=(title) {
+            label class="modal__backdrop" for=(id) {}
+            div class="modal__box" {
+                div class="modal__head" {
+                    h2 class="modal__title" { (title) }
+                    label class="modal__close" for=(id) aria-label="Close" { (icon("close")) }
+                }
+                div class="modal__body" { (body) }
+                div class="modal__foot" {
+                    label class="button button--secondary" for=(id) { "Close" }
+                }
+            }
+        }
+    }
+}
+
+/// [`modal`] wide, with a slim head that holds only a muted line (`what`) and the close link;
+/// the body carries its own title.
+pub fn wide_modal(title: &str, what: &str, close: &str, body: Markup) -> Markup {
+    html! {
+        div class="modal" role="dialog" aria-modal="true" aria-label=(title) {
+            a class="modal__backdrop" href=(close) aria-label="Close" {}
+            div class="modal__box modal__box--wide" {
+                div class="modal__head modal__head--slim" {
+                    span class="modal__what" { (what) }
+                    a class="modal__close" href=(close) aria-label="Close" { (icon("close")) }
+                }
+                div class="modal__body modal__body--wide" { (body) }
+            }
+        }
+    }
 }
 
 /// What a slot says (research R12).
@@ -517,18 +611,23 @@ pub fn logo(src: Option<&str>, alias: &str) -> Markup {
     }
 }
 
-/// A bar of `percent` (0 to 100) left, coloured by how much is left, as 9router's quota rows
-/// are: green above 50 %, yellow above 20 %, red below. The CSP allows no inline style, so the
-/// width is one of 21 classes in steps of 5 %; the exact figure is the text beside the bar.
+/// How a share left is coloured, as 9router's quota rows colour it (`getColorClasses`): `good`
+/// above 70 %, `low` from 30 %, `out` below.
+pub fn left_tone(percent: f64) -> &'static str {
+    if percent > 70.0 {
+        "good"
+    } else if percent >= 30.0 {
+        "low"
+    } else {
+        "out"
+    }
+}
+
+/// A bar of `percent` (0 to 100) left, coloured by [`left_tone`]. The CSP allows no inline style,
+/// so the width is one of 21 classes in steps of 5 %; the exact figure is the text beside the bar.
 pub fn meter(percent: f64) -> Markup {
     let p = if percent.is_finite() { percent.clamp(0.0, 100.0) } else { 0.0 };
-    let tone = if p > 50.0 {
-        "meter--good"
-    } else if p > 20.0 {
-        "meter--low"
-    } else {
-        "meter--out"
-    };
+    let tone = format!("meter--{}", left_tone(p));
     let step = ((p / 5.0).round() as u32) * 5;
     let class = format!("meter {tone} meter--w{step}");
     html! { span class=(class) role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow=(format!("{p:.0}")) { span class="meter__fill" {} } }

@@ -11,10 +11,15 @@ use maud::{Markup, html};
 use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Refused, Req};
-use crate::components::{Head, card, command, empty, field, form, icon, kv, logo, meter, name, section_bar, status};
+use crate::components::{
+    Head, card, command, empty, field, form, icon, kv, left_tone, logo, meter, name, status,
+};
 use crate::page::{ViewName, Want};
 
 pub const VIEWS: &[ViewName] = &[ViewName::Accounts, ViewName::Quota, ViewName::Routing, ViewName::Check];
+
+/// Where the filters link to.
+const PATH: &str = "/quota";
 
 /// `accounts` is read whole (the filters list every account); `quota` is narrowed the way
 /// `quota [provider [name]]` is; `routing` is read whole and joined per account.
@@ -42,13 +47,14 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
             account_card(ctx, q, a, &routes_of(routing, provider, account), default_len)
         })
         .collect();
-    let bar = section_bar(
-        "Accounts",
-        html! {
-            @if let Some(w) = amortization(ctx, routing) { (w) }
+    // The mockup's toolbar: the filters on the right, the amortization window `routing` shows
+    // beside them.
+    let bar = html! {
+        div class="quota-filters__bar" {
+            @if let Some(w) = amortization(ctx, routing) { span class="quota-filters__window" { (w) } }
             (filters(ctx.req, accounts))
-        },
-    );
+        }
+    };
     let content = if cards.is_empty() {
         html! {
             (bar)
@@ -60,7 +66,7 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
             (bar)
             (ack_card(ctx))
             div class="quota-grid" { @for c in &cards { (c) } }
-            p class="hint" {
+            p class="quota-grid__foot" {
                 "Showing " (cards.len()) " accounts · polled quota is read from the provider, estimated quota is counted from your requests."
             }
         }
@@ -105,7 +111,9 @@ fn amortization(ctx: &Ctx<'_>, routing: &Value) -> Option<Markup> {
     ))
 }
 
-/// Provider and account selects, "Expiring first", and the submit button: one `GET` form.
+/// The mockup's filter pills: "All providers" and "All accounts" open menus of links, and
+/// "Expiring first" is a link that turns the order on or off. Links need no script and no submit
+/// button.
 fn filters(req: &Req, accounts: &Value) -> Markup {
     let rows = accounts.as_array().map_or(&[][..], Vec::as_slice);
     let (current_provider, current_account) = (req.get("provider"), req.get("account"));
@@ -119,28 +127,55 @@ fn filters(req: &Req, accounts: &Value) -> Markup {
         .collect();
     names.sort_unstable();
     names.dedup();
+    let expiring = req.get("order") == Some("expiring");
+    let (order_class, order_href) = if expiring {
+        ("quota-filters__pill quota-filters__pill--on", req.href(PATH, &["order"], &[]))
+    } else {
+        ("quota-filters__pill", req.href(PATH, &[], &[("order", "expiring")]))
+    };
     html! {
-        form class="quota-filters" method="get" action="/quota" {
-            select class="quota-filters__select" name="provider" aria-label="Provider" {
-                option value="" { "All providers" }
-                @for p in &providers { option value=(p) selected[current_provider == Some(*p)] { (p) } }
+        nav class="quota-filters" aria-label="Filters" {
+            (pick(Some("apps"), "All providers", &providers, current_provider,
+                req.href(PATH, &["provider", "account"], &[]),
+                |p| req.href(PATH, &["account"], &[("provider", p)])))
+            (pick(None, "All accounts", &names, current_account,
+                req.href(PATH, &["account"], &[]),
+                |n| req.href(PATH, &[], &[("account", n)])))
+            a class=(order_class) href=(order_href) aria-current=[expiring.then_some("true")] {
+                (icon("hourglass_top")) "Expiring first"
             }
-            select class="quota-filters__select" name="account" aria-label="Account" {
-                option value="" { "All accounts" }
-                @for n in &names { option value=(n) selected[current_account == Some(*n)] { (n) } }
-            }
-            label class="quota-filters__toggle" {
-                input type="checkbox" name="order" value="expiring" checked[req.get("order") == Some("expiring")];
-                (icon("hourglass_top"))
-                "Expiring first"
-            }
-            @if req.notices_open() { input type="hidden" name="notices" value=""; }
-            button class="button button--secondary" type="submit" { "Show" }
         }
     }
 }
 
-/// One account: who it is and how it is signed in, its quota, and what it does in each target.
+/// One filter pill and its menu: "all" first, then each value; the chosen one is marked.
+fn pick(
+    icon_name: Option<&str>,
+    all: &str,
+    values: &[&str],
+    current: Option<&str>,
+    all_href: String,
+    href: impl Fn(&str) -> String,
+) -> Markup {
+    let item = |on: bool| if on { "pick__item pick__item--current" } else { "pick__item" };
+    html! {
+        details class="pick" {
+            summary class="pick__button quota-filters__pill" {
+                @if let Some(i) = icon_name { (icon(i)) }
+                span class="quota-filters__label" { (current.unwrap_or(all)) }
+                (icon("expand_more"))
+            }
+            div class="pick__menu" {
+                a class=(item(current.is_none())) href=(all_href) { (all) }
+                @for v in values { a class=(item(current == Some(*v))) href=(href(v)) { (v) } }
+            }
+        }
+    }
+}
+
+/// One account in the mockup's compact card: who it is, its sign-in state and where its quota
+/// comes from in the head; its quota windows, or why it has none, in the body; then what it does
+/// in each target.
 fn account_card(ctx: &Ctx<'_>, q: &Value, a: &Value, routes: &[(&Value, &Value)], default_len: &str) -> Markup {
     let provider = q["provider"].as_str().unwrap_or_default();
     let account = q["name"].as_str().unwrap_or_default();
@@ -153,6 +188,7 @@ fn account_card(ctx: &Ctx<'_>, q: &Value, a: &Value, routes: &[(&Value, &Value)]
     let priority = a["priority"].as_f64().map_or_else(|| "-".to_owned(), number);
     let order = a["order"].as_i64().map_or_else(|| "-".to_owned(), |o| o.to_string());
     let kind = a["kind"].as_str().or_else(|| q["kind"].as_str()).unwrap_or("-");
+    let quota = Quota::of(ctx, q, routes);
     let body = html! {
         div class="quota-card__head" {
             (logo(ctx.logos.href(provider), provider))
@@ -161,17 +197,25 @@ fn account_card(ctx: &Ctx<'_>, q: &Value, a: &Value, routes: &[(&Value, &Value)]
                 p class="quota-card__account" { (name(account)) }
                 p class="quota-card__meta" { "priority " (priority) " · order " (order) " · " (kind) }
             }
-            div class="quota-card__state" { (sign_in_status(ctx, a)) }
+            div class="quota-card__state" {
+                (sign_in_status(ctx, a))
+                span class="quota-card__since" { (quota.source_line(ctx, q)) }
+            }
         }
         div class="quota-card__body" {
             @if state == "needs_sign_in" {
-                p class="quota-card__alert" {
-                    "Sign in again. In the CLI: "
-                    (command(&format!("nullrouter accounts signin {provider} {account}")))
+                div class="quota-card__none quota-card__none--alert" {
+                    (icon("error"))
+                    p {
+                        "Sign in again to read quota. In the CLI: "
+                        (command(&format!("nullrouter accounts signin {provider} {account}")))
+                    }
                 }
+            } @else if quota.rows.is_empty() {
+                div class="quota-card__none" { (icon("data_usage")) p { (quota.none_text()) } }
             }
             (identity(ctx, a))
-            (quota_section(ctx, q, routes))
+            (quota.section(ctx, q))
             (targets_section(default_len, routes))
             (controls(ctx, q))
         }
@@ -307,6 +351,8 @@ struct Row<'a> {
     figure: String,
     /// Percent of the window left, for the bar; `None` draws no bar.
     left: Option<f64>,
+    /// Whether `figure` already says the percent left, so the row doesn't say it twice.
+    says_percent: bool,
     resets: Option<&'a str>,
 }
 
@@ -316,6 +362,7 @@ fn polled_row(w: &Value) -> Row<'_> {
         name: w["name"].as_str().unwrap_or("?"),
         figure: window_value(w),
         left: left_percent(w),
+        says_percent: w["unit"].as_str().unwrap_or("percent") == "percent",
         resets: w["resets_at"].as_str(),
     }
 }
@@ -336,68 +383,120 @@ fn estimated_rows(route: &Value) -> Vec<Row<'_>> {
                 name: w["name"].as_str().unwrap_or("?"),
                 figure: format!("{}/{} {unit} · floor {floor}%", si(left), si(capacity)),
                 left: (capacity > 0.0).then_some(left / capacity * 100.0),
+                says_percent: false,
                 resets: w["resets_at"].as_str(),
             }
         })
         .collect()
 }
 
-/// The source, the last poll, and each window with its bar. A pay-as-you-go account has no
-/// windows and no bar.
-fn quota_section(ctx: &Ctx<'_>, q: &Value, routes: &[(&Value, &Value)]) -> Markup {
-    let first = routes.first().map(|(_, r)| *r);
-    let reported = q["reported"] == true;
-    let source = match first {
-        Some(r) => r["source"].as_str(),
-        None if reported => Some("polled"),
-        None => None,
-    };
-    let pending = first.map_or(reported && q["latest"].is_null(), |r| r["pending_first_poll"] == true);
-    let stale = first.is_some_and(|r| r["stale"] == true);
-    let payg = source == Some("pay-as-you-go");
+/// An account's quota as `quota` and `routing` report it: where it comes from, the poll's state,
+/// and the windows to draw. A pay-as-you-go account has no windows and no bar.
+struct Quota<'a> {
+    source: Option<&'a str>,
+    reported: bool,
+    pending: bool,
+    stale: bool,
+    rows: Vec<Row<'a>>,
+}
 
-    let mut rows: Vec<Row<'_>> = q["latest"]["windows"].as_array().into_iter().flatten().map(polled_row).collect();
-    if let Some(r) = first.filter(|_| rows.is_empty() && !payg) {
-        rows = estimated_rows(r);
+impl<'a> Quota<'a> {
+    fn of(ctx: &Ctx<'_>, q: &'a Value, routes: &[(&'a Value, &'a Value)]) -> Self {
+        let first = routes.first().map(|(_, r)| *r);
+        let reported = q["reported"] == true;
+        let source = match first {
+            Some(r) => r["source"].as_str(),
+            None if reported => Some("polled"),
+            None => None,
+        };
+        let pending = first.map_or(reported && q["latest"].is_null(), |r| r["pending_first_poll"] == true);
+        let stale = first.is_some_and(|r| r["stale"] == true);
+        let mut rows: Vec<Row<'_>> = Vec::new();
+        if source != Some("pay-as-you-go") {
+            rows = q["latest"]["windows"].as_array().into_iter().flatten().map(polled_row).collect();
+            if let Some(r) = first.filter(|_| rows.is_empty()) {
+                rows = estimated_rows(r);
+            }
+        }
+        if ctx.req.get("order") == Some("expiring") {
+            // Soonest reset first; a window with no reset time last.
+            rows.sort_by_key(|r| {
+                let at = r.resets.and_then(|t| t.parse::<Timestamp>().ok());
+                (at.is_none(), at)
+            });
+        }
+        Quota { source, reported, pending, stale, rows }
     }
-    if ctx.req.get("order") == Some("expiring") {
-        // Soonest reset first; a window with no reset time last.
-        rows.sort_by_key(|r| {
-            let at = r.resets.and_then(|t| t.parse::<Timestamp>().ok());
-            (at.is_none(), at)
-        });
+
+    /// The line under the status badge: where the quota comes from, and when it was polled.
+    fn source_line(&self, ctx: &Ctx<'_>, q: &Value) -> Markup {
+        match self.source {
+            Some("polled") => html! {
+                "polled"
+                @if let Some(at) = q["latest"]["at"].as_str() { " " (ctx.time(at)) }
+            },
+            Some("estimated") => html! { "estimated from usage" },
+            Some(s) => html! { (s) },
+            None => html! { "quota not reported" },
+        }
     }
-    html! {
-        div class="quota-card__section" {
-            div class="quota-card__source" {
-                @if let Some(s) = source { (status(s)) } @else { span class="quota-card__note" { "quota not reported" } }
-                @if pending { (status("pending first poll")) }
-                @if stale { (status("stale")) }
-                @if reported {
-                    @if let Some(at) = q["latest"]["at"].as_str() {
-                        span class="quota-card__poll" {
-                            "last poll " (ctx.time(at)) " · every " (every(q["interval_s"].as_u64().unwrap_or(600)))
+
+    /// Why the card draws no window.
+    fn none_text(&self) -> &'static str {
+        match self.source {
+            Some("pay-as-you-go") => "Pay-as-you-go: billed per request, no quota to track.",
+            _ if self.pending => "Waiting for the first poll.",
+            Some(_) => "No quota windows reported.",
+            None => "This provider reports no quota.",
+        }
+    }
+
+    /// The count line (with the poll's state and schedule) and each window with its bar.
+    fn section(&self, ctx: &Ctx<'_>, q: &Value) -> Markup {
+        let n = self.rows.len();
+        html! {
+            div class="quota-card__section" {
+                div class="quota-card__count" {
+                    @if n > 0 { span { (n) " quota" @if n > 1 { "s" } } }
+                    @if self.pending { (status("pending first poll")) }
+                    @if self.stale { (status("stale")) }
+                    @if self.reported {
+                        span { "polled every " (every(q["interval_s"].as_u64().unwrap_or(600))) }
+                        // The head names the last poll only when the quota shown comes from it.
+                        @if let Some(at) = q["latest"]["at"].as_str().filter(|_| self.source != Some("polled")) {
+                            span { "last poll " (ctx.time(at)) }
                         }
-                    }
-                    @if let Some(at) = q["last_failure"]["at"].as_str() {
-                        span class="quota-card__poll" {
-                            "last poll failed " (ctx.time(at)) " (" (q["last_failure"]["error"]["summary"].as_str().unwrap_or("failed")) ")"
+                        @if let Some(at) = q["last_failure"]["at"].as_str() {
+                            span class="quota-card__failed" {
+                                "last poll failed " (ctx.time(at)) " (" (q["last_failure"]["error"]["summary"].as_str().unwrap_or("failed")) ")"
+                            }
                         }
                     }
                 }
+                @for r in &self.rows { (window_row(ctx, r)) }
             }
-            @if !payg { @for r in &rows { (window_row(ctx, r)) } }
         }
     }
 }
 
+/// A window in 9router's compact quota row: a dot and the name, the bar with the figure and the
+/// percent left under it, and when it resets.
 fn window_row(ctx: &Ctx<'_>, r: &Row<'_>) -> Markup {
+    let tone = r.left.map_or("none", |p| left_tone(p.clamp(0.0, 100.0)));
     html! {
         div class="quota-card__window" {
-            span class="quota-card__window-name" { (name(r.name)) }
+            span class="quota-card__window-name" {
+                span class=(format!("quota-card__dot quota-card__dot--{tone}")) aria-hidden="true" {}
+                span class="quota-card__window-label" { (name(r.name)) }
+            }
             div class="quota-card__window-main" {
                 @if let Some(p) = r.left { (meter(p)) }
-                span class="quota-card__window-figure" { (r.figure) }
+                div class="quota-card__window-figures" {
+                    span class="quota-card__window-figure" { (r.figure) }
+                    @if let Some(p) = r.left.filter(|_| !r.says_percent) {
+                        b class=(format!("quota-card__left quota-card__left--{tone}")) { (format!("{:.0}%", p.clamp(0.0, 100.0))) }
+                    }
+                }
             }
             @if let Some(t) = r.resets { span class="quota-card__window-reset" { "resets " (ctx.time(t)) } }
         }

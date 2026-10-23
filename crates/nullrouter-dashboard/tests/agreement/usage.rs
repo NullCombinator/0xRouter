@@ -620,11 +620,12 @@ fn topology_nodes(html: &str) -> Vec<(String, String)> {
         .skip(1)
         .map(|g| {
             let id = g.split("</title>").next().unwrap_or_default().to_owned();
+            // The node's second line starts with its count: `N req · last response …`.
             let count = g
-                .split("topology__count")
+                .split("topology__last")
                 .nth(1)
                 .and_then(|c| c.split('>').nth(1))
-                .and_then(|c| c.split('<').next())
+                .and_then(|c| c.split(" req").next())
                 .unwrap_or_default();
             (id, count.to_owned())
         })

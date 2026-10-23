@@ -21,6 +21,7 @@ ulid.workspace = true
 nullrouter-server.workspace = true
 nullrouter-engine.workspace = true
 nullrouter-registry.workspace = true
+nullrouter-adapters.workspace = true
 
 [features]
 # Test-only: the isolation test (T071) makes every page build panic or sleep.

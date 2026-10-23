@@ -118,7 +118,10 @@ async fn only_test_all_is_disabled_and_every_other_form_posts_with_the_token() {
         let tag = button.split('>').next().unwrap();
         assert!(tag.contains("disabled") || tag.contains("type=\"submit\""), "{tag}");
     }
-    assert_eq!(html.matches("disabled>").count(), html.matches("Test All").count(), "only Test All is disabled");
+    // The panel's search boxes are disabled inputs, not buttons; the plugin settings window only
+    // closes (its forms save themselves). Of the buttons, only Test All is disabled.
+    let disabled_buttons = html.split("<button").skip(1).filter(|b| b.split('>').next().unwrap().contains("disabled")).count();
+    assert_eq!(disabled_buttons, html.matches("Test All").count(), "only Test All is disabled");
     assert!(html.contains("<form class=\"provider-grid__search\" method=\"get\""));
     for post in html.split("<form class=\"form\"").skip(1) {
         let form = post.split("</form>").next().unwrap();
@@ -196,7 +199,7 @@ async fn a_provider_without_accounts_says_no_connections() {
     assert!(card.contains("No connections"), "{card}");
 
     let window = text_of(&d.ok(&format!("/providers/{id}")).await);
-    assert!(window.contains("Accounts No connections"), "{window}");
+    assert!(window.contains("Connections") && window.contains("No connections · "), "{window}");
 }
 
 /// A provider that has accounts shows the count and the states that aren't active.
@@ -366,4 +369,26 @@ async fn the_search_filters_cards_by_id() {
     assert!(!page.contains("href=\"/providers/xai"));
     let none = text_of(&d.ok("/providers?q=zzzz-nothing").await);
     assert!(none.contains("No provider matches"), "{none}");
+}
+
+/// "All kinds" lists the providers whose capabilities (as `providers` prints them) include the
+/// chosen kind, and the search keeps it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_kinds_menu_lists_the_providers_that_declare_the_kind() {
+    let d = Dash::dashboard().await;
+    let providers = d.view(ViewName::Providers, json!({})).await;
+    let kind = rows(&providers)
+        .iter()
+        .flat_map(|p| rows(&p["capabilities"]))
+        .filter_map(Value::as_str)
+        .find(|k| *k != "llm")
+        .expect("a fixture plugin declares a kind other than llm")
+        .to_owned();
+    let page = d.ok(&format!("/providers?has={kind}")).await;
+    for p in rows(&providers) {
+        let id = p["id"].as_str().unwrap();
+        let has = rows(&p["capabilities"]).iter().any(|c| c == kind.as_str());
+        assert_eq!(page.contains(&format!("href=\"/providers/{id}?")) || page.contains(&format!("href=\"/providers/{id}\"")), has, "{id} under {kind}");
+    }
+    assert!(page.contains(&format!("name=\"has\" value=\"{kind}\"")), "the search keeps the kind");
 }
