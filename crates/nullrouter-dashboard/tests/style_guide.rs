@@ -322,11 +322,7 @@ fn the_value_rules_catch_what_they_forbid() {
 /// `GET url` as a signed-in browser: the Content-Security-Policy header and the body. The page must
 /// answer 200.
 async fn fetch(d: &Dash, url: &str) -> (Option<String>, String) {
-    let http = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .no_proxy()
-        .build()
-        .unwrap();
+    let http = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).no_proxy().build().unwrap();
     let r = http
         .get(format!("http://{}{url}", d.addr))
         .header(reqwest::header::COOKIE, format!("nrd_session_{}={TOKEN}", d.addr.port()))
@@ -360,6 +356,12 @@ async fn no_page_window_or_task_panel_has_a_script_and_the_csp_holds() {
         format!("/endpoint?window=revoke&key={key}"),
         "/endpoint?window=revoke".to_owned(),
         "/providers?window=add".to_owned(),
+        "/providers?window=add-openai".to_owned(),
+        "/providers?window=add-anthropic".to_owned(),
+        "/providers?window=uninstall-plugin&id=bluesminds".to_owned(),
+        "/settings?window=private-endpoints".to_owned(),
+        "/endpoint?window=clear-adapter&harness=claude-code&version=v1".to_owned(),
+        "/endpoint?window=remove-adapter&harness=claude-code&version=v1".to_owned(),
         "/providers?window=signin&id=anthropic".to_owned(),
         format!("/providers?window=remove-account&id=anthropic&name={account}"),
         "/proxy-pools?window=remove&name=eu".to_owned(),

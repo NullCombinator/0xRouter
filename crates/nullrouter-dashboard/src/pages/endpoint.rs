@@ -6,23 +6,29 @@
 //! new key is shown once by the flash at the top of the page, not here.
 
 use maud::{Markup, html};
-use nullrouter_server::ops;
+use nullrouter_server::ops::{self, adapters as adapter_ops};
 use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Req};
 use crate::components::{
     Head, Tone, badge, card, confirm_window, empty, field, form, kv, link_button, modal, name, section_bar, select,
-    side_panel, side_section,
+    side_panel, side_section, status, switch,
 };
 use crate::page::{ViewName, Want};
 use crate::{access, landscape};
 
-pub const VIEWS: &[ViewName] =
-    &[ViewName::Check, ViewName::Keys, ViewName::Accounts, ViewName::Latency, ViewName::Usage];
+pub const VIEWS: &[ViewName] = &[
+    ViewName::Check,
+    ViewName::Keys,
+    ViewName::Accounts,
+    ViewName::Latency,
+    ViewName::Usage,
+    ViewName::Adapters,
+    ViewName::Alerts,
+];
 
 pub const NO_AGENTS: &str = "No agent keys.";
 pub const NO_AGENTS_HINT: &str = "Run `nullrouter keys issue <name>`.";
-pub const ADAPTERS: &str = "Client-side adapters are not built yet.";
 /// What the endpoint card adds when no server answered (`check` says the same).
 pub const CONFIGURED: &str = "(configured; no server running)";
 
@@ -40,6 +46,8 @@ pub fn wants(_req: &Req) -> Vec<Want> {
         Want::new(ViewName::Accounts, json!({})),
         Want::new(ViewName::Latency, json!({})),
         Want::new(ViewName::Usage, json!({"period": "today"})),
+        Want::new(ViewName::Adapters, json!({})),
+        Want::new(ViewName::Alerts, json!({})),
     ]
 }
 
@@ -64,16 +72,18 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
             }
         }
     };
-    let adapters = side_section("Adapters", html! { p class="hint" { (ADAPTERS) } });
-    Ok(Body { content, side: Some(side_panel("extension", "Client adapters", adapters)), window: window(ctx) })
+    Ok(Body { content, side: Some(adapters_panel(ctx)), window: window(ctx) })
 }
 
 /// The window open on top: Add Agent for `?window=add`, a key's confirm window for
-/// `?window=revoke&key=<id>`. Any other window, or a revoke without a key, opens nothing.
+/// `?window=revoke&key=<id>`, an adapter version's for `?window=clear-adapter` or `remove-adapter`
+/// with `&harness=<h>&version=<v>`. Any other window, or one without what it names, opens nothing.
 fn window(ctx: &Ctx<'_>) -> Option<Markup> {
     match ctx.req.get("window")? {
         "add" => Some(issue_window(ctx)),
         "revoke" => Some(revoke_window(ctx, ctx.req.get("key")?)),
+        "clear-adapter" => Some(clear_window(ctx, ctx.req.get("harness")?, ctx.req.get("version")?)),
+        "remove-adapter" => Some(remove_window(ctx, ctx.req.get("harness")?, ctx.req.get("version")?)),
         _ => None,
     }
 }
@@ -113,6 +123,179 @@ fn revoke_window(ctx: &Ctx<'_>, key: &str) -> Markup {
         },
     );
     confirm_window("Revoke key", &loss, BACK, action)
+}
+
+/// The confirm window of clearing a suspect adapter version: what clearing does, the real form
+/// beside Cancel. A refused clear reopens it: `_back` names the version.
+fn clear_window(ctx: &Ctx<'_>, harness: &str, version: &str) -> Markup {
+    let loss = adapter_ops::clear_question(harness, version);
+    let action = form(
+        "/do/adapters/clear",
+        &adapter_back(harness, version),
+        &ctx.req.token,
+        html! {
+            input type="hidden" name="_window" value="clear-adapter";
+            input type="hidden" name="harness" value=(harness);
+            input type="hidden" name="version" value=(version);
+            button class="button button--primary" type="submit" { "Clear version" }
+        },
+    );
+    confirm_window("Clear version", &loss, BACK, action)
+}
+
+/// The confirm window of removing an adapter version. The active version needs the extra switch,
+/// which the adapters view says (`active`).
+fn remove_window(ctx: &Ctx<'_>, harness: &str, version: &str) -> Markup {
+    let loss = adapter_ops::remove_question(harness, Some(version));
+    let active = ctx
+        .json(ViewName::Adapters)
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|h| h["harness"] == harness && h["active"] == version);
+    let action = form(
+        "/do/adapters/remove",
+        &adapter_back(harness, version),
+        &ctx.req.token,
+        html! {
+            input type="hidden" name="_window" value="remove-adapter";
+            input type="hidden" name="harness" value=(harness);
+            input type="hidden" name="version" value=(version);
+            @if active { (switch("force", "Remove even though it is the active version", false)) }
+            button class="button button--primary" type="submit" { "Remove version" }
+        },
+    );
+    confirm_window("Remove version", &loss, BACK, action)
+}
+
+/// Where a refused clear or remove returns: the page, with the version named for the window.
+fn adapter_back(harness: &str, version: &str) -> String {
+    format!("{BACK}?harness={}&version={}", access::encode_component(harness), access::encode_component(version))
+}
+
+/// "Client adapters": each harness with its versions and the steps their states allow, the open
+/// alerts, and the forms that install an adapter and set the review model. Every fact is
+/// `adapters list` or `alerts list`; every form runs the op the CLI command runs.
+fn adapters_panel(ctx: &Ctx<'_>) -> Markup {
+    let harnesses = ctx.json(ViewName::Adapters).as_array().map_or(&[][..], Vec::as_slice);
+    let alerts = ctx.json(ViewName::Alerts).as_array().map_or(&[][..], Vec::as_slice);
+    let token = &ctx.req.token;
+    let sections = html! {
+        (side_section("Adapters", html! {
+            @for h in harnesses { (harness_block(ctx, h)) }
+        }))
+        (side_section("Alerts", html! {
+            @if alerts.is_empty() {
+                p class="hint" { "No open alerts." }
+            } @else {
+                @for a in alerts { (alert_row(ctx, a)) }
+                (form("/do/alerts/ack", BACK, token, html! {
+                    input type="hidden" name="id" value="all";
+                    button class="button button--secondary" type="submit" { "Acknowledge all" }
+                }))
+            }
+        }))
+        (side_section("Install adapter", html! {
+            (form("/do/adapters/install", BACK, token, html! {
+                (field("path", "Package path (a directory or a .tar.gz)", None, None))
+                button class="button button--secondary" type="submit" { "Install from path" }
+            }))
+            (form("/do/catalogue/install", BACK, token, html! {
+                (field("harness", "Harness", None, None))
+                (field("version", "Version (optional)", None, None))
+                button class="button button--secondary" type="submit" { "Install from catalogue" }
+            }))
+        }))
+        (side_section("Review settings", html! {
+            (form("/do/adapters/review-settings", BACK, token, html! {
+                (field("model", "Review model", None, None))
+                (field("budget", "Budget (input tokens)", None, None))
+                (field("reserve_output", "Reserve for the answer (optional)", None, None))
+                (switch("clear", "Clear the review model", false))
+                button class="button button--secondary" type="submit" { "Save review settings" }
+            }))
+        }))
+    };
+    side_panel("extension", "Client adapters", sections)
+}
+
+/// One harness: hermes as built-in, a third-party one with its active version, its open alerts and
+/// its versions.
+fn harness_block(ctx: &Ctx<'_>, h: &Value) -> Markup {
+    let harness = h["harness"].as_str().unwrap_or_default();
+    if h["built_in"] == true {
+        return html! { div class="adapter" { b class="adapter__name" { (name(harness)) } (badge(Tone::Default, "built-in")) } };
+    }
+    let versions = h["versions"].as_array().map_or(&[][..], Vec::as_slice);
+    html! {
+        div class="adapter" {
+            b class="adapter__name" { (name(harness)) }
+            (kv("active", html! { (h["active"].as_str().unwrap_or("none")) }))
+            (kv("open alerts", html! { (h["alerts"].as_u64().unwrap_or(0)) }))
+            @for v in versions { (version_row(ctx, harness, v)) }
+        }
+    }
+}
+
+/// One version: id, semver, state and flags, then the steps its state allows, each a POST that
+/// returns here. Clear and Remove open their confirm windows and change nothing by themselves.
+fn version_row(ctx: &Ctx<'_>, harness: &str, v: &Value) -> Markup {
+    let id = v["id"].as_str().unwrap_or_default();
+    let state = v["state"].as_str().unwrap_or_default();
+    let token = &ctx.req.token;
+    let step = |action: &str, label: &str, note: bool| {
+        form(
+            action,
+            BACK,
+            token,
+            html! {
+                input type="hidden" name="harness" value=(harness);
+                input type="hidden" name="version" value=(id);
+                @if note { (field("note", "Note (optional)", None, None)) }
+                button class="button button--secondary" type="submit" { (label) }
+            },
+        )
+    };
+    let window =
+        |w: &str| ctx.req.href(BACK, &["done", "task", "key"], &[("window", w), ("harness", harness), ("version", id)]);
+    html! {
+        div class="adapter-version" {
+            code class="code" { (id) }
+            span { (v["semver"].as_str().unwrap_or_default()) }
+            (status(state))
+            @if v["rebuilding"] == true { (badge(Tone::Info, "rebuilding")) }
+            @if v["rebuild_failed"] == true { (badge(Tone::Error, "rebuild_failed")) }
+            @match state {
+                "queued" => { (step("/do/adapters/build", "Build", false)) }
+                "quarantined" => { (step("/do/adapters/review", "Review", false)) }
+                "reported" => {
+                    (step("/do/adapters/approve", "Approve", true))
+                    (step("/do/adapters/reject", "Reject", true))
+                }
+                "suspect" => { (link_button(&window("clear-adapter"), "Clear", None, false)) }
+                _ => {}
+            }
+            (link_button(&window("remove-adapter"), "Remove", None, false))
+        }
+    }
+}
+
+/// One alert as `alerts list` shows it, with its Acknowledge form.
+fn alert_row(ctx: &Ctx<'_>, a: &Value) -> Markup {
+    let text = |k: &str| a[k].as_str().unwrap_or_default();
+    html! {
+        div class="alert-row" {
+            code class="code" { (text("id")) }
+            span { (text("kind")) }
+            span { (text("harness")) "@" (text("version")) }
+            span { (text("detail")) }
+            (ctx.time(text("at")))
+            (form("/do/alerts/ack", BACK, &ctx.req.token, html! {
+                input type="hidden" name="id" value=(text("id"));
+                button class="button button--secondary" type="submit" { "Acknowledge" }
+            }))
+        }
+    }
 }
 
 /// The "API Endpoint" card: the URL as selectable text, and the note when it is only configured.

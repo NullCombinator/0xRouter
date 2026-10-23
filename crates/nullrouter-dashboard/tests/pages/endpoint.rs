@@ -3,7 +3,6 @@
 //! forms and a Revoke link, and Settings changes nothing.
 
 use nullrouter_dashboard::page::ViewName;
-use nullrouter_dashboard::pages::endpoint;
 use serde_json::json;
 
 use crate::common::{Dash, text_of};
@@ -124,15 +123,49 @@ async fn a_window_without_a_key_to_revoke_opens_nothing() {
     assert!(!html.contains("/do/keys/revoke") && !html.contains("class=\"modal\""), "{html}");
 }
 
+/// The adapters panel lists hermes as built-in and has the install, review-settings and alert forms,
+/// all posting to their ops with the token and returning here; no script runs.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_adapters_panel_says_they_are_not_built_and_lists_none() {
+async fn the_adapters_panel_lists_the_harnesses_and_has_the_install_and_review_forms() {
     let d = Dash::dashboard().await;
     let html = d.ok("/endpoint").await;
     let from = html.find("<details class=\"side-panel\"").expect("the panel is drawn");
     let panel = &html[from..from + html[from..].find("</details>").unwrap()];
     let text = text_of(panel);
-    assert!(text.contains("Client adapters") && text.contains(endpoint::ADAPTERS), "{text}");
-    assert!(!panel.contains("plugin-row") && !panel.contains("<li") && !panel.contains("<table"), "no rows: {panel}");
+    assert!(text.contains("Client adapters") && text.contains("hermes") && text.contains("built-in"), "{text}");
+    for (action, field) in [
+        ("/do/adapters/install", "name=\"path\""),
+        ("/do/catalogue/install", "name=\"harness\""),
+        ("/do/adapters/review-settings", "name=\"model\""),
+    ] {
+        let form = form_to(panel, action);
+        assert!(form.contains(field) && form.contains("name=\"_back\" value=\"/endpoint\""), "{action}: {form}");
+        assert!(form.contains("name=\"_t\" value=\""), "{action} carries the token: {form}");
+    }
+    assert!(!html.contains("<script"), "no script");
+}
+
+/// A clear or remove window opens only for a named version, and names what it loses.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_adapter_clear_and_remove_windows_need_a_version_and_post_it() {
+    let d = Dash::dashboard().await;
+    for (window, action, loss) in [
+        ("clear-adapter", "/do/adapters/clear", "adapters.clear"),
+        ("remove-adapter", "/do/adapters/remove", "adapters.remove"),
+    ] {
+        let none = d.ok(&format!("/endpoint?window={window}&harness=claude-code")).await;
+        assert!(!none.contains(action), "{window}: no version, no window");
+        let html = d.ok(&format!("/endpoint?window={window}&harness=claude-code&version=v1")).await;
+        let form = form_to(&html, action);
+        assert!(form.contains(&format!("name=\"_window\" value=\"{window}\"")), "{form}");
+        assert!(
+            form.contains("name=\"harness\" value=\"claude-code\"") && form.contains("name=\"version\" value=\"v1\"")
+        );
+        assert!(html.contains("class=\"modal\""), "a window");
+        let subject = "claude-code v1";
+        let want = nullrouter_server::ops::describe_loss(loss, subject).unwrap();
+        assert!(text_of(&html).contains(&want), "{want}");
+    }
 }
 
 /// Settings shows its cards, and its two changes are forms that post to their ops and return here;
@@ -157,4 +190,23 @@ async fn settings_has_its_cards_and_the_break_and_window_forms() {
     assert!(window.contains("name=\"duration\"") && window.contains("name=\"_back\" value=\"/settings\""), "{window}");
     assert!(window.contains("name=\"_t\" value=\""), "the form carries the token: {window}");
     assert!(!html.contains("<script"), "no script");
+}
+
+/// Settings shows the private-endpoints state; turning it on goes through the confirm window with
+/// the CLI's question, and the form that confirms posts `on`.
+#[tokio::test(flavor = "multi_thread")]
+async fn private_endpoints_turn_on_through_a_confirm_window() {
+    let d = Dash::dashboard().await;
+    let check = d.view(ViewName::Check, json!({})).await;
+    assert_eq!(check["allow_private_endpoints"], false, "the fixture leaves it off");
+    let html = d.ok("/settings").await;
+    assert!(html.contains("href=\"/settings?window=private-endpoints\""), "{html}");
+    assert!(!html.contains("/do/plugins/private-endpoints"), "off: turning on needs the window");
+
+    let window = d.ok("/settings?window=private-endpoints").await;
+    let loss = nullrouter_server::ops::describe_loss("plugins.private_endpoints", "on").unwrap();
+    assert!(text_of(&window).contains(&loss), "{loss}");
+    let form = form_to(&window, "/do/plugins/private-endpoints");
+    assert!(form.contains("name=\"on\" value=\"on\"") && form.contains("name=\"_window\" value=\"private-endpoints\""));
+    assert!(form.contains("name=\"_back\" value=\"/settings\""), "{form}");
 }

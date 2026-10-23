@@ -304,7 +304,10 @@ mod tests {
         assert_eq!(d.text, "anthropic: disabled (routing skips it), saved; applies at next start");
         hide(&c, "anthropic").unwrap();
         let t = std::fs::read_to_string(&cfg).unwrap();
-        assert!(t.contains("[provider.anthropic]") && t.contains("enabled = false") && t.contains("hidden = true"), "{t}");
+        assert!(
+            t.contains("[provider.anthropic]") && t.contains("enabled = false") && t.contains("hidden = true"),
+            "{t}"
+        );
         enable(&c, "anthropic").unwrap();
         show(&c, "anthropic").unwrap();
         assert!(!std::fs::read_to_string(&cfg).unwrap().contains("provider.anthropic"));

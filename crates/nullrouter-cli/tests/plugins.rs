@@ -180,7 +180,25 @@ fn add_compatible_writes_a_provider_and_refuses_private_addresses() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let add = |id: &str, style: &str, url: &str| {
-        nr(home, &["providers", "add-compatible", id, "--style", style, "--base-url", url, "--model", "a", "--model", "b", "--model", "c"], "")
+        nr(
+            home,
+            &[
+                "providers",
+                "add-compatible",
+                id,
+                "--style",
+                style,
+                "--base-url",
+                url,
+                "--model",
+                "a",
+                "--model",
+                "b",
+                "--model",
+                "c",
+            ],
+            "",
+        )
     };
     let o = add("my-openai", "openai", "https://llm.example.com/v1");
     assert!(o.status.success(), "{}", text(&o));

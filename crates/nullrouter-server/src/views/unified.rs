@@ -46,9 +46,7 @@ fn member_verdicts(home: &OperatorHome, live: &Live, entry: &Value) -> Result<Va
         None => {
             let replay = store::load(home.path());
             let pairs = replay.verdicts.all().into_iter();
-            let line = |(p, v): (Pair, &Verdict)| {
-                json!({ "provider": p.provider, "account": p.account, "model": p.model, "state": v.state })
-            };
+            let line = |(p, v): (Pair, &Verdict)| json!({ "provider": p.provider, "account": p.account, "model": p.model, "state": v.state });
             pairs.map(line).collect()
         }
     };

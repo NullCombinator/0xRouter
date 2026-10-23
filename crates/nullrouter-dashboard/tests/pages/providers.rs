@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use nullrouter_dashboard::page::ViewName;
-use nullrouter_dashboard::pages::providers::{ADD_HINT, INSTALL_HINT, SWITCH_HINT, TEST_HINT};
+use nullrouter_dashboard::pages::providers::TEST_HINT;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
@@ -102,27 +102,78 @@ async fn the_kind_link_keeps_the_query_and_an_unknown_kind_lists_nothing() {
     }
 }
 
-/// R15: each disabled control shows its hint, and none can submit anything.
+/// R15 after spec 014: the one control not built (Test All) is disabled with its hint; every other
+/// control is live. The search is the only GET form, and every other form posts with the token.
 #[tokio::test(flavor = "multi_thread")]
-async fn every_disabled_control_shows_its_hint_and_has_no_form() {
+async fn only_test_all_is_disabled_and_every_other_form_posts_with_the_token() {
     let d = Dash::dashboard().await;
     let html = d.ok("/providers").await;
     let text = text_of(&html);
-    for label in ["Add Anthropic Compatible", "Add OpenAI Compatible", "Test All", "Install"] {
+    for label in ["Add Anthropic Compatible", "Add OpenAI Compatible", "Test All", "Install", "Enable", "Uninstall"] {
         assert!(text.contains(label), "{label}");
     }
-    for hint in [ADD_HINT, TEST_HINT, SWITCH_HINT, INSTALL_HINT] {
-        let plain = hint.replace('`', "");
-        assert!(text.contains(&plain), "{plain:?} is on the page");
-    }
-    // Every button but the search's is disabled; the search is the page's only form, and a GET.
+    assert!(text.contains(&TEST_HINT.replace('`', "")), "the hint of Test All is on the page");
+    // Every button is a submit of a form, but Test All's, which is disabled.
     for button in html.split("<button").skip(1) {
         let tag = button.split('>').next().unwrap();
         assert!(tag.contains("disabled") || tag.contains("type=\"submit\""), "{tag}");
     }
-    assert_eq!(html.matches("<form").count(), 1, "only the search is a form");
+    assert_eq!(html.matches("disabled>").count(), html.matches("Test All").count(), "only Test All is disabled");
     assert!(html.contains("<form class=\"provider-grid__search\" method=\"get\""));
-    assert!(html.matches("role=\"switch\"").count() > 0 && html.matches("aria-disabled=\"true\"").count() > 0);
+    for post in html.split("<form class=\"form\"").skip(1) {
+        let form = post.split("</form>").next().unwrap();
+        assert!(form.contains("name=\"_t\" value=\"") && form.contains("name=\"_back\""), "{form}");
+    }
+    for action in ["/do/plugins/install", "/do/providers/disable", "/do/providers/hide"] {
+        assert!(html.contains(&format!("action=\"{action}\"")), "{action}");
+    }
+    assert!(!html.contains("<script"), "no script");
+}
+
+/// Each loaded plugin row has the switches its state calls for, the installed community one has
+/// Uninstall, which opens a confirm window naming what it loses.
+#[tokio::test(flavor = "multi_thread")]
+async fn plugin_rows_switch_and_uninstall_goes_through_a_confirm_window() {
+    let d = Dash::dashboard().await;
+    let providers = d.view(ViewName::Providers, json!({"all": true})).await;
+    let first = &rows(&providers)[0];
+    assert!(first["enabled"].is_boolean() && first["hidden"].is_boolean(), "the rows say their switches");
+
+    let plugins = d.view(ViewName::Plugins, json!({"community": true})).await;
+    let installed =
+        rows(&plugins).iter().find(|r| r["set"] == "community" && r["status"] == "installed").expect("one installed");
+    let id = installed["id"].as_str().unwrap();
+    let html = d.ok("/providers").await;
+    assert!(html.contains(&format!("window=uninstall-plugin&amp;id={id}")), "a link to the confirm window");
+    assert!(!html.contains("/do/plugins/uninstall"), "uninstalling needs the window");
+
+    let window = d.ok(&format!("/providers?window=uninstall-plugin&id={id}")).await;
+    let loss = nullrouter_server::ops::describe_loss("plugins.uninstall", id).unwrap();
+    assert!(text_of(&window).contains(&loss), "{loss}");
+    let form = form_to(&window, "/do/plugins/uninstall");
+    assert!(form.contains(&format!("name=\"id\" value=\"{id}\"")), "{form}");
+    assert!(form.contains("name=\"_window\" value=\"uninstall-plugin\""), "{form}");
+    let none = d.ok("/providers?window=uninstall-plugin").await;
+    assert!(!none.contains("/do/plugins/uninstall"), "no id, no window");
+}
+
+/// Both Add windows post a compatible provider: id, name, base URL, models one per line, the style
+/// each stands for, and a way back to the same window when refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_add_compatible_windows_post_their_style() {
+    let d = Dash::dashboard().await;
+    for (window, style) in [("add-openai", "openai"), ("add-anthropic", "anthropic")] {
+        let html = d.ok(&format!("/providers?window={window}")).await;
+        let form = form_to(&html, "/do/providers/add-compatible");
+        assert!(form.contains(&format!("name=\"style\" value=\"{style}\"")), "{form}");
+        assert!(form.contains(&format!("name=\"_window\" value=\"{window}\"")), "{form}");
+        assert!(form.contains("name=\"_back\" value=\"/providers\""), "{form}");
+        for field in ["name=\"id\"", "name=\"name\"", "name=\"base_url\"", "<textarea class=\"input\" name=\"models\""]
+        {
+            assert!(form.contains(field), "{field}: {form}");
+        }
+        assert!(!html.contains("Open Settings"), "only a private-address refusal links to Settings");
+    }
 }
 
 /// US4: a provider with no accounts says so, on its card and in its window.

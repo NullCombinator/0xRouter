@@ -139,7 +139,6 @@ async fn the_plugins_panel_agrees_with_plugins_list_community() {
     assert!(text.contains(&format!("Bundled · {}", bundled.len())), "{text}");
     assert!(text.contains(&format!("Installed from community · {}", installed.len())), "{text}");
     assert!(text.contains(&format!("Community · not installed: {available} available.")), "{text}");
-    assert!(text.contains("In the CLI: nullrouter plugins list --community"), "{text}");
 
     // Each bundled plugin: its source and its state.
     for r in bundled {

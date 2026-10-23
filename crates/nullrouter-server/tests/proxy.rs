@@ -240,5 +240,8 @@ async fn the_final_503_names_the_paused_proxy() {
     assert_eq!(r.status().as_u16(), 503);
     let body = r.text().await.unwrap();
     assert!(body.contains("proxy a paused"), "the client is told why: {body}");
-    assert!(!body.contains(PASSWORD) && !body.contains(&a.addr().to_string()), "and nothing of the proxy's address or login: {body}");
+    assert!(
+        !body.contains(PASSWORD) && !body.contains(&a.addr().to_string()),
+        "and nothing of the proxy's address or login: {body}"
+    );
 }

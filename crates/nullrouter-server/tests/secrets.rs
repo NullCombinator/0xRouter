@@ -722,7 +722,9 @@ async fn proxy_credentials_appear_nowhere() {
     .unwrap();
     nullrouter_engine::files::write_private(
         &s.home().join(accounts::FILE),
-        &format!("schema = 2\n[[account]]\nprovider = \"mockco\"\nname = \"main\"\nsecret = \"{SECRET}\"\nproxy = \"eu\"\n"),
+        &format!(
+            "schema = 2\n[[account]]\nprovider = \"mockco\"\nname = \"main\"\nsecret = \"{SECRET}\"\nproxy = \"eu\"\n"
+        ),
     )
     .unwrap();
     s.engine.reload().await.unwrap();
@@ -770,7 +772,8 @@ async fn proxy_credentials_appear_nowhere() {
     ] {
         let home = home.clone();
         let args2 = args.clone();
-        let view = views::run_in_process(&s.engine, needs, &args, move |live| build(&home, &args2, live)).await.unwrap();
+        let view =
+            views::run_in_process(&s.engine, needs, &args, move |live| build(&home, &args2, live)).await.unwrap();
         shown.push(format!("{}{}", view.json, view.extra));
     }
     let pause_file = std::fs::read_to_string(s.home().join("routing/proxies.json")).unwrap_or_default();
@@ -919,7 +922,8 @@ fn fit_history(base: SystemTime, n: usize) -> Vec<nullrouter_engine::quota::hist
     for i in 1..=n {
         let input = 800 + (next() * 3600.0) as u64;
         level += k * input as f64;
-        let tally = ModelTally { requests: 1, requests_usage_unreported: 0, input, output: 0, cache_read: 0, cache_write: 0 };
+        let tally =
+            ModelTally { requests: 1, requests_usage_unreported: 0, input, output: 0, cache_read: 0, cache_write: 0 };
         out.push(entry(10 * i as u64, level.round(), Some(tally)));
     }
     out.push(entry(10 * (n as u64 + 1), level.round() + 8.0, None));
@@ -982,7 +986,8 @@ async fn the_fit_and_its_alerts_keep_no_secret_and_reach_no_provider() {
     }
     let engine = s.engine.clone();
     tokio::task::spawn_blocking(move || engine.fit_learner.replay()).await.unwrap();
-    let capacity = s.engine.fits.load().window("keyco", "5-hour").capacity.get("main").copied().expect("a fitted capacity");
+    let capacity =
+        s.engine.fits.load().window("keyco", "5-hour").capacity.get("main").copied().expect("a fitted capacity");
 
     // The same request with the fit published.
     let r = send().await.unwrap();
@@ -1019,12 +1024,15 @@ async fn the_fit_and_its_alerts_keep_no_secret_and_reach_no_provider() {
     let got = s.mock.received();
     assert_eq!(got.len(), 2, "one upstream request each side of the fit");
     let dump = |r: &Received| {
-        let mut h: Vec<String> = r.headers.iter().map(|(k, v)| format!("{k}: {}", v.to_str().unwrap_or_default())).collect();
+        let mut h: Vec<String> =
+            r.headers.iter().map(|(k, v)| format!("{k}: {}", v.to_str().unwrap_or_default())).collect();
         h.sort();
         format!("{}\n{}", h.join("\n"), String::from_utf8_lossy(&r.body)).to_lowercase()
     };
     let mut banned: Vec<String> = ids.iter().map(|i| i.to_lowercase()).collect();
-    banned.extend(["outside", "quota.fit", "quota.alert", &format!("{capacity}"), &format!("{capacity:.0}")].map(str::to_owned));
+    banned.extend(
+        ["outside", "quota.fit", "quota.alert", &format!("{capacity}"), &format!("{capacity:.0}")].map(str::to_owned),
+    );
     for r in &got {
         let text = dump(r);
         for b in &banned {

@@ -79,8 +79,9 @@ fn delta(d: Value, finish: Value) -> Bytes {
 
 /// A stream that thinks in `n` deltas, then says "ok".
 fn thinking(n: usize) -> Vec<Bytes> {
-    let mut out: Vec<Bytes> =
-        (0..n).map(|i| delta(json!({"role": "assistant", "reasoning_content": format!("t{i} ")}), Value::Null)).collect();
+    let mut out: Vec<Bytes> = (0..n)
+        .map(|i| delta(json!({"role": "assistant", "reasoning_content": format!("t{i} ")}), Value::Null))
+        .collect();
     out.push(delta(json!({"content": "ok"}), Value::Null));
     out.push(delta(json!({}), json!("stop")));
     out.push(Bytes::from_static(b"data: [DONE]\n\n"));
@@ -117,10 +118,7 @@ async fn an_operator_header_timeout_beats_the_default_and_removing_it_restores_t
     assert_ne!(status, 200, "nothing else could serve it");
     let reason = failed_as_timeout(&rec);
     assert!(reason.contains("200 ms"), "{reason}");
-    assert_eq!(
-        timeout_of(&rec),
-        Some(TimeoutHit { which: TimeoutKind::Headers, ms: 200, source: OPERATOR_PROVIDER })
-    );
+    assert_eq!(timeout_of(&rec), Some(TimeoutHit { which: TimeoutKind::Headers, ms: 200, source: OPERATOR_PROVIDER }));
 
     // Scenario 2: the override is gone, so the same delay is fine under the built-in 60 s.
     configure(&s, "").await.unwrap();
@@ -214,10 +212,7 @@ async fn a_reload_changes_the_next_request_and_not_the_one_in_flight() {
     s.mock.push([phased(700, 0, 10, thinking(0))]);
     let (status, rec) = run(&s, ask(&s, "mockco/m1")).await;
     assert_ne!(status, 200);
-    assert_eq!(
-        timeout_of(&rec),
-        Some(TimeoutHit { which: TimeoutKind::Headers, ms: 100, source: OPERATOR_PROVIDER })
-    );
+    assert_eq!(timeout_of(&rec), Some(TimeoutHit { which: TimeoutKind::Headers, ms: 100, source: OPERATOR_PROVIDER }));
 }
 
 /// FR-032: a hand-edited bad value is refused with the field named, and the old settings stay.
@@ -285,7 +280,8 @@ async fn reuse_and_http2_resolve_operator_over_plugin_over_default() {
     let view = |s: &Server| {
         let engine = s.engine.clone();
         async move {
-            let v = nullrouter_server::operator::handle(&engine, &json!({"op": "connection.view", "provider": "duo"})).await;
+            let v = nullrouter_server::operator::handle(&engine, &json!({"op": "connection.view", "provider": "duo"}))
+                .await;
             assert_eq!(v["ok"], true, "{v}");
             v["providers"][0].clone()
         }
@@ -324,7 +320,13 @@ fn kinds(rec: &RequestRecord) -> Vec<nullrouter_engine::records::AttemptKind> {
 /// `duo`, whose plugin declares two 503 retries 10 ms apart.
 fn retrying(mock: &nullrouter_engine::testkit::MockUpstream) -> Vec<(&'static str, String)> {
     let (id, body) = duo(mock).remove(0);
-    vec![(id, body.replace("wire = \"openai-chat\"\n", "wire = \"openai-chat\"\nretry = { \"503\" = { retries = 2, delay_ms = 10 } }\n"))]
+    vec![(
+        id,
+        body.replace(
+            "wire = \"openai-chat\"\n",
+            "wire = \"openai-chat\"\nretry = { \"503\" = { retries = 2, delay_ms = 10 } }\n",
+        ),
+    )]
 }
 
 /// US6 scenario 1: no same-account retries moves straight on.

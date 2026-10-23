@@ -789,11 +789,11 @@ fn stamps(text: &str) -> String {
 /// A file's comparable form: TOML as normalised data, anything else with its timestamps masked.
 fn normal_text(rel: &str, bytes: &[u8]) -> String {
     let text = String::from_utf8_lossy(bytes).into_owned();
-    if rel.ends_with(".toml") {
-        if let Ok(table) = toml::from_str::<toml::Table>(&text) {
-            let v = serde_json::to_value(table).unwrap();
-            return serde_json::to_string_pretty(&normal(&v, "")).unwrap();
-        }
+    if rel.ends_with(".toml")
+        && let Ok(table) = toml::from_str::<toml::Table>(&text)
+    {
+        let v = serde_json::to_value(table).unwrap();
+        return serde_json::to_string_pretty(&normal(&v, "")).unwrap();
     }
     stamps(&text)
 }

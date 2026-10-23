@@ -21,8 +21,7 @@ const GOOD: &str = r#"{"risk":"low","summary":"changes nothing","findings":[]}"#
 fn wasm_target_installed() -> bool {
     let args = ["target", "list", "--installed", "--toolchain", nullrouter_builder::TOOLCHAIN];
     let Ok(out) = Command::new("rustup").args(args).output() else { return false };
-    out.status.success()
-        && String::from_utf8_lossy(&out.stdout).lines().any(|l| l.trim() == nullrouter_builder::TARGET)
+    out.status.success() && String::from_utf8_lossy(&out.stdout).lines().any(|l| l.trim() == nullrouter_builder::TARGET)
 }
 
 /// The builder binary: `$NR_BUILDER`, else `nullrouter-builder` next to the test binaries. Cargo

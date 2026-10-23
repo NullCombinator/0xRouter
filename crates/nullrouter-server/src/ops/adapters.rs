@@ -333,11 +333,8 @@ pub fn review_with(ctx: &Ctx, log: &mut Vec<String>, harness: &str, version: &st
             let index = read_index(ctx)?;
             let entry = index.version(&h, &v).ok_or_else(|| fail(format!("no version {v} of {h} in the index")))?;
             if entry.state != VersionState::InReview {
-                let reason = if entry.state_reason.is_empty() {
-                    String::new()
-                } else {
-                    format!(" ({})", entry.state_reason)
-                };
+                let reason =
+                    if entry.state_reason.is_empty() { String::new() } else { format!(" ({})", entry.state_reason) };
                 return Ok(plain(
                     format!("{h} {v}: {}{reason}", entry.state),
                     json!({"harness": h, "version": v, "state": entry.state, "reason": entry.state_reason}),
@@ -418,19 +415,13 @@ pub fn clear_question(harness: &str, version: &str) -> String {
 pub fn clear_events(ctx: &Ctx, harness: &str, version: &str) -> Result<Vec<Alert>, OpError> {
     let (h, v) = (harness_of(harness)?, VersionId::from_run(version));
     let index = read_index(ctx)?;
-    let state = index
-        .version(&h, &v)
-        .ok_or_else(|| fail(format!("no version {v} of {h} in the index")))?
-        .state;
+    let state = index.version(&h, &v).ok_or_else(|| fail(format!("no version {v} of {h} in the index")))?.state;
     if state != VersionState::Suspect {
         return Err(fail(format!("{h} {v} is {state}, not suspect")));
     }
     let store = store_of(ctx)?;
     let events = AlertLog::open(&store).list().map_err(fail)?;
-    Ok(events
-        .into_iter()
-        .filter(|a| a.kind == AlertKind::Guardrail && a.harness == h && a.version == v)
-        .collect())
+    Ok(events.into_iter().filter(|a| a.kind == AlertKind::Guardrail && a.harness == h && a.version == v).collect())
 }
 
 /// One guardrail event as a line: when, the record it came from, what happened.
@@ -477,12 +468,7 @@ fn bound_keys(ctx: &Ctx, harness: &HarnessName) -> Result<Vec<String>, OpError> 
 }
 
 /// The checks a removal makes first, and the keys it would turn into plain clients.
-pub fn remove_preview(
-    ctx: &Ctx,
-    harness: &str,
-    version: Option<&str>,
-    force: bool,
-) -> Result<RemovePreview, OpError> {
+pub fn remove_preview(ctx: &Ctx, harness: &str, version: Option<&str>, force: bool) -> Result<RemovePreview, OpError> {
     let h = harness_of(harness)?;
     let v = version.map(VersionId::from_run);
     let index = read_index(ctx)?;
@@ -674,7 +660,11 @@ pub fn alerts_ack_with(ctx: &Ctx, log: &mut Vec<String>, id: Option<&str>, all: 
         return Ok(plain(format!("acknowledged {n}"), json!({"acknowledged": n})));
     }
     let Some(raw) = id.filter(|s| !s.is_empty()) else {
-        return Err(OpError { text: "nullrouter alerts ack: give an alert id, or --all".into(), exit: 2, field: Some("id") });
+        return Err(OpError {
+            text: "nullrouter alerts ack: give an alert id, or --all".into(),
+            exit: 2,
+            field: Some("id"),
+        });
     };
     let unknown = || field_fail("id", format!("no open alert {raw}"));
     let Some(id) = AlertId::parse(raw) else { return Err(unknown()) };

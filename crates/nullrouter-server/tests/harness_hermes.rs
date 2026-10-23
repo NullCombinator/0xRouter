@@ -64,7 +64,9 @@ fn hermes_completes_every_turn_on_each_chosen_provider() {
         }
     }
     if !reject.is_empty() {
-        println!("echoed reasoning looks rejected on: {reject:?}\nadd the provider ids to REJECTS_ECHOED_REASONING (T031)");
+        println!(
+            "echoed reasoning looks rejected on: {reject:?}\nadd the provider ids to REJECTS_ECHOED_REASONING (T031)"
+        );
     }
     assert!(failed.is_empty(), "hermes did not complete every turn on: {failed:?}");
 }

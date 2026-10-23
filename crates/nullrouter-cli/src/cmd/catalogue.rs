@@ -6,9 +6,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Subcommand;
+use nullrouter_adapters::InstallError;
 use nullrouter_adapters::catalogue::{self, CatalogueError, Client};
 use nullrouter_adapters::store::{Index, Store};
-use nullrouter_adapters::InstallError;
 use nullrouter_engine::state::Engine;
 use nullrouter_registry::OperatorHome;
 use nullrouter_server::ops::Ctx;

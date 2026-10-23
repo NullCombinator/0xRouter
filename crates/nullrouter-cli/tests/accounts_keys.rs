@@ -239,7 +239,11 @@ fn accounts_list_shows_sign_in_states_and_the_command() {
     fn cells(l: &str) -> Vec<&str> {
         l.split("  ").map(str::trim).filter(|c| !c.is_empty()).collect()
     }
-    assert_eq!(cells(lines[0]), ["provider", "name", "kind", "order", "priority", "secret", "proxy", "exclusive", "state"], "{text}");
+    assert_eq!(
+        cells(lines[0]),
+        ["provider", "name", "kind", "order", "priority", "secret", "proxy", "exclusive", "state"],
+        "{text}"
+    );
     assert_eq!(cells(lines[1]), ["anthropic", "api", "key", "1", "1", "…0003", "—", "active"], "{text}");
     assert_eq!(cells(lines[2]), ["anthropic", "max", "signin", "0", "1", "…h3Kq", "—", "active"], "{text}");
     assert_eq!(
@@ -555,7 +559,14 @@ fn keys_bind_to_an_adapter_and_the_list_shows_it_only_when_one_is() {
     // Rebind, then clear.
     assert!(nr(h, &["keys", "set-adapter", "plain", "claude-code"], "").status.success());
     assert_eq!(
-        Keys::load(&h.join(keys::FILE)).unwrap().iter().find(|k| k.name == "plain").unwrap().adapter.as_ref().map(|n| n.to_string()),
+        Keys::load(&h.join(keys::FILE))
+            .unwrap()
+            .iter()
+            .find(|k| k.name == "plain")
+            .unwrap()
+            .adapter
+            .as_ref()
+            .map(|n| n.to_string()),
         Some("claude-code".into())
     );
     assert!(nr(h, &["keys", "set-adapter", "plain", "--clear"], "").status.success());
@@ -571,7 +582,10 @@ fn keys_bind_to_an_adapter_and_the_list_shows_it_only_when_one_is() {
         assert_eq!(nr(h, &args, "").status.code(), Some(1), "{args:?}");
     }
     assert!(!nr(h, &["keys", "set-adapter", "plain"], "").status.success());
-    assert!(Keys::load(&h.join(keys::FILE)).unwrap().iter().all(|k| k.name != "other"), "a refused issue leaves no key");
+    assert!(
+        Keys::load(&h.join(keys::FILE)).unwrap().iter().all(|k| k.name != "other"),
+        "a refused issue leaves no key"
+    );
 }
 
 #[test]

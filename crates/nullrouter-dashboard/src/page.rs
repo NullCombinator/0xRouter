@@ -21,6 +21,10 @@ pub const ATTEMPTS: u32 = 3;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ViewName {
     Accounts,
+    /// The adapter store: harnesses, versions and states (`adapters list`).
+    Adapters,
+    /// The adapter alerts (`alerts list`).
+    Alerts,
     Behaviour,
     Check,
     /// The declared combos and those dropped (`combos`).
@@ -51,6 +55,8 @@ impl ViewName {
     pub const fn needs(self) -> &'static [&'static str] {
         match self {
             Self::Accounts => views::accounts::NEEDS,
+            Self::Adapters => views::adapters::NEEDS,
+            Self::Alerts => views::alerts::NEEDS,
             Self::Behaviour => views::behaviour::NEEDS,
             Self::Check => views::check::NEEDS,
             Self::Combos => views::combos::NEEDS,
@@ -77,6 +83,8 @@ impl ViewName {
     fn builder(self) -> Build {
         match self {
             Self::Accounts => views::accounts::build,
+            Self::Adapters => views::adapters::build,
+            Self::Alerts => views::alerts::build,
             Self::Behaviour => views::behaviour::build,
             Self::Check => views::check::build,
             Self::Combos => views::combos::build,

@@ -118,7 +118,7 @@ pass unchanged; never edit a golden file to make a move pass.
   - Add the CLI `providers add-compatible`.
   - Tests cover openai and anthropic styles, a taken id, a bad URL and a private URL.
 - [X] T035 [P] [US4] Move `adapters install|review|build|approve|reject|clear|rebuild|remove|review-settings` (`crates/nullrouter-cli/src/cmd/adapters.rs`), `catalogue install` (`cmd/catalogue.rs`) and `alerts ack` (`cmd/alerts.rs`) to `crates/nullrouter-server/src/ops/adapters.rs`. Review, build, rebuild and catalogue install run as tasks. The `[y/N]` texts for clear and remove come from `ops`. `crates/nullrouter-cli/tests/adapter_output.rs` and the adapters crate's lifecycle tests pass unchanged.
-- [ ] T036 [US4] Make the side panels and settings windows work:
+- [X] T036 [US4] Make the side panels and settings windows work:
   - Providers settings window (`pages/providers.rs`): Show on page / Enabled switches, Install, Uninstall (confirm), and the "Add OpenAI Compatible" / "Add Anthropic Compatible" windows (id, name, base URL, models one per line), showing the private-endpoint refusal with a link to Settings.
   - Settings (`pages/settings.rs`): the private-endpoints switch, with a confirm window when turning it on.
   - Endpoint & Key adapter settings window (`pages/endpoint.rs`): install from path, install from catalogue (task), review settings, per-version review/build/approve/reject/clear (confirm)/remove (confirm), and alert ack.

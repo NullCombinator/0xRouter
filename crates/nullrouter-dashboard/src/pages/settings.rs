@@ -4,10 +4,13 @@
 //! carries only the time it was issued.
 
 use maud::{Markup, html};
+use nullrouter_server::ops;
 use serde_json::{Value, json};
 
 use super::{Body, Ctx, Failure, Refused, Req};
-use crate::components::{Head, card, field, form, icon, inset, kv, prose, select};
+use crate::components::{
+    Head, Tone, badge, card, confirm_window, field, form, icon, inset, kv, link_button, prose, select,
+};
 use crate::page::{ViewName, Want};
 
 pub const VIEWS: &[ViewName] = &[ViewName::Behaviour, ViewName::Check, ViewName::Dashboard, ViewName::Routing];
@@ -32,10 +35,53 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
     let content = html! {
         (routing(ctx.json(ViewName::Behaviour)))
         (changes(ctx))
+        (private_endpoints(ctx))
         (local_mode(ctx.json(ViewName::Check)))
         (dashboard(ctx, ctx.json(ViewName::Dashboard)))
     };
-    Ok(Body::new(content))
+    let window = match ctx.req.get("window") {
+        Some("private-endpoints") => Some(private_window(ctx)),
+        _ => None,
+    };
+    Ok(Body { content, side: None, window })
+}
+
+/// "Private endpoints": whether plugins may reach this machine and the local network, as `check`
+/// says it. Turning it on opens a confirm window (`?window=private-endpoints`); turning it off
+/// posts at once.
+fn private_endpoints(ctx: &Ctx<'_>) -> Markup {
+    let on = ctx.json(ViewName::Check)["allow_private_endpoints"] == true;
+    let head = Head::new("settings", "Private endpoints").subtitle("Same as nullrouter plugins private-endpoints");
+    let turn_on = ctx.req.href(BACK, &["done", "task", "window"], &[("window", "private-endpoints")]);
+    card(
+        Some(head),
+        html! {
+            (kv("Private endpoints", badge(if on { Tone::Warning } else { Tone::Default }, if on { "on" } else { "off" })))
+            @if on {
+                (form("/do/plugins/private-endpoints", BACK, &ctx.req.token, html! {
+                    button class="button button--secondary" type="submit" { "Turn off private endpoints" }
+                }))
+            } @else {
+                (link_button(&turn_on, "Turn on private endpoints", None, false))
+            }
+        },
+    )
+}
+
+/// The confirm window of turning private endpoints on: what it allows, the real form beside Cancel.
+fn private_window(ctx: &Ctx<'_>) -> Markup {
+    let loss = ops::describe_loss("plugins.private_endpoints", "on").unwrap_or_default();
+    let action = form(
+        "/do/plugins/private-endpoints",
+        BACK,
+        &ctx.req.token,
+        html! {
+            input type="hidden" name="_window" value="private-endpoints";
+            input type="hidden" name="on" value="on";
+            button class="button button--primary" type="submit" { "Turn on private endpoints" }
+        },
+    );
+    confirm_window("Turn on private endpoints", &loss, BACK, action)
 }
 
 /// "Routing": each `[pipeline]` setting as `behaviour show` prints it, `(default)` where the value

@@ -187,10 +187,7 @@ fn change(
     let snapshot = handle.snapshot();
     let known: Vec<&str> = snapshot.providers().map(|p| p.id.as_str()).collect();
     if !known.contains(&provider) {
-        return Err(fail_in(
-            "provider",
-            format!("no provider {provider:?}; known providers: {}", known.join(", ")),
-        ));
+        return Err(fail_in("provider", format!("no provider {provider:?}; known providers: {}", known.join(", "))));
     }
     let header = match model {
         Some(m) => format!("provider.{provider}.model.\"{}\".connection", quoted(m)),

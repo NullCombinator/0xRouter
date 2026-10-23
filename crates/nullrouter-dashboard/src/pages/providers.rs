@@ -14,21 +14,23 @@ use serde_json::{Value, json};
 use super::{Body, Ctx, Failure, Refused, Req};
 use crate::access::encode_component;
 use crate::components::{
-    self, Tone, badge, confirm_window, disabled, disabled_switch, empty, field, form, icon, kv, link_button, modal,
-    name, prose, secret_field, select, status,
+    self, Tone, badge, confirm_window, disabled, empty, field, form, icon, kv, link_button, modal, name, prose,
+    secret_field, select, status, textarea,
 };
 use crate::page::{ViewName, Want};
 
 pub const VIEWS: &[ViewName] =
     &[ViewName::Providers, ViewName::Accounts, ViewName::Plugins, ViewName::Model, ViewName::Latency, ViewName::Check];
 
-/// The hints of research R15.
-pub const ADD_HINT: &str = "Not built yet. Add a provider with a plugin file; see docs/plugins.md.";
+/// The hint of the one control that is not built yet (research R15).
 pub const TEST_HINT: &str = "Not built yet: model tests come with their own slice.";
-pub const SWITCH_HINT: &str = "Not built yet. Every loaded plugin is active.";
-pub const INSTALL_HINT: &str = "In the CLI: `nullrouter plugins install <id>`";
-pub const UNINSTALL_HINT: &str = "In the CLI: `nullrouter plugins uninstall <id>`";
-pub const COMMUNITY_HINT: &str = "In the CLI: `nullrouter plugins list --community`.";
+/// The windows that add a compatible provider: window id, style, title.
+const COMPATIBLE: &[(&str, &str, &str)] =
+    &[("add-anthropic", "anthropic", "Add Anthropic Compatible"), ("add-openai", "openai", "Add OpenAI Compatible")];
+/// The fields of the add form, the first taking a refusal that names none of them.
+const ADD_FIELDS: &[&str] = &["id", "name", "base_url", "models"];
+/// Where the settings forms and windows return: this page, with its window closed.
+const BACK: &str = "/providers";
 /// The keys each settings form takes, as the CLI's `routing` and `connection` commands name them.
 pub const OVERRIDE_KEYS: &str = "Keys: `cache_lifetime`, `reserve`, `price.input`, `price.output`, `price.cache_read`, `price.cache_write`, `window.<name>.capacity`, `window.<name>.length`, `window.<name>.reserve`, `window.<name>.weight.<class>`, `window.<name>.multiplier.<glob>`.";
 pub const PLUGIN_KEYS: &str = "Keys: `window.<name>.weight.<class>` or `window.<name>.multiplier.<glob>`, with a number. Capacity is per account, so a plugin never takes it.";
@@ -49,6 +51,8 @@ pub const SECTIONS: &[(&str, &[&str])] = &[
 pub fn wants(req: &Req) -> Vec<Want> {
     let mut wants = vec![
         Want::new(ViewName::Providers, json!({})),
+        // The settings panel lists hidden providers too, so Show can bring them back.
+        Want::new(ViewName::Providers, json!({"all": true})),
         Want::new(ViewName::Accounts, json!({})),
         Want::new(ViewName::Plugins, json!({"community": true})),
         Want::new(ViewName::Check, json!({})),
@@ -68,6 +72,8 @@ pub fn body(ctx: &Ctx<'_>) -> Result<Body, Failure> {
     let window = match ctx.req.get("window") {
         Some("signin") => Some(signin_window(ctx, providers)?),
         Some("remove-account") => remove_window(ctx),
+        Some("uninstall-plugin") => uninstall_window(ctx),
+        Some(w) if COMPATIBLE.iter().any(|(id, ..)| *id == w) => Some(add_window(ctx, w)),
         _ => match &ctx.req.window {
             Some(token) => Some(window(ctx, providers, accounts, token)?),
             None => None,
@@ -139,14 +145,15 @@ fn search(req: &Req) -> Markup {
 fn custom_section(ctx: &Ctx<'_>, shown: &[&Value], accounts: &[Value]) -> Markup {
     let mine: Vec<&Value> = shown.iter().copied().filter(|p| section_of(p) == CUSTOM).collect();
     let controls = html! {
-        (disabled("Add Anthropic Compatible", Some("add"), ADD_HINT))
-        (disabled("Add OpenAI Compatible", Some("add"), ADD_HINT))
+        @for (window, _, title) in COMPATIBLE {
+            (link_button(&ctx.req.href(BACK, &["window", "id", "name", "done", "task"], &[("window", window)]), title, Some("add"), false))
+        }
     };
     if mine.is_empty() {
         return html! {
             div class="provider-grid" {
                 (components::section_bar(CUSTOM, controls))
-                (empty("extension", "No custom providers", "Add one with a plugin file; see docs/plugins.md."))
+                (empty("extension", "No custom providers", "Add one with the buttons above, or with a plugin file; see docs/plugins.md."))
             }
         };
     }
@@ -682,11 +689,65 @@ fn model_row(ctx: &Ctx<'_>, provider: &str, accounts: &[&Value], m: &Value) -> M
     }
 }
 
-/// "Provider plugins": what `plugins list --community` lists, with the switches disabled.
+/// The add window of a compatible provider (`?window=add-openai` or `add-anthropic`): id, name,
+/// base URL and models one per line. A refusal reopens it with the values kept; a private-address
+/// refusal links to Settings, where the switch is.
+fn add_window(ctx: &Ctx<'_>, window: &str) -> Markup {
+    let (_, style, title) = COMPATIBLE.iter().find(|(id, ..)| *id == window).copied().unwrap_or_default();
+    let err = refused_form(ctx.req, window);
+    let url_error = error_on(err, "base_url", ADD_FIELDS);
+    let private = err.is_some_and(|r| r.field.as_deref() == Some("base_url") && r.text.contains("private address"));
+    let body = form(
+        "/do/providers/add-compatible",
+        BACK,
+        &ctx.req.token,
+        html! {
+            input type="hidden" name="_window" value=(window);
+            input type="hidden" name="style" value=(style);
+            (field("id", "Id", kept(err, "id"), error_on(err, "id", ADD_FIELDS)))
+            (field("name", "Name (optional)", kept(err, "name"), error_on(err, "name", ADD_FIELDS)))
+            (field("base_url", "Base URL", kept(err, "base_url"), url_error))
+            @if private { a class="button button--secondary" href="/settings" { "Open Settings" } }
+            (textarea("models", "Models, one per line", kept(err, "models"), error_on(err, "models", ADD_FIELDS)))
+            button class="button button--primary" type="submit" { "Add provider" }
+        },
+    );
+    modal(title, BACK, body)
+}
+
+/// The uninstall confirm window (`?window=uninstall-plugin&id=<p>`): what uninstalling loses, the
+/// real form beside Cancel. Nothing opens without an id.
+fn uninstall_window(ctx: &Ctx<'_>) -> Option<Markup> {
+    let id = ctx.req.get("id")?;
+    let loss = ops::describe_loss("plugins.uninstall", id).unwrap_or_default();
+    // A refused uninstall reopens this window: `_back` names the plugin, `_window` reopens it.
+    let back = format!("{BACK}?id={}", encode_component(id));
+    let action = form(
+        "/do/plugins/uninstall",
+        &back,
+        &ctx.req.token,
+        html! {
+            input type="hidden" name="_window" value="uninstall-plugin";
+            input type="hidden" name="id" value=(id);
+            button class="button button--primary" type="submit" { "Uninstall provider" }
+        },
+    );
+    Some(confirm_window("Uninstall provider", &loss, BACK, action))
+}
+
+/// "Provider plugins": what `plugins list --community` lists, each with its Enabled and Show on
+/// page switches, an Install form for the community plugins that fit, and Uninstall (confirm) for
+/// the installed ones.
 fn side(ctx: &Ctx<'_>) -> Markup {
     let plugins = rows(ctx.json(ViewName::Plugins));
+    let all = ctx.all(ViewName::Providers).find(|(args, _)| args["all"] == true).map_or(&[][..], |(_, v)| rows(v));
     let installed: Vec<&Value> = of(plugins, "community").filter(|r| r["status"] == "installed").collect();
     let not_installed = of(plugins, "community").filter(|r| r["status"] != "installed").count();
+    let fits: Vec<(&str, &str)> = of(plugins, "community")
+        .filter(|r| r["status"] == "fits")
+        .filter_map(|r| r["id"].as_str())
+        .map(|id| (id, id))
+        .collect();
     let is_installed = |r: &Value| installed.iter().any(|i| i["id"] == r["id"]);
     let bundled: Vec<&Value> = of(plugins, "bundled").collect();
     let own: Vec<&Value> = of(plugins, "user").filter(|r| !is_installed(r)).collect();
@@ -699,31 +760,55 @@ fn side(ctx: &Ctx<'_>) -> Markup {
             .unwrap_or_default()
             .to_owned()
     };
+    let row = |r: &Value, state: &str, uninstall: bool| plugin_row(ctx, r, state, all, uninstall);
+    let back = ctx.req.href(&ctx.req.path(), &["done", "task"], &[]);
     let sections = html! {
-        p class="plugin-row__note" { (prose(SWITCH_HINT)) }
         (components::side_section(&format!("Bundled · {}", bundled.len()), html! {
-            @for r in &bundled { (plugin_row(ctx, r, r["status"].as_str().unwrap_or_default(), false)) }
+            @for r in &bundled { (row(r, r["status"].as_str().unwrap_or_default(), false)) }
         }))
         (components::side_section(&format!("Installed from community · {}", installed.len()), html! {
-            @for r in &installed { (plugin_row(ctx, r, &state_of(r), true)) }
+            @for r in &installed { (row(r, &state_of(r), true)) }
         }))
         @if !own.is_empty() {
             (components::side_section(&format!("Your own · {}", own.len()), html! {
-                @for r in &own { (plugin_row(ctx, r, r["status"].as_str().unwrap_or_default(), false)) }
+                @for r in &own { (row(r, r["status"].as_str().unwrap_or_default(), false)) }
             }))
         }
         (components::side_section(&format!("Community · not installed: {not_installed} available."), html! {
-            p { (prose(COMMUNITY_HINT)) }
-            (disabled("Install", None, INSTALL_HINT))
+            @if fits.is_empty() {
+                p class="hint" { "No community plugin is left to install." }
+            } @else {
+                (form("/do/plugins/install", &back, &ctx.req.token, html! {
+                    (select("id", "Plugin", &fits, None))
+                    button class="button button--secondary" type="submit" { "Install" }
+                }))
+            }
         }))
     };
     components::side_panel("extension", "Provider plugins", sections)
 }
 
-/// One plugin: its source and state as `plugins list` shows them, the two
-/// disabled switches, and for a community plugin the uninstall hint.
-fn plugin_row(ctx: &Ctx<'_>, r: &Value, state: &str, uninstall: bool) -> Markup {
+/// One plugin: its source and state as `plugins list` shows them, and, for a plugin the registry
+/// loaded, its Enabled and Show on page switches (each posts the opposite of what the providers
+/// view says) and, for a community plugin, Uninstall.
+fn plugin_row(ctx: &Ctx<'_>, r: &Value, state: &str, all: &[Value], uninstall: bool) -> Markup {
     let id = r["id"].as_str().unwrap_or_default();
+    let settings = all.iter().find(|p| p["id"] == id);
+    let back = ctx.req.href(&ctx.req.path(), &["done", "task"], &[]);
+    let token = &ctx.req.token;
+    let switch_form = |action: &str, label: &str| {
+        form(
+            action,
+            &back,
+            token,
+            html! {
+                input type="hidden" name="id" value=(id);
+                button class="button button--secondary" type="submit" { (label) }
+            },
+        )
+    };
+    let remove =
+        ctx.req.href(BACK, &["window", "id", "name", "done", "task"], &[("window", "uninstall-plugin"), ("id", id)]);
     html! {
         div class="plugin-row" {
             span class="plugin-row__logo" { (components::logo(ctx.logos.href(id), id)) }
@@ -732,11 +817,23 @@ fn plugin_row(ctx: &Ctx<'_>, r: &Value, state: &str, uninstall: bool) -> Markup 
                 span class="plugin-row__source" { (r["set"].as_str().unwrap_or_default()) }
             }
             (status(state))
-            div class="plugin-row__switches" {
-                (disabled_switch("Enabled", SWITCH_HINT))
-                (disabled_switch("Shown", SWITCH_HINT))
+            @if let Some(p) = settings {
+                div class="plugin-row__switches" {
+                    span class="hint" { "Enabled: " (if p["enabled"] == false { "no" } else { "yes" }) }
+                    @if p["enabled"] == false {
+                        (switch_form("/do/providers/enable", "Enable"))
+                    } @else {
+                        (switch_form("/do/providers/disable", "Disable"))
+                    }
+                    span class="hint" { "Show on page: " (if p["hidden"] == true { "no" } else { "yes" }) }
+                    @if p["hidden"] == true {
+                        (switch_form("/do/providers/show", "Show on page"))
+                    } @else {
+                        (switch_form("/do/providers/hide", "Hide from page"))
+                    }
+                }
             }
-            @if uninstall { (disabled("Uninstall", None, &UNINSTALL_HINT.replace("<id>", id))) }
+            @if uninstall { (link_button(&remove, "Uninstall", None, false)) }
         }
     }
 }

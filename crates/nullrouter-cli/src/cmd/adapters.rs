@@ -9,13 +9,13 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Subcommand;
+use nullrouter_adapters::HarnessName;
 use nullrouter_adapters::loader::Manifest;
 use nullrouter_adapters::review::ReviewReport;
 use nullrouter_adapters::store::{Index, Store, VersionEntry, VersionId};
-use nullrouter_adapters::HarnessName;
 use nullrouter_registry::OperatorHome;
-use nullrouter_server::ops::adapters::{self as ops, Failure};
 use nullrouter_server::ops::accounts::Report;
+use nullrouter_server::ops::adapters::{self as ops, Failure};
 use nullrouter_server::ops::{Ctx, OpError, Status};
 use nullrouter_server::views;
 use serde_json::{Value, json};
@@ -144,7 +144,11 @@ fn printed(r: &Report, as_json: bool) -> Result<ExitCode, ExitCode> {
 }
 
 /// [`print_report`] for the steps that can end in a refusal, which have their own shapes.
-pub(crate) fn print_ended(log: &[String], r: Result<Report, Box<Failure>>, as_json: bool) -> Result<ExitCode, ExitCode> {
+pub(crate) fn print_ended(
+    log: &[String],
+    r: Result<Report, Box<Failure>>,
+    as_json: bool,
+) -> Result<ExitCode, ExitCode> {
     for l in log {
         eprintln!("{l}");
     }
@@ -267,7 +271,12 @@ fn list(home: &OperatorHome, as_json: bool) -> Result<ExitCode, ExitCode> {
 }
 
 /// `review` without `--retry`: the report of a version, read from the store.
-fn review(home: &OperatorHome, harness: &HarnessName, version: &VersionId, as_json: bool) -> Result<ExitCode, ExitCode> {
+fn review(
+    home: &OperatorHome,
+    harness: &HarnessName,
+    version: &VersionId,
+    as_json: bool,
+) -> Result<ExitCode, ExitCode> {
     let index = read_index(home)?;
     let entry = index
         .version(harness, version)

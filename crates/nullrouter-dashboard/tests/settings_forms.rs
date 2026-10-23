@@ -363,3 +363,30 @@ async fn proxy_fixed_and_quota_poll_answer_with_a_refusal_never_a_server_error()
         assert!(shown.contains("ghost"), "{route}: {shown}");
     }
 }
+
+/// A compatible provider at a private address is refused in the CLI's words; the Add window reopens
+/// with the values kept and a link to Settings, and the switch there then lets the same add pass.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_private_base_url_reopens_the_add_window_with_a_link_to_settings() {
+    let site = Site::start().await;
+    let fields = [
+        ("id", "local-llm".to_owned()),
+        ("name", "Local".to_owned()),
+        ("style", "openai".to_owned()),
+        ("base_url", "http://127.0.0.1:11434".to_owned()),
+        ("models", "llama-a\nllama-b".to_owned()),
+        ("_window", "add-openai".to_owned()),
+    ];
+    let r = site.post("providers/add-compatible", "/providers", &fields).await;
+    assert_eq!(r.status(), StatusCode::SEE_OTHER);
+    let location = r.headers()["location"].to_str().unwrap().to_owned();
+    assert!(location.starts_with("/providers?window=add-openai&done="), "{location}");
+    let (_, page) = site.get(&location).await;
+    let (refused, text) = notice(&page).expect("the refusal is shown");
+    assert!(refused && text.contains("is a private address"), "{text}");
+    let at = page.find("action=\"/do/providers/add-compatible\"").expect("the Add window is open");
+    let form = &page[at..at + page[at..].find("</form>").unwrap()];
+    assert!(form.contains("value=\"local-llm\"") && form.contains("value=\"http://127.0.0.1:11434\""), "{form}");
+    assert!(form.contains("llama-a\nllama-b"), "the models are kept: {form}");
+    assert!(form.contains("href=\"/settings\""), "a link to Settings: {form}");
+}

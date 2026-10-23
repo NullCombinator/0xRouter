@@ -47,6 +47,7 @@ pub fn build(home: &OperatorHome, _args: &Value, live: &Live) -> Result<View, Vi
         "home": handle.home().path(),
         "endpoint": endpoint,
         "endpoint_source": endpoint_source,
+        "allow_private_endpoints": reg.runtime().allow_private_endpoints,
         "providers": { "bundled": r.bundled, "user": r.user },
         "unified_models": r.unified_models,
         "pending_conflicts": r.pending_conflicts.iter().map(|c| json!({ "id": c.id, "path": c.path })).collect::<Vec<_>>(),

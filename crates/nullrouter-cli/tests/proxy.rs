@@ -64,7 +64,10 @@ fn a_proxy_is_defined_assigned_listed_and_removed_without_a_password_on_screen()
     ok(h, &["proxy", "use", "eu", "--all"], "");
     ok(h, &["proxy", "use", "us", "--provider", "anthropic"], "");
     ok(h, &["proxy", "use", "none", "--account", "anthropic/main"], "");
-    assert_eq!(Accounts::load(&h.join(accounts::FILE)).unwrap().get("anthropic", "main").unwrap().proxy.as_deref(), Some("none"));
+    assert_eq!(
+        Accounts::load(&h.join(accounts::FILE)).unwrap().get("anthropic", "main").unwrap().proxy.as_deref(),
+        Some("none")
+    );
     let config = std::fs::read_to_string(h.join("config.toml")).unwrap();
     assert!(config.contains("[connection]") && config.contains("proxy = \"eu\""), "{config}");
     assert!(config.contains("[provider.anthropic.connection]") && config.contains("proxy = \"us\""), "{config}");
@@ -96,7 +99,9 @@ fn unknown_names_are_refused_with_what_is_known() {
     assert!(refused(h, &["proxy", "use", "eu", "--provider", "nope"]).contains("known providers:"));
     assert!(refused(h, &["proxy", "use", "eu", "--account", "anthropic/other"]).contains("anthropic/main"));
     assert!(refused(h, &["proxy", "remove", "gone"]).contains("known proxies: eu"));
-    assert!(!h.join("config.toml").exists() || !std::fs::read_to_string(h.join("config.toml")).unwrap().contains("gone"));
+    assert!(
+        !h.join("config.toml").exists() || !std::fs::read_to_string(h.join("config.toml")).unwrap().contains("gone")
+    );
 }
 
 #[test]
@@ -172,9 +177,21 @@ fn a_password_from_the_environment_is_not_printed_by_any_command() {
             .unwrap();
         text(&o)
     };
-    let mut said = vec![run(&["proxy", "add", "eu", "http://127.0.0.1:3128", "--username", USER, "--password-env", "NR_PROXY_PW"])];
+    let mut said = vec![run(&[
+        "proxy",
+        "add",
+        "eu",
+        "http://127.0.0.1:3128",
+        "--username",
+        USER,
+        "--password-env",
+        "NR_PROXY_PW",
+    ])];
     assert!(std::fs::read_to_string(h.join("proxies.toml")).unwrap().contains("NR_PROXY_PW"));
-    assert!(!std::fs::read_to_string(h.join("proxies.toml")).unwrap().contains(ENV_PASSWORD), "only the variable's name is kept");
+    assert!(
+        !std::fs::read_to_string(h.join("proxies.toml")).unwrap().contains(ENV_PASSWORD),
+        "only the variable's name is kept"
+    );
     said.push(run(&["proxy", "use", "eu", "--all"]));
     for args in [
         &["proxy", "list"][..],

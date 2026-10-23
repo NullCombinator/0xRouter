@@ -328,8 +328,5 @@ async fn a_started_test_shows_started_and_after_it_ends_the_verdict_matches_verd
     let mut accounts: Vec<&str> = rows.iter().map(|r| r["account"].as_str().unwrap()).collect();
     accounts.sort();
     assert_eq!(accounts, ["backup", "main"], "{v}");
-    assert!(
-        rows.iter().all(|r| r["provider"] == "anthropic" && r["model"] == "m1" && r["state"] == "pass"),
-        "{v}"
-    );
+    assert!(rows.iter().all(|r| r["provider"] == "anthropic" && r["model"] == "m1" && r["state"] == "pass"), "{v}");
 }

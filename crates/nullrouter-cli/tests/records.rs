@@ -240,7 +240,9 @@ async fn serve(home: &Path) -> Serving {
     for _ in 0..500 {
         // Connect, don't just look for the file: the CLI's "a server runs" is this connect.
         let sock = home.join("run/operator.sock");
-        if std::os::unix::net::UnixStream::connect(&sock).is_ok() && tokio::net::TcpStream::connect(&listen).await.is_ok() {
+        if std::os::unix::net::UnixStream::connect(&sock).is_ok()
+            && tokio::net::TcpStream::connect(&listen).await.is_ok()
+        {
             // Both listeners are bound before the server recovers the journal and starts
             // accepting, and recovery closes any open request as interrupted: wait for an HTTP
             // answer, which only comes after it.
