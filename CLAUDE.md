@@ -147,6 +147,7 @@ Orchestration programs in `.claude/workflows/` — chain agents in phases with s
 | `audit-rust-port` | Given a Rust file, locate JS counterpart, run 7-section parity audit with triage |
 | `optimize-perf` | Benchmaxxing loop: baseline → 7 parallel hypothesis subagents → implement → correctness gate → competitor benchmarks → refactor pass |
 | `refactor-pass` | Standalone ≥20% SLoC reduction with zero criterion-regression gate |
+| `mockup-to-ui` | Make the dashboard match `docs/dashboard/mockups/`: one parallel agent per page, shared files changed serially first. Input: `{ root?, pages?, passes? }` |
 
 ## Skills
 
