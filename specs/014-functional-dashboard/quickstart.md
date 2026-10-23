@@ -42,8 +42,10 @@ Expected: done in under 10 minutes with no terminal after step 1, except the req
 
 ## 4. Long task
 
-Combo → Test a combo with two members. The page asks to confirm the billed calls, then says "started
-at …" and refreshes itself until the verdict shows. `nullrouter verdicts` agrees.
+Combo → Test a combo with two members. A combo test is one request through the combo, so it bills
+one call and starts at once. Test All with two accounts plans two billed calls: its confirm window
+says "2 billed calls: 2 text. Continue?". Either way the page says "started at …" and refreshes
+itself until the verdict shows, and `nullrouter verdicts` agrees.
 
 ## 5. Sign-in (user, real account)
 
