@@ -270,7 +270,13 @@ pub async fn dispatch(State(shared): State<Arc<Shared>>, req: Request) -> Respon
     let back = crate::forms::back(fields.get("_back").map_or("", String::as_str));
     let window = fields.get("_window").filter(|w| !w.is_empty()).cloned();
     let mut kept: Vec<(String, String)> =
-        fields.iter().filter(|(k, _)| !k.starts_with('_')).map(|(k, v)| (k.clone(), v.clone())).collect();
+        fields
+            .iter()
+            .filter(|(k, _)| !k.starts_with('_'))
+            // A URL with userinfo or a query may hold a credential: it is not refilled (security review L2).
+            .filter(|(k, v)| !(matches!(k.as_str(), "url" | "base_url") && nullrouter_registry::compatible::has_secret_parts(v)))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
     kept.sort();
     // The origin a sign-in returns to: the Host the browser used, when this dashboard answers to it.
     let origin = parts

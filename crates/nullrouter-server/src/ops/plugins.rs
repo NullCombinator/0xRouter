@@ -86,6 +86,7 @@ pub fn private_endpoints_question() -> String {
 
 /// Sets `allow_private_endpoints` in `config.toml` and reloads. Off removes the key.
 pub fn private_endpoints_with(ctx: &Ctx, log: &mut Vec<String>, on: bool) -> Result<Report, OpError> {
+    let _lock = super::config_text::lock(&ctx.home);
     let file = ctx.home.config_file();
     let text = match std::fs::read_to_string(&file) {
         Ok(t) => t,
@@ -140,7 +141,8 @@ pub fn add_compatible_with(
             "base_url",
             REFUSED,
             format!(
-                "{id}: base_url {base_url} is a private address; turn private endpoints on first (nullrouter plugins private-endpoints on)"
+                "{id}: base_url {} is a private address; turn private endpoints on first (nullrouter plugins private-endpoints on)",
+                compatible::redact(base_url)
             ),
         ));
     }
@@ -158,10 +160,26 @@ pub fn add_compatible_with(
 
     let dir = ctx.home.plugins_dir();
     std::fs::create_dir_all(&dir).map_err(|e| fail(format!("{}: {e}", dir.display())))?;
-    let tmp = dir.join(format!(".{id}.toml.tmp"));
-    std::fs::write(&tmp, src)
-        .and_then(|()| std::fs::rename(&tmp, &taken))
-        .map_err(|e| fail(format!("{}: {e}", taken.display())))?;
+    // `create_new` on the final path: a racing post with the same id gets the "taken" refusal.
+    // The file is written whole and synced before the lock drops; a reader of the plugins dir
+    // that sees a half-written file only sees it for this write.
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let made = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&taken);
+        match made {
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(in_field("id", 1, format!("{id}: a provider with this id exists; choose another id")));
+            }
+            Err(e) => return Err(fail(format!("{}: {e}", taken.display()))),
+            Ok(mut f) => {
+                if let Err(e) = f.write_all(src.as_bytes()).and_then(|()| f.sync_all()) {
+                    let _ = std::fs::remove_file(&taken);
+                    return Err(fail(format!("{}: {e}", taken.display())));
+                }
+            }
+        }
+    }
 
     let n = models.len();
     let plural = if n == 1 { "model" } else { "models" };
@@ -209,6 +227,7 @@ fn visibility_with(ctx: &Ctx, log: &mut Vec<String>, id: &str, switch: Switch) -
     if !known {
         return Err(in_field("id", 1, format!("{id}: no such provider")));
     }
+    let _lock = super::config_text::lock(&ctx.home);
     let file = ctx.home.config_file();
     let text = match std::fs::read_to_string(&file) {
         Ok(t) => t,

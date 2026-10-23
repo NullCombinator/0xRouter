@@ -462,6 +462,7 @@ pub fn settings_with(
         _ => return Err(settings_usage()),
     };
     let path = home.config_file();
+    let _lock = super::config_text::lock(home);
     let text = super::routing::edit_key(&config_text(home)?, table, key, toml.as_deref());
     // The file must still load and keep the rules: a config the server would refuse is never written.
     let config: OperatorConfig =
@@ -472,10 +473,7 @@ pub fn settings_with(
         return Err(fail(lines.join("\n")));
     }
     std::fs::create_dir_all(home.path()).map_err(fail)?;
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, &text)
-        .and_then(|()| std::fs::rename(&tmp, &path))
-        .map_err(|e| fail(format!("{}: {e}", path.display())))?;
+    super::config_text::write_atomic(&path, text.as_bytes()).map_err(|e| fail(format!("{}: {e}", path.display())))?;
     let applied = apply(ctx).map_err(fail)?;
     log.extend(applied.notes.iter().map(|n| format!("note: {n}")));
     let text = format!("{setting} = {shown}: {}", applied.text);

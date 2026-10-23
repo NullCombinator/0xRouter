@@ -149,6 +149,7 @@ fn change(
     name: &str,
     members: &[String],
 ) -> Result<Report, OpError> {
+    let _lock = super::config_text::lock(&ctx.home);
     let text = read_config(ctx)?;
     let config = parse(&text)?;
     let of_kind = match kind {

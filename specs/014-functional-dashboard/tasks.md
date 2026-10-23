@@ -144,7 +144,7 @@ pass unchanged; never edit a golden file to make a move pass.
 - [X] T047 [P] Update the docs:
   - `docs/operator-config.md`: the new commands, `[provider.<id>] enabled|hidden`, and private endpoints;
   - `docs/dashboard/` (or the 009 docs): making changes, confirm windows, Console Log, the form-token note.
-- [ ] T048 Run a security review of the branch (security-auditor) over the forms layer, flash, change log, sign-in hand-back and custom-provider writes, and re-check finding L1 (the shared loopback cookie host, accepted 2026-10-06 for a read-only dashboard) now that the cookie opens the change forms; update the "What the cookie reaches" paragraph in `docs/operator-config.md` to match. Record it in `specs/014-functional-dashboard/security-review.md` and fix every High and Medium.
+- [X] T048 Run a security review of the branch (security-auditor) over the forms layer, flash, change log, sign-in hand-back and custom-provider writes, and re-check finding L1 (the shared loopback cookie host, accepted 2026-10-06 for a read-only dashboard) now that the cookie opens the change forms; update the "What the cookie reaches" paragraph in `docs/operator-config.md` to match. Record it in `specs/014-functional-dashboard/security-review.md` and fix every High and Medium.
 - [ ] T049 Run quickstart.md §§ 1–4 on a scratch home and record the results in `specs/014-functional-dashboard/operator-runs.md`. § 5 (real OAuth sign-in) joins the user's whole-system live run.
 
 ## Dependencies

@@ -73,16 +73,49 @@ pub fn check_id(id: &str) -> Result<(), Invalid> {
     }
 }
 
+/// `url` for an error text: scheme, host, port and path only. Userinfo, query and fragment are
+/// dropped, since they may hold a credential; a URL that doesn't parse is not shown at all.
+pub fn redact(url: &str) -> String {
+    match url::Url::parse(url) {
+        Ok(mut u) if u.host_str().is_some() => {
+            let _ = u.set_username("");
+            let _ = u.set_password(None);
+            u.set_query(None);
+            u.set_fragment(None);
+            let shown = u.to_string();
+            // `Url` adds a `/` the operator didn't type to a URL with no path.
+            if u.path() == "/" && !url.trim_end_matches(['?', '#']).contains("/?") && !url.ends_with('/') {
+                shown.trim_end_matches('/').to_owned()
+            } else {
+                shown
+            }
+        }
+        _ => "(not shown)".to_owned(),
+    }
+}
+
+/// Whether `url` carries userinfo, a query or a fragment, where a credential may sit. A URL that
+/// doesn't parse counts when it holds `@` or `?`.
+pub fn has_secret_parts(url: &str) -> bool {
+    match url::Url::parse(url) {
+        Ok(u) => !u.username().is_empty() || u.password().is_some() || u.query().is_some() || u.fragment().is_some(),
+        Err(_) => url.contains('@') || url.contains('?') || url.contains('#'),
+    }
+}
+
 /// The endpoint URL for `base_url`: a URL already ending in the endpoint is kept; otherwise
 /// the endpoint is appended, after `/v1` when the URL has no path.
 pub fn endpoint_url(style: Style, base_url: &str) -> Result<String, Invalid> {
-    let url =
-        url::Url::parse(base_url).map_err(|e| bad("base_url", format!("base_url {base_url} doesn't parse: {e}")))?;
+    let url = url::Url::parse(base_url)
+        .map_err(|e| bad("base_url", format!("base_url {} doesn't parse: {e}", redact(base_url))))?;
     if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
-        return Err(bad("base_url", format!("base_url {base_url} must be an http or https URL")));
+        return Err(bad("base_url", format!("base_url {} must be an http or https URL", redact(base_url))));
     }
     if url.query().is_some() || url.fragment().is_some() || !url.username().is_empty() || url.password().is_some() {
-        return Err(bad("base_url", format!("base_url {base_url} must have no credentials, query or fragment")));
+        return Err(bad(
+            "base_url",
+            format!("base_url {} must have no credentials, query or fragment", redact(base_url)),
+        ));
     }
     let tail = match style {
         Style::OpenaiChat => "/chat/completions",

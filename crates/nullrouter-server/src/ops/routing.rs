@@ -49,6 +49,7 @@ pub fn set_break_default_with(ctx: &Ctx, log: &mut Vec<String>, behaviour: &str)
     let b = BreakBehaviour::parse(behaviour).ok_or_else(|| {
         fail_in("behaviour", format!("unknown break behaviour {behaviour:?}; allowed: restart, error_event"))
     })?;
+    let _lock = super::config_text::lock(&ctx.home);
     let text = set_break(&read_config(ctx)?, b);
     write_checked(&ctx.home, &text).map_err(fail)?;
     finish(ctx, log, |status| format!("break_behaviour = {}: {status}", b.as_str()))
@@ -331,6 +332,7 @@ fn edit_plugin(
     change: impl FnOnce(&mut BTreeMap<String, WindowOverride>) -> Result<(), String>,
 ) -> Result<Report, OpError> {
     let path = ctx.home.config_file();
+    let _lock = super::config_text::lock(&ctx.home);
     let text = read_config(ctx)?;
     let config: OperatorConfig = toml::from_str(&text).map_err(|e| fail(format!("{}: {e}", path.display())))?;
     let reg = open(ctx)?.snapshot();
@@ -446,6 +448,10 @@ pub fn window_with(ctx: &Ctx, log: &mut Vec<String>, target: Option<&str>, lengt
         }
         Some(length)
     };
+    let _lock = super::config_text::lock(&ctx.home);
+    if let Some(t) = target.filter(|t| t.chars().any(|c| c.is_control())) {
+        return Err(fail_in("target", format!("{t:?}: a target has no control characters")));
+    }
     let text = read_config(ctx)?;
     let quoted_value = value.map(|v| format!("\"{v}\""));
     let text = match target {
@@ -473,7 +479,7 @@ pub fn edit_key(text: &str, header: &str, key: &str, value: Option<&str>) -> Str
     let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
     let is_header = |l: &str| l.trim_start().starts_with('[');
     let bare = header == "[routing]" || header.starts_with("[tests");
-    let written = if bare { key.to_owned() } else { format!("\"{key}\"") };
+    let written = if bare { key.to_owned() } else { format!("\"{}\"", config_text::quoted(key)) };
     let Some(start) = lines.iter().position(|l| l.trim() == header) else {
         let Some(v) = value else { return text.to_owned() };
         let mut out = text.to_owned();
@@ -543,6 +549,24 @@ mod tests {
         assert_eq!((e.exit, e.field), (1, Some("target")));
         assert!(e.text.contains("sonnet"), "{}", e.text);
         assert!(!ctx.home.config_file().exists(), "nothing written");
+    }
+
+    #[test]
+    fn a_target_with_a_quote_and_a_newline_is_refused_and_config_is_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = Ctx { home: nullrouter_registry::OperatorHome::new(dir.path()), engine: None };
+        let original = "schema = 1\n";
+        std::fs::write(ctx.home.config_file(), original).unwrap();
+        let target = "sonnet\" = \"1h\"\n[server]\nlisten = \"x\"\n#";
+        let e = window(&ctx, Some(target), "2h").unwrap_err();
+        assert_eq!((e.exit, e.field), (1, Some("target")));
+        assert_eq!(std::fs::read_to_string(ctx.home.config_file()).unwrap(), original);
+    }
+
+    #[test]
+    fn a_quote_in_a_key_is_escaped() {
+        let out = edit_key("", "[routing.amortization_for]", "a\"b", Some("\"1h\""));
+        assert!(out.contains("\"a\\\"b\" = \"1h\""), "{out}");
     }
 
     #[test]

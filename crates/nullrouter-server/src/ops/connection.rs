@@ -193,6 +193,7 @@ fn change(
         Some(m) => format!("provider.{provider}.model.\"{}\".connection", quoted(m)),
         None => format!("provider.{provider}.connection"),
     };
+    let _lock = super::config_text::lock(&ctx.home);
     let path = ctx.home.config_file();
     let text = match std::fs::read_to_string(&path) {
         Ok(t) => t,

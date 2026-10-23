@@ -52,6 +52,15 @@ pub fn path(home: &OperatorHome) -> PathBuf {
 /// 1,200 lines or more it is rewritten to its newest 1,000.
 pub fn append(home: &OperatorHome, entry: &Entry) -> io::Result<()> {
     let path = path(home);
+    // Control characters (an ESC sequence typed into a form) never reach the file or the terminal.
+    let clean = |s: &str| s.chars().filter(|c| !c.is_control()).collect::<String>();
+    let entry = &Entry {
+        at: entry.at.clone(),
+        op: entry.op.clone(),
+        subject: clean(&entry.subject),
+        result: entry.result,
+        text: clean(&entry.text),
+    };
     let mut line = serde_json::to_string(entry).map_err(io::Error::other)?;
     line.push('\n');
     let mut file = OpenOptions::new().create(true).append(true).mode(0o600).open(&path)?;
@@ -115,6 +124,20 @@ mod tests {
 
     fn mode(path: &Path) -> u32 {
         std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn control_characters_are_filtered_at_write_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = OperatorHome::new(dir.path());
+        let mut e = entry(1);
+        e.subject = "anthropic/\x1b[31mred\x07".into();
+        e.text = "bad \x1b]0;title\x07 name\n".into();
+        append(&home, &e).unwrap();
+        let raw = std::fs::read_to_string(path(&home)).unwrap();
+        assert!(!raw.contains("\\u001b") && !raw.contains('\x1b'), "{raw}");
+        let got = read(&home, 1).unwrap();
+        assert!(got[0].subject.chars().chain(got[0].text.chars()).all(|c| !c.is_control()));
     }
 
     #[test]

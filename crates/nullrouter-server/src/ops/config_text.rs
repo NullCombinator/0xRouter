@@ -128,15 +128,88 @@ pub fn write_file(home: &OperatorHome, edited: &str) -> Result<(), String> {
     toml::from_str::<OperatorConfig>(edited)
         .map_err(|e| format!("{}: the edit would not load: {e}", path.display()))?;
     std::fs::create_dir_all(home.path()).map_err(|e| e.to_string())?;
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, edited)
-        .and_then(|()| std::fs::rename(&tmp, &path))
-        .map_err(|e| format!("{}: {e}", path.display()))
+    write_atomic(&path, edited.as_bytes()).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+static WRITERS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Holds the `config.toml` writers' lock: a process-wide mutex plus an advisory exclusive lock on
+/// the `config.toml.lock` sibling (std `File::lock`; no locking crate), so the dashboard's ops and
+/// a CLI process take turns. Hold it across read, edit and write. Not reentrant: do not call
+/// [`write_file`] and take it again in the same call chain from inside the held section.
+pub struct ConfigLock {
+    _file: Option<std::fs::File>,
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+/// Takes the writers' lock for the home's `config.toml`.
+pub fn lock(home: &OperatorHome) -> ConfigLock {
+    let guard = WRITERS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _ = std::fs::create_dir_all(home.path());
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(home.config_file().with_extension("toml.lock"))
+        .ok()
+        .filter(|f| f.lock().is_ok());
+    ConfigLock { _file: file, _guard: guard }
+}
+
+/// Writes `bytes` to `path` through a unique temp file in the same directory (`create_new`, 0600,
+/// `sync_all`), then renames it over `path`. A mode the file already had is kept.
+pub fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let name = path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    let tmp = path.with_file_name(format!(
+        ".{name}.{}.{}.tmp",
+        std::process::id(),
+        N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let mode = std::fs::metadata(path).map_or(0o600, |m| m.permissions().mode() & 0o777);
+    let result = (|| {
+        let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp)?;
+        f.write_all(bytes)?;
+        f.set_permissions(std::fs::Permissions::from_mode(mode))?;
+        f.sync_all()?;
+        std::fs::rename(&tmp, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn writes_go_through_unique_temp_files_keep_the_mode_and_leave_nothing_behind() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let home = OperatorHome::new(dir.path());
+        std::fs::write(home.config_file(), "schema = 1\n").unwrap();
+        std::fs::set_permissions(home.config_file(), std::fs::Permissions::from_mode(0o600)).unwrap();
+        std::thread::scope(|s| {
+            for _ in 0..8 {
+                s.spawn(|| {
+                    let _g = lock(&home);
+                    write_file(&home, "schema = 1\n").unwrap();
+                });
+            }
+        });
+        let mode = std::fs::metadata(home.config_file()).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        let stray: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".tmp"))
+            .collect();
+        assert!(stray.is_empty(), "{stray:?}");
+    }
 
     #[test]
     fn the_loader_refuses_a_target_that_names_nothing_and_nothing_is_written() {

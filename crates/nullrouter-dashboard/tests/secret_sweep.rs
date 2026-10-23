@@ -34,7 +34,13 @@ const PASTE: &str = "code-MARKER-paste-44d0";
 /// The sign-in paste code in a refused paste (a malformed task id).
 const PASTE_REFUSED: &str = "code-MARKER-paste-bad-0f9e";
 
-const MARKERS: [&str; 6] = [ACCOUNT, ACCOUNT_REFUSED, PROXY, PROXY_REFUSED, PASTE, PASTE_REFUSED];
+/// The password in a pasted `https://u:p@host/v1` base URL (security review L2).
+const URL_USERINFO: &str = "pw-MARKER-url-userinfo-5b1c";
+/// The key in a pasted `https://host/v1?api_key=...` base URL.
+const URL_QUERY: &str = "key-MARKER-url-query-c83e";
+
+const MARKERS: [&str; 8] =
+    [ACCOUNT, ACCOUNT_REFUSED, PROXY, PROXY_REFUSED, PASTE, PASTE_REFUSED, URL_USERINFO, URL_QUERY];
 const FAKE_TASK: &str = "tk_abcdefghijklmnop";
 const BACK_PROVIDER: &str = "/providers/anthropic";
 const BACK_PROVIDERS: &str = "/providers";
@@ -116,15 +122,26 @@ async fn no_secret_typed_into_a_write_only_field_comes_back_out() {
     .await;
     assert!(refused, "a bad proxy URL is not refused");
 
+    // A base URL with userinfo or a query: refused, and neither the refusal, the refilled form nor
+    // the change log carries the credential.
+    let with_userinfo = format!("https://u:{URL_USERINFO}@example.com/v1");
+    let with_query = format!("https://example.com/v1?api_key={URL_QUERY}");
+    for (id, url) in [("userinfo", &with_userinfo), ("query", &with_query)] {
+        let refused = submit(
+            &site,
+            &mut seen,
+            "providers/add-compatible",
+            BACK_PROVIDERS,
+            &[("id", id), ("name", id), ("style", "openai"), ("base_url", url), ("models", "m1")],
+        )
+        .await;
+        assert!(refused, "a base URL with a credential is not refused");
+    }
+
     // The sign-in paste code: a well-formed task id that is no task, and a malformed one.
-    let refused = submit(
-        &site,
-        &mut seen,
-        "accounts/signin-paste",
-        BACK_PROVIDERS,
-        &[("task", FAKE_TASK), ("code", PASTE)],
-    )
-    .await;
+    let refused =
+        submit(&site, &mut seen, "accounts/signin-paste", BACK_PROVIDERS, &[("task", FAKE_TASK), ("code", PASTE)])
+            .await;
     assert!(refused, "a paste to no task is not refused");
     let refused = submit(
         &site,
@@ -190,9 +207,8 @@ async fn no_secret_typed_into_a_write_only_field_comes_back_out() {
 
     // Every file in the home. The two secret stores may hold their own marker and no other; no
     // other file may hold any marker, the change log included.
-    let holds = |path: &Path, marker: &str| {
-        std::fs::read(path).unwrap().windows(marker.len()).any(|w| w == marker.as_bytes())
-    };
+    let holds =
+        |path: &Path, marker: &str| std::fs::read(path).unwrap().windows(marker.len()).any(|w| w == marker.as_bytes());
     let home = site.home();
     assert!(holds(&home.join(accounts::FILE), ACCOUNT), "the account secret is not in accounts.toml");
     assert!(holds(&home.join(proxy::FILE), PROXY), "the proxy password is not in proxies.toml");

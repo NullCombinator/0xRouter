@@ -188,6 +188,7 @@ fn assign(ctx: &Ctx, log: &mut Vec<String>, target: &Target, value: Option<&str>
         }
         _ => ("connection".to_owned(), "all providers".to_owned()),
     };
+    let _lock = super::config_text::lock(home);
     let path = home.config_file();
     let text = match std::fs::read_to_string(&path) {
         Ok(t) => t,
@@ -202,10 +203,7 @@ fn assign(ctx: &Ctx, log: &mut Vec<String>, target: &Target, value: Option<&str>
     toml::from_str::<OperatorConfig>(&edited)
         .map_err(|e| fail(format!("{}: the edit would not load: {e}", path.display())))?;
     std::fs::create_dir_all(home.path()).map_err(fail)?;
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, &edited)
-        .and_then(|()| std::fs::rename(&tmp, &path))
-        .map_err(|e| fail(format!("{}: {e}", path.display())))?;
+    super::config_text::write_atomic(&path, edited.as_bytes()).map_err(|e| fail(format!("{}: {e}", path.display())))?;
     Ok(format!("{what}: {}: {}", said(value), applied(ctx, log)?))
 }
 

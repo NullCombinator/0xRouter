@@ -22,7 +22,21 @@ fn subject(form: &Form) -> String {
 
 pub fn install(ctx: &Ctx, form: &Form) -> Ran {
     let path = form.get("path").trim();
-    (path.to_owned(), ops::install(ctx, Path::new(path)))
+    // A browser install takes only an existing regular `.tar.gz` file, never a link or a directory
+    // (security review L5). Nothing but the path is shown back.
+    let refuse = |why: &str| {
+        let text = format!("{why}: give the path of a .tar.gz or .tgz package file");
+        (path.to_owned(), Err(OpError { text, exit: 1, field: Some("path") }))
+    };
+    let archive = path.ends_with(".tar.gz") || path.ends_with(".tgz");
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.is_file() && archive => (path.to_owned(), ops::install(ctx, Path::new(path))),
+        Ok(m) if m.file_type().is_symlink() => refuse("that path is a link"),
+        Ok(m) if !m.is_file() => refuse("that path is not a regular file"),
+        Ok(_) => refuse("that file is not a package archive"),
+        // Nothing there: the op's own "No such file" text, the one the CLI gives.
+        Err(_) => (path.to_owned(), ops::install(ctx, Path::new(path))),
+    }
 }
 
 pub fn catalogue_install(ctx: &Ctx, form: &Form) -> Ran {
@@ -88,6 +102,28 @@ pub fn ack(ctx: &Ctx, form: &Form) -> Ran {
 mod tests {
     use super::*;
     use crate::changes::lookup;
+
+    fn form(path: &str) -> Form {
+        Form { fields: [("path".to_owned(), path.to_owned())].into(), origin: None }
+    }
+
+    #[test]
+    fn install_refuses_links_directories_and_non_archives_without_reading_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = Ctx { home: nullrouter_registry::OperatorHome::new(dir.path()), engine: None };
+        let plain = dir.path().join("secret.txt");
+        std::fs::write(&plain, "FILE-BYTES-MARKER").unwrap();
+        let archive = dir.path().join("real.tar.gz");
+        std::fs::write(&archive, "x").unwrap();
+        let link = dir.path().join("link.tar.gz");
+        std::os::unix::fs::symlink(&archive, &link).unwrap();
+        for p in [&plain, &link, &dir.path().to_owned()] {
+            let (_, r) = install(&ctx, &form(p.to_str().unwrap()));
+            let e = r.unwrap_err();
+            assert_eq!(e.field, Some("path"), "{p:?}");
+            assert!(!e.text.contains("FILE-BYTES-MARKER"));
+        }
+    }
 
     #[test]
     fn adapter_catalogue_and_alert_forms_are_registered() {
