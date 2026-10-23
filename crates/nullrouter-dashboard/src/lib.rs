@@ -15,7 +15,7 @@ use axum::Router;
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use axum::response::Response;
-use axum::routing::get;
+use axum::routing::{get, post};
 use nullrouter_engine::state::Engine;
 use nullrouter_engine::status::DashboardStatus;
 use nullrouter_registry::schema::DashboardSettings;
@@ -24,11 +24,14 @@ use tokio::task::JoinHandle;
 
 pub mod access;
 pub mod assets;
+pub mod changes;
 pub mod components;
+pub mod forms;
 pub mod frame;
 pub mod guard;
 pub mod headers;
 pub mod landscape;
+pub mod log;
 pub mod logos;
 pub mod page;
 pub mod pages;
@@ -45,6 +48,10 @@ pub struct Shared {
     pub rule: headers::HostRule,
     /// Wrong tokens since the last right one.
     pub access: access::Access,
+    /// The form token key and the flashes (spec 014).
+    pub forms: forms::Forms,
+    /// The live sign-ins (security-review.md M1).
+    pub sessions: access::Sessions,
 }
 
 /// A running dashboard (or the record of why there isn't one).
@@ -84,6 +91,17 @@ pub async fn spawn(
     version: impl Into<String>,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> DashboardHandle {
+    spawn_with(engine, settings, version, shutdown, access::Limits::default()).await
+}
+
+/// [`spawn`] with other session lifetimes, for the tests that age a session.
+pub async fn spawn_with(
+    engine: Arc<Engine>,
+    settings: &DashboardSettings,
+    version: impl Into<String>,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+    limits: access::Limits,
+) -> DashboardHandle {
     let mut status =
         DashboardStatus { enabled: settings.enabled, listen: settings.listen.clone(), serving: false, error: None };
     if !settings.enabled {
@@ -116,6 +134,8 @@ pub async fn spawn(
         guard: guard::Guard::default(),
         rule: headers::HostRule::new(host, port),
         access: access::Access::default(),
+        forms: forms::Forms::new(),
+        sessions: access::Sessions::new(limits),
     });
     let app = router(shared);
     status.serving = true;
@@ -135,6 +155,8 @@ pub fn router(shared: Arc<Shared>) -> Router {
     let rule = shared.rule.clone();
     Router::new()
         .route("/signin", get(pages::signin::get).post(pages::signin::post))
+        .route("/do/{area}/{op}", post(changes::dispatch))
+        .route("/signout", post(changes::signout))
         .fallback(gated)
         .with_state(shared)
         .layer(axum::middleware::from_fn_with_state(rule, headers::enforce))
@@ -146,16 +168,28 @@ async fn gated(State(shared): State<Arc<Shared>>, req: Request) -> Response {
     if path.starts_with("/assets/") {
         return assets::serve(path);
     }
-    match access::gate(&shared.engine, req.headers()) {
+    match access::gate(&shared.engine, &shared.sessions, req.headers(), shared.rule.port()) {
         access::Gate::NoToken => pages::signin::see_other("/signin"),
         access::Gate::SignedOut => {
             let wanted = req.uri().path_and_query().map_or(path, |p| p.as_str());
             pages::signin::see_other(&format!("/signin?next={}", access::encode_component(wanted)))
         }
         access::Gate::SignedIn if path == "/" => pages::signin::see_other("/endpoint"),
+        #[cfg(any(test, feature = "testkit"))]
+        access::Gate::SignedIn if path == "/debug/form-token" => {
+            // Test-only: the form token no page carries yet.
+            let session = access::session_cookie(&shared.engine, &shared.sessions, req.headers(), shared.rule.port())
+                .unwrap_or_default();
+            axum::response::IntoResponse::into_response(shared.forms.token(session))
+        }
         access::Gate::SignedIn if path.starts_with("/logos/") => logos::serve(&shared.engine, path),
         access::Gate::SignedIn => match pages::Req::parse(path, req.uri().query().unwrap_or_default()) {
-            Some(page_req) => page(shared, page_req).await,
+            Some(mut page_req) => {
+                let session =
+                    access::session_cookie(&shared.engine, &shared.sessions, req.headers(), shared.rule.port());
+                page_req.token = shared.forms.token(session.unwrap_or_default());
+                page(shared, page_req, req.headers()).await
+            }
             None => frame::render_error(None, &shared.version, StatusCode::NOT_FOUND, "No such page."),
         },
     }
@@ -163,21 +197,22 @@ async fn gated(State(shared): State<Arc<Shared>>, req: Request) -> Response {
 
 /// One page, built under the guard (research R8): its views in one consistent state, then the
 /// markup, both in the guarded task so a panic or a stall is this page's error only.
-async fn page(shared: Arc<Shared>, req: pages::Req) -> Response {
+async fn page(shared: Arc<Shared>, req: pages::Req, headers: &axum::http::HeaderMap) -> Response {
     let (engine, version) = (shared.engine.clone(), shared.version.clone());
-    let r = req.clone();
+    let (top, refused) = top_of(&shared, &req, headers);
+    let r = pages::Req { refused, ..req.clone() };
     let built = shared
         .guard
         .run(move || async move {
             let tz = time::local_zone();
             let logos = logos::Index::of(&engine);
             match read(&engine, &r).await {
-                Ok(p) => frame::render(&r, &p, &version, &tz, &logos),
+                Ok(p) => frame::render(&engine, &r, &p, &version, &tz, &logos, top),
                 // A window whose id doesn't exist: the page under it, and the CLI's message.
                 Err(page::PageError::View(e)) if r.window.is_some() => {
                     let base = pages::Req { window: None, ..r.clone() };
                     match read(&engine, &base).await {
-                        Ok(p) => frame::render_missing_window(&r, &p, &version, &tz, &logos, &e.message),
+                        Ok(p) => frame::render_missing_window(&engine, &r, &p, &version, &tz, &logos, &e.message, top),
                         Err(e) => frame::render_error(
                             Some(&r),
                             &version,
@@ -202,4 +237,55 @@ async fn read(engine: &Arc<Engine>, req: &pages::Req) -> Result<page::Page, page
         Some(id) => Err(page::PageError::View(nullrouter_server::views::ViewError::failed(format!("no record {id}")))),
         None => page::build(engine, &pages::wants(req)).await,
     }
+}
+
+/// What the page shows above its content: the flash a form's redirect named (`done`), or the task
+/// panel (`task`). A flash is read once; an unknown or foreign id shows nothing. A refused change's
+/// flash also comes back as the [`pages::Refused`] the page keeps its form's values with.
+fn top_of(
+    shared: &Shared,
+    req: &pages::Req,
+    headers: &axum::http::HeaderMap,
+) -> (Option<maud::Markup>, Option<pages::Refused>) {
+    use components::{TaskState, flash_notice, once_box, task_input, task_panel};
+    use forms::FlashKind;
+    use nullrouter_engine::tasks::TaskResult;
+    if let Some(id) = req.get("done") {
+        let Some(session) = access::session_cookie(&shared.engine, &shared.sessions, headers, shared.rule.port())
+        else {
+            return (None, None);
+        };
+        return match shared.forms.take(session, id) {
+            None => (None, None),
+            Some(FlashKind::Done { text }) => (Some(flash_notice(&text, false)), None),
+            Some(FlashKind::Refused { text, field, kept }) => {
+                (Some(flash_notice(&text, true)), Some(pages::Refused { text, field, kept }))
+            }
+            Some(FlashKind::Once { label, value }) => (Some(value.with_exposed(|v| once_box(&label, v))), None),
+        };
+    }
+    let Some(view) = req.get("task").and_then(|t| t.parse().ok()).and_then(|id| shared.engine.tasks.get(&id)) else {
+        return (None, None);
+    };
+    // A task started by one session is not shown to another (security-review.md I3).
+    if let Some(owner) = &view.owner {
+        let mine = access::session_cookie(&shared.engine, &shared.sessions, headers, shared.rule.port())
+            .is_some_and(|s| access::session_digest(s) == *owner);
+        if !mine {
+            return (None, None);
+        }
+    }
+    let tz = time::local_zone();
+    let started = time::local_text(&view.started.to_string(), &tz).unwrap_or_else(|| view.started.to_string());
+    let state = match &view.result {
+        TaskResult::Running => TaskState::Running,
+        TaskResult::Done { text } => TaskState::Done(text),
+        TaskResult::Failed { text } => TaskState::Failed(text),
+    };
+    // What the operator must do now: paste a code back to this page, or read a device code (the
+    // paste form returns here, without the task id, which the redirect adds again).
+    let back = req.href(&req.path(), &["task", "done"], &[]);
+    let input = view.input.as_ref().map(|i| task_input(view.id.as_str(), i, &back, &req.token)).unwrap_or_default();
+    let panel = task_panel(&view.subject, &started, &view.progress, state);
+    (Some(maud::html! { (panel) (input) }), None)
 }

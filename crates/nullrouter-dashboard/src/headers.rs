@@ -22,6 +22,7 @@ pub const IMMUTABLE: &str = "public, max-age=86400, immutable";
 #[derive(Clone, Debug)]
 pub struct HostRule {
     allowed: Arc<BTreeSet<String>>,
+    port: u16,
 }
 
 impl HostRule {
@@ -33,7 +34,12 @@ impl HostRule {
             .iter()
             .map(|h| format!("{}:{port}", h.to_ascii_lowercase()))
             .collect();
-        Self { allowed: Arc::new(allowed) }
+        Self { allowed: Arc::new(allowed), port }
+    }
+
+    /// The bound port, which names the session cookie.
+    pub fn port(&self) -> u16 {
+        self.port
     }
 
     pub fn allows(&self, host: &str) -> bool {
@@ -43,7 +49,8 @@ impl HostRule {
 
 /// Whether `method` may reach `path`.
 pub fn method_allowed(method: &Method, path: &str) -> bool {
-    *method == Method::GET || (*method == Method::POST && path == "/signin")
+    *method == Method::GET
+        || (*method == Method::POST && (path == "/signin" || path == "/signout" || path.starts_with("/do/")))
 }
 
 /// Sets the security headers on `headers`. `Cache-Control` is `no-store` unless the handler set
@@ -180,6 +187,7 @@ mod tests {
         let host = Some("127.0.0.1:20130");
         assert_eq!(call("GET", "/quota", host).await.status(), StatusCode::OK);
         assert_eq!(call("POST", "/signin", host).await.status(), StatusCode::OK);
+        assert_eq!(call("POST", "/signout", host).await.status(), StatusCode::OK);
         for (method, path) in [
             ("POST", "/quota"),
             ("POST", "/"),

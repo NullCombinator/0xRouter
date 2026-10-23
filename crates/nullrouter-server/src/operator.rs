@@ -750,8 +750,7 @@ fn journal_health(engine: &Engine) -> Value {
 /// failed per provider, a break per relearning number, and each account's unacknowledged usage
 /// alerts. An account serving several targets is named once.
 fn fit_warnings(engine: &Engine, st: &EngineState, targets: &[TargetView]) -> Vec<String> {
-    let mut out: Vec<String> =
-        st.registry.providers().filter_map(|p| engine.fit_learner.save_warning(&p.id)).collect();
+    let mut out: Vec<String> = st.registry.providers().filter_map(|p| engine.fit_learner.save_warning(&p.id)).collect();
     let mut seen: BTreeSet<(&str, &str)> = BTreeSet::new();
     for a in targets.iter().flat_map(|t| &t.accounts) {
         if !seen.insert((a.provider.as_str(), a.account.as_str())) {
@@ -762,7 +761,8 @@ fn fit_warnings(engine: &Engine, st: &EngineState, targets: &[TargetView]) -> Ve
             for n in w.numbers.iter().filter(|n| n.state == "relearning") {
                 if let Some(since) = n.since {
                     let when = weekday_time(since);
-                    let text = format!("{who}: provider rules changed around {when} on {} {}, relearning", w.window, n.number);
+                    let text =
+                        format!("{who}: provider rules changed around {when} on {} {}, relearning", w.window, n.number);
                     out.push(text);
                 }
             }

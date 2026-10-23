@@ -3,9 +3,18 @@
 //! uses only tokens, keywords, 0, and percentages in a width or flex; and each rule uses only the
 //! tokens of the components its selector names. `NR_BLESS=1` rewrites tokens.css.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use common::{Dash, text_of};
+use nullrouter_dashboard::page::ViewName;
+use nullrouter_dashboard::pages::Id;
+use nullrouter_engine::tasks::TaskKind;
+use nullrouter_engine::testkit::homes;
+use serde_json::json;
 
 const WIDTHS: &[&str] = &["width", "max-width", "min-width", "flex", "flex-basis"];
 
@@ -54,7 +63,8 @@ fn components(guide: &toml::Table) -> Vec<(String, BTreeSet<String>, String)> {
 }
 
 fn render(tokens: &[Token]) -> String {
-    let mut css = String::from("/* Generated from tokens.toml by tests/style_guide.rs (NR_BLESS=1); do not edit. */\n:root {\n");
+    let mut css =
+        String::from("/* Generated from tokens.toml by tests/style_guide.rs (NR_BLESS=1); do not edit. */\n:root {\n");
     for t in tokens {
         css.push_str(&format!("  --{}: {};\n", t.name, t.value));
     }
@@ -158,14 +168,52 @@ fn every_component_source_exists() {
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
 
-/// dashboard.css as (selector, [(property, value)]), comments removed. It has no nested blocks.
+/// `css` with its two kinds of nested block flattened: an `@media` block's rules stand as they are,
+/// and each step of `@keyframes name` becomes a rule for `.name`, so its values are checked
+/// against the component the name belongs to.
+fn flatten(css: &str) -> String {
+    let mut out = String::new();
+    let mut rest = css;
+    while let Some(at) = rest.find('@') {
+        out.push_str(&rest[..at]);
+        let open = rest[at..].find('{').expect("an at-rule has a block") + at;
+        let head = rest[at + 1..open].trim();
+        let (mut depth, mut close) = (0, open);
+        for (i, c) in rest[open..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+            if depth == 0 {
+                close = open + i;
+                break;
+            }
+        }
+        let inner = &rest[open + 1..close];
+        if let Some(name) = head.strip_prefix("keyframes ") {
+            for step in inner.split('}').filter(|r| !r.trim().is_empty()) {
+                let body = step.split_once('{').expect("a keyframe step").1;
+                out.push_str(&format!(".{} {{{body}}}\n", name.trim()));
+            }
+        } else {
+            assert!(head.starts_with("media "), "only @media and @keyframes blocks: @{head}");
+            out.push_str(inner);
+        }
+        rest = &rest[close + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// dashboard.css as (selector, [(property, value)]), comments removed, at-rules flattened.
 fn rules() -> Vec<(String, Vec<(String, String)>)> {
     let mut css = style("dashboard.css");
     while let Some(start) = css.find("/*") {
         let end = css[start..].find("*/").map_or(css.len(), |e| start + e + 2);
         css.replace_range(start..end, "");
     }
-    css.split('}')
+    flatten(&css).split('}')
         .filter(|r| !r.trim().is_empty())
         .map(|r| {
             let (sel, body) = r.split_once('{').unwrap_or_else(|| panic!("not a rule: {r}"));
@@ -307,4 +355,70 @@ fn the_value_rules_catch_what_they_forbid() {
         Ok(vec!["space-6".to_owned(), "size-14".to_owned()])
     );
     assert_eq!(selector_components(".a__b .c--d:hover, td"), ["a", "c", "page"].map(String::from).into());
+}
+
+/// `GET url` as a signed-in browser: the Content-Security-Policy header and the body. The page must
+/// answer 200.
+async fn fetch(d: &Dash, url: &str) -> (Option<String>, String) {
+    let http = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).no_proxy().build().unwrap();
+    let r = http
+        .get(format!("http://{}{url}", d.addr))
+        .header(reqwest::header::COOKIE, &d.cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), reqwest::StatusCode::OK, "{url}");
+    let csp = r.headers().get(reqwest::header::CONTENT_SECURITY_POLICY).map(|v| v.to_str().unwrap().to_owned());
+    (csp, r.text().await.unwrap())
+}
+
+/// SC-008: no page, window, confirm window or task panel carries a script, and the CSP never allows
+/// one (no `script-src`) while it keeps `form-action 'self'`.
+#[tokio::test(flavor = "multi_thread")]
+async fn no_page_window_or_task_panel_has_a_script_and_the_csp_holds() {
+    let d = Dash::dashboard().await;
+    let keys = d.view(ViewName::Keys, json!({})).await;
+    let key = keys[0]["id"].as_str().unwrap().to_owned();
+    let accounts = d.view(ViewName::Accounts, json!({"provider": "anthropic"})).await;
+    let account = accounts[0]["name"].as_str().unwrap().to_owned();
+    // A running test task, so a task panel has something to show (the handle keeps it alive).
+    let Ok(task) = d.engine.tasks.start(TaskKind::Test, "u") else { panic!("the fixture starts a task") };
+    let task_id = task.id().as_str().to_owned();
+
+    let mut urls: Vec<String> = Id::ALL.iter().map(|id| id.path().to_owned()).collect();
+    urls.extend(Id::ALL.iter().map(|id| format!("{}?notices", id.path())));
+    urls.extend([
+        "/providers/anthropic".to_owned(),
+        format!("/usage/records/{}", homes::fallback_id()),
+        "/endpoint?window=add".to_owned(),
+        format!("/endpoint?window=revoke&key={key}"),
+        "/endpoint?window=revoke".to_owned(),
+        "/providers?window=add".to_owned(),
+        "/providers?window=add-openai".to_owned(),
+        "/providers?window=add-anthropic".to_owned(),
+        "/providers?window=uninstall-plugin&id=bluesminds".to_owned(),
+        "/settings?window=private-endpoints".to_owned(),
+        "/endpoint?window=clear-adapter&harness=claude-code&version=v1".to_owned(),
+        "/endpoint?window=remove-adapter&harness=claude-code&version=v1".to_owned(),
+        "/providers?window=signin&id=anthropic".to_owned(),
+        format!("/providers?window=remove-account&id=anthropic&name={account}"),
+        "/proxy-pools?window=remove&name=eu".to_owned(),
+        "/combo?window=test&target=all".to_owned(),
+        "/combo?window=remove-unified&name=u".to_owned(),
+        "/combo?window=remove-combo&name=c".to_owned(),
+        format!("/combo?task={task_id}"),
+        format!("/providers?task={task_id}"),
+    ]);
+
+    for url in &urls {
+        let (csp, body) = fetch(&d, url).await;
+        assert!(!body.to_ascii_lowercase().contains("<script"), "{url}: the body has a script tag");
+        let csp = csp.unwrap_or_else(|| panic!("{url}: no Content-Security-Policy header"));
+        assert!(!csp.contains("script-src"), "{url}: the CSP allows scripts: {csp}");
+        assert!(csp.contains("form-action 'self'"), "{url}: the CSP lacks form-action 'self': {csp}");
+    }
+
+    // The task panel really rendered on the page the check named it for (not a 200 with nothing).
+    let (_, panel) = fetch(&d, &format!("/combo?task={task_id}")).await;
+    assert!(text_of(&panel).contains("started at"), "the task panel is on the page: {}", text_of(&panel));
 }

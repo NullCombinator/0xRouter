@@ -151,3 +151,76 @@ async fn an_installed_plugin_serves_a_request() {
     assert_eq!(got.len(), 1);
     assert_eq!(got[0].headers["authorization"], "Bearer gsk-SENTINEL-0128");
 }
+
+#[test]
+fn private_endpoints_asks_unless_yes_and_edits_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let cfg = home.join("config.toml");
+    let o = nr(home, &["plugins", "private-endpoints", "on"], "n\n");
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(
+        text(&o).contains("Plugins may then reach this machine and your local network. Continue? [y/N]"),
+        "{}",
+        text(&o)
+    );
+    assert!(!cfg.exists());
+    let o = nr(home, &["plugins", "private-endpoints", "on"], "y\n");
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("saved; applies at next start"), "{}", text(&o));
+    assert_eq!(std::fs::read_to_string(&cfg).unwrap(), "allow_private_endpoints = true\n");
+    // Off needs no question.
+    assert!(nr(home, &["plugins", "private-endpoints", "off"], "").status.success());
+    assert_eq!(std::fs::read_to_string(&cfg).unwrap(), "");
+    assert!(nr(home, &["plugins", "private-endpoints", "on", "--yes"], "").status.success());
+}
+
+#[test]
+fn add_compatible_writes_a_provider_and_refuses_private_addresses() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let add = |id: &str, style: &str, url: &str| {
+        nr(
+            home,
+            &[
+                "providers",
+                "add-compatible",
+                id,
+                "--style",
+                style,
+                "--base-url",
+                url,
+                "--model",
+                "a",
+                "--model",
+                "b",
+                "--model",
+                "c",
+            ],
+            "",
+        )
+    };
+    let o = add("my-openai", "openai", "https://llm.example.com/v1");
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("my-openai: added (3 models), saved; applies at next start"), "{}", text(&o));
+    assert!(add("my-claude", "anthropic", "https://claude.example.com").status.success());
+    let rows = json_out(home, &["--json", "providers"]);
+    assert!(rows.as_array().unwrap().iter().any(|p| p["id"] == "my-openai" && p["source"] == "user"));
+    assert!(rows.as_array().unwrap().iter().any(|p| p["id"] == "my-claude"));
+
+    // A taken id, a bad URL, a private URL.
+    assert_eq!(add("my-openai", "openai", "https://llm.example.com/v1").status.code(), Some(1));
+    assert_eq!(add("openrouter", "openai", "https://llm.example.com/v1").status.code(), Some(1));
+    assert_eq!(add("bad-url", "openai", "not a url").status.code(), Some(1));
+    let o = add("local-llm", "openai", "http://127.0.0.1:11434");
+    assert_eq!(o.status.code(), Some(3), "{}", text(&o));
+    assert_eq!(
+        String::from_utf8_lossy(&o.stderr).trim(),
+        "local-llm: base_url http://127.0.0.1:11434 is a private address; turn private endpoints on first (nullrouter plugins private-endpoints on)"
+    );
+    assert!(!home.join("plugins/local-llm.toml").exists());
+    assert!(nr(home, &["plugins", "private-endpoints", "on", "--yes"], "").status.success());
+    assert!(add("local-llm", "openai", "http://127.0.0.1:11434").status.success());
+    // The plain list still works.
+    assert!(nr(home, &["providers"], "").status.success());
+}

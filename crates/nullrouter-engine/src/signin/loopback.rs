@@ -43,6 +43,8 @@ pub struct Loopback {
     listeners: Vec<TcpListener>,
     path: String,
     redirect_uri: String,
+    /// Where the browser goes after a good callback (the dashboard), instead of the page.
+    return_to: Option<String>,
 }
 
 /// How many ephemeral ports are tried for a `localhost` redirect whose IPv6 twin is taken.
@@ -102,7 +104,15 @@ impl Loopback {
             let bound = listeners[0].local_addr().map_err(|source| BindError::Io { addr, source })?.port();
             u.set_port(Some(bound)).map_err(|()| bad())?;
         }
-        Ok(Self { listeners, path: u.path().to_owned(), redirect_uri: u.into() })
+        Ok(Self { listeners, path: u.path().to_owned(), redirect_uri: u.into(), return_to: None })
+    }
+
+    /// Answers a good callback with a `303` to `url` instead of the page. A link with a
+    /// control character or space is ignored (it would split the response head).
+    pub fn set_return(&mut self, url: &str) {
+        if !url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+            self.return_to = Some(url.to_owned());
+        }
     }
 
     /// The redirect URI to send, with the bound port.
@@ -153,6 +163,14 @@ impl Loopback {
             return None;
         }
         let ok = verdict(query);
+        if let (true, Some(to)) = (ok, &self.return_to) {
+            let head = format!(
+                "HTTP/1.1 303 See Other\r\nlocation: {to}\r\ncontent-length: 0\r\ncache-control: no-store\r\nconnection: close\r\n\r\n"
+            );
+            let _ = stream.write_all(head.as_bytes()).await;
+            let _ = stream.shutdown().await;
+            return Some(query.to_owned());
+        }
         let (status, page) = if ok { ("200 OK", DONE_PAGE) } else { ("400 Bad Request", FAILED_PAGE) };
         let _ = respond(&mut stream, status, page).await;
         Some(query.to_owned())
@@ -213,6 +231,22 @@ mod tests {
         });
         assert_eq!(l.accept(|_| true).await.unwrap(), "code=c&state=s", "answered over IPv6");
         assert_eq!(client.await.unwrap(), 200);
+    }
+
+    #[tokio::test]
+    async fn a_good_callback_can_be_a_303_back_to_the_dashboard() {
+        let mut l = Loopback::bind("http://127.0.0.1:0/callback").await.unwrap();
+        l.set_return("http://127.0.0.1:20129/providers?window=provider&id=x&task=tk_a");
+        let uri = l.redirect_uri().to_owned();
+        let client = tokio::spawn(async move {
+            let c = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+            let r = c.get(format!("{uri}?code=c&state=s")).send().await.unwrap();
+            (r.status(), r.headers()["location"].to_str().unwrap().to_owned())
+        });
+        l.accept(|_| true).await.unwrap();
+        let (status, loc) = client.await.unwrap();
+        assert_eq!(status, 303);
+        assert!(loc.starts_with("http://127.0.0.1:20129/providers?"));
     }
 
     #[tokio::test]

@@ -53,7 +53,11 @@ fn each_status_word_renders_with_its_variant() {
 async fn every_badge_on_a_page_follows_the_table() {
     let d = Dash::dashboard().await;
     let mut paths: Vec<String> = Id::ALL.iter().map(|id| id.path().to_owned()).collect();
-    paths.extend(["/providers/anthropic".into(), "/providers/xai".into(), format!("/usage/records/{}", homes::fallback_id())]);
+    paths.extend([
+        "/providers/anthropic".into(),
+        "/providers/xai".into(),
+        format!("/usage/records/{}", homes::fallback_id()),
+    ]);
     let mut seen = 0;
     for path in &paths {
         for (v, words) in badges(&d.ok(path).await) {

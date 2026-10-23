@@ -35,6 +35,8 @@ pub struct Frame<'a> {
     pub check: Option<&'a Value>,
     /// The `accounts` JSON, when the panel is open.
     pub accounts: Option<&'a Value>,
+    /// A flash or task panel, shown above the page's content.
+    pub top: Option<Markup>,
 }
 
 /// The whole document.
@@ -67,11 +69,24 @@ pub fn document(f: &Frame<'_>, body: Body) -> Markup {
                         @if let Some(as_of) = &f.as_of {
                             span class="page-header__as-of" { (icon("schedule")) (as_of) }
                         }
+                        @if let Some(req) = f.req.filter(|r| !r.token.is_empty()) {
+                            form class="page-header__signout" method="post" action="/signout" {
+                                input type="hidden" name="_t" value=(req.token);
+                                button class="button button--secondary" type="submit" { "Sign out" }
+                            }
+                        }
                     }
                     div class="main__column" {
-                        @if !own.is_empty() {
+                        @if own.len() == 1 {
                             div class="notices" { @for (level, text) in &own { (notice(level, text)) } }
+                        } @else if !own.is_empty() {
+                            // Several notices fold under one line that counts them; an error keeps it open.
+                            details class="notices-fold" open[own.iter().any(|(l, _)| *l == "error")] {
+                                summary class="notices-fold__summary" { (icon("info")) (counts(&own)) }
+                                div class="notices" { @for (level, text) in &own { (notice(level, text)) } }
+                            }
                         }
+                        @if let Some(top) = &f.top { (top) }
                         (body.content)
                     }
                 }
@@ -95,7 +110,7 @@ fn sidebar(current: Option<Id>, version: &str) -> Markup {
     html! {
         aside class="sidebar" {
             div class="sidebar__brand" {
-                span class="sidebar__mark" { (icon("hub")) }
+                (mark())
                 div class="sidebar__names" {
                     span class="sidebar__name" { "0Router Proxy" }
                     span class="sidebar__version" { (version) }
@@ -114,6 +129,11 @@ fn sidebar(current: Option<Id>, version: &str) -> Markup {
             }
         }
     }
+}
+
+/// The brand mark: the project logo, as the mockups' sidebar shows it.
+pub fn mark() -> Markup {
+    html! { img class="sidebar__mark" src=(assets::href("logo-mark.png")) alt="" width="36" height="36"; }
 }
 
 /// The housekeeping panel (FR-024, research R4): every `check` notice by level, then the accounts
@@ -181,32 +201,43 @@ fn account_line(a: &Value) -> Markup {
 }
 
 /// The page for `req` from its built state, inside the frame.
-pub fn render(req: &Req, page: &Page, version: &str, tz: &TimeZone, logos: &Index) -> Response {
-    let ctx = Ctx { req, page, tz, logos };
+pub fn render(
+    engine: &std::sync::Arc<nullrouter_engine::state::Engine>,
+    req: &Req,
+    page: &Page,
+    version: &str,
+    tz: &TimeZone,
+    logos: &Index,
+    top: Option<Markup>,
+) -> Response {
+    let ctx = Ctx { req, page, tz, logos, engine };
     let (status, body) = match pages::body(&ctx) {
         Ok(body) => (StatusCode::OK, body),
         Err(f) => (f.status, Body::new(failure_card(&f.message))),
     };
-    respond(status, &frame_for(req, page, version, tz), body)
+    respond(status, &frame_for(req, page, version, tz, top), body)
 }
 
 /// The page under a window that couldn't open: the page as it is, and the window showing the
 /// CLI's message (404).
+#[allow(clippy::too_many_arguments)]
 pub fn render_missing_window(
+    engine: &std::sync::Arc<nullrouter_engine::state::Engine>,
     req: &Req,
     page: &Page,
     version: &str,
     tz: &TimeZone,
     logos: &Index,
     message: &str,
+    top: Option<Markup>,
 ) -> Response {
-    let ctx = Ctx { req, page, tz, logos };
+    let ctx = Ctx { req, page, tz, logos, engine };
     let mut body = pages::body(&ctx).unwrap_or_else(|f| Body::new(failure_card(&f.message)));
     body.window = Some(components::modal("Not found", &req.close_href(), html! { p { (message) } }));
-    respond(StatusCode::NOT_FOUND, &frame_for(req, page, version, tz), body)
+    respond(StatusCode::NOT_FOUND, &frame_for(req, page, version, tz, top), body)
 }
 
-fn frame_for<'a>(req: &'a Req, page: &'a Page, version: &'a str, tz: &TimeZone) -> Frame<'a> {
+fn frame_for<'a>(req: &'a Req, page: &'a Page, version: &'a str, tz: &TimeZone, top: Option<Markup>) -> Frame<'a> {
     Frame {
         current: Some(req.id),
         version,
@@ -214,13 +245,14 @@ fn frame_for<'a>(req: &'a Req, page: &'a Page, version: &'a str, tz: &TimeZone) 
         req: Some(req),
         check: page.view(ViewName::Check).map(|v| &v.json),
         accounts: page.view(ViewName::Accounts).map(|v| &v.json),
+        top,
     }
 }
 
 /// A page that could not be built at all (a view failed, the state kept changing, the build
 /// panicked or ran out of time, or the dashboard is busy): the frame and the reason.
 pub fn render_error(req: Option<&Req>, version: &str, status: StatusCode, text: &str) -> Response {
-    let frame = Frame { current: req.map(|r| r.id), version, as_of: None, req, check: None, accounts: None };
+    let frame = Frame { current: req.map(|r| r.id), version, as_of: None, req, check: None, accounts: None, top: None };
     respond(status, &frame, Body::new(failure_card(text)))
 }
 
@@ -237,6 +269,18 @@ fn respond(status: StatusCode, frame: &Frame<'_>, body: Body) -> Response {
     (status, Html(document(frame, body).into_string())).into_response()
 }
 
+/// `3 notes · 3 warnings`: the page's notices counted by level, errors first.
+fn counts(own: &[(&str, &str)]) -> String {
+    let n = |want: &str| own.iter().filter(|(l, _)| *l == want).count();
+    let plural = |k: usize, word: &str| if k == 1 { format!("1 {word}") } else { format!("{k} {word}s") };
+    [("error", n("error")), ("warning", n("warning")), ("note", own.len() - n("error") - n("warning"))]
+        .into_iter()
+        .filter(|(_, k)| *k > 0)
+        .map(|(w, k)| plural(k, w))
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -251,6 +295,7 @@ mod tests {
             req: Some(req),
             check: Some(check),
             accounts: Some(accounts),
+            top: None,
         }
     }
 

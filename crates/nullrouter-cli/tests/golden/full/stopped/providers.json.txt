@@ -9,7 +9,11 @@ exit: 0
       "llm",
       "image_to_text"
     ],
-    "source": "bundled"
+    "source": "bundled",
+    "signin": true,
+    "terms_warning": true,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "elevenlabs",
@@ -19,7 +23,11 @@ exit: 0
       "tts",
       "stt"
     ],
-    "source": "bundled"
+    "source": "bundled",
+    "signin": false,
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "grok-cli",
@@ -28,7 +36,11 @@ exit: 0
     "capabilities": [
       "llm"
     ],
-    "source": "bundled"
+    "source": "bundled",
+    "signin": true,
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "opencode-go",
@@ -38,7 +50,11 @@ exit: 0
       "llm",
       "image_to_text"
     ],
-    "source": "bundled"
+    "source": "bundled",
+    "signin": false,
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "opencode-zen",
@@ -48,7 +64,11 @@ exit: 0
       "llm",
       "image_to_text"
     ],
-    "source": "bundled"
+    "source": "bundled",
+    "signin": false,
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "openrouter",
@@ -62,7 +82,11 @@ exit: 0
       "tts",
       "embedding"
     ],
-    "source": "bundled"
+    "source": "bundled",
+    "signin": false,
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "xai",
@@ -74,7 +98,11 @@ exit: 0
       "image_to_text",
       "video"
     ],
-    "source": "bundled"
+    "source": "bundled",
+    "signin": true,
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   },
   {
     "id": "bluesminds",
@@ -83,7 +111,11 @@ exit: 0
     "capabilities": [
       "llm"
     ],
-    "source": "user"
+    "source": "user",
+    "signin": false,
+    "terms_warning": false,
+    "enabled": true,
+    "hidden": false
   }
 ]
 --- stderr

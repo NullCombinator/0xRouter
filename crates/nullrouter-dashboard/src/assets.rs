@@ -1,7 +1,7 @@
 //! The style sheets and the font, embedded and served under one content hash
 //! (`/assets/<hash>/<file>`, research R11): cacheable for a day, never fetched from outside the
 //! machine, and open without the cookie because they carry no 0router data. Icons are drawn
-//! inline ([`crate::components::icon`]).
+//! inline ([`crate::components::icon`]); the brand mark is the one image.
 
 use std::sync::OnceLock;
 
@@ -22,6 +22,8 @@ const ASSETS: &[Asset] = &[
     Asset { name: "tokens.css", mime: "text/css; charset=utf-8", bytes: include_bytes!("../style/tokens.css") },
     Asset { name: "dashboard.css", mime: "text/css; charset=utf-8", bytes: include_bytes!("../style/dashboard.css") },
     Asset { name: "inter-latin.woff2", mime: "font/woff2", bytes: include_bytes!("../assets/inter-latin.woff2") },
+    // The project's mark (assets/brand/logo.jpg at 128 px), as the mockups' sidebar shows it.
+    Asset { name: "logo-mark.png", mime: "image/png", bytes: include_bytes!("../assets/logo-mark.png") },
 ];
 
 /// The sheets every page links, in cascade order.

@@ -7,11 +7,12 @@ use std::time::SystemTime;
 
 use clap::Subcommand;
 use nullrouter_cli::signin::{self, SignIn};
-use nullrouter_engine::accounts::{self, Account, Accounts, SecretSource};
+use nullrouter_engine::accounts::{self, Accounts, SecretSource};
 use nullrouter_engine::clock;
 use nullrouter_engine::signin::SignInHttp;
-use nullrouter_engine::tokens;
 use nullrouter_registry::{OperatorHome, SecretString};
+use nullrouter_server::ops::accounts::Report;
+use nullrouter_server::ops::{self, Ctx, OpError, Status};
 use nullrouter_server::views::{self, View};
 use serde_json::{Value, json};
 
@@ -178,6 +179,26 @@ fn sign_in(
     }
 }
 
+/// Prints an op's log on stderr and turns its result into the CLI's output and exit code.
+fn report(r: Result<Report, OpError>, log: &[String], as_json: bool) -> Result<ExitCode, ExitCode> {
+    for l in log {
+        eprintln!("{l}");
+    }
+    let r = r.map_err(|e| {
+        eprintln!("{}", e.text);
+        ExitCode::from(e.exit)
+    })?;
+    if let Status::SavedNotApplied { reason } = &r.done.status {
+        return Err(fail(reason));
+    }
+    if as_json {
+        println!("{}", r.json);
+    } else {
+        println!("{}", r.done.text);
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
 pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
     if let Command::List { provider, long } = &cmd {
@@ -187,28 +208,17 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
         print_list(&view, &list, *long, as_json);
         return Ok(ExitCode::SUCCESS);
     }
-    let mut list = Accounts::load(&home.path().join(accounts::FILE)).map_err(fail)?;
-    // What the command did beyond `accounts.toml`, for its line.
-    let mut note = None;
-    let mut removed = false;
-    let mut gone: Option<Accounts> = None;
-    let mut added = false;
-    let (provider, name) = match cmd {
+    let ctx = Ctx { home: home.clone(), engine: None };
+    let mut log = Vec::new();
+    let log = &mut log;
+    let result = match cmd {
         Command::List { .. } => unreachable!("handled above"),
         Command::Signin { provider, name, paste, no_browser, accept_terms_risk } => {
             let browser = !paste && !no_browser && signin::has_display();
             return sign_in(&home, &provider, &name, browser, accept_terms_risk, as_json);
         }
         Command::Add { provider, name, env, order } => {
-            if !accounts::valid_name(&name) {
-                return Err(fail(accounts::AccountError::BadName(name)));
-            }
-            // The secret may only go to the hosts the provider sends to now (FR-044).
-            let reg = crate::open(Some(home.path().to_owned()))?.snapshot();
-            let hosts = match reg.provider(&provider) {
-                Ok(p) => accounts::provider_hosts(p),
-                Err(e) => return Err(fail(e)),
-            };
+            ops::accounts::precheck_add(&ctx, &provider, &name).map_err(op_fail)?;
             let (source, secret) = match env {
                 Some(var) => {
                     let secret = std::env::var(&var).ok().filter(|s| !s.is_empty()).map(SecretString::new);
@@ -219,98 +229,24 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
                 }
                 None => (SecretSource::Literal, Some(SecretString::new(secret_from_stdin()?))),
             };
-            // Without `--order`, a new account goes after the provider's others.
-            let order = order
-                .unwrap_or_else(|| list.iter().filter(|a| a.provider == provider).map(|a| a.order).max().unwrap_or(0));
-            let account = Account::key(provider.clone(), name.clone(), source, secret, order, hosts);
-            list.add(account).map_err(fail)?;
-            added = true;
-            (provider, name)
+            ops::accounts::add_with(&ctx, log, &provider, &name, source, secret, order)
         }
         Command::Priority { provider, name, priority } => {
-            let n = priority
-                .parse::<f64>()
-                .map_err(|_| fail(format!("{priority:?}: priority must be a number of 0 or more")))?;
-            list.set_priority(&provider, &name, n).map_err(fail)?;
-            (provider, name)
+            ops::accounts::priority_with(&ctx, log, &provider, &name, &priority)
         }
-        Command::Remove { provider, name } => {
-            let account = list.remove(&provider, &name).map_err(fail)?;
-            removed = true;
-            // Kept for the quota fit, which needs the account's provider scope.
-            let mut only = Accounts::default();
-            only.add(account).map_err(fail)?;
-            gone = Some(only);
-            // Its tokens go too, under the writers' lock; its quota history stays
-            // (`quota forget` deletes it).
-            if tokens::remove(home.path(), &provider, &name).map_err(fail)? {
-                note = Some("removed with its tokens");
-            }
-            (provider, name)
-        }
-        Command::Disable { provider, name } => {
-            list.set_disabled(&provider, &name, true).map_err(fail)?;
-            (provider, name)
-        }
-        Command::Enable { provider, name } => {
-            list.set_disabled(&provider, &name, false).map_err(fail)?;
-            // A refused account is tried again (research R10).
-            if tokens::clear_refused(home.path(), &provider, &name).map_err(fail)? {
-                note = Some("no longer marked refused");
-            }
-            (provider, name)
-        }
+        Command::Remove { provider, name } => ops::accounts::remove_with(&ctx, log, &provider, &name),
+        Command::Disable { provider, name } => ops::accounts::disable_with(&ctx, log, &provider, &name),
+        Command::Enable { provider, name } => ops::accounts::enable_with(&ctx, log, &provider, &name),
         Command::Exclusive { provider, name, state } => {
-            let Some(current) = list.get(&provider, &name) else {
-                return Err(fail(accounts::AccountError::NotFound { provider, name }));
-            };
-            let since = if state == "on" {
-                let reg = crate::open(Some(home.path().to_owned()))?.snapshot();
-                let entity = reg.provider(&provider).map_err(fail)?;
-                if let Some(problem) = current.exclusive_use_problem(entity) {
-                    eprintln!("{problem}");
-                    return Err(ExitCode::from(2));
-                }
-                Some(current.exclusive_use.unwrap_or_else(clock::now))
-            } else {
-                None
-            };
-            list.set_exclusive_use(&provider, &name, since).map_err(fail)?;
-            (provider, name)
+            ops::accounts::exclusive_with(&ctx, log, &provider, &name, state == "on")
         }
     };
-    list.save().map_err(fail)?;
-    let status = super::apply(&home).map_err(fail)?;
-    // A running server drops the account's fingerprints and ledger entries when it reloads; with
-    // none running, the warm file is edited here.
-    if removed
-        && status != "applied"
-        && let Err(e) = nullrouter_engine::journal::state::forget_account(home.path(), &format!("{provider}/{name}"))
-    {
-        eprintln!("note: the routing state of {provider}/{name} could not be cleaned: {e}");
-    }
-    // A running server's reload settles the quota fit; with none running, it is settled here.
-    if status != "applied" {
-        let fit = if let Some(only) = &gone {
-            crate::open(Some(home.path().to_owned()))
-                .map(|r| nullrouter_engine::quota::fit::account_removed(home.path(), &r.snapshot(), only, &provider, &name))
-        } else if added {
-            Ok(nullrouter_engine::quota::fit::account_added(home.path(), &provider, &name))
-        } else {
-            Ok(Ok(()))
-        };
-        if let Ok(Err(e)) = fit {
-            eprintln!("note: the quota fit of {provider}/{name} could not be updated: {e}");
-        }
-    }
-    if as_json {
-        println!("{}", json!({"provider": provider, "name": name, "note": note, "status": status}));
-    } else if let Some(note) = note {
-        println!("{provider}/{name}: {note}; {status}");
-    } else {
-        println!("{provider}/{name}: {status}");
-    }
-    Ok(ExitCode::SUCCESS)
+    report(result, log, as_json)
+}
+
+fn op_fail(e: OpError) -> ExitCode {
+    eprintln!("{}", e.text);
+    ExitCode::from(e.exit)
 }
 
 /// Columns padded to their widest cell (header included), two spaces apart; the last
@@ -356,9 +292,8 @@ fn print_list(view: &View, list: &Accounts, long: bool, as_json: bool) {
     let text = |r: &Value, k: &str| r[k].as_str().unwrap_or("-").to_owned();
     // `since <date>` (UTC, YYYY-MM-DD) or blank.
     let since = |r: &Value| {
-        exclusive_of(list, r).map_or_else(String::new, |t| {
-            format!("since {}", clock::rfc3339(t).split('T').next().unwrap_or(""))
-        })
+        exclusive_of(list, r)
+            .map_or_else(String::new, |t| format!("since {}", clock::rfc3339(t).split('T').next().unwrap_or("")))
     };
     let mut cells = vec![
         ["provider", "name", "kind", "order", "priority", "secret", "proxy", "exclusive", "state"]

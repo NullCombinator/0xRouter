@@ -175,7 +175,8 @@ async fn a_hang_returns_within_its_timeout() {
 async fn an_interrupted_run_keeps_what_finished_and_sends_nothing_new() {
     let mock = MockUpstream::start().await;
     mock.respond(reply);
-    let dir = home_with(&mock, &["slow", "slower", "slowest"], "[tests]\nconcurrency = 1\n[tests.timeout]\ntext = \"5s\"\n");
+    let dir =
+        home_with(&mock, &["slow", "slower", "slowest"], "[tests]\nconcurrency = 1\n[tests.timeout]\ntext = \"5s\"\n");
     let home = dir.path().to_owned();
     let _server = serve(&home).await;
 

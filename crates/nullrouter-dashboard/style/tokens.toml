@@ -78,10 +78,20 @@ value = "#fff"
 source = "src/shared/components/Button.js:6"
 class = "text-white"
 
+[token.color-black-1]
+value = "color-mix(in oklab, #000 1%, transparent)"
+source = "src/app/(dashboard)/dashboard/media-providers/web/page.js:41"
+class = "hover:bg-black/[0.01]"
+
 [token.color-black-2]
 value = "color-mix(in oklab, #000 2%, transparent)"
 source = "src/app/(dashboard)/dashboard/providers/page.js:393"
 class = "bg-black/[0.02]"
+
+[token.color-black-5]
+value = "color-mix(in oklab, #000 5%, transparent)"
+source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/index.js:832"
+class = "hover:bg-black/5"
 
 [token.color-black-10]
 value = "color-mix(in oklab, #000 10%, transparent)"
@@ -97,6 +107,11 @@ class = "bg-black/50"
 value = "color-mix(in oklab, var(--color-brand-500) 10%, transparent)"
 source = "src/shared/components/Badge.js:7"
 class = "bg-brand-500/10"
+
+[token.color-primary-5]
+value = "color-mix(in oklab, var(--color-primary) 5%, transparent)"
+source = "src/app/(dashboard)/dashboard/cli-tools/components/MitmServerCard.js:136"
+class = "bg-primary/5"
 
 [token.color-brand-500-30]
 value = "color-mix(in oklab, var(--color-brand-500) 30%, transparent)"
@@ -147,6 +162,31 @@ class = "text-yellow-600"
 value = "color-mix(in oklab, var(--color-yellow-500) 10%, transparent)"
 source = "src/shared/components/Badge.js:9"
 class = "bg-yellow-500/10"
+
+[token.color-red-50]
+value = "oklch(97.1% 0.013 17.38)"
+source = "src/app/(dashboard)/dashboard/providers/new/page.js:199"
+class = "bg-red-50"
+
+[token.color-red-100]
+value = "oklch(93.6% 0.032 17.717)"
+source = "src/shared/components/KiroSocialOAuthModal.js:189"
+class = "bg-red-100"
+
+[token.color-red-200]
+value = "oklch(88.5% 0.062 18.334)"
+source = "src/app/(dashboard)/dashboard/profile/page.js:1631"
+class = "border-red-200"
+
+[token.color-red-300]
+value = "oklch(80.8% 0.114 19.571)"
+source = "src/app/(dashboard)/dashboard/endpoint/EndpointPageClient.js:790"
+class = "border-red-300"
+
+[token.color-red-400]
+value = "oklch(70.4% 0.191 22.216)"
+source = "src/app/(dashboard)/dashboard/console-log/ConsoleLogClient.js:11"
+class = "text-red-400"
 
 [token.color-red-500]
 value = "oklch(63.7% 0.237 25.331)"
@@ -271,6 +311,16 @@ value = "calc(2 / 1.5)"
 source = "src/shared/components/Header.js:291"
 class = "lg:text-2xl"
 
+[token.text-3xl]
+value = "1.875rem"
+source = "src/app/(dashboard)/dashboard/providers/[id]/page.js:1403"
+class = "sm:text-3xl"
+
+[token.text-3xl-leading]
+value = "calc(2.25 / 1.875)"
+source = "src/app/(dashboard)/dashboard/providers/[id]/page.js:1403"
+class = "sm:text-3xl"
+
 [token.text-10]
 value = "10px"
 source = "src/shared/components/Badge.js:15"
@@ -285,6 +335,11 @@ class = "text-[11px]"
 value = "13px"
 source = "src/shared/components/Sidebar.js:181"
 class = "text-[13px]"
+
+[token.weight-normal]
+value = "400"
+source = "src/shared/components/ModelSelectModal.js:611"
+class = "font-normal"
 
 [token.weight-medium]
 value = "500"
@@ -322,6 +377,20 @@ source = "src/app/globals.css:591"
 [token.icon-default]
 value = "24px"
 source = "src/app/globals.css:336"
+
+[token.nav-item-leading]
+value = "24px"
+source = "src/app/globals.css:336"
+
+[token.duration-fast]
+value = "0.15s"
+source = "src/shared/components/XiaomiMimoAuthModal.js:347"
+class = "duration-150"
+
+[token.duration-node]
+value = "0.3s"
+source = "src/app/landing/components/Features.js:117"
+class = "duration-300"
 
 [token.icon-page]
 value = "1.5rem"
@@ -383,6 +452,11 @@ value = "1rem"
 source = "src/shared/components/Sidebar.js:160"
 class = "px-4"
 
+[token.space-5]
+value = "1.25rem"
+source = "src/app/(dashboard)/dashboard/cli-tools/components/MitmServerCard.js:270"
+class = "p-5"
+
 [token.space-6]
 value = "1.5rem"
 source = "src/shared/components/Sidebar.js:121"
@@ -402,6 +476,11 @@ class = "lg:p-10"
 value = "3rem"
 source = "src/app/(dashboard)/dashboard/combos/page.js:415"
 class = "py-12"
+
+[token.size-1]
+value = "0.25rem"
+source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/QuotaTable.js:182"
+class = "h-1"
 
 [token.size-1-5]
 value = "0.375rem"
@@ -433,6 +512,16 @@ value = "2.25rem"
 source = "src/shared/components/Sidebar.js:123"
 class = "size-9"
 
+[token.size-10]
+value = "2.5rem"
+source = "src/app/(dashboard)/dashboard/profile/page.js:847"
+class = "size-10"
+
+[token.size-12]
+value = "3rem"
+source = "src/app/(dashboard)/dashboard/providers/[id]/page.js:1377"
+class = "size-12"
+
 [token.size-14]
 value = "3.5rem"
 source = "src/shared/components/Toggle.js:17"
@@ -442,6 +531,11 @@ class = "w-14"
 value = "4rem"
 source = "src/app/(dashboard)/dashboard/combos/page.js:416"
 class = "w-16"
+
+[token.landscape-width]
+value = "1000px"
+source = "src/app/landing/components/HeroSection.js:7"
+class = "w-[1000px]"
 
 [token.size-full]
 value = "100%"
@@ -463,6 +557,11 @@ value = "400px"
 source = "src/shared/components/Drawer.js:15"
 class = "w-[400px]"
 
+[token.rail-width]
+value = "20rem"
+source = "src/app/(dashboard)/dashboard/providers/components/ModelAvailabilityBadge.js:113"
+class = "w-80"
+
 [token.container-7xl]
 value = "80rem"
 source = "src/shared/components/layouts/DashboardLayout.js:99"
@@ -472,6 +571,11 @@ class = "max-w-7xl"
 value = "56rem"
 source = "src/shared/components/Modal.js:24"
 class = "max-w-4xl"
+
+[token.modal-narrow-width]
+value = "48rem"
+source = "src/app/(dashboard)/dashboard/basic-chat/BasicChatPageClient.js:876"
+class = "max-w-3xl"
 
 [token.panel-width]
 value = "24rem"
@@ -502,6 +606,11 @@ class = "1fr"
 value = "repeat(2, minmax(0, 1fr))"
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/index.js:1049"
 class = "md:grid-cols-2"
+
+[token.grid-cols-5]
+value = "repeat(5, minmax(0, 1fr))"
+source = "src/app/(dashboard)/dashboard/usage/components/OverviewCards.js:11"
+class = "lg:grid-cols-5"
 
 [token.grid-usage]
 value = "minmax(0, 2fr) minmax(280px, 1fr)"
@@ -689,23 +798,27 @@ uses = ["sidebar-width", "screen-height", "border-width", "color-border-subtle",
 source = "src/shared/components/Sidebar.js:112"
 
 [component.nav-item]
-uses = ["space-3", "space-1", "radius-lg", "color-text-muted", "color-surface-2", "color-text-main", "color-primary", "color-primary-10", "icon-nav", "text-13", "weight-medium"]
+uses = ["space-3", "space-1", "radius-lg", "color-text-muted", "color-surface-2", "color-text-main", "color-primary", "color-primary-10", "icon-nav", "text-13", "weight-medium", "nav-item-leading"]
 source = "src/shared/components/Sidebar.js:167"
 
 [component.main]
-uses = ["flex-1", "space-8", "container-7xl", "space-10"]
+uses = ["flex-1", "space-8", "container-7xl", "space-10", "space-6"]
 source = "src/shared/components/layouts/DashboardLayout.js:94"
 
 [component.page-header]
-uses = ["space-3", "space-8", "space-2", "border-width", "color-border-subtle", "color-primary", "icon-page", "flex-1", "text-2xl", "text-2xl-leading", "weight-semibold", "tracking-tight", "color-text-muted", "text-sm", "text-sm-leading", "space-1-5", "color-border", "radius-brand", "color-surface", "text-xs", "text-xs-leading", "icon-badge"]
+uses = ["space-3", "space-8", "space-2", "border-width", "color-border-subtle", "color-primary", "icon-page", "flex-1", "text-2xl", "text-2xl-leading", "weight-semibold", "tracking-tight", "color-text-muted", "text-sm", "text-sm-leading", "space-1-5", "color-border", "radius-brand", "color-surface", "text-xs", "text-xs-leading", "icon-badge", "space-4", "space-0-5"]
 source = "src/shared/components/Header.js:230"
 
 [component.notices]
 uses = ["space-2"]
 source = "src/shared/components/layouts/DashboardLayout.js:12"
 
+[component.notices-fold]
+uses = ["space-2", "space-1-5", "space-3", "border-width", "color-border", "radius-brand", "color-surface", "color-text-muted", "text-xs", "text-xs-leading", "icon-badge"]
+source = "src/shared/components/layouts/DashboardLayout.js:12"
+
 [component.notice]
-uses = ["space-3", "border-width", "radius-lg", "text-sm", "text-sm-leading", "color-red-500-30", "color-red-500-10", "color-red-600", "color-yellow-500-30", "color-yellow-500-10", "color-yellow-600", "color-blue-500-30", "color-blue-500-10", "color-blue-600"]
+uses = ["space-3", "border-width", "radius-lg", "text-sm", "text-sm-leading", "color-red-500-30", "color-red-500-10", "color-red-600", "color-yellow-500-30", "color-yellow-500-10", "color-yellow-600", "color-blue-500-30", "color-blue-500-10", "color-blue-600", "space-2", "text-xs", "text-xs-leading"]
 source = "src/shared/components/layouts/DashboardLayout.js:12"
 
 [component.failure]
@@ -721,7 +834,7 @@ uses = ["space-4", "border-width", "color-border-subtle", "radius-brand", "color
 source = "src/shared/components/Card.js:61"
 
 [component.section-bar]
-uses = ["space-3", "space-4", "text-xl", "text-xl-leading", "weight-semibold", "space-2"]
+uses = ["space-3", "space-4", "text-xl", "text-xl-leading", "weight-semibold", "space-2", "color-text-muted", "text-sm", "text-sm-leading"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:628"
 
 [component.kv]
@@ -729,7 +842,7 @@ uses = ["space-4", "space-2", "border-width", "color-border-subtle", "text-sm", 
 source = "src/shared/components/Card.js:76"
 
 [component.button]
-uses = ["space-2", "size-7", "space-3", "border-width", "radius-button", "text-xs", "text-xs-leading", "weight-semibold", "icon-nav", "size-9", "space-4", "radius-brand", "text-sm", "text-sm-leading", "color-brand-500", "color-white", "shadow-sm", "color-brand-600", "color-border", "color-surface-2", "color-text-main", "color-surface-3", "opacity-disabled"]
+uses = ["space-2", "size-7", "space-3", "border-width", "radius-button", "text-xs", "text-xs-leading", "weight-semibold", "icon-nav", "size-9", "space-4", "radius-brand", "text-sm", "text-sm-leading", "color-brand-500", "color-white", "shadow-sm", "color-brand-600", "color-border", "color-surface-2", "color-text-main", "color-surface-3", "opacity-disabled", "color-surface"]
 source = "src/shared/components/Button.js:35"
 
 [component.control]
@@ -745,7 +858,7 @@ uses = ["size-8", "size-4", "space-0-5", "radius-full", "color-brand-500", "opac
 source = "src/shared/components/Toggle.js:20"
 
 [component.input]
-uses = ["space-2-5", "space-3", "border-width", "radius-brand", "color-surface-2", "color-text-main", "text-sm", "text-sm-leading", "color-brand-500-40", "shadow-focus", "opacity-disabled"]
+uses = ["space-2-5", "space-3", "border-width", "radius-brand", "color-surface-2", "color-text-main", "text-sm", "text-sm-leading", "color-brand-500-40", "shadow-focus", "opacity-disabled", "color-red-500-30"]
 source = "src/shared/components/Input.js:41"
 
 [component.code]
@@ -769,7 +882,7 @@ uses = ["size-8", "radius-lg"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:731"
 
 [component.meter]
-uses = ["size-1-5", "border-width", "radius-full", "size-full", "color-green-500-10", "color-green-500", "color-yellow-500-10", "color-yellow-500", "color-red-500-10", "color-red-500", "color-black-10"]
+uses = ["size-1", "border-width", "radius-full", "size-full", "color-green-500-10", "color-green-500", "color-yellow-500-10", "color-yellow-500", "color-red-500-10", "color-red-500", "color-black-10"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/QuotaTable.js:182"
 
 [component.slot]
@@ -777,19 +890,19 @@ uses = ["space-1", "space-6", "border-width", "color-border", "radius-brand-lg",
 source = "src/app/(dashboard)/dashboard/combos/page.js:1067"
 
 [component.empty]
-uses = ["space-12", "size-16", "space-4", "radius-full", "color-primary-10", "color-primary", "icon-empty", "space-1", "color-text-main", "text-base", "text-base-leading", "weight-medium", "color-text-muted", "text-sm", "text-sm-leading"]
+uses = ["space-12", "size-16", "space-4", "radius-full", "color-primary-10", "color-primary", "icon-empty", "space-1", "color-text-main", "text-base", "text-base-leading", "weight-medium", "color-text-muted", "text-sm", "text-sm-leading", "size-14", "radius-brand-lg", "space-8", "weight-semibold", "space-3"]
 source = "src/app/(dashboard)/dashboard/combos/page.js:415"
 
 [component.modal]
-uses = ["z-modal", "space-4", "color-black-50", "blur-backdrop", "modal-width", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-elev", "space-3", "space-2", "space-6", "color-text-main", "text-lg", "text-lg-leading", "weight-semibold", "space-1-5", "radius-brand", "color-text-muted", "color-surface-2", "modal-body-height"]
+uses = ["z-modal", "space-4", "color-black-50", "blur-backdrop", "modal-width", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-elev", "space-3", "space-2", "space-6", "color-text-main", "text-lg", "text-lg-leading", "weight-semibold", "space-1-5", "radius-brand", "color-text-muted", "color-surface-2", "modal-body-height", "color-bg", "text-xs", "text-xs-leading", "space-1", "modal-narrow-width"]
 source = "src/shared/components/Modal.js:47"
 
 [component.side-panel]
-uses = ["screen-height", "border-width", "color-border-subtle", "color-surface", "drawer-width", "space-3", "space-6", "color-primary", "space-4", "flex-1", "color-text-main", "text-lg", "text-lg-leading", "weight-semibold", "color-text-muted"]
+uses = ["screen-height", "border-width", "color-border-subtle", "color-surface", "drawer-width", "space-3", "space-6", "color-primary", "space-4", "flex-1", "color-text-main", "text-lg", "text-lg-leading", "weight-semibold", "color-text-muted", "z-panel", "shadow-elev", "size-7", "size-14", "color-border", "radius-brand", "shadow-soft", "color-bg-alt", "rail-width", "color-vibrancy", "blur-vibrancy", "space-2", "space-5", "text-base", "text-base-leading", "space-1-5", "radius-lg", "text-13", "size-8", "duration-fast", "color-brand-500-40", "color-brand-500"]
 source = "src/shared/components/Drawer.js:51"
 
 [component.side-section]
-uses = ["space-4", "space-6", "border-width", "color-border-subtle", "space-2", "color-text-muted-60", "text-xs", "text-xs-leading", "weight-semibold", "tracking-wider"]
+uses = ["space-4", "space-6", "border-width", "color-border-subtle", "space-2", "color-text-muted-60", "text-xs", "text-xs-leading", "weight-semibold", "tracking-wider", "space-5", "space-2-5", "color-text-subtle", "text-11", "color-text-muted", "text-13"]
 source = "src/shared/components/Sidebar.js:187"
 
 [component.floating-button]
@@ -805,23 +918,23 @@ uses = ["screen-height", "space-4", "color-bg", "color-text-main", "font-sans", 
 source = "src/shared/components/layouts/AuthLayout.js:19"
 
 [component.quota-filters]
-uses = ["space-1-5", "size-8", "space-2", "border-width", "color-black-10", "radius-lg", "color-black-2", "color-text-main", "text-xs", "text-xs-leading"]
+uses = ["space-1-5", "size-8", "space-2", "border-width", "color-black-10", "radius-lg", "color-black-2", "color-text-main", "text-xs", "text-xs-leading", "space-3", "color-text-muted", "weight-normal", "color-black-5", "icon-badge", "color-primary-10", "color-primary"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:393"
 
 [component.quota-grid]
-uses = ["grid-cols-2", "space-3"]
+uses = ["grid-cols-2", "space-3", "color-text-muted", "text-xs", "text-xs-leading", "space-2", "space-3", "border-width", "color-border-subtle", "radius-lg", "color-surface-2"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/index.js:1049"
 
 [component.quota-card]
-uses = ["size-full", "opacity-disabled", "color-red-500-30", "space-2", "space-3", "border-width", "color-black-10", "flex-1", "text-sm", "text-sm-leading", "weight-semibold", "color-text-muted", "text-xs", "text-xs-leading", "text-11", "space-0-5", "text-10", "space-1-5", "color-red-600", "space-1", "color-border-subtle", "quota-name-width", "weight-medium"]
+uses = ["size-full", "opacity-disabled", "color-red-500-30", "space-2", "space-3", "border-width", "color-black-10", "flex-1", "text-sm", "text-sm-leading", "weight-semibold", "color-text-muted", "text-xs", "text-xs-leading", "text-11", "space-0-5", "text-10", "space-1-5", "color-red-600", "space-1", "color-border-subtle", "quota-name-width", "weight-medium", "space-5", "size-7", "color-red-500", "color-black-5", "color-black-2", "size-1-5", "radius-full", "color-green-500", "color-yellow-500", "color-green-600", "color-yellow-600"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderLimits/ProviderLimitCard.js:58"
 
 [component.usage-overview]
-uses = ["space-6", "grid-usage", "space-2", "flex-1"]
+uses = ["space-6", "grid-usage", "space-2", "flex-1", "space-1", "radius-brand", "color-surface-2", "color-surface", "color-text-main", "shadow-soft", "border-width", "color-border-subtle", "radius-brand-lg"]
 source = "src/shared/components/UsageStats.js:475"
 
 [component.usage-stats]
-uses = ["card-min", "fr", "space-3"]
+uses = ["card-min", "fr", "space-3", "grid-cols-5"]
 source = "src/app/(dashboard)/dashboard/usage/components/OverviewCards.js:11"
 
 [component.usage-stat]
@@ -829,7 +942,7 @@ uses = ["space-3", "space-1", "color-text-muted", "text-xs", "text-xs-leading", 
 source = "src/app/(dashboard)/dashboard/usage/components/OverviewCards.js:12"
 
 [component.usage-recent]
-uses = ["size-full", "space-3", "color-text-muted", "text-sm", "text-sm-leading", "space-1-5", "space-1", "text-xs", "text-xs-leading", "size-1-5", "radius-full", "color-green-500", "color-red-500", "color-blue-500"]
+uses = ["size-full", "space-3", "color-text-muted", "text-sm", "text-sm-leading", "space-1-5", "space-1", "text-xs", "text-xs-leading", "size-1-5", "radius-full", "color-green-500", "color-red-500", "color-blue-500", "space-2", "weight-semibold", "color-brand-500", "color-text-main", "font-mono", "weight-medium"]
 source = "src/app/(dashboard)/dashboard/usage/components/UsageTable.js:163"
 
 [component.usage-table]
@@ -844,32 +957,36 @@ source = "src/app/(dashboard)/dashboard/usage/components/UsageTable.js:193"
 uses = ["space-1", "space-2", "space-3", "border-width", "color-border-subtle", "radius-lg", "color-bg", "color-green-500-30", "color-red-500-30", "space-4", "color-text-muted-60", "text-xs", "text-xs-leading", "weight-semibold", "tracking-wider", "text-sm", "text-sm-leading", "color-text-subtle", "font-mono", "color-text-muted"]
 source = "src/app/(dashboard)/dashboard/usage/components/RequestDetailsTab.js:58"
 
+[component.pick]
+uses = ["space-1", "size-9", "space-3", "border-width", "color-border", "radius-brand", "color-surface", "color-text-main", "text-sm", "text-sm-leading", "weight-medium", "icon-nav", "color-text-muted", "z-panel", "card-min", "space-2", "radius-brand-lg", "shadow-elev", "space-2-5", "space-4", "color-surface-2", "color-primary", "weight-semibold"]
+source = "src/shared/components/HeaderMenu.js:81"
+
 [component.provider-grid]
-uses = ["card-min", "fr", "space-4", "space-2"]
+uses = ["card-min", "fr", "space-4", "space-2", "size-9", "space-3", "border-width", "color-border", "radius-brand", "color-surface-2", "color-text-muted", "text-sm", "text-sm-leading", "icon-nav", "color-text-main", "space-1-5", "color-surface", "space-4", "color-border-subtle", "radius-brand-lg"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:632"
 
 [component.provider-card]
-uses = ["space-3", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-soft", "color-text-main", "color-brand-500-30", "shadow-warm", "color-brand-500", "space-1", "text-base", "text-base-leading", "weight-semibold", "space-1-5", "color-text-muted", "text-xs", "text-xs-leading"]
+uses = ["space-3", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-soft", "color-text-main", "color-brand-500-30", "shadow-warm", "color-brand-500", "space-4", "space-0-5", "text-sm", "text-sm-leading", "weight-semibold", "space-1-5", "color-text-muted", "text-xs", "text-xs-leading"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:714"
 
 [component.provider-window]
-uses = ["space-6", "space-4", "space-1", "text-2xl", "text-2xl-leading", "weight-semibold", "tracking-tight", "space-2", "color-text-muted", "text-sm", "text-sm-leading", "space-3", "color-text-muted-60", "text-xs", "text-xs-leading", "tracking-wider", "border-width", "color-border-subtle", "radius-lg", "color-bg", "weight-medium"]
+uses = ["space-6", "space-4", "space-1", "text-2xl", "text-2xl-leading", "weight-semibold", "tracking-tight", "space-2", "color-text-muted", "text-sm", "text-sm-leading", "space-3", "color-text-muted-60", "text-xs", "text-xs-leading", "tracking-wider", "border-width", "color-border-subtle", "radius-lg", "color-bg", "weight-medium", "size-12", "text-3xl", "text-3xl-leading", "space-1-5", "radius-brand-lg", "color-surface", "shadow-soft", "color-text-main", "text-lg", "text-lg-leading", "duration-fast", "color-black-2", "space-0-5", "flex-1"]
 source = "src/shared/components/Modal.js:57"
 
 [component.kind-filter]
-uses = ["space-1-5", "size-7", "space-3", "radius-button", "color-surface-2", "color-text-muted", "text-xs", "text-xs-leading", "weight-medium", "color-text-main", "color-brand-500", "color-white", "color-text-subtle", "text-11"]
+uses = ["space-1-5", "size-7", "space-3", "radius-button", "color-surface-2", "color-text-muted", "text-xs", "text-xs-leading", "weight-medium", "color-text-main", "color-brand-500", "color-white", "color-text-subtle", "text-11", "opacity-disabled"]
 source = "src/shared/components/SegmentedControl.js:20"
 
 [component.model-row]
-uses = ["space-2", "space-3", "border-width", "color-border", "radius-lg", "space-4", "space-1-5", "text-xs", "text-xs-leading"]
+uses = ["space-2", "space-3", "border-width", "color-border", "radius-lg", "space-4", "space-1-5", "text-xs", "text-xs-leading", "duration-fast", "color-black-2", "space-0-5", "color-text-muted", "flex-1", "space-1", "text-10", "text-11"]
 source = "src/app/(dashboard)/dashboard/usage/components/RequestDetailsTab.js:58"
 
 [component.plugin-row]
-uses = ["space-3", "space-1-5", "flex-1", "text-sm", "text-sm-leading", "weight-semibold", "color-text-muted", "text-11", "space-2", "text-xs", "text-xs-leading"]
+uses = ["space-3", "space-1-5", "flex-1", "text-sm", "text-sm-leading", "weight-semibold", "color-text-muted", "text-11", "space-2", "text-xs", "text-xs-leading", "space-2-5", "size-8", "radius-lg", "color-brand-500-10", "color-brand-500", "text-13", "text-10"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:722"
 
 [component.endpoint-url]
-uses = ["space-3", "space-2-5", "radius-brand", "color-surface-2", "font-mono", "text-sm", "text-sm-leading", "color-text-muted", "text-xs", "text-xs-leading"]
+uses = ["space-3", "space-2-5", "radius-brand", "color-surface-2", "font-mono", "text-sm", "text-sm-leading", "color-text-muted", "text-xs", "text-xs-leading", "weight-semibold", "color-text-main", "flex-1"]
 source = "src/shared/components/Input.js:41"
 
 [component.key-grid]
@@ -877,25 +994,61 @@ uses = ["card-min", "fr", "space-4"]
 source = "src/app/(dashboard)/dashboard/providers/page.js:632"
 
 [component.key-card]
-uses = ["space-3", "space-4", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-soft", "opacity-disabled", "space-2", "text-base", "text-base-leading", "weight-semibold"]
+uses = ["space-3", "space-4", "border-width", "color-border-subtle", "radius-brand-lg", "color-surface", "shadow-soft", "opacity-disabled", "space-2", "text-base", "text-base-leading", "weight-semibold", "size-10", "radius-full", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "space-1", "flex-1", "font-mono", "text-xs", "text-xs-leading", "color-text-muted", "space-1-5", "color-black-1", "duration-fast"]
 source = "src/shared/components/Card.js:28"
 
 [component.settings-list]
-uses = ["space-3", "color-text-muted", "text-sm", "text-sm-leading", "font-mono"]
+uses = ["space-3", "color-text-muted", "text-sm", "text-sm-leading", "font-mono", "color-text-main", "weight-semibold", "space-1", "space-2-5", "radius-full", "color-surface-2", "text-xs", "text-xs-leading", "weight-medium", "border-width", "color-border-subtle"]
 source = "src/shared/components/Card.js:76"
 
 [component.gauge]
-uses = ["color-green-500", "color-yellow-500", "color-red-500", "size-1-5", "color-text-main", "border-width", "color-text-muted", "text-10", "text-11", "weight-medium"]
+uses = ["color-text-subtle", "color-surface-3", "color-text-muted", "border-width", "color-surface", "color-border", "color-red-50", "color-red-100", "color-red-200", "color-red-300", "color-red-400", "color-red-500", "color-red-600", "color-text-main", "color-white", "edge-last-opacity", "text-11", "text-10", "weight-medium", "weight-semibold"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:35"
 
 [component.pipe]
-uses = ["color-border", "border-width", "edge-idle-opacity", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7"]
+uses = ["color-border", "border-width", "edge-idle-opacity", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "size-1-5", "color-border-subtle", "space-4", "edge-last-opacity", "color-text-subtle", "color-surface-2", "color-white", "color-surface-3", "color-primary", "opacity-disabled"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:294"
 
 [component.topology]
-uses = ["size-full", "color-surface", "color-border", "color-primary", "node-border-width", "edge-failed", "edge-last", "edge-failed-width", "edge-last-width", "edge-idle-width", "edge-failed-opacity", "edge-last-opacity", "edge-idle-opacity", "color-text-main", "color-text-muted", "text-base", "text-xs", "text-10", "weight-medium"]
+uses = ["size-full", "color-surface", "color-border", "color-primary", "node-border-width", "edge-failed", "edge-last", "edge-failed-width", "edge-last-width", "edge-idle-width", "edge-failed-opacity", "edge-last-opacity", "edge-idle-opacity", "color-text-main", "color-text-muted", "text-base", "text-xs", "text-10", "weight-medium", "weight-semibold", "color-brand-500", "color-bg", "duration-node", "color-primary-5", "text-sm", "weight-bold", "text-13", "text-11"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:35"
 
 [component.landscape]
-uses = ["size-full", "color-surface", "color-border", "color-primary", "border-width", "color-text-main", "color-text-muted", "text-xs", "text-10", "weight-medium", "weight-semibold", "opacity-disabled", "space-2", "text-sm", "text-sm-leading", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7"]
+uses = ["size-full", "color-surface", "color-border", "color-primary", "border-width", "color-text-main", "color-text-muted", "text-xs", "text-10", "weight-medium", "weight-semibold", "opacity-disabled", "space-2", "text-sm", "text-sm-leading", "agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7", "space-4", "space-1-5", "text-xs-leading", "size-1-5", "radius-full", "color-border-subtle", "radius-brand-lg", "color-surface-2", "color-primary-10", "node-border-width", "color-bg", "duration-node", "text-base", "text-13", "text-11", "color-text-subtle", "tracking-wider", "color-green-600", "color-red-600", "landscape-width"]
 source = "src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js:35"
+
+[component.form]
+uses = ["space-4"]
+source = "src/shared/components/Input.js:21"
+
+[component.field]
+uses = ["space-1-5", "space-1", "color-text-main", "text-sm", "text-sm-leading", "weight-medium", "color-red-600", "text-xs", "text-xs-leading", "icon-badge"]
+source = "src/shared/components/Input.js:23"
+
+[component.switch-field]
+uses = ["space-2", "size-8", "size-4", "space-0-5", "radius-full", "color-surface-3", "color-brand-500", "size-3", "color-white", "shadow-sm", "shadow-focus", "color-text-main", "text-sm", "text-sm-leading", "weight-medium"]
+source = "src/shared/components/Toggle.js:39"
+
+[component.once]
+uses = ["space-2", "space-3", "border-width", "color-yellow-500-30", "radius-lg", "color-yellow-500-10", "color-text-main", "text-sm", "text-sm-leading", "weight-semibold", "space-2-5", "radius-brand", "color-surface", "font-mono", "color-yellow-600", "text-xs", "text-xs-leading", "space-1", "icon-badge"]
+source = "src/shared/components/Input.js:41"
+
+[component.confirm]
+uses = ["space-4", "space-2"]
+source = "src/shared/components/Modal.js:57"
+
+[component.task]
+uses = ["space-2", "space-3", "border-width", "color-border-subtle", "radius-lg", "color-bg", "text-sm", "text-sm-leading", "color-text-main", "weight-semibold", "color-text-muted", "text-xs", "text-xs-leading", "space-1", "font-mono"]
+source = "src/app/(dashboard)/dashboard/usage/components/RequestDetailsTab.js:58"
+
+[component.modal-toggle]
+uses = []
+source = "src/shared/components/Modal.js:47"
+
+[component.settings-table]
+uses = ["space-2-5", "space-4", "color-bg-alt", "color-text-muted", "text-xs", "text-xs-leading", "weight-medium", "space-3", "border-width", "color-border-subtle", "text-sm", "text-sm-leading"]
+source = "src/app/(dashboard)/dashboard/providers/page.js:676"
+
+[component.settings-install]
+uses = ["space-2", "flex-1"]
+source = "src/app/(dashboard)/dashboard/providers/page.js:676"

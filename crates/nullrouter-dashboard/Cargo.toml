@@ -21,12 +21,16 @@ ulid.workspace = true
 nullrouter-server.workspace = true
 nullrouter-engine.workspace = true
 nullrouter-registry.workspace = true
+nullrouter-adapters.workspace = true
 
 [features]
 # Test-only: the isolation test (T071) makes every page build panic or sleep.
 fault = []
+# Test-only: `debug.noop`, a change that touches nothing, for the form foundation tests.
+testkit = []
 
 [dev-dependencies]
+nullrouter-dashboard = { path = ".", features = ["testkit"] }
 nullrouter-engine = { workspace = true, features = ["testkit"] }
 tempfile.workspace = true
 reqwest.workspace = true
@@ -40,6 +44,10 @@ required-features = ["fault"]
 
 [[bench]]
 name = "pages"
+harness = false
+
+[[bench]]
+name = "overhead"
 harness = false
 
 [lints]

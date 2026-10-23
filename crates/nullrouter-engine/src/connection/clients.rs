@@ -73,6 +73,19 @@ impl Clients {
         &self.proxies
     }
 
+    /// Takes over `old`'s built clients (they share their connection pools) when every input a
+    /// client is built from is the same: the private-endpoint setting and the proxy definitions.
+    pub fn adopt_from(&self, old: &Clients) {
+        if self.allow_private != old.allow_private
+            || self.trust_any_certificate != old.trust_any_certificate
+            || !self.proxies.same_definitions(&old.proxies)
+        {
+            return;
+        }
+        let kept = old.cache.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        self.cache.lock().unwrap_or_else(|e| e.into_inner()).extend(kept);
+    }
+
     /// How many clients have been built.
     pub fn len(&self) -> usize {
         self.cache.lock().unwrap_or_else(|e| e.into_inner()).len()

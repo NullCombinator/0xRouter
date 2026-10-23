@@ -34,6 +34,7 @@ pub mod routing;
 pub mod signin;
 pub mod state;
 pub mod status;
+pub mod tasks;
 pub mod tests;
 pub mod timing;
 pub mod tokens;

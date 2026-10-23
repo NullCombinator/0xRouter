@@ -118,6 +118,8 @@ pub struct Engine {
     pub cooldowns: Cooldowns,
     /// Requests in flight, for `live.snapshot` (spec 013). In memory only.
     pub live: crate::live::Live,
+    /// Background tasks the dashboard starts (spec 014). In memory only.
+    pub tasks: crate::tasks::Tasks,
     /// The proxies that are paused, and why (spec 013, research R8). Kept across reloads.
     pub proxy_board: ProxyBoard,
     /// Video jobs by their `vj_` id.
@@ -382,6 +384,7 @@ impl Engine {
             router,
             cooldowns: Cooldowns::default(),
             live: Default::default(),
+            tasks: Default::default(),
             proxy_board,
             jobs: crate::jobs::JobMap::default(),
             tokens,
@@ -487,6 +490,10 @@ impl Engine {
             self.live_models.clone(),
             generation,
         );
+        // The client cache outlives a reload that changes nothing a client is built from, so a
+        // request after a dashboard change does not build a client (rustls roots) and open a new
+        // connection on an async worker.
+        state.clients.adopt_from(&old.clients);
         self.swap_redactor(self.build_redactor(&state.accounts, state.clients.proxies(), std::iter::empty()));
         self.proxy_board.reconcile(&crate::connection::fingerprints(&state));
         // An account that was added, enabled again or given a new priority starts its deficit at 0

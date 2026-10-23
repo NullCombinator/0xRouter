@@ -16,6 +16,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use nullrouter_engine::clock;
 use serde_json::Value;
 
+// `10 min`, `1 h`, `90 s`: the server's helper, shared with the dashboard's operations.
+pub use nullrouter_server::ops::quota::every_text as every;
+
 const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -76,17 +79,6 @@ fn ago(t: SystemTime, now: SystemTime) -> String {
         60..7200 => format!("{} min ago", s / 60),
         7200..172_800 => format!("{} h ago", s / 3600),
         _ => format!("{} d ago", s / 86_400),
-    }
-}
-
-/// `10 min`, `1 h`, `90 s`.
-pub fn every(secs: u64) -> String {
-    if secs != 0 && secs.is_multiple_of(3600) {
-        format!("{} h", secs / 3600)
-    } else if secs != 0 && secs.is_multiple_of(60) {
-        format!("{} min", secs / 60)
-    } else {
-        format!("{secs} s")
     }
 }
 

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use nullrouter_registry::OperatorHome;
+use nullrouter_server::ops::targets::Kind;
 use nullrouter_server::views;
 use serde_json::{Value, json};
 
@@ -36,7 +37,11 @@ pub(crate) fn print_tree(entry: &Value) {
     }
 }
 
-pub(crate) fn run(home: Option<PathBuf>, name: Option<&str>, as_json: bool) -> Result<ExitCode, ExitCode> {
+pub(crate) fn run(home: Option<PathBuf>, args: super::unified::Args, as_json: bool) -> Result<ExitCode, ExitCode> {
+    let name = match args.command {
+        Some(cmd) => return super::unified::change(home, Kind::Combo, cmd, as_json),
+        None => args.name.as_deref(),
+    };
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
     let view = super::read(&home, views::combos::NEEDS, &json!({"name": name}), views::combos::build)?;
     let out = &view.json;

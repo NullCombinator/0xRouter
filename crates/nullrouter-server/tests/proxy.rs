@@ -103,19 +103,23 @@ async fn account_beats_provider_beats_all_and_none_stops_the_search() {
     apply(&s, &both, Some("a"), "[provider.mockco.connection]\nproxy = \"b\"\n").await;
     let (_, rec) = run(&s).await;
     assert_eq!(proxy_of(&rec).as_deref(), Some("a"));
-    assert_eq!((a.carried(), b.carried()), (2, 1));
+    // A reload that leaves the proxy definitions alone keeps the built clients, so this request may
+    // reuse the pooled connection through a: a carries it, and nothing else does.
+    assert_eq!((a.carried(), b.carried(), direct(&s)), (1, 1, 0));
 
     // `none` at the account stops the search: direct although the provider names one.
     apply(&s, &both, Some("none"), "[provider.mockco.connection]\nproxy = \"b\"\n").await;
     let (status, rec) = run(&s).await;
     assert_eq!((status, proxy_of(&rec)), (200, None));
-    assert_eq!((a.carried(), b.carried(), direct(&s)), (2, 1, 1));
+    assert_eq!((a.carried(), b.carried(), direct(&s)), (1, 1, 1));
 
     // `none` at the provider stops all.
     apply(&s, &both, None, "[connection]\nproxy = \"a\"\n[provider.mockco.connection]\nproxy = \"none\"\n").await;
     let (_, rec) = run(&s).await;
     assert_eq!(proxy_of(&rec), None);
-    assert_eq!((a.carried(), direct(&s)), (2, 2));
+    // Direct again, possibly on the pooled direct connection: no proxy carried it.
+    assert_eq!((a.carried(), b.carried()), (1, 1));
+    assert!(direct(&s) >= 1);
 }
 
 #[tokio::test]
@@ -240,5 +244,8 @@ async fn the_final_503_names_the_paused_proxy() {
     assert_eq!(r.status().as_u16(), 503);
     let body = r.text().await.unwrap();
     assert!(body.contains("proxy a paused"), "the client is told why: {body}");
-    assert!(!body.contains(PASSWORD) && !body.contains(&a.addr().to_string()), "and nothing of the proxy's address or login: {body}");
+    assert!(
+        !body.contains(PASSWORD) && !body.contains(&a.addr().to_string()),
+        "and nothing of the proxy's address or login: {body}"
+    );
 }

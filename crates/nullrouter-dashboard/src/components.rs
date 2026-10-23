@@ -7,6 +7,7 @@
 //! test maps each class to its component by the part before `__` or `--`.
 
 use maud::{Markup, html};
+use nullrouter_engine::tasks::TaskInput;
 
 macro_rules! icons {
     ($($name:literal),* $(,)?) => {
@@ -58,6 +59,7 @@ icons!(
     "movie",
     "notifications",
     "open_in_new",
+    "play_arrow",
     "psychology",
     "record_voice_over",
     "remove",
@@ -173,8 +175,17 @@ impl<'a> Head<'a> {
 
 /// `Card.js` at `padding = "md"`, with an optional header.
 pub fn card(head: Option<Head<'_>>, body: Markup) -> Markup {
+    card_as("card", head, body)
+}
+
+/// A card's head over a body with no card around it: the body brings its own frame.
+pub fn bare_card(head: Head<'_>, body: Markup) -> Markup {
+    card_as("card card--bare", Some(head), body)
+}
+
+fn card_as(class: &str, head: Option<Head<'_>>, body: Markup) -> Markup {
     html! {
-        section class="card" {
+        section class=(class) {
             @if let Some(h) = head {
                 div class="card__head" {
                     span class="card__tile" { (icon(h.icon)) }
@@ -200,6 +211,17 @@ pub fn section_bar(title: &str, right: Markup) -> Markup {
     html! { div class="section-bar" { h2 class="section-bar__title" { (title) } div class="section-bar__controls" { (right) } } }
 }
 
+/// A section bar with a muted note before its controls (the mockups' "Agents" bar): where a group
+/// of disabled controls shares one hint, the hint is the note.
+pub fn section_bar_noted(title: &str, note: Markup, right: Markup) -> Markup {
+    html! {
+        div class="section-bar" {
+            h2 class="section-bar__title" { (title) }
+            div class="section-bar__controls" { span class="section-bar__note" { (note) } (right) }
+        }
+    }
+}
+
 /// A label and a value on one line.
 pub fn kv(label: &str, value: Markup) -> Markup {
     html! { div class="kv" { span class="kv__label" { (label) } span class="kv__value" { (value) } } }
@@ -220,6 +242,13 @@ pub fn disabled(label: &str, icon_name: Option<&str>, hint: &str) -> Markup {
             span class="hint" { (prose(hint)) }
         }
     }
+}
+
+/// A disabled button alone, for a group whose hint is its section bar's note
+/// ([`section_bar_noted`]); `primary` draws it in the brand fill, as the mockups' first button.
+pub fn disabled_button(label: &str, icon_name: Option<&str>, primary: bool) -> Markup {
+    let class = if primary { "button button--primary" } else { "button button--secondary" };
+    html! { button class=(class) type="button" disabled { @if let Some(i) = icon_name { (icon(i)) } (label) } }
 }
 
 /// A switch drawn off and disabled, with its hint (plugin enable, disable, hide).
@@ -248,15 +277,27 @@ pub fn modal(title: &str, close: &str, body: Markup) -> Markup {
     }
 }
 
-/// The right side panel (Client adapters, Provider plugins), always rendered; its chevron is a
-/// `<details>` summary, so it opens and closes without a script.
-pub fn side_panel(icon_name: &str, title: &str, sections: Markup) -> Markup {
+/// The hint on a panel's search, which isn't built yet.
+pub const SEARCH_HINT: &str = "Not built yet: the search comes with the functional dashboard.";
+
+/// The right side panel (Client adapters, Provider plugins), always rendered and closed at first,
+/// as the mockups draw it: a chevron tab at the page's edge. The tab is a `<details>` summary, so
+/// it opens and closes without a script. Under the title: a search (disabled) and the gear that
+/// opens the [`settings`] window `gear`.
+pub fn side_panel(icon_name: &str, title: &str, search: &str, gear: &str, sections: Markup) -> Markup {
     html! {
-        details class="side-panel" open {
+        details class="side-panel" {
             summary class="side-panel__head" {
                 (icon(icon_name)) b class="side-panel__title" { (title) }
                 span class="side-panel__chevron side-panel__chevron--open" { (icon("chevron_right")) }
                 span class="side-panel__chevron side-panel__chevron--closed" { (icon("chevron_left")) }
+            }
+            div class="side-panel__tools" {
+                label class="side-panel__search" title=(SEARCH_HINT) {
+                    (icon("search"))
+                    input class="side-panel__input" type="search" placeholder=(search) aria-label=(search) disabled;
+                }
+                label class="side-panel__gear" for=(gear) title="Settings" aria-label="Settings" { (icon("settings")) }
             }
             div class="side-panel__body" { (sections) }
         }
@@ -266,6 +307,60 @@ pub fn side_panel(icon_name: &str, title: &str, sections: Markup) -> Markup {
 /// A titled group inside a side panel.
 pub fn side_section(heading: &str, body: Markup) -> Markup {
     html! { div class="side-section" { h5 class="side-section__heading" { (heading) } (body) } }
+}
+
+/// One row of a side panel: a logo tile, the name, a short line under it, and a status badge.
+pub fn side_row(tile: Markup, title: &str, line: &str, state: Markup) -> Markup {
+    html! {
+        div class="plugin-row" {
+            span class="plugin-row__logo" { (tile) }
+            div class="plugin-row__text" {
+                b class="plugin-row__id" { (name(title)) }
+                span class="plugin-row__source" { (line) }
+            }
+            (state)
+        }
+    }
+}
+
+/// A settings window opened by a panel's gear, over the page and the open panel: a hidden
+/// checkbox `id` that the gear, the backdrop, the close button and Cancel are labels for (the
+/// mockups' CSS toggle). There is no script; each form in the body saves on its own, so the foot
+/// only closes the window.
+pub fn settings(id: &str, title: &str, body: Markup) -> Markup {
+    html! {
+        input class="modal-toggle" type="checkbox" id=(id) aria-label=(title);
+        div class="modal modal--toggled" role="dialog" aria-modal="true" aria-label=(title) {
+            label class="modal__backdrop" for=(id) {}
+            div class="modal__box" {
+                div class="modal__head" {
+                    h2 class="modal__title" { (title) }
+                    label class="modal__close" for=(id) aria-label="Close" { (icon("close")) }
+                }
+                div class="modal__body" { (body) }
+                div class="modal__foot" {
+                    label class="button button--secondary" for=(id) { "Close" }
+                }
+            }
+        }
+    }
+}
+
+/// [`modal`] wide, with a slim head that holds only a muted line (`what`) and the close link;
+/// the body carries its own title.
+pub fn wide_modal(title: &str, what: &str, close: &str, body: Markup) -> Markup {
+    html! {
+        div class="modal" role="dialog" aria-modal="true" aria-label=(title) {
+            a class="modal__backdrop" href=(close) aria-label="Close" {}
+            div class="modal__box modal__box--wide" {
+                div class="modal__head modal__head--slim" {
+                    span class="modal__what" { (what) }
+                    a class="modal__close" href=(close) aria-label="Close" { (icon("close")) }
+                }
+                div class="modal__body modal__body--wide" { (body) }
+            }
+        }
+    }
 }
 
 /// What a slot says (research R12).
@@ -303,6 +398,186 @@ pub fn notice(level: &str, text: &str) -> Markup {
     html! { div class=(class) role="status" { (icon(icon_name)) pre class="notice__text" { (text) } } }
 }
 
+/// The answer to a form, shown once at the top of the page it returns to (contracts/dashboard-forms.md):
+/// a change that was done, or one that was refused. Named apart from [`notice`], which takes a level.
+pub fn flash_notice(text: &str, refused: bool) -> Markup {
+    let (class, icon_name) = if refused { ("notice notice--error", "error") } else { ("notice notice--note", "check") };
+    html! { div class=(class) role="status" { (icon(icon_name)) p class="notice__text" { (text) } } }
+}
+
+/// A POST form to `action` (contracts/dashboard-forms.md "Every form"). The form token and the page
+/// to return to travel as hidden fields; the body holds the fields and the submit.
+pub fn form(action: &str, back: &str, token: &str, body: Markup) -> Markup {
+    html! {
+        form class="form" method="post" action=(action) {
+            input type="hidden" name="_t" value=(token);
+            input type="hidden" name="_back" value=(back);
+            (body)
+        }
+    }
+}
+
+fn input_class(error: Option<&str>) -> &'static str {
+    if error.is_some() { "input input--error" } else { "input" }
+}
+
+fn field_error(error: Option<&str>) -> Markup {
+    html! { @if let Some(e) = error { span class="field__error" { (icon("error")) (e) } } }
+}
+
+/// A text field under its label, with the value it had (none for a new field) and its error beside it.
+pub fn field(name: &str, label: &str, value: Option<&str>, error: Option<&str>) -> Markup {
+    html! {
+        label class="field" {
+            span class="field__label" { (label) }
+            input class=(input_class(error)) type="text" name=(name) value=[value];
+            (field_error(error))
+        }
+    }
+}
+
+/// A multi-line text field under its label, with the value it had and its error beside it (members,
+/// one per line).
+pub fn textarea(name: &str, label: &str, value: Option<&str>, error: Option<&str>) -> Markup {
+    html! {
+        label class="field" {
+            span class="field__label" { (label) }
+            textarea class=(input_class(error)) name=(name) rows="4" { (value.unwrap_or_default()) }
+            (field_error(error))
+        }
+    }
+}
+
+/// A drop-down under its label; `selected` is the option's value that is chosen.
+pub fn select(name: &str, label: &str, options: &[(&str, &str)], selected: Option<&str>) -> Markup {
+    html! {
+        label class="field" {
+            span class="field__label" { (label) }
+            select class="input" name=(name) {
+                @for (value, text) in options {
+                    option value=(value) selected[selected == Some(*value)] { (text) }
+                }
+            }
+        }
+    }
+}
+
+/// A live on/off switch: a checkbox drawn as a track and a knob, submitted under `name` when on.
+pub fn switch(name: &str, label: &str, on: bool) -> Markup {
+    html! {
+        label class="switch-field" {
+            input class="switch-field__input" type="checkbox" name=(name) value="on" checked[on];
+            span class="switch-field__track" { span class="switch-field__knob" {} }
+            span class="switch-field__label" { (label) }
+        }
+    }
+}
+
+/// A password field for a write-only value (`secret`, `password`, `code`): it never has a value
+/// attribute, so nothing the server holds is echoed back into the page.
+pub fn secret_field(name: &str, label: &str, error: Option<&str>) -> Markup {
+    html! {
+        label class="field" {
+            span class="field__label" { (label) }
+            input class=(input_class(error)) type="password" name=(name) autocomplete="off";
+            (field_error(error))
+        }
+    }
+}
+
+/// A value shown once, selectable, with the warning that it won't be shown again (a new key, a
+/// proxy's one-time code).
+pub fn once_box(label: &str, value: &str) -> Markup {
+    html! {
+        div class="once" {
+            span class="once__label" { (label) }
+            pre class="once__value" { (value) }
+            p class="once__warning" { (icon("warning")) "This is the only time it is shown." }
+        }
+    }
+}
+
+/// A confirm window (research R9): the modal names what is lost, and holds the real form with its
+/// Confirm button beside a Cancel link that closes the window.
+pub fn confirm_window(title: &str, loss_text: &str, cancel_href: &str, form: Markup) -> Markup {
+    let body = html! {
+        div class="confirm" {
+            (notice("warning", loss_text))
+            div class="confirm__actions" {
+                (link_button(cancel_href, "Cancel", None, false))
+                (form)
+            }
+        }
+    };
+    modal(title, cancel_href, body)
+}
+
+/// Where a long task stands (research R4). A running task's page refreshes every 3 s, with no script.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskState<'a> {
+    Running,
+    Done(&'a str),
+    Failed(&'a str),
+}
+
+/// A task's panel: its subject, its state, its progress lines, and its result once it has one.
+pub fn task_panel(subject: &str, started: &str, progress: &[String], result: TaskState<'_>) -> Markup {
+    let (state, outcome, refresh) = match result {
+        TaskState::Running => (badge(Tone::Info, "in progress"), None, true),
+        TaskState::Done(text) => (badge(Tone::Success, "done"), Some(flash_notice(text, false)), false),
+        TaskState::Failed(text) => (badge(Tone::Error, "failed"), Some(flash_notice(text, true)), false),
+    };
+    html! {
+        div class="task" {
+            @if refresh { meta http-equiv="refresh" content="3"; }
+            div class="task__head" {
+                span class="task__subject" { (subject) }
+                (state)
+            }
+            p class="task__started" { "started at " (started) }
+            @if !progress.is_empty() {
+                ul class="task__progress" { @for line in progress { li { (progress_line(line)) } } }
+            }
+            @if let Some(o) = outcome { (o) }
+        }
+    }
+}
+
+/// A progress line; a link the provider sent (the sign-in's authorize address) is copyable text in
+/// a `code` element, never an `href`: the dashboard refers only to its own addresses.
+fn progress_line(line: &str) -> Markup {
+    let trimmed = line.trim();
+    html! {
+        @if trimmed.starts_with("https://") { code class="code" { (trimmed) } } @else { (line) }
+    }
+}
+
+/// What a sign-in task waits for, under its panel: a form that posts the pasted code (write-only,
+/// a password field), or the device code and its link as copyable text. `back` is where the form's
+/// redirect returns, and `token` is the form token.
+pub fn task_input(task: &str, input: &TaskInput, back: &str, token: &str) -> Markup {
+    match input {
+        TaskInput::Paste => form(
+            "/do/accounts/signin-paste",
+            back,
+            token,
+            html! {
+                input type="hidden" name="task" value=(task);
+                (secret_field("code", "Pasted code or address", None))
+                button class="button button--primary" type="submit" { "Send code" }
+            },
+        ),
+        TaskInput::Device { code, link } => html! {
+            div class="task__input" {
+                span class="kv__label" { "Approve this code" }
+                code class="code" { (code) }
+                span class="kv__label" { "on this page" }
+                code class="code" { (link) }
+            }
+        },
+    }
+}
+
 /// A name shown in full, or cut with an ellipsis and the full name in its `title`.
 pub fn name(text: &str) -> Markup {
     html! { span class="truncate" title=(text) { (text) } }
@@ -336,18 +611,23 @@ pub fn logo(src: Option<&str>, alias: &str) -> Markup {
     }
 }
 
-/// A bar of `percent` (0 to 100) left, coloured by how much is left, as 9router's quota rows
-/// are: green above 50 %, yellow above 20 %, red below. The CSP allows no inline style, so the
-/// width is one of 21 classes in steps of 5 %; the exact figure is the text beside the bar.
+/// How a share left is coloured, as 9router's quota rows colour it (`getColorClasses`): `good`
+/// above 70 %, `low` from 30 %, `out` below.
+pub fn left_tone(percent: f64) -> &'static str {
+    if percent > 70.0 {
+        "good"
+    } else if percent >= 30.0 {
+        "low"
+    } else {
+        "out"
+    }
+}
+
+/// A bar of `percent` (0 to 100) left, coloured by [`left_tone`]. The CSP allows no inline style,
+/// so the width is one of 21 classes in steps of 5 %; the exact figure is the text beside the bar.
 pub fn meter(percent: f64) -> Markup {
     let p = if percent.is_finite() { percent.clamp(0.0, 100.0) } else { 0.0 };
-    let tone = if p > 50.0 {
-        "meter--good"
-    } else if p > 20.0 {
-        "meter--low"
-    } else {
-        "meter--out"
-    };
+    let tone = format!("meter--{}", left_tone(p));
     let step = ((p / 5.0).round() as u32) * 5;
     let class = format!("meter {tone} meter--w{step}");
     html! { span class=(class) role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow=(format!("{p:.0}")) { span class="meter__fill" {} } }
@@ -461,5 +741,66 @@ mod tests {
     fn a_disabled_control_has_nothing_to_submit() {
         let m = disabled("Add Agent", Some("add"), "In the CLI: `nullrouter keys issue <name>`").into_string();
         assert!(m.contains("disabled") && !m.contains("<form") && !m.contains("type=\"submit\""), "{m}");
+    }
+
+    #[test]
+    fn a_secret_field_is_a_password_that_never_has_a_value() {
+        for error in [None, Some("refused")] {
+            let m = secret_field("secret", "API key", error).into_string();
+            assert!(m.contains(r#"type="password""#) && m.contains(r#"autocomplete="off""#), "{m}");
+            assert!(!m.contains("value"), "a write-only field has no value attribute: {m}");
+        }
+    }
+
+    #[test]
+    fn a_form_carries_its_token_and_the_page_it_returns_to() {
+        let m = form("/do/keys/issue", "/endpoint", "tok123", maud::html! { p { "x" } }).into_string();
+        assert!(m.contains(r#"method="post""#) && m.contains(r#"action="/do/keys/issue""#), "{m}");
+        assert!(m.contains(r#"<input type="hidden" name="_t" value="tok123">"#), "{m}");
+        assert!(m.contains(r#"<input type="hidden" name="_back" value="/endpoint">"#), "{m}");
+    }
+
+    #[test]
+    fn a_running_task_refreshes_and_a_finished_one_does_not() {
+        let progress = vec!["step one".to_owned()];
+        let running = task_panel("Test anthropic/work", "14:02", &progress, TaskState::Running).into_string();
+        assert!(running.contains(r#"<meta http-equiv="refresh" content="3">"#), "{running}");
+        assert!(running.contains("started at 14:02"), "{running}");
+        for done in [TaskState::Done("ok"), TaskState::Failed("boom")] {
+            let m = task_panel("Test", "14:02", &progress, done).into_string();
+            assert!(!m.contains("http-equiv"), "{m}");
+        }
+    }
+
+    #[test]
+    fn a_once_value_comes_with_the_only_time_warning() {
+        let m = once_box("Key", "nr_abc123").into_string();
+        assert!(m.contains("This is the only time it is shown."), "{m}");
+        assert!(m.contains("nr_abc123"), "{m}");
+    }
+
+    #[test]
+    fn a_paste_task_takes_a_write_only_code_for_its_task() {
+        let m = task_input("tk_abcdefghijklmnop", &TaskInput::Paste, "/providers", "tok").into_string();
+        assert!(m.contains(r#"action="/do/accounts/signin-paste""#), "{m}");
+        assert!(m.contains(r#"name="task" value="tk_abcdefghijklmnop""#), "{m}");
+        assert!(m.contains(r#"type="password" name="code""#) && !m.contains("value=\"\""), "{m}");
+    }
+
+    #[test]
+    fn a_device_task_shows_its_code_and_link_as_text_not_as_a_link() {
+        let input = TaskInput::Device { code: "ABCD-1234".into(), link: "https://auth.example/device".into() };
+        let m = task_input("tk_abcdefghijklmnop", &input, "/providers", "tok").into_string();
+        assert!(m.contains("<code class=\"code\">ABCD-1234</code>"), "{m}");
+        assert!(m.contains("<code class=\"code\">https://auth.example/device</code>"), "{m}");
+        assert!(!m.contains("href"), "no link a browser follows: {m}");
+    }
+
+    #[test]
+    fn a_progress_link_is_copyable_text() {
+        let progress = vec!["  https://auth.example/authorize?x=1  ".to_owned(), "waiting".to_owned()];
+        let m = task_panel("Sign in", "14:02", &progress, TaskState::Running).into_string();
+        assert!(m.contains("<code class=\"code\">https://auth.example/authorize?x=1</code>"), "{m}");
+        assert!(m.contains("<li>waiting</li>"), "{m}");
     }
 }

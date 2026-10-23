@@ -35,7 +35,12 @@ fn render(query: &str, accounts: Value, quota_view: Value, routing: Value) -> St
         ],
     };
     let (tz, logos) = (TimeZone::UTC, Index::default());
-    let ctx = Ctx { req: &req, page: &page, tz: &tz, logos: &logos };
+    // The quota page plans nothing; the engine is the context's, over an empty home.
+    let dir = nullrouter_engine::testkit::homes::empty();
+    let (engine, _) =
+        nullrouter_engine::state::Engine::open(nullrouter_registry::OperatorHome::new(dir.path())).unwrap();
+    let engine = std::sync::Arc::new(engine);
+    let ctx = Ctx { req: &req, page: &page, tz: &tz, logos: &logos, engine: &engine };
     match quota::body(&ctx) {
         Ok(body) => body.content.into_string(),
         Err(e) => panic!("the page failed: {}", e.message),
@@ -182,17 +187,18 @@ fn expiring_first_sorts_windows_by_reset() {
             routing(vec![route("anthropic", "main", "polled", json!({}))]),
         )
     };
-    let at = |html: &str, name: &str| {
-        html.find(&format!(">{name}<")).unwrap_or_else(|| panic!("{name} is not on the page"))
-    };
+    let at =
+        |html: &str, name: &str| html.find(&format!(">{name}<")).unwrap_or_else(|| panic!("{name} is not on the page"));
     let plain = page("");
     assert!(at(&plain, "weekly") < at(&plain, "monthly") && at(&plain, "monthly") < at(&plain, "5-hour"));
     let sorted = page("order=expiring");
     assert!(at(&sorted, "5-hour") < at(&sorted, "weekly") && at(&sorted, "weekly") < at(&sorted, "monthly"));
-    assert!(sorted.contains("checked"), "the toggle shows it is on");
+    assert!(sorted.contains("quota-filters__pill--on"), "the toggle shows it is on");
+    assert!(!plain.contains("quota-filters__pill--on"), "and off without it");
 }
 
-/// Narrowing keeps its place in the form: the chosen provider and account are selected.
+/// Narrowing keeps its place in the filters: the chosen provider and account name their pills and
+/// are marked in their menus, every provider is offered, and each link keeps the other choices.
 #[test]
 fn the_filters_show_what_is_chosen() {
     let html = render(
@@ -201,10 +207,51 @@ fn the_filters_show_what_is_chosen() {
         json!([unreported("anthropic", "main")]),
         routing(vec![]),
     );
-    assert!(html.contains("<option value=\"anthropic\" selected>"), "{html}");
-    assert!(html.contains("<option value=\"main\" selected>"), "{html}");
-    assert!(html.contains("<option value=\"xai\">"), "every provider is offered: {html}");
-    assert!(html.contains("name=\"order\"") && html.contains("Expiring first"), "{html}");
+    assert!(html.contains("<span class=\"quota-filters__label\">anthropic</span>"), "{html}");
+    assert!(html.contains("<span class=\"quota-filters__label\">main</span>"), "{html}");
+    assert!(html.contains("pick__item--current\" href=\"/quota?provider=anthropic\">anthropic<"), "{html}");
+    assert!(html.contains("href=\"/quota?provider=xai\">xai<"), "every provider is offered: {html}");
+    assert!(html.contains("href=\"/quota?provider=anthropic&amp;account=main&amp;order=expiring\""), "{html}");
+    assert!(html.contains("Expiring first") && !html.contains("<form class=\"quota-filters"), "{html}");
+}
+
+/// The first `<form>` posting to `action`, through its `</form>`.
+fn form_to<'a>(html: &'a str, action: &str) -> &'a str {
+    let at = html.find(&format!("action=\"{action}\"")).unwrap_or_else(|| panic!("no form posts to {action}"));
+    let start = html[..at].rfind("<form").expect("the action belongs to a form");
+    let end = at + html[at..].find("</form>").expect("the form closes");
+    &html[start..end]
+}
+
+/// Each account's card has its interval form, which names the account and returns to the page, and
+/// Poll now only where the account reports quota; the alert form posts to `/do/quota/ack`.
+#[tokio::test(flavor = "multi_thread")]
+async fn each_card_has_its_interval_form_and_poll_now_where_quota_is_reported() {
+    let d = Dash::dashboard().await;
+    let rows = d.view(ViewName::Quota, json!({"provider": null, "name": null})).await;
+    let html = d.ok("/quota").await;
+    let all = cards(&html);
+    assert!(!rows.as_array().unwrap().is_empty(), "the fixture has accounts");
+    for q in rows.as_array().unwrap() {
+        let (p, n) = (q["provider"].as_str().unwrap(), q["name"].as_str().unwrap());
+        let card = all
+            .iter()
+            .find(|c| text_of(c).contains(&format!("{p} {n} priority")))
+            .unwrap_or_else(|| panic!("no card for {p}/{n}"));
+        let form = form_to(card, "/do/quota/interval");
+        assert!(form.contains(&format!("name=\"provider\" value=\"{p}\"")), "{p}/{n}: {form}");
+        assert!(form.contains(&format!("name=\"name\" value=\"{n}\"")), "{p}/{n}: {form}");
+        assert!(form.contains("name=\"every\"") && form.contains("name=\"_back\" value=\"/quota\""), "{form}");
+        assert!(form.contains("name=\"_t\" value=\""), "{form}");
+        assert_eq!(
+            card.contains("/do/quota/poll"),
+            q["reported"] == true,
+            "{p}/{n}: Poll now only where quota is reported"
+        );
+    }
+    let ack = form_to(&html, "/do/quota/ack");
+    assert!(ack.contains("name=\"id\"") && ack.contains("name=\"_t\" value=\""), "{ack}");
+    assert!(!html.contains("<script"), "no script");
 }
 
 /// A home with no accounts says how to add one.

@@ -7,7 +7,8 @@ use std::process::ExitCode;
 use clap::Subcommand;
 use nullrouter_engine::files::DashboardToken;
 use nullrouter_registry::OperatorHome;
-use nullrouter_server::views;
+use nullrouter_server::views::change_log::{self, Outcome};
+use nullrouter_server::views::{self, usage::local_text};
 use serde_json::{Value, json};
 
 #[derive(Subcommand)]
@@ -17,6 +18,12 @@ pub(crate) enum Command {
     Token,
     /// Whether the dashboard is on, where it listens, and when its token was issued.
     Status,
+    /// The changes made from the dashboard, newest first.
+    Log {
+        /// How many changes to show.
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+    },
 }
 
 fn fail(e: impl std::fmt::Display) -> ExitCode {
@@ -33,7 +40,36 @@ pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<
     match cmd {
         Command::Token => token(&home, as_json),
         Command::Status => status(&home, as_json),
+        Command::Log { limit } => log(&home, limit, as_json),
     }
+}
+
+/// The snake_case word a change's result prints as.
+fn result_word(result: Outcome) -> &'static str {
+    match result {
+        Outcome::Done => "done",
+        Outcome::SavedNotApplied => "saved_not_applied",
+        Outcome::Started => "started",
+        Outcome::Refused => "refused",
+    }
+}
+
+/// The change log, newest first, from the file the dashboard writes; no server is needed. Text is
+/// one line per change; `--json` is the entries as an array.
+fn log(home: &OperatorHome, limit: usize, as_json: bool) -> Result<ExitCode, ExitCode> {
+    let entries = change_log::read(home, limit).map_err(fail)?;
+    if as_json {
+        let v = serde_json::to_value(&entries).map_err(fail)?;
+        println!("{v:#}");
+    } else if entries.is_empty() {
+        println!("no changes made from the dashboard yet");
+    } else {
+        for e in &entries {
+            let text = if e.text.is_empty() { String::new() } else { format!(": {}", e.text) };
+            println!("{}  {}  {}  {}{text}", local_text(&e.at), e.op, e.subject, result_word(e.result));
+        }
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Writes the new digest, tells a running server, then prints the token: the only time it exists.

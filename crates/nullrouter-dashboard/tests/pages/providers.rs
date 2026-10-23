@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use nullrouter_dashboard::page::ViewName;
-use nullrouter_dashboard::pages::providers::{ADD_HINT, INSTALL_HINT, SWITCH_HINT, TEST_HINT};
+use nullrouter_dashboard::pages::providers::TEST_HINT;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
@@ -23,13 +23,15 @@ fn in_kind(m: &Value, kind: &str) -> bool {
 fn filter(html: &str) -> Vec<(String, usize, String)> {
     let start = html.find("<nav class=\"kind-filter\"").expect("the window has a kind filter");
     let nav = &html[start..start + html[start..].find("</nav>").unwrap()];
-    nav.split("<a class=\"kind-filter__item").skip(1).map(|a| {
-        let href = a.split("href=\"").nth(1).unwrap().split('"').next().unwrap().to_owned();
-        let text = text_of(a.split_once('>').unwrap().1);
-        let (label, count) = text.rsplit_once(' ').expect("a label and a count");
-        (label.to_owned(), count.parse().expect("the count is a number"), href)
-    })
-    .collect()
+    nav.split("<a class=\"kind-filter__item")
+        .skip(1)
+        .map(|a| {
+            let href = a.split("href=\"").nth(1).unwrap().split('"').next().unwrap().to_owned();
+            let text = text_of(a.split_once('>').unwrap().1);
+            let (label, count) = text.rsplit_once(' ').expect("a label and a count");
+            (label.to_owned(), count.parse().expect("the count is a number"), href)
+        })
+        .collect()
 }
 
 /// The model ids a window lists.
@@ -70,7 +72,8 @@ async fn the_kind_filter_lists_exactly_the_declared_kinds_with_counts() {
         assert_eq!(listed(&html).len(), models.len(), "{id}: All lists every model");
 
         for (label, count, href) in &links[1..] {
-            let ids: Vec<&str> = models.iter().filter(|m| in_kind(m, label)).map(|m| m["model"].as_str().unwrap()).collect();
+            let ids: Vec<&str> =
+                models.iter().filter(|m| in_kind(m, label)).map(|m| m["model"].as_str().unwrap()).collect();
             assert_eq!(*count, ids.len(), "{id}: count of {label}");
             assert_eq!(href, &format!("/providers/{id}?kind={label}"), "{id}: link of {label}");
 
@@ -99,27 +102,81 @@ async fn the_kind_link_keeps_the_query_and_an_unknown_kind_lists_nothing() {
     }
 }
 
-/// R15: each disabled control shows its hint, and none can submit anything.
+/// R15 after spec 014: the one control not built (Test All) is disabled with its hint; every other
+/// control is live. The search is the only GET form, and every other form posts with the token.
 #[tokio::test(flavor = "multi_thread")]
-async fn every_disabled_control_shows_its_hint_and_has_no_form() {
+async fn only_test_all_is_disabled_and_every_other_form_posts_with_the_token() {
     let d = Dash::dashboard().await;
     let html = d.ok("/providers").await;
     let text = text_of(&html);
-    for label in ["Add Anthropic Compatible", "Add OpenAI Compatible", "Test All", "Install"] {
+    for label in ["Add Anthropic Compatible", "Add OpenAI Compatible", "Test All", "Install", "Enable", "Uninstall"] {
         assert!(text.contains(label), "{label}");
     }
-    for hint in [ADD_HINT, TEST_HINT, SWITCH_HINT, INSTALL_HINT] {
-        let plain = hint.replace('`', "");
-        assert!(text.contains(&plain), "{plain:?} is on the page");
-    }
-    // Every button but the search's is disabled; the search is the page's only form, and a GET.
+    assert!(text.contains(&TEST_HINT.replace('`', "")), "the hint of Test All is on the page");
+    // Every button is a submit of a form, but Test All's, which is disabled.
     for button in html.split("<button").skip(1) {
         let tag = button.split('>').next().unwrap();
         assert!(tag.contains("disabled") || tag.contains("type=\"submit\""), "{tag}");
     }
-    assert_eq!(html.matches("<form").count(), 1, "only the search is a form");
+    // The panel's search boxes are disabled inputs, not buttons; the plugin settings window only
+    // closes (its forms save themselves). Of the buttons, only Test All is disabled.
+    let disabled_buttons = html.split("<button").skip(1).filter(|b| b.split('>').next().unwrap().contains("disabled")).count();
+    assert_eq!(disabled_buttons, html.matches("Test All").count(), "only Test All is disabled");
     assert!(html.contains("<form class=\"provider-grid__search\" method=\"get\""));
-    assert!(html.matches("role=\"switch\"").count() > 0 && html.matches("aria-disabled=\"true\"").count() > 0);
+    for post in html.split("<form class=\"form\"").skip(1) {
+        let form = post.split("</form>").next().unwrap();
+        assert!(form.contains("name=\"_t\" value=\"") && form.contains("name=\"_back\""), "{form}");
+    }
+    for action in ["/do/plugins/install", "/do/providers/disable", "/do/providers/hide"] {
+        assert!(html.contains(&format!("action=\"{action}\"")), "{action}");
+    }
+    assert!(!html.contains("<script"), "no script");
+}
+
+/// Each loaded plugin row has the switches its state calls for, the installed community one has
+/// Uninstall, which opens a confirm window naming what it loses.
+#[tokio::test(flavor = "multi_thread")]
+async fn plugin_rows_switch_and_uninstall_goes_through_a_confirm_window() {
+    let d = Dash::dashboard().await;
+    let providers = d.view(ViewName::Providers, json!({"all": true})).await;
+    let first = &rows(&providers)[0];
+    assert!(first["enabled"].is_boolean() && first["hidden"].is_boolean(), "the rows say their switches");
+
+    let plugins = d.view(ViewName::Plugins, json!({"community": true})).await;
+    let installed =
+        rows(&plugins).iter().find(|r| r["set"] == "community" && r["status"] == "installed").expect("one installed");
+    let id = installed["id"].as_str().unwrap();
+    let html = d.ok("/providers").await;
+    assert!(html.contains(&format!("window=uninstall-plugin&amp;id={id}")), "a link to the confirm window");
+    assert!(!html.contains("/do/plugins/uninstall"), "uninstalling needs the window");
+
+    let window = d.ok(&format!("/providers?window=uninstall-plugin&id={id}")).await;
+    let loss = nullrouter_server::ops::describe_loss("plugins.uninstall", id).unwrap();
+    assert!(text_of(&window).contains(&loss), "{loss}");
+    let form = form_to(&window, "/do/plugins/uninstall");
+    assert!(form.contains(&format!("name=\"id\" value=\"{id}\"")), "{form}");
+    assert!(form.contains("name=\"_window\" value=\"uninstall-plugin\""), "{form}");
+    let none = d.ok("/providers?window=uninstall-plugin").await;
+    assert!(!none.contains("/do/plugins/uninstall"), "no id, no window");
+}
+
+/// Both Add windows post a compatible provider: id, name, base URL, models one per line, the style
+/// each stands for, and a way back to the same window when refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_add_compatible_windows_post_their_style() {
+    let d = Dash::dashboard().await;
+    for (window, style) in [("add-openai", "openai"), ("add-anthropic", "anthropic")] {
+        let html = d.ok(&format!("/providers?window={window}")).await;
+        let form = form_to(&html, "/do/providers/add-compatible");
+        assert!(form.contains(&format!("name=\"style\" value=\"{style}\"")), "{form}");
+        assert!(form.contains(&format!("name=\"_window\" value=\"{window}\"")), "{form}");
+        assert!(form.contains("name=\"_back\" value=\"/providers\""), "{form}");
+        for field in ["name=\"id\"", "name=\"name\"", "name=\"base_url\"", "<textarea class=\"input\" name=\"models\""]
+        {
+            assert!(form.contains(field), "{field}: {form}");
+        }
+        assert!(!html.contains("Open Settings"), "only a private-address refusal links to Settings");
+    }
 }
 
 /// US4: a provider with no accounts says so, on its card and in its window.
@@ -142,7 +199,7 @@ async fn a_provider_without_accounts_says_no_connections() {
     assert!(card.contains("No connections"), "{card}");
 
     let window = text_of(&d.ok(&format!("/providers/{id}")).await);
-    assert!(window.contains("Accounts No connections"), "{window}");
+    assert!(window.contains("Connections") && window.contains("No connections · "), "{window}");
 }
 
 /// A provider that has accounts shows the count and the states that aren't active.
@@ -166,6 +223,142 @@ async fn an_unknown_provider_is_a_404_with_the_clis_message() {
     assert!(text.contains("Providers"), "inside the frame");
 }
 
+/// The first `<form>` posting to `action`, through its `</form>`.
+fn form_to<'a>(html: &'a str, action: &str) -> &'a str {
+    let at = html.find(&format!("action=\"{action}\"")).unwrap_or_else(|| panic!("no form posts to {action}"));
+    let start = html[..at].rfind("<form").expect("the action belongs to a form");
+    let end = at + html[at..].find("</form>").expect("the form closes");
+    &html[start..end]
+}
+
+/// The first account of `provider` in the accounts view, by name.
+async fn first_account(d: &Dash, provider: &str) -> String {
+    let accounts = d.view(ViewName::Accounts, json!({"provider": provider})).await;
+    rows(&accounts)[0]["name"].as_str().unwrap().to_owned()
+}
+
+/// Add account is a form in the provider window: a name, a password field for the key that has no
+/// value attribute, and an order; it returns to the window.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_provider_window_adds_an_account_with_a_write_only_key() {
+    let d = Dash::dashboard().await;
+    let html = d.ok("/providers/anthropic").await;
+    let form = form_to(&html, "/do/accounts/add");
+    assert!(form.contains("name=\"provider\" value=\"anthropic\""), "{form}");
+    assert!(form.contains("name=\"_back\" value=\"/providers/anthropic\""), "a refusal stays here: {form}");
+    for field in ["name=\"name\"", "name=\"order\""] {
+        assert!(form.contains(field), "{field}: {form}");
+    }
+    let at = form.find("type=\"password\" name=\"secret\"").expect("the key is a password field");
+    let tag = &form[at..at + form[at..].find('>').unwrap()];
+    assert!(!tag.contains("value"), "a write-only field has no value attribute: {tag}");
+}
+
+/// Each account row has its priority form, the enable or disable form its state calls for, the two
+/// exclusive forms, and a Remove link that opens its confirm window.
+#[tokio::test(flavor = "multi_thread")]
+async fn account_rows_have_priority_enable_exclusive_and_remove() {
+    let d = Dash::dashboard().await;
+    let accounts = d.view(ViewName::Accounts, json!({"provider": "anthropic"})).await;
+    assert!(!rows(&accounts).is_empty(), "the fixture gives anthropic accounts");
+    let html = d.ok("/providers/anthropic").await;
+    for action in ["/do/accounts/priority", "/do/accounts/exclusive", "/do/accounts/enable", "/do/accounts/disable"] {
+        assert!(html.contains(&format!("action=\"{action}\"")), "{action} is on the window");
+    }
+    for a in rows(&accounts) {
+        let name = a["name"].as_str().unwrap();
+        assert!(html.contains(&format!("name=\"name\" value=\"{name}\"")), "{name}: its forms name it");
+        // The href is escaped, so its `&` reads `&amp;`.
+        let remove = format!("window=remove-account&amp;id=anthropic&amp;name={name}");
+        assert!(html.contains(&remove), "{name}: a Remove link\n{html}");
+    }
+}
+
+/// The remove window names what removing loses, posts the account, and returns to the same
+/// account's window when refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_remove_window_shows_the_loss_and_reopens_on_refusal() {
+    let d = Dash::dashboard().await;
+    let name = first_account(&d, "anthropic").await;
+    let html = d.ok(&format!("/providers?window=remove-account&id=anthropic&name={name}")).await;
+    let loss = nullrouter_server::ops::describe_loss("accounts.remove", &format!("anthropic/{name}")).unwrap();
+    assert!(text_of(&html).contains(&loss), "{loss}\n{}", text_of(&html));
+    let form = form_to(&html, "/do/accounts/remove");
+    assert!(form.contains("name=\"_window\" value=\"remove-account\""), "{form}");
+    // `_back` is an attribute value, so its `&` is written `&amp;`.
+    assert!(form.contains(&format!("name=\"_back\" value=\"/providers?id=anthropic&amp;name={name}\"")), "{form}");
+    assert!(html.contains("class=\"modal\""), "a window");
+
+    let nothing = d.ok("/providers?window=remove-account&id=anthropic").await;
+    assert!(!nothing.contains("/do/accounts/remove"), "no account named, no window");
+}
+
+/// The sign-in window carries the terms warning, and its Sign in form posts the answer to it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_sign_in_window_shows_the_terms_warning_and_posts_accept_terms() {
+    let d = Dash::dashboard().await;
+    let html = d.ok("/providers?window=signin&id=anthropic").await;
+    assert!(html.contains("terms limit the use of Claude Pro/Max subscriptions"), "{html}");
+    let form = form_to(&html, "/do/accounts/signin");
+    assert!(form.contains("name=\"accept_terms\" value=\"on\""), "{form}");
+    assert!(form.contains("name=\"provider\" value=\"anthropic\""), "{form}");
+    assert!(form.contains("name=\"_window\" value=\"signin\""), "a refusal reopens it: {form}");
+    assert!(!html.contains("<script"), "no script");
+}
+
+/// The provider window's settings forms: each account's routing overrides, the plugin meters and the
+/// connection settings post to their routes with the token and return to the window; a refusal
+/// reopens the window through its `_window`, and no script runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_provider_window_has_the_routing_plugin_and_connection_forms() {
+    let d = Dash::dashboard().await;
+    let html = d.ok("/providers/anthropic").await;
+    for action in [
+        "/do/routing/set",
+        "/do/routing/unset",
+        "/do/routing/set-plugin",
+        "/do/routing/unset-plugin",
+        "/do/connection/set",
+        "/do/connection/unset",
+    ] {
+        let form = form_to(&html, action);
+        assert!(form.contains("name=\"_back\" value=\"/providers/anthropic\""), "{action} returns here: {form}");
+        assert!(form.contains("name=\"_t\" value=\""), "{action} carries the token: {form}");
+        assert!(form.contains("name=\"_window\" value=\""), "{action} names its window: {form}");
+    }
+    let connection = form_to(&html, "/do/connection/set");
+    assert!(connection.contains("name=\"model\"") && connection.contains("name=\"key\""), "{connection}");
+    let plugin = form_to(&html, "/do/routing/set-plugin");
+    assert!(plugin.contains("name=\"provider\" value=\"anthropic\""), "{plugin}");
+
+    let accounts = d.view(ViewName::Accounts, json!({"provider": "anthropic"})).await;
+    for a in rows(&accounts) {
+        let name = a["name"].as_str().unwrap();
+        assert!(html.contains(&format!("name=\"_window\" value=\"routing-set-{name}\"")), "{name}: its override form");
+    }
+    assert!(!html.contains("<script"), "no script");
+}
+
+/// Each model row of the provider window has a Test link to `provider/model`, and the verdict forms
+/// that mark and clear it on one of the provider's connections; no script runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_model_rows_have_a_test_link_and_verdict_forms() {
+    let d = Dash::dashboard().await;
+    let models = d.view(ViewName::Model, json!({"provider": "anthropic"})).await;
+    let html = d.ok("/providers/anthropic").await;
+    assert!(html.contains("href=\"/combo?window=test&amp;target=anthropic"), "a Test link per model");
+    for m in rows(&models) {
+        let id = m["model"].as_str().unwrap();
+        assert!(html.contains(&format!("name=\"model\" value=\"{id}\"")), "{id}: its verdict names it");
+    }
+    let mark = form_to(&html, "/do/verdicts/mark");
+    assert!(mark.contains("name=\"provider\" value=\"anthropic\"") && mark.contains("name=\"account\""), "{mark}");
+    assert!(mark.contains("name=\"note\""), "a note is optional: {mark}");
+    let clear = form_to(&html, "/do/verdicts/clear");
+    assert!(clear.contains("name=\"account\"") && clear.contains("name=\"model\""), "{clear}");
+    assert!(!html.contains("<script"), "no script");
+}
+
 /// The search is a GET form that filters by id or alias.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_search_filters_cards_by_id() {
@@ -176,4 +369,26 @@ async fn the_search_filters_cards_by_id() {
     assert!(!page.contains("href=\"/providers/xai"));
     let none = text_of(&d.ok("/providers?q=zzzz-nothing").await);
     assert!(none.contains("No provider matches"), "{none}");
+}
+
+/// "All kinds" lists the providers whose capabilities (as `providers` prints them) include the
+/// chosen kind, and the search keeps it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_kinds_menu_lists_the_providers_that_declare_the_kind() {
+    let d = Dash::dashboard().await;
+    let providers = d.view(ViewName::Providers, json!({})).await;
+    let kind = rows(&providers)
+        .iter()
+        .flat_map(|p| rows(&p["capabilities"]))
+        .filter_map(Value::as_str)
+        .find(|k| *k != "llm")
+        .expect("a fixture plugin declares a kind other than llm")
+        .to_owned();
+    let page = d.ok(&format!("/providers?has={kind}")).await;
+    for p in rows(&providers) {
+        let id = p["id"].as_str().unwrap();
+        let has = rows(&p["capabilities"]).iter().any(|c| c == kind.as_str());
+        assert_eq!(page.contains(&format!("href=\"/providers/{id}?")) || page.contains(&format!("href=\"/providers/{id}\"")), has, "{id} under {kind}");
+    }
+    assert!(page.contains(&format!("name=\"has\" value=\"{kind}\"")), "the search keeps the kind");
 }

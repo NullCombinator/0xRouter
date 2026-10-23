@@ -6,16 +6,16 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Subcommand;
+use nullrouter_adapters::InstallError;
 use nullrouter_adapters::catalogue::{self, CatalogueError, Client};
-use nullrouter_adapters::store::{Index, Origin, Store};
-use nullrouter_adapters::{BUILD_TIMEOUT, InstallError, InstallOptions};
+use nullrouter_adapters::store::{Index, Store};
 use nullrouter_engine::state::Engine;
 use nullrouter_registry::OperatorHome;
+use nullrouter_server::ops::Ctx;
+use nullrouter_server::ops::adapters as ops;
 use serde_json::{Value, json};
 
-use super::adapters::finish;
-
-const REFUSED: u8 = 3;
+use super::adapters::print_ended;
 
 #[derive(Subcommand)]
 pub(crate) enum Command {
@@ -89,7 +89,7 @@ fn exit_of(e: &CatalogueError) -> u8 {
         CatalogueError::HashMismatch { .. }
         | CatalogueError::FpMismatch { .. }
         | CatalogueError::Unpack(_)
-        | CatalogueError::Install(InstallError::Refused(_)) => REFUSED,
+        | CatalogueError::Install(InstallError::Refused(_)) => 3,
         _ => 1,
     }
 }
@@ -169,22 +169,10 @@ fn show(home: &OperatorHome, harness: &str, as_json: bool) -> Result<ExitCode, E
 }
 
 fn install(home: &OperatorHome, harness: &str, semver: Option<&str>, as_json: bool) -> Result<ExitCode, ExitCode> {
-    let (engine, _) = Engine::open(home.clone()).map_err(|e| fail(format!("startup failed:\n{e}")))?;
-    let st = engine.snapshot();
-    let styles: Vec<&str> = st.styles.keys().map(String::as_str).collect();
-    let url = st.settings().adapters.catalogue_url.clone();
-    let opts = InstallOptions {
-        styles: &styles,
-        builder: st.settings().adapters.builder.as_deref(),
-        origin: Origin::Local(String::new()),
-        build_timeout: BUILD_TIMEOUT,
-    };
-    let client = Client::new().map_err(|e| report(&e, as_json))?;
-    let result = runtime()?.block_on(client.install(home.path(), &url, harness, semver, opts));
-    match result {
-        Ok(done) => finish(home, &done, as_json),
-        Err(e) => Err(report(&e, as_json)),
-    }
+    let ctx = Ctx { home: home.clone(), engine: None };
+    let mut log = Vec::new();
+    let r = ops::catalogue_install_with(&ctx, &mut log, harness, semver);
+    print_ended(&log, r, as_json)
 }
 
 fn check(home: &OperatorHome, as_json: bool) -> Result<ExitCode, ExitCode> {

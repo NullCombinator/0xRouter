@@ -3,9 +3,12 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::Subcommand;
+use std::io::{self, Write};
+
+use clap::{Subcommand, ValueEnum};
 use nullrouter_registry::OperatorHome;
-use nullrouter_registry::community::{self, InstallError};
+use nullrouter_server::ops::plugins;
+use nullrouter_server::ops::{Ctx, Status};
 use nullrouter_server::views;
 use serde_json::json;
 
@@ -23,62 +26,69 @@ pub(crate) enum Command {
     Uninstall {
         id: String,
     },
+    /// Let plugins reach this machine and the local network, or stop them.
+    PrivateEndpoints {
+        on: Switch,
+        /// Don't ask before turning it on.
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
-/// Exit code for a plugin this core can't support.
-const UNSUPPORTED: u8 = 3;
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum Switch {
+    On,
+    Off,
+}
 
 pub(crate) fn run(home: Option<PathBuf>, cmd: Command, as_json: bool) -> Result<ExitCode, ExitCode> {
-    match cmd {
-        Command::List { community } => list(home, community, as_json),
-        Command::Install { id } => {
-            let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
-            let path = community::install(&id, &home).map_err(refused)?;
-            done(&home, "installed", &id, &path, as_json)
-        }
-        Command::Uninstall { id } => {
-            let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
-            let path = community::uninstall(&id, &home).map_err(refused)?;
-            // The plugin's fits go with it; reinstalling starts from nothing (spec 012).
-            if let Err(e) = nullrouter_engine::quota::fit::store::remove(home.path(), &id) {
-                eprintln!("fit state of {id} not removed: {e}");
+    let fail = |text: String, code: u8| {
+        eprintln!("{text}");
+        ExitCode::from(code)
+    };
+    let home = || home.clone().map_or_else(OperatorHome::resolve, OperatorHome::new);
+    let ctx = || Ctx { home: home(), engine: None };
+    let mut log = Vec::new();
+    let result = match cmd {
+        Command::List { community } => return list(home(), community, as_json),
+        Command::Install { id } => plugins::install_with(&ctx(), &mut log, &id),
+        Command::Uninstall { id } => plugins::uninstall_with(&ctx(), &mut log, &id),
+        Command::PrivateEndpoints { on, yes } => {
+            let on = on == Switch::On;
+            if on && !yes {
+                if as_json {
+                    return Err(fail("--json needs --yes".into(), 2));
+                }
+                eprint!("{} Continue? [y/N] ", plugins::private_endpoints_question());
+                io::stderr().flush().map_err(|e| fail(e.to_string(), 1))?;
+                let mut line = String::new();
+                io::stdin().read_line(&mut line).map_err(|e| fail(e.to_string(), 1))?;
+                if !matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+                    println!("not changed");
+                    return Err(ExitCode::from(1));
+                }
             }
-            done(&home, "uninstalled", &id, &path, as_json)
+            plugins::private_endpoints_with(&ctx(), &mut log, on)
         }
+    };
+    for l in &log {
+        eprintln!("{l}");
     }
-}
-
-fn refused(e: InstallError) -> ExitCode {
-    eprintln!("{e}");
-    match e {
-        InstallError::Unsupported(_) => ExitCode::from(UNSUPPORTED),
-        _ => ExitCode::from(1),
+    let r = result.map_err(|e| fail(e.text, e.exit))?;
+    if let Status::SavedNotApplied { reason } = &r.done.status {
+        return Err(fail(reason.clone(), 1));
     }
-}
-
-fn done(
-    home: &OperatorHome,
-    what: &str,
-    id: &str,
-    path: &std::path::Path,
-    as_json: bool,
-) -> Result<ExitCode, ExitCode> {
-    let status = super::apply(home).map_err(|e| {
-        eprintln!("{what} {id} ({}), {e}", path.display());
-        ExitCode::from(1)
-    })?;
     if as_json {
-        println!("{}", json!({"id": id, what: path.display().to_string(), "status": status}));
+        println!("{}", r.json);
     } else {
-        println!("{what} {id} ({}), {status}", path.display());
+        println!("{}", r.done.text);
     }
     Ok(ExitCode::SUCCESS)
 }
 
 /// Bundled and installed plugins as loaded, then, with `--community`, every community
 /// plugin with its fit status.
-fn list(home: Option<PathBuf>, with_community: bool, as_json: bool) -> Result<ExitCode, ExitCode> {
-    let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
+fn list(home: OperatorHome, with_community: bool, as_json: bool) -> Result<ExitCode, ExitCode> {
     let view = super::read(&home, views::plugins::NEEDS, &json!({"community": with_community}), views::plugins::build)?;
     if as_json {
         println!("{:#}", view.json);

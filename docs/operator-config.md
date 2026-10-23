@@ -11,6 +11,7 @@ $NULLROUTER_HOME
 ├── install-id      # this installation's random id (mode 0600)
 ├── keys.toml       # agent key digests (mode 0600)
 ├── dashboard.toml  # the dashboard token's digest and issue time (mode 0600)
+├── dashboard-log.jsonl # changes made from the dashboard, newest 1,000 lines (mode 0600)
 ├── proxies.toml    # named proxies and their credentials (mode 0600)
 ├── plugins/        # user and installed community plugins (*.toml, top level only), see plugins.md
 ├── routing/
@@ -436,10 +437,14 @@ This is untested.
 
 ## The dashboard
 
-`serve` also serves a read-only web dashboard on its own port, `127.0.0.1:20130`. It shows the
-endpoint, agent keys, providers, quota, routing and request records on pages that read the same
-facts the CLI prints; it changes nothing, so every change stays in the CLI. It runs in the
-`serve` process, on its own listener, and a fault in it never slows or breaks a client request.
+`serve` also serves a web dashboard on its own port, `127.0.0.1:20130`. It shows the endpoint,
+agent keys, providers, quota, routing and request records on pages that read the same facts the
+CLI prints, and its forms make the same changes the CLI makes (see
+[Making changes from the dashboard](#making-changes-from-the-dashboard)). Every change a CLI
+command can make is in the dashboard, except `serve`, `dashboard token`, and the history
+housekeeping commands `records prune`, `records forget`, `quota prune` and `quota forget`. Those
+stay CLI-only. The dashboard runs in the `serve` process, on its own listener, and a fault in it
+never slows or breaks a client request.
 
 ```toml
 # config.toml
@@ -463,6 +468,8 @@ nullrouter dashboard token     # prints nrd_… once; a running server is told t
 nullrouter dashboard status    # on or off, the address, whether it is listening, when the token was issued
 ```
 
+The same token covers reading and making changes. There is no second token.
+
 Open `http://127.0.0.1:20130` and enter the token once. The browser keeps a cookie
 (`nr_dashboard`, `HttpOnly`, `SameSite=Strict`) for 400 days, the longest a browser allows, so it
 doesn't ask again. 0router stores only the token's SHA-256 digest in `dashboard.toml` (mode
@@ -472,19 +479,78 @@ does the same for one browser.
 
 A wrong token is refused after a delay that starts at 1 second and doubles to 30 seconds with
 each wrong token, and a right one resets it. The delay is shared, not per browser. Other limits:
-a request whose `Host` isn't the dashboard's own gets `421` (DNS rebinding), a sign-in posted
-from another site gets `403`, and every method but `GET` gets `405` (the sign-in post is the one
-exception).
+a request whose `Host` isn't the dashboard's own gets `421` (DNS rebinding), a sign-in or change
+form posted from another site gets `403`, and every method but `GET` gets `405`. The sign-in post
+and the change forms under `/do/` are the exceptions.
 
 ### What the cookie reaches
 
-Browsers scope a cookie by host name, not by port. The dashboard cookie is therefore also sent to
-any other web server you run on `127.0.0.1` and visit in the same browser. This is a known and
-accepted limit: a process running as your own user can already read `~/.0router`, and the only
-thing the cookie opens is a read-only view that shows no secret and no prompt. (Security review
-finding L1, accepted on 2026-10-06.) To give the dashboard its own cookie host on Linux, where
-every `127.0.0.0/8` address is loopback, set `listen = "127.0.0.2:20130"` and open that address.
-The default stays `127.0.0.1:20130` on every system.
+Browsers scope a cookie by host name, not by port. A cookie set by `127.0.0.1:20130` is also sent
+to every other web server you open on `127.0.0.1` in the same browser, such as a development
+server, a container's published port or another user's server. Since the dashboard can make
+changes, that cookie is worth protecting. It is a sign-in session, not your dashboard token. It
+ends after 12 hours unused and 7 days at most, and **Sign out** or `nullrouter dashboard token`
+ends every session at once. Sessions live in the server's memory, so restarting `nullrouter serve`
+ends them too. Whoever holds a live session can do anything the dashboard can do, including
+issuing client keys, until it ends. The form token and the origin check stop other web pages from
+posting through your browser, but they don't stop a program that has the cookie and can connect to
+this machine's loopback.
+
+To keep the cookie away from other local servers on Linux, where every `127.0.0.0/8` address is
+loopback, set `listen = "127.0.0.2:20130"` in `[dashboard]` and open that address. The default
+stays `127.0.0.1:20130` on every system. If other people or untrusted programs share this
+machine, use a separate address, sign out when you're done, and reissue the token if you think the
+cookie was seen.
+
+### Making changes from the dashboard
+
+A change made in the browser runs the same operation as its CLI command. It applies the same
+checks, writes the same files and reloads a running server the same way. A refusal shows the
+CLI's text next to the field it concerns, and the other fields you typed stay filled in.
+
+- **Write-only fields.** An API key, a proxy password and a pasted sign-in code are entered in
+  password fields. The dashboard never shows them again and never logs them.
+- **A new client key** is shown once, on the page the issue returns, with a warning that it won't
+  be shown again. Reloading or coming back never shows it. Lose it, and you issue another.
+- **Reloading never repeats a change.** After a change the browser lands on the page that shows
+  the new state, with a short notice at the top. A `once` value (the new key) is shown in a box
+  with the warning "This is the only time it is shown."
+- **Confirm windows.** Anything that can't be undone first opens a window that names the subject
+  and what is lost. Nothing changes until you confirm. Cancelling changes nothing. The windows
+  are for:
+  - removing an account, a proxy, an adapter or a unified model or combo;
+  - revoking a client key;
+  - uninstalling a plugin;
+  - clearing a suspect adapter;
+  - turning private endpoints on (the window says plugins may then reach this machine and your
+    local network);
+  - a test that makes more than one billed call (the window gives the count first, as
+    `nullrouter test` does).
+- **Long tasks.** A sign-in wait, a model or combo test, Test All, an adapter review or build, a
+  catalogue install, a proxy probe and a quota poll return at once with "started" and the time.
+  Reload the page to see progress and the result. Leaving the page does not stop the task.
+  Starting a second task on the same target gets the CLI's answer.
+- **Form check value.** Every form carries a hidden check value (`_t`). It is derived from your
+  browser session's cookie, and nothing about it is stored, so it stops working when the session
+  ends. A form posted from another site, or without a valid check value, changes nothing and gets
+  an error page. A token reissued with `dashboard token` ends every session, so open forms fail
+  and the page asks for the new token. Open the page again after you enter it.
+
+### Console Log
+
+Console Log lists every change made in the browser, newest first: the local time, the operation
+(such as `accounts.remove`), the subject (such as `anthropic/work`), and the result. The result
+is `done`, `saved_not_applied`, `started` or `refused`, with the refusal text when there is one.
+Changes made from the CLI are not listed. The CLI's output is their record.
+
+```bash
+nullrouter dashboard log                  # the newest 50, newest first
+nullrouter dashboard log --limit 200      # or any other count
+nullrouter --json dashboard log           # the same entries as a JSON array
+```
+
+The log is kept in `dashboard-log.jsonl` in the operator home (mode 0600). It keeps the newest
+1,000 lines. No entry holds a secret, a prompt or a response. Reading the log needs no server.
 
 ## When a stream breaks
 
@@ -515,8 +581,19 @@ Plugin URLs may not point at loopback, private, link-local or metadata addresses
 at request time. To route to a local model server, opt in:
 
 ```toml
-allow_private_endpoints = true
+allow_private_endpoints = true     # top level of config.toml; applies to every plugin
 ```
+
+or with the CLI, which asks first, and `--yes` skips the question:
+
+```bash
+nullrouter plugins private-endpoints on        # Plugins may then reach this machine and your local network. Continue? [y/N]
+nullrouter plugins private-endpoints off       # removes the key from config.toml
+```
+
+The Settings page of the dashboard shows the setting and changes it, with the same question as a
+confirm window. A custom compatible provider with a private address is refused while the setting
+is off, and the refusal names this command (see [Custom compatible providers](#custom-compatible-providers)).
 
 ## Routing
 
@@ -860,6 +937,25 @@ Each member's upstream id is resolved once, at load. Rules:
 - a provider appears at most once per unified model;
 - typed members must agree on `kind` (untyped members never conflict).
 
+### Changing a unified model
+
+```bash
+nullrouter unified add sonnet kr/claude-sonnet-4-5 openrouter/anthropic/claude-sonnet-4.5
+nullrouter unified set sonnet kr/claude-sonnet-4-5          # replaces the members
+nullrouter unified remove sonnet                            # asks first; --yes skips the question
+```
+
+Members are `provider/model`, in order. `add` prints `sonnet: declared (2 members)`. A member
+that breaks the rules above is refused, and nothing is written. `remove` is refused while a
+combo lists the model, with the combo's name:
+
+```text
+sonnet: combo fast uses it; remove it from the combo first
+```
+
+The change is written to `config.toml` and applied to the running server. With no server running
+it prints `saved; applies at next start`.
+
 ## Phases in records
 
 Each attempt of a record carries the marks the router took and the phases derived from them.
@@ -1012,6 +1108,23 @@ nullrouter combos coder         # one, nested combos expanded; exit 2 if it isn'
 nullrouter resolve coder        # the same tree
 ```
 
+### Changing a combo
+
+```bash
+nullrouter combos add coder sonnet fallback-chain
+nullrouter combos set coder sonnet gpt      # replaces the members
+nullrouter combos remove coder              # asks first; --yes skips the question
+```
+
+Members are unified models or combo names, in order. A member that is neither is refused:
+
+```text
+fast: member x is neither a unified model nor a combo
+```
+
+Like the unified model commands, a change is written to `config.toml` and applied to the running
+server, or saved with `saved; applies at next start` when no server runs.
+
 ## Model tests
 
 A test proves that a model works on one account: one real, minimal call through 0router (a
@@ -1115,6 +1228,57 @@ With the default, `openai/brand-new-model` is forwarded unchanged even though op
 not declare it. With `false`, it is a not-found error. Passthrough providers accept any
 model either way.
 
+### Enabling, disabling, hiding and showing
+
+```toml
+[provider.openrouter]
+enabled = false    # routing skips the provider; its accounts stay (default true)
+hidden = true      # left out of /v1/models and the provider list (default false)
+```
+
+```bash
+nullrouter providers disable openrouter    # openrouter: disabled (routing skips it)
+nullrouter providers enable openrouter
+nullrouter providers hide openrouter       # openrouter: hidden
+nullrouter providers show openrouter
+```
+
+The two settings are separate. A disabled provider takes no requests. A hidden provider drops
+out of the model lists, but the settings panel on the dashboard still lists it, so you can show
+it again. Both are reversible. The Providers side panel on the dashboard makes the same changes.
+
+### Custom compatible providers
+
+`providers add-compatible` declares a provider for a server that speaks the Chat Completions or
+Messages API. It writes a provider plugin with one text section, API-key auth in the style's
+header, and a static list of models:
+
+```bash
+nullrouter providers add-compatible local-llm --style openai \
+  --base-url http://127.0.0.1:11434 --model llama3.1 --model qwen2.5 --model phi4 --name "Local LLM"
+```
+
+```text
+local-llm: added (3 models)
+```
+
+- `--style` is `openai` or `anthropic`. `--model` is repeated, one per model id, at least one and
+  at most 200. `--name` defaults to the id.
+- The id is lowercase letters, digits and dashes, up to 32 characters, and not the id of an
+  existing provider.
+- The base URL must be https, unless it is a private or loopback address. Those, over http or
+  https, are accepted only once private endpoints are on. While they are off, the command refuses
+  them, as in the example above:
+
+```text
+local-llm: base_url http://127.0.0.1:11434 is a private address; turn private endpoints on first (nullrouter plugins private-endpoints on)
+```
+
+  That refusal exits 3. Turn the setting on and run the command again. Nothing is written when a
+  refusal happens.
+- The provider appears at once, and accounts are added to it as to any provider (`accounts add`
+  or the dashboard).
+
 ## Replacing a bundled provider
 
 A user plugin whose `id` matches a bundled provider stays **pending**: the bundled
@@ -1144,8 +1308,9 @@ config.toml:4:1 unified_model[0].members[1].provider: unknown provider "xx"
   - in-flight requests keep the snapshot they started with;
   - nothing watches the files. Each mutating command (`accounts`, `keys`, `behaviour`,
     `quota interval`, `accounts exclusive`, `routing set`/`unset`/`set-plugin`/`unset-plugin`/`window`, `connection set`/`unset`, `proxy add`/`remove`/`use`/`clear`/`fixed`,
-    `verdicts settings`, `plugins install`/`uninstall`) writes its file atomically and then asks the running
-    server to reload over the operator socket. It prints `applied` when the server
+    `verdicts settings`, `plugins install`/`uninstall`/`private-endpoints`, `unified` and `combos`
+    `add`/`set`/`remove`, `providers enable`/`disable`/`hide`/`show`/`add-compatible`) writes its
+    file atomically and then asks the running server to reload over the operator socket. It prints `applied` when the server
     acknowledged, or `saved; applies at next start` when no server is running. A hand
     edit applies at the next start or the next such reload. If the reload loads a unified
     model whose members' limits differ, the command prints the note on stderr.

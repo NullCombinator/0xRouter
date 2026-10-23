@@ -4,6 +4,7 @@ exit: 1
   "home": "<HOME>",
   "endpoint": "http://127.0.0.1:<PORT>/v1",
   "endpoint_source": "server",
+  "allow_private_endpoints": false,
   "providers": {
     "bundled": 7,
     "user": 1

@@ -133,6 +133,15 @@ impl Id {
     }
 }
 
+/// A refused change the page shows again (spec 014 R3): its text, the form field it belongs to, and
+/// the values the form had (secrets already left out).
+#[derive(Debug, Clone)]
+pub struct Refused {
+    pub text: String,
+    pub field: Option<String>,
+    pub kept: Vec<(String, String)>,
+}
+
 /// A page request: the route, the window it opens (a provider or a record id), and the query.
 #[derive(Debug, Clone)]
 pub struct Req {
@@ -140,6 +149,12 @@ pub struct Req {
     /// `/providers/<id>` or `/usage/records/<id>`: the window open on top of the page.
     pub window: Option<String>,
     pub query: Vec<(String, String)>,
+    /// The form token for this request's session (`Forms::token`); the dashboard sets it before the
+    /// page is built, and it is empty until then.
+    pub token: String,
+    /// The refusal a `done` flash carried, when the last change was refused; the page keeps the
+    /// form's values beside it.
+    pub refused: Option<Refused>,
 }
 
 impl Req {
@@ -170,7 +185,7 @@ impl Req {
                 (id, Some(rest))
             }
         };
-        Some(Self { id, window, query })
+        Some(Self { id, window, query, token: String::new(), refused: None })
     }
 
     /// The first value of `name` in the query, when it isn't empty.
@@ -281,9 +296,16 @@ pub struct Ctx<'a> {
     pub tz: &'a TimeZone,
     /// Provider logo addresses (not a view: the bytes are the registry's, research R10).
     pub logos: &'a crate::logos::Index,
+    /// The engine, for what a page plans in process (a test's plan reads its snapshot, no network).
+    pub engine: &'a std::sync::Arc<nullrouter_engine::state::Engine>,
 }
 
 impl Ctx<'_> {
+    /// The operator context ops run in from this page: the home and the engine, in process.
+    pub fn ops(&self) -> nullrouter_server::ops::Ctx {
+        nullrouter_server::ops::Ctx { home: self.engine.home().clone(), engine: Some(self.engine.clone()) }
+    }
+
     /// The JSON of the first view fetched under `name`; `Null` when the page didn't ask for it.
     pub fn json(&self, name: ViewName) -> &Value {
         self.page.view(name).map_or(&Value::Null, |v| &v.json)
@@ -299,9 +321,14 @@ impl Ctx<'_> {
         self.page.views.iter().filter(move |f| f.view == name).map(|f| (&f.args, &f.value.json))
     }
 
-    /// An instant as `<time>` in this machine's zone.
+    /// An instant as `<time>` in this machine's zone; one from the page's day shows only its clock.
     pub fn time(&self, rfc3339: &str) -> Markup {
-        crate::time::time_element(rfc3339, self.tz)
+        crate::time::time_element_since(rfc3339, self.tz, self.page.as_of)
+    }
+
+    /// `2s ago`, counted from the page's "as of" instant.
+    pub fn ago(&self, rfc3339: &str) -> Markup {
+        crate::time::ago_element(rfc3339, self.tz, self.page.as_of)
     }
 }
 

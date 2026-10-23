@@ -507,6 +507,12 @@ pub struct MemberDecl {
 pub struct ProviderSettings {
     #[serde(default = "yes")]
     pub allow_uncatalogued_models: bool,
+    /// `enabled = false`: routing skips the provider (default true).
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// `hidden = true`: left out of model lists and the provider list (default false).
+    #[serde(default)]
+    pub hidden: bool,
     #[serde(default)]
     pub connection: ConnectionSettings,
     /// `[provider.P.retry]`: same-account retries (spec 013, US6).
@@ -525,6 +531,8 @@ impl Default for ProviderSettings {
     fn default() -> Self {
         Self {
             allow_uncatalogued_models: true,
+            enabled: true,
+            hidden: false,
             connection: ConnectionSettings::default(),
             retry: RetrySettings::default(),
             model: BTreeMap::new(),

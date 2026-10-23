@@ -298,7 +298,8 @@ fn unacknowledged_alerts_are_warnings_and_leave_the_exit_status_alone() {
     let entry = format!(
         r#"{{"v":1,"kind":"entry","id":"{ENTRY}","window":"weekly","type":"idle","start":"2026-10-07T02:10:00.000Z","end":"2026-10-07T02:30:00.000Z","amount":4.0,"unit":"percent","found_at":"2026-10-07T02:31:00.000Z"}}"#
     );
-    let alert = format!(r#"{{"v":1,"kind":"alert","id":"{ALERT}","entry":"{ENTRY}","raised_at":"2026-10-07T02:31:00.000Z"}}"#);
+    let alert =
+        format!(r#"{{"v":1,"kind":"alert","id":"{ALERT}","entry":"{ENTRY}","raised_at":"2026-10-07T02:31:00.000Z"}}"#);
     let q = h.join("quota/opencode-go");
     fs::create_dir_all(&q).unwrap();
     chmod(&h.join("quota"), 0o700);

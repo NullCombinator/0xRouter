@@ -39,6 +39,9 @@ pub fn listed(st: &EngineState) -> Vec<Listed> {
     let mut out: Vec<Listed> = unified.chain(reg.combos().map(|c| ours(&c.name, c.kind))).collect();
     let mut seen: BTreeSet<String> = out.iter().map(|l| l.id.clone()).collect();
     for p in reg.providers() {
+        if reg.settings(&p.id).hidden {
+            continue;
+        }
         let no_auth = p.auth.as_ref().is_some_and(|a| a.no_auth);
         if !no_auth && st.accounts.for_provider(&p.id).next().is_none() {
             continue;

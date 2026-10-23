@@ -12,7 +12,6 @@ use axum::response::{Html, IntoResponse, Response};
 use maud::{DOCTYPE, Markup, html};
 
 use crate::access::{self, Gate};
-use crate::components::icon;
 use crate::{Shared, assets};
 
 /// What the sign-in page shows.
@@ -36,7 +35,7 @@ pub fn page(screen: &Screen) -> Markup {
             body class="signin" {
                 main class="signin__card" {
                     div class="signin__brand" {
-                        span class="sidebar__mark" { (icon("hub")) }
+                        (crate::frame::mark())
                         h1 class="signin__title" { "0Router Proxy" }
                     }
                     @match screen {
@@ -74,7 +73,7 @@ pub fn see_other(to: &str) -> Response {
 }
 
 pub async fn get(State(shared): State<Arc<Shared>>, req: Request) -> Response {
-    match access::gate(&shared.engine, req.headers()) {
+    match access::gate(&shared.engine, &shared.sessions, req.headers(), shared.rule.port()) {
         Gate::NoToken => html_response(StatusCode::OK, &Screen::NoToken),
         Gate::SignedIn => see_other("/"),
         Gate::SignedOut => {
@@ -90,7 +89,7 @@ pub async fn post(State(shared): State<Arc<Shared>>, req: Request) -> Response {
     if !access::origin_ok(&shared.rule, parts.headers.get(ORIGIN)) {
         return (StatusCode::FORBIDDEN, "This sign-in did not come from the dashboard.\n").into_response();
     }
-    match access::gate(&shared.engine, &parts.headers) {
+    match access::gate(&shared.engine, &shared.sessions, &parts.headers, shared.rule.port()) {
         Gate::NoToken => return html_response(StatusCode::OK, &Screen::NoToken),
         Gate::SignedIn => return see_other("/"),
         Gate::SignedOut => {}
@@ -104,8 +103,14 @@ pub async fn post(State(shared): State<Arc<Shared>>, req: Request) -> Response {
     let digest = shared.engine.snapshot().dashboard.digest.clone().unwrap_or_default();
     if access::token_matches(&digest, presented) {
         shared.access.right_token();
+        // The cookie carries a fresh random id, never the token. With no OS randomness there is no
+        // sign-in: a weaker id would be a guessable one.
+        let Some(id) = shared.sessions.create(&digest, std::time::Instant::now()) else {
+            return (StatusCode::SERVICE_UNAVAILABLE, "The system gave no randomness to sign in with.\n")
+                .into_response();
+        };
         let mut response = see_other(&next);
-        if let Ok(cookie) = HeaderValue::try_from(access::set_cookie(presented)) {
+        if let Ok(cookie) = HeaderValue::try_from(access::set_cookie(&id, shared.rule.port())) {
             response.headers_mut().insert(SET_COOKIE, cookie);
         }
         return response;

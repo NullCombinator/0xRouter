@@ -368,10 +368,28 @@ pub fn load_config(home: &OperatorHome) -> Result<OperatorConfig, StartupError> 
 
 /// Builds a full snapshot from `home`.
 pub(crate) fn build(home: &OperatorHome, mode: Mode, parity: bool) -> Result<Registry, Vec<ValidationError>> {
+    build_with(home, mode, parity, None)
+}
+
+/// A reload's checks on `candidate` as if it were the home's `config.toml`, with nothing
+/// written: what an edit must pass before it is saved.
+pub fn check_config_text(home: &OperatorHome, candidate: &str) -> Result<(), Vec<ValidationError>> {
+    build_with(home, Mode::Reload, false, Some(candidate)).map(|_| ())
+}
+
+fn build_with(
+    home: &OperatorHome,
+    mode: Mode,
+    parity: bool,
+    candidate: Option<&str>,
+) -> Result<Registry, Vec<ValidationError>> {
     let styles = styles()?;
     let config_file = home.config_file();
     let config_name = config_file.display().to_string();
-    let config_src = read_optional(&config_file).map_err(|e| vec![io_error(&config_file, &e)])?;
+    let config_src = match candidate {
+        Some(c) => Some(c.to_owned()),
+        None => read_optional(&config_file).map_err(|e| vec![io_error(&config_file, &e)])?,
+    };
     let config: OperatorConfig = match &config_src {
         Some(src) => parse(src, &config_name)?,
         None => OperatorConfig::default(),
@@ -670,12 +688,7 @@ pub(crate) struct ConfigOutcome {
 /// `[provider.P.meter."<window>"]` against the plugin's own meters (spec 012, FR-019): the window
 /// must be one the plugin declares, token weights only on a `weighted_tokens` window, each weight
 /// and factor in range, and each multiplier glob one the plugin declares for that window.
-fn check_meter(
-    provider: &ProviderEntity,
-    token: &str,
-    s: &ProviderSettings,
-    err: &mut impl FnMut(FieldPath, String),
-) {
+fn check_meter(provider: &ProviderEntity, token: &str, s: &ProviderSettings, err: &mut impl FnMut(FieldPath, String)) {
     let declared: &[MeterDecl] = match &provider.routing {
         Some(r) => &r.window,
         None => &[],

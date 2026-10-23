@@ -205,7 +205,8 @@ pub async fn prune(engine: &Arc<Engine>, req: &Value) -> Value {
     // Queued poll entries first, so the prune sees every one on disk.
     engine.checkpoint_tallies().await;
     let learner = engine.fit_learner.clone();
-    let done = tokio::task::spawn_blocking(move || learner.prune(before, provider.as_deref(), account.as_deref())).await;
+    let done =
+        tokio::task::spawn_blocking(move || learner.prune(before, provider.as_deref(), account.as_deref())).await;
     match done {
         Ok(Ok((removed, folded))) => json!({"ok": true, "removed": removed, "folded": folded}),
         Ok(Err(e)) => json!({"ok": false, "error": e.to_string()}),

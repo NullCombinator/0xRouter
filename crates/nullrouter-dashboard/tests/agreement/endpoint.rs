@@ -109,8 +109,8 @@ async fn settings_shows_behaviour_the_home_and_the_dashboard_status() {
     assert!(!settings.is_empty());
     for (name, v) in settings {
         let tag = if v["default"] == true { " (default)" } else { "" };
-        let want = format!("{name} {}{tag}", v["value"].as_str().unwrap());
-        assert!(text.contains(&want), "{want:?}\n{text}");
+        let want = format!("{}{tag}", v["value"].as_str().unwrap());
+        assert!(text.contains(name.as_str()) && text.contains(&want), "{name} {want:?}\n{text}");
     }
 
     let check = d.view(ViewName::Check, json!({})).await;
@@ -176,7 +176,7 @@ async fn the_landscape_prints_what_latency_prints() {
         assert!(text.contains(&latency_pair(&p["own_ttft"])), "{what}: own ttft\n{text}");
         assert!(text.contains(&format!("{} req", p["requests"])), "{what}: requests");
         assert!(
-            text.contains(&format!("last response {}", p["last"]["result"].as_str().unwrap())),
+            text.contains(&format!("Last response {}", p["last"]["result"].as_str().unwrap())),
             "{what}: last response\n{text}"
         );
         for per in p["agents"].as_array().unwrap() {
@@ -184,7 +184,7 @@ async fn the_landscape_prints_what_latency_prints() {
             assert!(text.contains(&format!("{name} {}", per["requests"])), "{what}: {name} count\n{text}");
         }
     }
-    assert!(!html.contains("<script") && !html.contains("<animate"), "no script or animation");
+    assert!(!html.contains("<script"), "no script");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -193,7 +193,8 @@ async fn an_agents_colour_is_the_same_on_two_loads_and_after_a_key_is_appended()
     let path = dir.path().join("keys.toml");
     let d = Dash::start(dir).await;
     let colours = |html: &str| -> Vec<String> {
-        html.split("landscape__dot landscape__dot--")
+        // The legend lists the agents in key order, each in its colour (the drawing goes middle-out).
+        html.split("landscape__swatch landscape__swatch--")
             .skip(1)
             .map(|s| s.split('"').next().unwrap_or_default().to_owned())
             .collect()

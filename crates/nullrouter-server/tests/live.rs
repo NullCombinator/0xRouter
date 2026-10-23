@@ -35,10 +35,9 @@ fn phased(headers_delay: Duration, first_frame_delay: Duration, text: &str) -> S
 }
 
 fn chat(s: &common::Server, prompt: &str) -> reqwest::RequestBuilder {
-    reqwest::Client::new()
-        .post(format!("{}/v1/chat/completions", s.base))
-        .bearer_auth(&s.key)
-        .body(json!({"model": "mockco/m1", "stream": true, "messages": [{"role": "user", "content": prompt}]}).to_string())
+    reqwest::Client::new().post(format!("{}/v1/chat/completions", s.base)).bearer_auth(&s.key).body(
+        json!({"model": "mockco/m1", "stream": true, "messages": [{"role": "user", "content": prompt}]}).to_string(),
+    )
 }
 
 async fn snapshot(s: &common::Server) -> Value {
@@ -192,6 +191,9 @@ async fn a_socket_client_that_never_reads_does_not_slow_requests() {
     let mut idle = tokio::net::UnixStream::connect(operator::socket_path(s.engine.home())).await.unwrap();
     idle.write_all(b"{\"op\":\"live.snapshot\"}\n").await.unwrap();
     let with = fifty(&s).await;
-    assert!(with < alone * 2 + Duration::from_millis(500), "50 requests took {with:?}, {alone:?} without the idle client");
+    assert!(
+        with < alone * 2 + Duration::from_millis(500),
+        "50 requests took {with:?}, {alone:?} without the idle client"
+    );
     drop(idle);
 }

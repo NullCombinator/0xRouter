@@ -176,3 +176,19 @@ async fn a_target_broken_on_every_pair_is_still_listed() {
         e["name"].as_str().unwrap().strip_prefix("models/").unwrap().to_owned()
     });
 }
+
+/// Spec 014 T033: a hidden provider is absent from the model list, and `get_model` does not find it.
+#[tokio::test]
+async fn a_hidden_provider_is_absent_from_the_model_list() {
+    let s = start().await;
+    let config = std::fs::read_to_string(s.home().join("config.toml")).unwrap();
+    std::fs::write(s.home().join("config.toml"), format!("{config}[provider.typed]\nhidden = true\n")).unwrap();
+    let r = operator::handle(&s.engine, &json!({"op": "reload"})).await;
+    assert_eq!(r["ok"], true, "{r}");
+    let (_, body) = get(&s, "/v1/models", false).await;
+    let ids: Vec<&str> = body["data"].as_array().unwrap().iter().map(|e| e["id"].as_str().unwrap()).collect();
+    assert!(ids.contains(&"mockco/m1"), "{ids:?}");
+    assert!(!ids.iter().any(|i| i.starts_with("typed/")), "{ids:?}");
+    let (status, _) = get(&s, "/v1/models/typed/emb", false).await;
+    assert_eq!(status, 404);
+}

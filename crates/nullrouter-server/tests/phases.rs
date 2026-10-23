@@ -42,10 +42,8 @@ fn frames(first_pings: usize) -> Vec<Bytes> {
     out.push(data(chunk(json!({"role": "assistant", "content": "Hel"}), Value::Null)));
     out.push(data(chunk(json!({"content": "lo"}), Value::Null)));
     out.push(data(chunk(json!({}), json!("stop"))));
-    out.push(data(
-        json!({"id": "up-1", "object": "chat.completion.chunk", "created": 1, "model": "m1", "choices": [],
-               "usage": {"prompt_tokens": 5, "completion_tokens": 2}}),
-    ));
+    out.push(data(json!({"id": "up-1", "object": "chat.completion.chunk", "created": 1, "model": "m1", "choices": [],
+               "usage": {"prompt_tokens": 5, "completion_tokens": 2}})));
     out.push(Bytes::from_static(b"data: [DONE]\n\n"));
     out
 }
@@ -55,10 +53,9 @@ fn phased(headers_delay: Duration, first_frame_delay: Duration, every: Duration,
 }
 
 fn chat(s: &common::Server, stream: bool) -> reqwest::RequestBuilder {
-    reqwest::Client::new()
-        .post(format!("{}/v1/chat/completions", s.base))
-        .bearer_auth(&s.key)
-        .body(json!({"model": "mockco/m1", "stream": stream, "messages": [{"role": "user", "content": "hi"}]}).to_string())
+    reqwest::Client::new().post(format!("{}/v1/chat/completions", s.base)).bearer_auth(&s.key).body(
+        json!({"model": "mockco/m1", "stream": stream, "messages": [{"role": "user", "content": "hi"}]}).to_string(),
+    )
 }
 
 /// Sends a request, reads it to the end, and returns the finished record.

@@ -12,11 +12,11 @@ use std::time::{Duration, SystemTime};
 
 use clap::{Args as ClapArgs, Subcommand};
 use nullrouter_engine::clock;
-use nullrouter_engine::state::Engine;
-use nullrouter_engine::verdict::{self, Mark, Rejection};
+use nullrouter_engine::verdict::{self, Rejection};
 use nullrouter_registry::OperatorHome;
-use nullrouter_registry::schema::{OperatorConfig, TEST_TYPES, TestSettings, parse_broken_retest, parse_duration};
-use nullrouter_server::operator::{self, CallError};
+use nullrouter_registry::schema::{OperatorConfig, TEST_TYPES, TestSettings};
+use nullrouter_server::ops::model_tests;
+use nullrouter_server::ops::{Ctx, OpError};
 use nullrouter_server::views;
 use serde_json::{Value, json};
 
@@ -69,11 +69,9 @@ fn fail(e: impl std::fmt::Display) -> ExitCode {
 pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<ExitCode, ExitCode> {
     let home = home.map_or_else(OperatorHome::resolve, OperatorHome::new);
     match args.command {
-        Some(Command::Clear { provider, account, model }) => {
-            set(&home, [provider, account, model], Mark::Clear, as_json)
-        }
+        Some(Command::Clear { provider, account, model }) => set(&home, [provider, account, model], None, as_json),
         Some(Command::Mark { provider, account, model, note }) => {
-            set(&home, [provider, account, model], Mark::Broken { note }, as_json)
+            set(&home, [provider, account, model], Some(note), as_json)
         }
         Some(Command::Settings { args }) if args.is_empty() => show_settings(&home, as_json),
         Some(Command::Settings { args }) => set_setting(&home, &args),
@@ -91,40 +89,29 @@ pub(crate) fn run(home: Option<PathBuf>, args: Args, as_json: bool) -> Result<Ex
     }
 }
 
-/// `clear` or `mark` through the server, or on the engine opened here with none running.
+/// `clear` or `mark`: through the server, or on the engine opened here with none running.
 fn set(
     home: &OperatorHome,
     [provider, account, model]: [String; 3],
-    mark: Mark,
+    mark: Option<Option<String>>,
     as_json: bool,
 ) -> Result<ExitCode, ExitCode> {
-    let (state, note) = match &mark {
-        Mark::Broken { note } => ("broken", note.clone()),
-        Mark::Clear => ("clear", None),
-    };
-    let req = json!({"op": "verdicts.set", "provider": provider, "account": account, "model": model,
-                     "state": state, "note": note});
-    let status = match operator::call(home, &req) {
-        Ok(a) if a["ok"] == true => "applied",
-        Ok(a) => return Err(fail(a["error"].as_str().unwrap_or("the server refused the request"))),
-        Err(CallError::NoServer(_)) => {
-            let (engine, _) = Engine::open(home.clone()).map_err(|e| fail(format!("startup failed:\n{e}")))?;
-            let done = verdict::mark(&engine, &provider, &account, &model, mark);
-            engine.journal.flush_blocking();
-            done.map_err(fail)?;
-            "saved; applies at next start"
-        }
-        Err(e) => return Err(fail(e)),
-    };
+    let ctx = Ctx { home: home.clone(), engine: None };
+    let report = match &mark {
+        Some(note) => model_tests::mark_with(&ctx, &provider, &account, &model, note.as_deref()),
+        None => model_tests::clear_with(&ctx, &provider, &account, &model),
+    }
+    .map_err(op_fail)?;
     if as_json {
-        let out = json!({"provider": provider, "account": account, "model": model, "state": state, "status": status});
-        println!("{out:#}");
-    } else if state == "clear" {
-        println!("{provider}/{account} {model}: untested: {status}");
+        println!("{:#}", report.json);
     } else {
-        println!("{provider}/{account} {model}: BROKEN, set by the operator: {status}");
+        println!("{}", report.done.text);
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn op_fail(e: OpError) -> ExitCode {
+    fail(e.text)
 }
 
 /// `2026-10-07 09:12` from an RFC 3339 time (UTC).
@@ -224,12 +211,7 @@ fn written(d: Duration) -> String {
 
 /// `config.toml` as written, or empty when there is none.
 fn config_text(home: &OperatorHome) -> Result<String, ExitCode> {
-    let path = home.config_file();
-    match std::fs::read_to_string(&path) {
-        Ok(t) => Ok(t),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        Err(e) => Err(fail(format!("{}: {e}", path.display()))),
-    }
+    model_tests::config_text(home).map_err(op_fail)
 }
 
 /// Each setting with its value now and its default, as `(name, value, default)`.
@@ -268,67 +250,20 @@ fn show_settings(home: &OperatorHome, as_json: bool) -> Result<ExitCode, ExitCod
     Ok(ExitCode::SUCCESS)
 }
 
-const SETTINGS: &str = "retest <steps,…|default>, broken-retest <on|off|duration|default>, \
-                        timeout <text|embedding|tts|stt|image|video> <duration|default>, concurrency <1-32|default>";
-
-/// Sets one `[tests]` value in `config.toml`. A value that doesn't parse, or breaks a rule,
-/// prints the rule and writes nothing.
+/// Sets one `[tests]` value in `config.toml`.
 fn set_setting(home: &OperatorHome, args: &[String]) -> Result<ExitCode, ExitCode> {
-    let usage = || fail(format!("usage: verdicts settings [{SETTINGS}]"));
-    // (table, key, TOML value or None for default, what to print)
-    let (table, key, value, shown) = match args {
-        [name, v] if name == "retest" => {
-            let steps: Vec<&str> = v.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
-            if v != "default" {
-                for s in &steps {
-                    parse_duration(s).map_err(|e| fail(format!("tests.retest: {s}: {e}")))?;
-                }
-            }
-            let quoted: Vec<String> = steps.iter().map(|s| format!("\"{s}\"")).collect();
-            let toml = (v != "default").then(|| format!("[{}]", quoted.join(", ")));
-            ("[tests]", "retest", toml, v.clone())
-        }
-        [name, v] if name == "broken-retest" => {
-            if v != "default" {
-                parse_broken_retest(v).map_err(|rule| fail(format!("tests.broken_retest: {rule}")))?;
-            }
-            ("[tests]", "broken_retest", (v != "default").then(|| format!("\"{v}\"")), v.clone())
-        }
-        [name, v] if name == "concurrency" => {
-            if v != "default" {
-                v.parse::<u32>().map_err(|_| fail("tests.concurrency: 1 to 32"))?;
-            }
-            ("[tests]", "concurrency", (v != "default").then(|| v.clone()), v.clone())
-        }
-        [name, ty, v] if name == "timeout" => {
-            if !TEST_TYPES.contains(&ty.as_str()) {
-                return Err(fail(format!("tests.timeout: the type is one of {}", TEST_TYPES.join(", "))));
-            }
-            if v != "default" {
-                parse_duration(v).map_err(|e| fail(format!("tests.timeout.{ty}: {e}")))?;
-            }
-            ("[tests.timeout]", ty.as_str(), (v != "default").then(|| format!("\"{v}\"")), format!("{ty} {v}"))
-        }
-        _ => return Err(usage()),
+    let ctx = Ctx { home: home.clone(), engine: None };
+    let (setting, type_, value) = match args {
+        [name, v] => (name.as_str(), None, v.as_str()),
+        [name, ty, v] => (name.as_str(), Some(ty.as_str()), v.as_str()),
+        _ => return Err(op_fail(model_tests::settings_usage())),
     };
-    let path = home.config_file();
-    let text = super::routing::edit_key(&config_text(home)?, table, key, value.as_deref());
-    // The file must still load and keep the rules: a config the server would refuse is never written.
-    let config: OperatorConfig =
-        toml::from_str(&text).map_err(|e| fail(format!("{}: the edit would not load: {e}", path.display())))?;
-    let broken = config.tests.check();
-    if !broken.is_empty() {
-        let lines: Vec<String> = broken.iter().map(|(at, rule)| format!("{at}: {rule}")).collect();
-        return Err(fail(lines.join("\n")));
+    let mut log = Vec::new();
+    let result = model_tests::settings_with(&ctx, &mut log, setting, type_, value);
+    for l in &log {
+        eprintln!("{l}");
     }
-    std::fs::create_dir_all(home.path()).map_err(fail)?;
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, &text)
-        .and_then(|()| std::fs::rename(&tmp, &path))
-        .map_err(|e| fail(format!("{}: {e}", path.display())))?;
-    let status = super::apply(home).map_err(fail)?;
-    let name = args[0].as_str();
-    println!("{name} = {shown}: {status}");
+    println!("{}", result.map_err(op_fail)?.done.text);
     Ok(ExitCode::SUCCESS)
 }
 

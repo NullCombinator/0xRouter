@@ -5,6 +5,7 @@
 mod common;
 
 mod badges;
+mod combo;
 mod endpoint;
 mod names;
 mod not_built;
