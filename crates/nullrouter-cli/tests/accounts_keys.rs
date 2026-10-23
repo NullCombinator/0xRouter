@@ -419,7 +419,7 @@ fn serve(home: &Path) -> Serving {
         .spawn()
         .unwrap();
     let serving = Serving(child);
-    for _ in 0..500 {
+    for _ in 0..1500 {
         if home.join("run/operator.sock").exists() && std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
             return serving;
         }
