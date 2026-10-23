@@ -136,7 +136,7 @@ pass unchanged; never edit a golden file to make a move pass.
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T042 Add the parity suite `crates/nullrouter-cli/tests/dashboard_parity.rs` (SC-002, SC-003). It drives every op id in contracts/dashboard-forms.md once through `/do/...` and once through its CLI twin on twin homes. It compares the homes' files, excluding timestamps, ids and `dashboard-log.jsonl`, and for each scripted refusal compares the texts. It prints one `op: browser == cli` line per op.
+- [X] T042 Add the parity suite `crates/nullrouter-cli/tests/dashboard_parity.rs` (SC-002, SC-003). It drives every op id in contracts/dashboard-forms.md once through `/do/...` and once through its CLI twin on twin homes. It compares the homes' files, excluding timestamps, ids and `dashboard-log.jsonl`, and for each scripted refusal compares the texts. It prints one `op: browser == cli` line per op.
 - [ ] T043 Add a secret sweep in `crates/nullrouter-dashboard/tests/secret_sweep.rs` (SC-004): post marker secrets into every write-only field (account secret, proxy password, sign-in paste code), crawl every page and window, and read every home file except the secret stores. No marker may appear anywhere else.
 - [ ] T044 Add a confirm sweep in `crates/nullrouter-dashboard/tests/confirm.rs` (SC-007). For every irreversible op, the button leads to the confirm window, Cancel leaves the home byte-identical, and Confirm applies the change.
 - [X] T045 Extend `crates/nullrouter-dashboard/tests/style_guide.rs` (SC-008): no `<script`, and the CSP keeps no `script-src` and keeps `form-action 'self'`, on every page including windows, confirm windows and task panels.
