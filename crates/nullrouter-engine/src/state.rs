@@ -490,6 +490,10 @@ impl Engine {
             self.live_models.clone(),
             generation,
         );
+        // The client cache outlives a reload that changes nothing a client is built from, so a
+        // request after a dashboard change does not build a client (rustls roots) and open a new
+        // connection on an async worker.
+        state.clients.adopt_from(&old.clients);
         self.swap_redactor(self.build_redactor(&state.accounts, state.clients.proxies(), std::iter::empty()));
         self.proxy_board.reconcile(&crate::connection::fingerprints(&state));
         // An account that was added, enabled again or given a new priority starts its deficit at 0

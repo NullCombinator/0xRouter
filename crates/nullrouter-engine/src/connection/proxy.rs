@@ -58,6 +58,16 @@ impl std::fmt::Debug for Proxy {
 }
 
 impl Proxy {
+    /// Whether `other` builds the same client: same name, URL, user, password source and value.
+    fn same_definition(&self, other: &Proxy) -> bool {
+        let secret = |p: &Proxy| p.secret.as_ref().map(|s| s.with_exposed(str::to_owned));
+        self.name == other.name
+            && self.url == other.url
+            && self.username == other.username
+            && self.password == other.password
+            && secret(self) == secret(other)
+    }
+
     /// `scheme://host:port` for listings; never a credential.
     pub fn shown(&self) -> String {
         self.url.clone()
@@ -126,6 +136,11 @@ pub fn check_url(url: &str) -> Result<(), String> {
 }
 
 impl Proxies {
+    /// Whether both lists define the same proxies, in the same order.
+    pub fn same_definitions(&self, other: &Proxies) -> bool {
+        self.list.len() == other.list.len() && self.list.iter().zip(&other.list).all(|(a, b)| a.same_definition(b))
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &Proxy> {
         self.list.iter()
     }

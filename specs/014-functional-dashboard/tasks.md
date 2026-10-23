@@ -140,7 +140,7 @@ pass unchanged; never edit a golden file to make a move pass.
 - [X] T043 Add a secret sweep in `crates/nullrouter-dashboard/tests/secret_sweep.rs` (SC-004): post marker secrets into every write-only field (account secret, proxy password, sign-in paste code), crawl every page and window, and read every home file except the secret stores. No marker may appear anywhere else.
 - [X] T044 Add a confirm sweep in `crates/nullrouter-dashboard/tests/confirm.rs` (SC-007). For every irreversible op, the button leads to the confirm window, Cancel leaves the home byte-identical, and Confirm applies the change.
 - [X] T045 Extend `crates/nullrouter-dashboard/tests/style_guide.rs` (SC-008): no `<script`, and the CSP keeps no `script-src` and keeps `form-action 'self'`, on every page including windows, confirm windows and task panels.
-- [ ] T046 Add a bench in `crates/nullrouter-server/benches/` or extend the 013 overhead bench (SC-006): router overhead p95 with a loop posting dashboard changes as fast as possible, against the 013 baseline. Record the result in `specs/014-functional-dashboard/bench-baseline.md`.
+- [X] T046 Add a bench in `crates/nullrouter-server/benches/` or extend the 013 overhead bench (SC-006): router overhead p95 with a loop posting dashboard changes as fast as possible, against the 013 baseline. Record the result in `specs/014-functional-dashboard/bench-baseline.md`.
 - [X] T047 [P] Update the docs:
   - `docs/operator-config.md`: the new commands, `[provider.<id>] enabled|hidden`, and private endpoints;
   - `docs/dashboard/` (or the 009 docs): making changes, confirm windows, Console Log, the form-token note.
